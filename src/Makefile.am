@@ -199,6 +199,7 @@ BITCOIN_CORE_H = \
   policy/policy.h \
   policy/rbf.h \
   policy/settings.h \
+  pos/kernel.h \
   pow.h \
   protocol.h \
   psbt.h \
@@ -356,6 +357,7 @@ libbitcoin_server_a_SOURCES = \
   policy/packages.cpp \
   policy/rbf.cpp \
   policy/settings.cpp \
+  pos/kernel.cpp \
   pow.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
@@ -460,6 +462,8 @@ crypto_libbitcoin_crypto_base_a_SOURCES = \
   crypto/muhash.cpp \
   crypto/ripemd160.cpp \
   crypto/ripemd160.h \
+  crypto/scrypt.cpp \
+  crypto/scrypt.h \
   crypto/sha1.cpp \
   crypto/sha1.h \
   crypto/sha256.cpp \
@@ -508,6 +512,7 @@ libbitcoin_consensus_a_SOURCES = \
   hash.cpp \
   hash.h \
   prevector.h \
+  timedatadummy.cpp \
   primitives/block.cpp \
   primitives/block.h \
   primitives/transaction.cpp \

@@ -181,3 +181,14 @@ struct timeval MillisToTimeval(std::chrono::milliseconds ms)
 {
     return MillisToTimeval(count_milliseconds(ms));
 }
+
+std::string DateTimeStrFormat(const char* pszFormat, int64_t nTime)
+{
+    static std::locale classic(std::locale::classic());
+    std::locale loc(classic, new boost::posix_time::time_facet(pszFormat));
+    std::stringstream ss;
+    ss.imbue(loc);
+    ss << boost::posix_time::from_time_t(nTime);
+    return ss.str();
+}
+

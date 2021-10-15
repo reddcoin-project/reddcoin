@@ -8,6 +8,9 @@
 
 #include <uint256.h>
 #include <limits>
+#include <script/script.h>
+
+class CScript;
 
 namespace Consensus {
 
@@ -107,6 +110,21 @@ struct Params {
     uint256 nMinimumChainWork;
     /** By default assume that the signatures in ancestors of this block are valid */
     uint256 defaultAssumeValid;
+
+    /** reddcoin-specific (oddities) */
+    int nRevertCoinbase;
+    CScript devScript;
+
+    /** reddcoin-specific (posv) */
+    uint256 posLimit;
+    uint256 posReset;
+    int64_t nStakeTargetSpacing;
+    int64_t nTargetSpacingWorkMax;
+    int64_t nTargetTimespan;
+    int64_t nStakeMinAge;
+    int64_t nStakeMaxAge;
+    int64_t nModifierInterval;
+    int nLastPowHeight;
 
     /**
      * If true, witness commitments contain a payload equal to a Bitcoin Script solution

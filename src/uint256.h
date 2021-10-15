@@ -26,6 +26,11 @@ public:
     /* constructor for constants between 1 and 255 */
     constexpr explicit base_blob(uint8_t v) : m_data{v} {}
 
+    const uint32_t *GetDataPtr() const
+    {
+        return (const uint32_t *)m_data;
+    }
+
     explicit base_blob(const std::vector<unsigned char>& vch);
 
     bool IsNull() const
@@ -78,6 +83,12 @@ public:
     static constexpr unsigned int size()
     {
         return sizeof(m_data);
+    }
+
+    uint64_t GetLow64() const
+    {
+        assert(WIDTH >= 2);
+        return m_data[0] | (uint64_t)m_data[1] << 32;
     }
 
     uint64_t GetUint64(int pos) const

@@ -1993,8 +1993,8 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
         return false;
     if (stack.empty())
         return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
-    if (CastToBool(stack.back()) == false)
-        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+//    if (CastToBool(stack.back()) == false)
+//        return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
 
     // Bare witness programs
     int witnessversion;

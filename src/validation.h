@@ -59,6 +59,8 @@ struct PrecomputedTransactionData;
 struct LockPoints;
 struct AssumeutxoData;
 
+static const int64_t COIN_YEAR_REWARD = 5 * CENT; // 5% per year
+
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
 static const unsigned int DEFAULT_MIN_RELAY_TX_FEE = 1000;
 /** Default for -limitancestorcount, max number of in-mempool ancestors */
@@ -77,7 +79,7 @@ static const int MAX_SCRIPTCHECK_THREADS = 15;
 static const int DEFAULT_SCRIPTCHECK_THREADS = 0;
 static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
 static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
-static const bool DEFAULT_TXINDEX = false;
+static const bool DEFAULT_TXINDEX = true;
 static constexpr bool DEFAULT_COINSTATSINDEX{false};
 static const char* const DEFAULT_BLOCKFILTERINDEX = "0";
 /** Default for -persistmempool */
@@ -1066,5 +1068,12 @@ bool LoadMempool(CTxMemPool& pool, CChainState& active_chainstate, FopenFn mocka
  * @returns empty if no assumeutxo configuration exists for the given height.
  */
 const AssumeutxoData* ExpectedAssumeutxo(const int height, const CChainParams& params);
+
+// reddcoin specific functions
+CAmount GetProofOfWorkReward(unsigned int nBits);
+CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees);
+CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees, double fInflationAdjustment);
+double GetInflationAdjustment(CChainState &active_chainstate, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
+bool VerifyHashTarget(CChainState &active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof);
 
 #endif // BITCOIN_VALIDATION_H

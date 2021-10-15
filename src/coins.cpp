@@ -112,7 +112,7 @@ void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool 
         bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
         // Coinbase transactions can always be overwritten, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
-        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase), overwrite);
+        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase, tx.IsCoinStake(), tx.nTime), overwrite);
     }
 }
 
@@ -237,6 +237,18 @@ void CCoinsViewCache::Uncache(const COutPoint& hash)
 
 unsigned int CCoinsViewCache::GetCacheSize() const {
     return cacheCoins.size();
+}
+
+CAmount CCoinsViewCache::GetValueIn(const CTransaction& tx) const
+{
+    if (tx.IsCoinBase())
+        return 0;
+
+    CAmount nResult = 0;
+    for (unsigned int i = 0; i < tx.vin.size(); i++)
+        nResult += AccessCoin(tx.vin[i].prevout).out.nValue;
+
+    return nResult;
 }
 
 bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const

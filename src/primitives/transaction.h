@@ -14,6 +14,9 @@
 
 #include <tuple>
 
+static const int POW_TX_VERSION = 1;
+static const int POW_BLOCK_VERSION = 2;
+
 /**
  * A flag that is ORed into the protocol version to designate that a transaction
  * should be (un)serialized without witness data.
@@ -151,6 +154,17 @@ public:
         return (nValue == -1);
     }
 
+    void SetEmpty()
+    {
+        nValue = 0;
+        scriptPubKey.clear();
+    }
+
+    bool IsEmpty() const
+    {
+        return (nValue == 0 && scriptPubKey.empty());
+    }
+
     friend bool operator==(const CTxOut& a, const CTxOut& b)
     {
         return (a.nValue       == b.nValue &&
@@ -221,6 +235,11 @@ inline void UnserializeTransaction(TxType& tx, Stream& s) {
         throw std::ios_base::failure("Unknown transaction optional data");
     }
     s >> tx.nLockTime;
+    if (tx.nVersion > POW_TX_VERSION) {
+        s >> tx.nTime;
+    } else {
+        tx.nTime = 0;
+    }
 }
 
 template<typename Stream, typename TxType>
@@ -250,6 +269,9 @@ inline void SerializeTransaction(const TxType& tx, Stream& s) {
         }
     }
     s << tx.nLockTime;
+    if (tx.nVersion > POW_TX_VERSION) {
+        s << tx.nTime;
+    }
 }
 
 
@@ -270,6 +292,7 @@ public:
     const std::vector<CTxIn> vin;
     const std::vector<CTxOut> vout;
     const int32_t nVersion;
+    const uint32_t nTime;
     const uint32_t nLockTime;
 
 private:
@@ -281,9 +304,15 @@ private:
     uint256 ComputeWitnessHash() const;
 
 public:
+    /** Construct a CTransaction that qualifies as IsNull() */
+    CTransaction();
+    CTransaction(uint32_t nTime);
+
     /** Convert a CMutableTransaction into a CTransaction. */
-    explicit CTransaction(const CMutableTransaction& tx);
-    CTransaction(CMutableTransaction&& tx);
+    explicit CTransaction(const CMutableTransaction &tx);
+    CTransaction(CMutableTransaction &&tx);
+
+    CTransaction& operator=(const CTransaction& tx);
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -314,7 +343,12 @@ public:
 
     bool IsCoinBase() const
     {
-        return (vin.size() == 1 && vin[0].prevout.IsNull());
+        return (vin.size() == 1 && vin[0].prevout.IsNull() && vout.size() >= 1);
+    }
+
+    bool IsCoinStake() const
+    {
+        return (vin.size() > 0 && (!vin[0].prevout.IsNull()) && vout.size() >= 2 && vout[0].IsEmpty());
     }
 
     friend bool operator==(const CTransaction& a, const CTransaction& b)
@@ -346,9 +380,11 @@ struct CMutableTransaction
     std::vector<CTxIn> vin;
     std::vector<CTxOut> vout;
     int32_t nVersion;
+    uint32_t nTime;
     uint32_t nLockTime;
 
     CMutableTransaction();
+    CMutableTransaction(uint32_t nTime);
     explicit CMutableTransaction(const CTransaction& tx);
 
     template <typename Stream>
