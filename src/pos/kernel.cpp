@@ -146,7 +146,7 @@ static bool SelectBlockFromCandidates(CChainState &active_chainstate, std::vecto
         // compute the selection hash by hashing its proof-hash and the
         // previous proof-of-stake modifier
         CDataStream ss(SER_GETHASH, 0);
-        ss << pindex->hashProofOfStake << nStakeModifierPrev;
+        ss << uint256() << nStakeModifierPrev;
         arith_uint256 hashSelection = UintToArith256(Hash(ss));
         // the selection hash is divided by 2**32 so that proof-of-stake block
         // is always favored over proof-of-work block. this is to preserve

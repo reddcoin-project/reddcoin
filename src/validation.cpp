@@ -3458,7 +3458,6 @@ bool VerifyHashTarget(CChainState &active_chainstate, CBlockIndex* pindexPrev, c
             return fValid;
         }
     }
-    hashProof = uint256();
 
     return true;
 }
@@ -3653,6 +3652,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     if (!VerifyHashTarget(*this, pindex, block, hash)) {
         return error("%s - error calculating hashproof (height %d)\n", __func__, pindex->nHeight);
     }
+    pindex->hashProofOfStake = hash;
 
     // Header is valid/has work, merkle tree and segwit merkle tree are good...RELAY NOW
     // (but if it does not build on our best tip, let the SendMessages loop relay it)

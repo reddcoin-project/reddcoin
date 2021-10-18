@@ -203,6 +203,11 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
 {
     UniValue result = blockheaderToJSON(tip, blockindex);
 
+    result.pushKV("type", blockindex->nNonce == 0 ? "PoS" : "PoW");
+    result.pushKV("hashproof", blockindex->hashProofOfStake.GetHex());
+    result.pushKV("entropybit", (int)blockindex->GetStakeEntropyBit());
+    result.pushKV("modifier", strprintf("%016llx", blockindex->nStakeModifier));
+    result.pushKV("blocksignature", HexStr(block.vchBlockSig));
     result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS));
     result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
     result.pushKV("weight", (int)::GetBlockWeight(block));
