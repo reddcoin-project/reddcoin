@@ -28,6 +28,7 @@
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <pos/kernel.h>
+#include <pos/signer.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -3244,6 +3245,11 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 
     if (fCheckPOW && fCheckMerkleRoot)
         block.fChecked = true;
+
+    // reddcoin: check block signature
+    if (block.IsProofOfStake() && !CheckBlockSignature(block)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sign", "bad block signature");
+    }
 
     return true;
 }
