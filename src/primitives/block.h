@@ -33,6 +33,7 @@ public:
     uint32_t nNonce;
 
     static const int32_t CURRENT_VERSION=5;
+    static const int32_t NORMAL_SERIALIZE_SIZE=80;
 
     CBlockHeader()
     {
@@ -136,6 +137,15 @@ public:
     bool IsProofOfWork() const
     {
         return !IsProofOfStake();
+    }
+
+    // peercoin: get max transaction timestamp
+    int64_t GetMaxTransactionTime() const
+    {
+        int64_t maxTransactionTime = 0;
+        for (const auto& tx : vtx)
+            maxTransactionTime = std::max(maxTransactionTime, (int64_t)tx->nTime);
+        return maxTransactionTime;
     }
 
     std::pair<COutPoint, unsigned int> GetProofOfStake() const
