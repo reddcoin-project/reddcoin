@@ -2066,7 +2066,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     else if (block.IsProofOfStake())
     {
         // PoSV: coinstake tx earns reward instead of paying fee
-        uint64_t nCoinAge = GetCoinAge(*this, *block.vtx[1]);
+        uint64_t nCoinAge = GetCoinAge(this, *block.vtx[1]);
         if (!nCoinAge)
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-posv-coinage");
 
@@ -2079,7 +2079,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
             nCalculatedStakeReward = GetProofOfStakeReward(nCoinAge, nFees);
         } else {
             // New PoSV stake reward calculation for ver 5 blocks
-            double fInflationAdjustment = GetInflationAdjustment(*this, pindex->pprev, m_params.GetConsensus());
+            double fInflationAdjustment = GetInflationAdjustment(this, m_params.GetConsensus());
             LogPrintf("fInflationAdjustment=%s\n", fInflationAdjustment);
 
             nCalculatedStakeReward = GetProofOfStakeReward(nCoinAge, nFees, fInflationAdjustment);
@@ -3447,7 +3447,7 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
 }
 
 // Verify hash target and signature of coinstake tx
-bool VerifyHashTarget(CChainState &active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof)
+bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof)
 {
     AssertLockHeld(cs_main);
 
@@ -3456,7 +3456,7 @@ bool VerifyHashTarget(CChainState &active_chainstate, CBlockIndex* pindexPrev, c
     if (hash != Params().GetConsensus().hashGenesisBlock) {
         if (block.IsProofOfStake()) {
             fValid = true;
-            if (!CheckProofOfStake(active_chainstate, pindexPrev, *block.vtx[1], block.nBits, hashProof)) {
+            if (!CheckProofOfStake(active_chainstate, pindexPrev, block.vtx[1], block.nBits, hashProof)) {
                 fValid = false;
                 LogPrintf("WARNING: VerifyHashTarget(): check proof-of-stake failed for block %s\n", hash.ToString());
             }
@@ -3649,13 +3649,13 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     // PoSV: compute stake modifier
     uint64_t nStakeModifier = 0;
     bool fGeneratedStakeModifier = false;
-    if (!ComputeNextStakeModifier(*this, pindex, nStakeModifier, fGeneratedStakeModifier)) {
+    if (!ComputeNextStakeModifier(this, pindex, nStakeModifier, fGeneratedStakeModifier)) {
         return error("%s - couldnt get next stake modifier (height %d)\n", __func__, pindex->nHeight);
     }
     pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
 
     // PoSV: calculate proofhash value
-    if (!VerifyHashTarget(*this, pindex, block, hash)) {
+    if (!VerifyHashTarget(this, pindex, block, hash)) {
         return error("%s - error calculating hashproof (height %d)\n", __func__, pindex->nHeight);
     }
     pindex->hashProofOfStake = hash;
@@ -5277,8 +5277,10 @@ void ChainstateManager::MaybeRebalanceCaches()
 
 // PoSV2 determine the inflation adjustment to apply
 // look back over the last month of rewards (365.2424 / 12)
-double GetInflationAdjustment(CChainState &active_chainstate, const CBlockIndex* pindex, const Consensus::Params& consensusParams)
+double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams)
 {
+    CBlockIndex* pindex = active_chainstate->m_chain.Tip();
+
     int64_t nStart = GetTimeMicros();
     float nInflationTarget = 0.05;
     double dMaxThreshold = 5;
@@ -5300,14 +5302,14 @@ double GetInflationAdjustment(CChainState &active_chainstate, const CBlockIndex*
     }
 
     // get previous block interval
-    std::string strHash = active_chainstate.m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
+    std::string strHash = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
     uint256 hash = uint256S(strHash);
 
-    if (active_chainstate.m_blockman.m_block_index.count(hash) == 0)
+    if (!active_chainstate->m_blockman.m_block_index.count(hash))
         LogPrintf("- Hash block missing\n");
 
-    int64_t nMoneySupplyPrev = active_chainstate.m_blockman.m_block_index[hash]->nMoneySupply;
-    int64_t nHeightPrev = active_chainstate.m_blockman.m_block_index[hash]->nHeight;
+    int64_t nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
+    int64_t nHeightPrev = active_chainstate->m_blockman.m_block_index[hash]->nHeight;
 
     nPoSVRewards = nMoneySupply - nMoneySupplyPrev;
     LogPrintf("- PoSV rewards %s in last interval.\n", FormatMoney(nPoSVRewards));

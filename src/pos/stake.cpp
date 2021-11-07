@@ -51,7 +51,7 @@
 
 // peercoin: create coin stake transaction
 typedef std::vector<unsigned char> valtype;
-bool CreateCoinStake(const CWallet* pwallet, CChainState& chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew)
+bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew)
 {
     // The following split & combine thresholds are important to security
     // Should not be adjusted if you don't understand the consequences
@@ -126,7 +126,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState& chainstate, unsigned i
             // Search nSearchInterval seconds back up to nMaxStakeSearchInterval
             uint256 hashProofOfStake = uint256();
             COutPoint prevoutStake = pcoin.outpoint;
-            if (CheckStakeKernelHash(chainstate, chainstate.m_chain.Tip(), nBits, header, postx.nTxOffset + CBlockHeader::NORMAL_SERIALIZE_SIZE, tx, prevoutStake, txNew.nTime - n, hashProofOfStake))
+            if (CheckStakeKernelHash(chainstate, nBits, header, postx.nTxOffset + CBlockHeader::NORMAL_SERIALIZE_SIZE, tx, prevoutStake, txNew.nTime - n, hashProofOfStake))
             {
                 // Found a kernel
                 if (gArgs.GetBoolArg("-debug", false) && gArgs.GetBoolArg("-printcoinstake", false))
@@ -213,11 +213,11 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState& chainstate, unsigned i
     // Calculate coin age reward
     {
         uint64_t nCoinAge;
-        CCoinsViewCache view(&chainstate.CoinsTip());
+        CCoinsViewCache view(&chainstate->CoinsTip());
         if (!GetCoinAge(chainstate, (const CTransaction)txNew))
             return error("CreateCoinStake : failed to calculate coin age");
 
-        CAmount nReward = GetProofOfStakeReward(nCoinAge, txNew.nTime, chainstate.m_chain.Tip()->nMoneySupply);
+        CAmount nReward = GetProofOfStakeReward(nCoinAge, txNew.nTime, chainstate->m_chain.Tip()->nMoneySupply);
         // Refuse to create mint that has zero or negative reward
         if(nReward <= 0) {
           return false;

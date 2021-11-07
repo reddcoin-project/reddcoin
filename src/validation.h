@@ -1073,7 +1073,7 @@ const AssumeutxoData* ExpectedAssumeutxo(const int height, const CChainParams& p
 CAmount GetProofOfWorkReward(unsigned int nBits);
 CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees);
 CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees, double fInflationAdjustment);
-double GetInflationAdjustment(CChainState &active_chainstate, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
-bool VerifyHashTarget(CChainState &active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof);
+double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams);
+bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof);
 
 #endif // BITCOIN_VALIDATION_H

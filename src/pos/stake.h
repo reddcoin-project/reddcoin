@@ -10,7 +10,7 @@
 
 class CChainState;
 
-bool CreateCoinStake(const CWallet* pwallet, CChainState& chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew);
+bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew);
 
 #endif // POS_STAKE_H
 
