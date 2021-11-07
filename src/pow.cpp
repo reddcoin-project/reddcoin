@@ -147,6 +147,11 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
     return CheckProofOfWork(UintToArith256(hash), nBits, params);
 }
 
+unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)
+{
+    return 0;
+}
+
 arith_uint256 GetBlockProof(const CBlockIndex& block)
 {
     arith_uint256 bnTarget;

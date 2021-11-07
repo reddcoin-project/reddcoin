@@ -5,6 +5,7 @@
 #ifndef BITCOIN_TEST_UTIL_SETUP_COMMON_H
 #define BITCOIN_TEST_UTIL_SETUP_COMMON_H
 
+#include <amount.h>
 #include <chainparamsbase.h>
 #include <fs.h>
 #include <key.h>
@@ -67,8 +68,6 @@ static inline uint256 InsecureRand256() { return g_insecure_rand_ctx.rand256(); 
 static inline uint64_t InsecureRandBits(int bits) { return g_insecure_rand_ctx.randbits(bits); }
 static inline uint64_t InsecureRandRange(uint64_t range) { return g_insecure_rand_ctx.randrange(range); }
 static inline bool InsecureRandBool() { return g_insecure_rand_ctx.randbool(); }
-
-static constexpr CAmount CENT{1000000};
 
 /** Basic testing setup.
  * This just configures logging, data dir and chain parameters.

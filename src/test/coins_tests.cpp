@@ -393,7 +393,7 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test)
             // Update the expected result to know about the new output coins
             assert(tx.vout.size() == 1);
             const COutPoint outpoint(tx.GetHash(), 0);
-            result[outpoint] = Coin(tx.vout[0], height, CTransaction(tx).IsCoinBase());
+            result[outpoint] = Coin(tx.vout[0], height, CTransaction(tx).IsCoinBase(), CTransaction(tx).IsCoinStake(), tx.nTime);
 
             // Call UpdateCoins on the top cache
             CTxUndo undo;
@@ -730,7 +730,7 @@ BOOST_AUTO_TEST_CASE(ccoins_spend)
     CheckSpendCoins(VALUE1, VALUE2, ABSENT, DIRTY|FRESH, NO_ENTRY   );
 }
 
-static void CheckAddCoinBase(CAmount base_value, CAmount cache_value, CAmount modify_value, CAmount expected_value, char cache_flags, char expected_flags, bool coinbase)
+static void CheckAddCoinBase(CAmount base_value, CAmount cache_value, CAmount modify_value, CAmount expected_value, char cache_flags, char expected_flags, bool coinbase, bool coinstake = false)
 {
     SingleEntryCacheTest test(base_value, cache_value, cache_flags);
 
@@ -739,7 +739,7 @@ static void CheckAddCoinBase(CAmount base_value, CAmount cache_value, CAmount mo
     try {
         CTxOut output;
         output.nValue = modify_value;
-        test.cache.AddCoin(OUTPOINT, Coin(std::move(output), 1, coinbase), coinbase);
+        test.cache.AddCoin(OUTPOINT, Coin(std::move(output), 1, coinbase, coinstake, 0), coinbase);
         test.cache.SelfTest();
         GetCoinsMapEntry(test.cache.map(), result_value, result_flags);
     } catch (std::logic_error&) {
