@@ -398,9 +398,11 @@ const CBlockIndex* LastCommonAncestor(const CBlockIndex* pa, const CBlockIndex* 
 class CDiskBlockIndex : public CBlockIndex
 {
 public:
+    uint256 hash;
     uint256 hashPrev;
 
     CDiskBlockIndex() {
+        hash = uint256();
         hashPrev = uint256();
     }
 
@@ -443,6 +445,7 @@ public:
 
     uint256 GetBlockHash() const
     {
+        if (hash != uint256()) return hash;
         CBlockHeader block;
         block.nVersion        = nVersion;
         block.hashPrevBlock   = hashPrev;
@@ -450,7 +453,9 @@ public:
         block.nTime           = nTime;
         block.nBits           = nBits;
         block.nNonce          = nNonce;
-        return block.GetHash();
+        uint256 thash = block.GetHash();
+        memcpy((void*)&hash,&thash,32);
+        return hash;
     }
 
 
