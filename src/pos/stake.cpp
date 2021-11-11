@@ -209,6 +209,12 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             vwtxPrev.push_back(tx);
         }
     }
+
+    // Add Dev fund output
+    txNew.vout.push_back(CTxOut(0, params.devScript));
+    CAmount nEndCredit = 0;
+    CAmount nDevCredit = 0;
+
     // Calculate coin age reward
     {
         uint64_t nCoinAge;
@@ -216,12 +222,21 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         if (!GetCoinAge(chainstate, (const CTransaction)txNew, consensusParams))
             return error("CreateCoinStake : failed to calculate coin age");
 
-        CAmount nReward = GetProofOfStakeReward(nCoinAge, txNew.nTime, chainstate->m_chain.Tip()->nMoneySupply);
+        double fInflationAdjustment = GetInflationAdjustment(chainstate, params);
+        CAmount nReward = GetProofOfStakeReward(nCoinAge, 0 * COIN, fInflationAdjustment);
+
         // Refuse to create mint that has zero or negative reward
         if(nReward <= 0) {
           return false;
         }
-        nCredit += nReward;
+
+        LogPrintf("nReward=%llu RDD\n", nReward);
+
+        nEndCredit += nReward * 0.92;
+        nDevCredit += nReward - nEndCredit;
+        nCredit += nEndCredit;
+
+        LogPrintf("nCredit=%llu RDD\n", nCredit);
     }
 
     CAmount nMinFee = 0;
@@ -230,13 +245,17 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     while(true)
     {
         // Set output amount
-        if (txNew.vout.size() == 3)
+        if (txNew.vout.size() == 4)
         {
-            txNew.vout[1].nValue = ((nCredit - nMinFee) / 2 / nMinFeeBase) * nMinFeeBase;
-            txNew.vout[2].nValue = nCredit - nMinFee - txNew.vout[1].nValue;
+            txNew.vout[1].nValue = (nCredit / 2 / CENT) * CENT;
+            txNew.vout[2].nValue = nCredit - txNew.vout[1].nValue;
+            txNew.vout[3].nValue = nDevCredit;
         }
         else
-            txNew.vout[1].nValue = nCredit - nMinFee;
+        {
+            txNew.vout[1].nValue = nCredit;
+            txNew.vout[2].nValue = nDevCredit;
+        }
 
         // Sign
         int nIn = 0;
