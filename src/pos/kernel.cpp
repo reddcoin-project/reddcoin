@@ -18,6 +18,7 @@
 #include <index/txindex.h>
 #include <index/disktxpos.h>
 #include <node/blockstorage.h>
+#include <pos/modifiercache.h>
 
 #include <boost/assign.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -280,6 +281,14 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
     nStakeModifierTime = pindexFrom->GetBlockTime();
     int64_t nStakeModifierSelectionInterval = GetStakeModifierSelectionInterval();
 
+    // Check the cache first
+    uint64_t nCachedModifier;
+    cachedModifier entry{nStakeModifierTime, nStakeModifierHeight};
+    if (cacheCheck(entry, nCachedModifier)) {
+        nStakeModifier = nCachedModifier;
+        return true;
+    }
+
     // we need to iterate index forward but we cannot depend on chainActive.Next()
     // because there is no guarantee that we are checking blocks in active chain.
     // So, we construct a temporary chain that we will iterate over.
@@ -312,6 +321,7 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
         }
     }
     nStakeModifier = pindex->nStakeModifier;
+    cacheAdd(entry, nStakeModifier);
     return true;
 }
 
