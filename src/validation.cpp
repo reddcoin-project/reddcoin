@@ -2066,7 +2066,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     else if (block.IsProofOfStake())
     {
         // PoSV: coinstake tx earns reward instead of paying fee
-        uint64_t nCoinAge = GetCoinAge(this, *block.vtx[1]);
+        uint64_t nCoinAge = GetCoinAge(this, *block.vtx[1], m_params.GetConsensus());
         if (!nCoinAge)
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-posv-coinage");
 
@@ -3580,6 +3580,10 @@ bool ChainstateManager::ProcessNewBlockHeaders(const std::vector<CBlockHeader>& 
         }
     }
     return true;
+}
+
+inline unsigned int StakeEntropyBitFromHash(uint256& hash) {
+    return (unsigned int) hash.GetLow64() & 1llu;
 }
 
 /** Store block on disk. If dbp is non-nullptr, the file is known to already reside on disk */

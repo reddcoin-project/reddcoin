@@ -6,11 +6,12 @@
 #ifndef POS_STAKE_H
 #define POS_STAKE_H
 
+#include <consensus/params.h>
 #include <wallet/wallet.h>
 
 class CChainState;
 
-bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew);
+bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams);
 
 #endif // POS_STAKE_H
 

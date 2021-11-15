@@ -51,7 +51,7 @@
 
 // peercoin: create coin stake transaction
 typedef std::vector<unsigned char> valtype;
-bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew)
+bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams)
 {
     // The following split & combine thresholds are important to security
     // Should not be adjusted if you don't understand the consequences
@@ -64,7 +64,6 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     // Transaction index is required to get to block header
     if (!g_txindex)
         return error("CreateCoinStake : transaction index unavailable");
-    const Consensus::Params& params = Params().GetConsensus();
 
     LOCK2(cs_main, pwallet->cs_wallet);
     txNew.vin.clear();
@@ -116,7 +115,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         }
 
         static int nMaxStakeSearchInterval = 60;
-        if (header.GetBlockTime() + params.nStakeMinAge > txNew.nTime - nMaxStakeSearchInterval)
+        if (header.GetBlockTime() + consensusParams.nStakeMinAge > txNew.nTime - nMaxStakeSearchInterval)
             continue; // only count coins meeting min age requirement
 
         bool fKernelFound = false;
@@ -203,7 +202,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             if (pcoin.txout.nValue > nCombineThreshold)
                 continue;
             // Do not add input that is still too young
-            if (tx->nTime + params.nStakeMaxAge > txNew.nTime)
+            if (tx->nTime + consensusParams.nStakeMaxAge > txNew.nTime)
                 continue;
             txNew.vin.push_back(CTxIn(pcoin.outpoint.hash, pcoin.outpoint.n));
             nCredit += pcoin.txout.nValue;
@@ -214,7 +213,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     {
         uint64_t nCoinAge;
         CCoinsViewCache view(&chainstate->CoinsTip());
-        if (!GetCoinAge(chainstate, (const CTransaction)txNew))
+        if (!GetCoinAge(chainstate, (const CTransaction)txNew, consensusParams))
             return error("CreateCoinStake : failed to calculate coin age");
 
         CAmount nReward = GetProofOfStakeReward(nCoinAge, txNew.nTime, chainstate->m_chain.Tip()->nMoneySupply);
