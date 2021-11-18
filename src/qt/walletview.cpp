@@ -18,6 +18,8 @@
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
+#include <qt/mintingview.h>
+#include <wallet/wallet.h>
 
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
@@ -58,6 +60,12 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     vbox->addLayout(hbox_buttons);
     transactionsPage->setLayout(vbox);
 
+    mintingPage = new QWidget(this);
+    QVBoxLayout *vboxMinting = new QVBoxLayout();
+    mintingView = new MintingView(this);
+    vboxMinting->addWidget(mintingView);
+    mintingPage->setLayout(vboxMinting);
+
     receiveCoinsPage = new ReceiveCoinsDialog(platformStyle);
     sendCoinsPage = new SendCoinsDialog(platformStyle);
 
@@ -66,6 +74,7 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
 
     addWidget(overviewPage);
     addWidget(transactionsPage);
+    addWidget(mintingPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
 
@@ -109,6 +118,7 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
 
     // Put transaction list in tabs
     transactionView->setModel(_walletModel);
+    mintingView->setModel(_walletModel);
     overviewPage->setWalletModel(_walletModel);
     receiveCoinsPage->setModel(_walletModel);
     sendCoinsPage->setModel(_walletModel);
@@ -166,6 +176,11 @@ void WalletView::gotoOverviewPage()
 void WalletView::gotoHistoryPage()
 {
     setCurrentWidget(transactionsPage);
+}
+
+void WalletView::gotoMintingPage()
+{
+    setCurrentWidget(mintingPage);
 }
 
 void WalletView::gotoReceiveCoinsPage()
