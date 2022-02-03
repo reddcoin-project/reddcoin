@@ -75,7 +75,7 @@ public:
         consensus.CSVHeight = std::numeric_limits<int>::max();
         consensus.SegwitHeight = std::numeric_limits<int>::max();
         consensus.MinBIP9WarningHeight = std::numeric_limits<int>::max();
-        consensus.devScript = CScript() << ParseHex("03c8fc5c87f00bcc32b5ce5c036957f8befeff05bf4d88d2dcde720249f78d9313") << OP_CHECKSIG;
+        consensus.devScript = { CScript() << ParseHex("03c8fc5c87f00bcc32b5ce5c036957f8befeff05bf4d88d2dcde720249f78d9313") << OP_CHECKSIG };
 
         /* pow specific */
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); //! << 20
@@ -273,7 +273,7 @@ public:
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.nLastPowHeight = 349;
+        consensus.nLastPowHeight = 1439;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
         consensus.BIP34Height = 227931;
         consensus.BIP34Hash = uint256S("0x000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8");
@@ -282,7 +282,8 @@ public:
         consensus.CSVHeight = 419328; // 000000000000000004a1b34462cb8aeebd5799177f7a29cf28f2d1961716b5b5
         consensus.SegwitHeight = 481824; // 0000000000000000001c8018d9cb3b742ef25114f27563e3fc4a1902167f9893
         consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
-        consensus.devScript = CScript() << ParseHex("03081542439583f7632ce9ff7c8851b0e9f56d0a6db9a13645ce102a8809287d4f") << OP_CHECKSIG;
+        consensus.devScript = { CScript() << ParseHex("03081542439583f7632ce9ff7c8851b0e9f56d0a6db9a13645ce102a8809287d4f") << OP_CHECKSIG,
+                                CScript() << ParseHex("03d4b22ae69b0ff7554f4c343cd213d00fd5131466cc21d8ebfab97c52ec9a00c9") << OP_CHECKSIG };
 
         /* pow specific */
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -290,7 +291,7 @@ public:
         consensus.posReset = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); //! << 32
         consensus.nPowTargetTimespan = 24 * 60 * 60; // 24 hours
         consensus.nPowTargetSpacing = 60;
-        consensus.fPowAllowMinDifficultyBlocks = false;
+        consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
         /* pos specific */
@@ -298,8 +299,6 @@ public:
         consensus.nStakeMaxAge = 45 * 24 *  60 * 60; // 45 days
         consensus.nModifierInterval = 13 * 60;
 
-        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
@@ -325,17 +324,16 @@ public:
         m_assumed_blockchain_size = 1;
         m_assumed_chain_state_size = 0;
 
-        genesis = CreateGenesisBlock(1446002303, 1446002303, 2108003, 0x1e0ffff0, 1, 10000 * COIN);
+        genesis = CreateGenesisBlock(1642570147, 1642570147, 4021275, 0x1e0ffff0, 1, 10000 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("a12ac9bd4cd26262c53a6277aafc61fe9dfe1e2b05eaa1ca148a5be8b394e35a"));
-        assert(genesis.hashMerkleRoot == uint256S("b502bc1dc42b07092b9187e92f70e32f9a53247feae16d821bebffa916af79ff"));
+        assert(consensus.hashGenesisBlock == uint256S("33a3d9c862e11c8c6b4ca39c9a742556960dbd3b5ccc7154ce2d4e81b3fba56b"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
 
         // nodes with support for servicebits filtering should be at the top
-        vSeeds.emplace_back("testnet-seed.reddcoin.com");
-        vSeeds.emplace_back("testnet-dnsseed.redd.ink");
+        vSeeds.emplace_back("seed-testnet.reddcoin.com");
+        vSeeds.emplace_back("dnsseed01-testnet.redd.ink");
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,111);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,196);

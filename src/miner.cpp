@@ -35,6 +35,9 @@
 std::vector<std::thread> threadGroup;
 int64_t nLastCoinStakeSearchInterval = 0;
 
+//! forward declaration for createnewblock
+CAmount GetBlockValue(int nHeight, const CAmount& nFees);
+
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
     int64_t nOldTime = pblock->nTime;
@@ -130,18 +133,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     // Set block version
     pblock->nVersion = CBlockHeader::CURRENT_VERSION;
 
-    // Create coinbase transaction.
-    CMutableTransaction coinbaseTx;
-    coinbaseTx.vin.resize(1);
-    coinbaseTx.vin[0].prevout.SetNull();
-    coinbaseTx.vout.resize(1);
-    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
-
-    if (pwallet == nullptr) {
-        //! peercoin allows this but really, a pos block requires a signature, so lets fail
-        return nullptr;
-    }
-
     // Add dummy coinbase tx as first transaction
     pblock->vtx.emplace_back();
     pblocktemplate->vTxFees.push_back(-1); // updated at end
@@ -149,6 +140,14 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     // reddcoin: if coinstake available add coinstake tx
     static int64_t nLastCoinStakeSearchTime = GetAdjustedTime();  // only initialized at startup
+
+    // Create coinbase transaction.
+    CMutableTransaction coinbaseTx;
+    coinbaseTx.vin.resize(1);
+    coinbaseTx.vin[0].prevout.SetNull();
+    coinbaseTx.vout.resize(1);
+    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
 
     if (pwallet)  // attempt to find a coinstake
     {
