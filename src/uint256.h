@@ -6,6 +6,7 @@
 #ifndef BITCOIN_UINT256_H
 #define BITCOIN_UINT256_H
 
+#include <crypto/common.h>
 #include <assert.h>
 #include <cstring>
 #include <stdint.h>
@@ -50,7 +51,17 @@ public:
 
     friend inline bool operator==(const base_blob& a, const base_blob& b) { return a.Compare(b) == 0; }
     friend inline bool operator!=(const base_blob& a, const base_blob& b) { return a.Compare(b) != 0; }
-    friend inline bool operator<(const base_blob& a, const base_blob& b) { return a.Compare(b) < 0; }
+    friend inline bool operator<(const base_blob& a, const base_blob& b)
+    {
+	for (int i = sizeof(a.data()) - 1; i >= 0; i--)
+	{
+	    if (a.data()[i] < b.data()[i])
+			return true;
+		else if (a.data()[i] > b.data()[i])
+			return false;
+	}
+	return false;
+    }
 
     std::string GetHex() const;
     void SetHex(const char* psz);
@@ -115,6 +126,10 @@ public:
     {
         s.read((char*)m_data, sizeof(m_data));
     }
+
+    friend class uint160;
+    friend class uint256;
+    friend class uint512;
 };
 
 /** 160-bit opaque blob.
@@ -158,6 +173,43 @@ inline uint256 uint256S(const char *str)
 inline uint256 uint256S(const std::string& str)
 {
     uint256 rv;
+    rv.SetHex(str);
+    return rv;
+}
+
+/** 512-bit opaque blob.
+ * @note This type is called uint256 for historical reasons only. It is an
+ * opaque blob of 512 bits and has no integer operations. Use arith_uint256 if
+ * those are required.
+ */
+class uint512 : public base_blob<512>
+{
+public:
+    uint512() {}
+    uint512(const base_blob<512>& b) : base_blob<512>(b) {}
+    explicit uint512(const std::vector<unsigned char>& vch) : base_blob<512>(vch) {}
+    /** A cheap hash function that just returns 64 bits from the result, it can be
+     * used when the contents are considered uniformly random. It is not appropriate
+     * when the value can easily be influenced from outside as e.g. a network adversary could
+     * provide values to trigger worst-case behavior.
+     */
+    uint64_t GetCheapHash() const
+    {
+        return ReadLE64(data());
+    }
+    uint256 trim256() const
+    {
+        uint256 ret;
+        for (unsigned int i = 0; i < uint256::WIDTH; i++) {
+            ret.data()[i] = data()[i];
+        }
+        return ret;
+    }
+};
+
+inline uint512 uint512S(const std::string& str)
+{
+    uint512 rv;
     rv.SetHex(str);
     return rv;
 }
