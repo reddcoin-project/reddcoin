@@ -361,10 +361,6 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     ss << nTimeBlockFrom << nTxPrevOffset << nTimeTxPrev << prevout.n << nTimeTx;
     hashProofOfStake = Hash(ss);
 
-    // Now check if proof-of-stake hash meets target protocol
-    if (UintToArith256(hashProofOfStake) > bnCoinDayWeight * bnTargetPerCoinDay) {
-        return false;
-    }
 
     if (fPrintProofOfStake) {
         LogPrintf("CheckStakeKernelHash() : using modifier 0x%016x at height=%d timestamp=%s for block from height=%d timestamp=%s\n",
@@ -377,6 +373,12 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
             nTimeBlockFrom, nTxPrevOffset, nTimeTxPrev, prevout.n, nTimeTx,
             hashProofOfStake.ToString().c_str());
     }
+
+    // Now check if proof-of-stake hash meets target protocol
+    if (UintToArith256(hashProofOfStake) > bnCoinDayWeight * bnTargetPerCoinDay) {
+        return false;
+    }
+
 
     return true;
 }
