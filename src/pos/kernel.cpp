@@ -347,7 +347,7 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     bnTargetPerCoinDay.SetCompact(nBits);
     int64_t nValueIn = txPrev->vout[prevout.n].nValue;
     uint256 hashBlockFrom = blockFrom.GetHash();
-    arith_uint256 bnCoinDayWeight = arith_uint256(nValueIn) * GetCoinAgeWeight((int64_t)nTimeTxPrev, (int64_t)nTimeTx, params) / COIN / (24 * 60 * 60);
+    arith_uint512 bnCoinDayWeight = arith_uint512(nValueIn) * GetCoinAgeWeight((int64_t)nTimeTxPrev, (int64_t)nTimeTx, params) / COIN / (24 * 60 * 60);
 
     // Calculate hash
     CDataStream ss(SER_GETHASH, 0);
@@ -374,8 +374,14 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
             hashProofOfStake.ToString().c_str());
     }
 
+    // We need to convert type so it can be compared to target
+    base_uint<512> targetProofOfStake512(bnTargetPerCoinDay.GetHex());
+    targetProofOfStake512 *= bnCoinDayWeight;
+
+    base_uint<512> hashProofOfStake512(hashProofOfStake.GetHex());
+
     // Now check if proof-of-stake hash meets target protocol
-    if (UintToArith256(hashProofOfStake) > bnCoinDayWeight * bnTargetPerCoinDay) {
+    if (hashProofOfStake512 > targetProofOfStake512) {
         return false;
     }
 
