@@ -30,9 +30,10 @@
 #include <warnings.h>
 
 #include <algorithm>
+#include <thread>
 #include <utility>
 
-std::vector<std::thread> threadGroup;
+std::thread threadStakeMinter;
 int64_t nLastCoinStakeSearchInterval = 0;
 
 //! forward declaration for createnewblock
@@ -646,6 +647,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
                     return;
             }
+            if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+                return;
 
             continue;
         }
@@ -677,5 +680,5 @@ void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManage
 void MintStake(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
 {
     // reddcoin: mint proof-of-stake blocks in the background
-    threadGroup.push_back(std::thread(&ThreadStakeMinter, pwallet, chainman, chainstate, connman, mempool));
+    threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
 }

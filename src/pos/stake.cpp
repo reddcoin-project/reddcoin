@@ -87,15 +87,13 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     std::vector<COutput> vAvailableCoins;
     CCoinControl temp;
     CoinSelectionParams coin_selection_params;
-    pwallet->AvailableCoins(vAvailableCoins, &temp, txNew.nTime, 1, MAX_MONEY, MAX_MONEY);
-
+    pwallet->AvailableCoins(vAvailableCoins, &temp);
     if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
         return false;
     if (setCoins.empty())
         return false;
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
-
     for (const auto& pcoin : setCoins)
     {
         CDiskTxPos postx;
@@ -125,7 +123,8 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             // Search nSearchInterval seconds back up to nMaxStakeSearchInterval
             uint256 hashProofOfStake = uint256();
             COutPoint prevoutStake = pcoin.outpoint;
-            if (CheckStakeKernelHash(chainstate, nBits, header, postx.nTxOffset + CBlockHeader::NORMAL_SERIALIZE_SIZE, tx, prevoutStake, txNew.nTime - n, hashProofOfStake))
+            bool foundStake = CheckStakeKernelHash(chainstate, nBits, header, postx.nTxOffset + CBlockHeader::NORMAL_SERIALIZE_SIZE, tx, prevoutStake, txNew.nTime - n, hashProofOfStake);
+            if (foundStake)
             {
                 // Found a kernel
                 if (gArgs.GetBoolArg("-debug", false) && gArgs.GetBoolArg("-printcoinstake", false))
@@ -135,6 +134,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 scriptPubKeyKernel = pcoin.txout.scriptPubKey;
                 TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
                 if (whichType != TxoutType::PUBKEY && whichType != TxoutType::PUBKEYHASH && whichType != TxoutType::WITNESS_V0_KEYHASH) {
+                    LogPrintf("CreateCoinStake : no support for kernel type=%s\n", GetTxnOutputType(whichType));
                     break;
                 }
                 if (whichType == TxoutType::PUBKEYHASH || whichType == TxoutType::WITNESS_V0_KEYHASH) // pay to address type or witness keyhash
@@ -142,7 +142,8 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                     // convert to pay to public key type
                     CKey key;
                     if (!pwallet->GetLegacyScriptPubKeyMan()->GetKey(CKeyID(uint160(vSolutions[0])), key)) {
-                        break;  // unable to find corresponding public key
+                        LogPrintf("CreateCoinStake : failed to get key for kernel type=%s\n", GetTxnOutputType(whichType));
+                        break;
                     }
                     scriptPubKeyOut << ToByteVector(key.GetPubKey()) << OP_CHECKSIG;
                 }
@@ -211,7 +212,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     }
 
     // Add Dev fund output
-    txNew.vout.push_back(CTxOut(0, params.devScript));
+    txNew.vout.push_back(CTxOut(0, consensusParams.devScript.front()));
     CAmount nEndCredit = 0;
     CAmount nDevCredit = 0;
 
@@ -222,7 +223,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         if (!GetCoinAge(chainstate, (const CTransaction)txNew, consensusParams))
             return error("CreateCoinStake : failed to calculate coin age");
 
-        double fInflationAdjustment = GetInflationAdjustment(chainstate, params);
+        double fInflationAdjustment = GetInflationAdjustment(chainstate, consensusParams);
         CAmount nReward = GetProofOfStakeReward(nCoinAge, 0 * COIN, fInflationAdjustment);
 
         // Refuse to create mint that has zero or negative reward
