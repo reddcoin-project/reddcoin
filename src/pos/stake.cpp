@@ -218,9 +218,9 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
 
     // Calculate coin age reward
     {
-        uint64_t nCoinAge;
+        uint64_t nCoinAge = GetCoinAge(chainstate, (const CTransaction)txNew, consensusParams);
         CCoinsViewCache view(&chainstate->CoinsTip());
-        if (!GetCoinAge(chainstate, (const CTransaction)txNew, consensusParams))
+        if (!nCoinAge)
             return error("CreateCoinStake : failed to calculate coin age");
 
         double fInflationAdjustment = GetInflationAdjustment(chainstate, consensusParams);
