@@ -163,6 +163,7 @@ void Interrupt(NodeContext& node)
     InterruptREST();
     InterruptTorControl();
     InterruptMapPort();
+    InterruptStaking();
     if (node.connman)
         node.connman->Interrupt();
     if (g_txindex) {

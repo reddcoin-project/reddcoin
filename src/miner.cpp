@@ -22,6 +22,7 @@
 #include <pos/stake.h>
 #include <pow.h>
 #include <primitives/transaction.h>
+#include <shutdown.h>
 #include <timedata.h>
 #include <util/moneystr.h>
 #include <util/system.h>
@@ -560,6 +561,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     try {
         bool fNeedToClear = false;
         while (true) {
+            if (ShutdownRequested())
+                return;
             while (pwallet->IsLocked()) {
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
@@ -679,4 +682,10 @@ void MintStake(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CC
 {
     // reddcoin: mint proof-of-stake blocks in the background
     threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
+}
+
+void InterruptStaking()
+{
+    LogPrintf("ThreadStakeMinter interrupted\n");
+    threadStakeMinter.join();
 }
