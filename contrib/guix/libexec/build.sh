@@ -237,9 +237,10 @@ mkdir -p "$OUTDIR"
 ###########################
 
 # CONFIGFLAGS
-CONFIGFLAGS="--enable-reduce-exports --disable-bench --disable-gui-tests --disable-fuzz-binary"
+CONFIGFLAGS="--enable-reduce-exports --disable-bench --disable-gui-tests --disable-fuzz-binary --disable-tests"
 case "$HOST" in
     *linux*) CONFIGFLAGS+=" --disable-threadlocal" ;;
+    *mingw*) CONFIGFLAGS+=" --with-libs=no" ;;
 esac
 
 # CFLAGS
@@ -322,7 +323,7 @@ mkdir -p "$DISTSRC"
     # installed. This directory will also later serve as the input for our
     # binary tarballs.
     INSTALLPATH="${PWD}/installed/${DISTNAME}"
-    mkdir -p "${INSTALLPATH}"
+    mkdir -p "${INSTALLPATH}"/lib
     # Install built Bitcoin Core to $INSTALLPATH
     case "$HOST" in
         *darwin*)
@@ -359,7 +360,7 @@ mkdir -p "$DISTSRC"
 
         case "$HOST" in
             *mingw*)
-                mv --target-directory="$DISTNAME"/lib/ "$DISTNAME"/bin/*.dll
+                # mv --target-directory="$DISTNAME"/lib/ "$DISTNAME"/bin/*.dll
                 ;;
         esac
 
