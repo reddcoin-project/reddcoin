@@ -1803,8 +1803,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    if (GetWallets()[0] && gArgs.GetBoolArg("-stakegen", true))
+    if (HasWallets() && GetWallets()[0] && gArgs.GetBoolArg("-stakegen", true)) {
         MintStake(GetWallets()[0], node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+    }
 
     return true;
 }
