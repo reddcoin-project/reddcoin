@@ -1799,6 +1799,17 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return error("%s: Consensus::CheckBlock: %s", __func__, state.ToString());
     }
 
+    bool fProofOfWork = block.IsProofOfWork();
+    bool fProofOfStake = block.IsProofOfStake();
+
+    if (!fProofOfWork && !fProofOfStake) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-block-type");
+    }
+
+    if (fProofOfWork && (pindex->nHeight > m_params.GetConsensus().nLastPowHeight)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "pow-ended");
+    }
+
     // verify that the view's current state corresponds to the previous block
     uint256 hashPrevBlock = pindex->pprev == nullptr ? uint256() : pindex->pprev->GetBlockHash();
     assert(hashPrevBlock == view.GetBestBlock());
@@ -3459,8 +3470,6 @@ bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, c
             fValid = true;
             if (!CheckProofOfStake(active_chainstate, pindexPrev, block.vtx[1], block.nBits, hashProof)) {
                 fValid = false;
-                //! occurs in testnet at this block, none after
-                if (pindexPrev->nHeight + 1 == 1459) fValid = true;
                 LogPrintf("WARNING: VerifyHashTarget(): check proof-of-stake failed for block %s\n", hash.ToString());
             }
             LogPrintf("%s - hashProof %s / nBits %08x\n", __func__, hashProof.ToString(), block.nBits);
