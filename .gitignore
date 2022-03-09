@@ -2,17 +2,17 @@
 
 *.exe
 *.pdb
-src/bitcoin
-src/bitcoind
-src/bitcoin-cli
-src/bitcoin-gui
-src/bitcoin-node
-src/bitcoin-tx
-src/bitcoin-util
-src/bitcoin-wallet
+src/reddcoin
+src/reddcoind
+src/reddcoin-cli
+src/reddcoin-gui
+src/reddcoin-node
+src/reddcoin-tx
+src/reddcoin-util
+src/reddcoin-wallet
 src/test/fuzz/fuzz
-src/test/test_bitcoin
-src/qt/test/test_bitcoin-qt
+src/test/test_reddcoin
+src/qt/test/test_reddcoin-qt
 
 # autoreconf
 Makefile.in
@@ -93,8 +93,8 @@ src/qt/bitcoin-qt.includes
 *.qm
 Makefile
 !depends/Makefile
-src/qt/bitcoin-qt
-Bitcoin-Qt.app
+src/qt/reddcoin-qt
+Reddcoin-Qt.app
 background.tiff*
 
 # Qt Creator
@@ -102,7 +102,7 @@ Makefile.am.user
 
 # Unit-tests
 Makefile.test
-bitcoin-qt_test
+reddcoin-qt_test
 
 # Resources cpp
 qrc_*.cpp
@@ -151,3 +151,10 @@ dist/
 *.background.tiff
 
 /guix-build-*
+
+#eclipse dev environment
+/.autotools
+/.classpath
+/.cproject
+/.project
+/.settings
