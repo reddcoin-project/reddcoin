@@ -61,7 +61,7 @@ MintingView::MintingView(QWidget *parent) :
     legendLayout->addWidget(oldLegend);
     legendLayout->insertStretch(-1);
 
-    QLabel *mintingLabel = new QLabel(tr("Display minting probability within : "));
+    QLabel *mintingLabel = new QLabel(tr("Display staking probability within : "));
     mintingCombo = new QComboBox();
     mintingCombo->addItem(tr("10 min"), Minting10min);
     mintingCombo->addItem(tr("24 hours"), Minting1day);

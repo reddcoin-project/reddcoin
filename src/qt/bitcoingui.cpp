@@ -278,8 +278,8 @@ void BitcoinGUI::createActions()
     historyAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_4));
     tabGroup->addAction(historyAction);
 
-    mintingAction = new QAction(platformStyle->SingleColorIcon(":/icons/minting"), tr("&Minting"), this);
-    mintingAction->setStatusTip(tr("Show your minting capacity"));
+    mintingAction = new QAction(platformStyle->SingleColorIcon(":/icons/staking"), tr("&Staking"), this);
+    mintingAction->setStatusTip(tr("Show your staking capacity"));
     mintingAction->setToolTip(mintingAction->statusTip());
     mintingAction->setCheckable(true);
     mintingAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));

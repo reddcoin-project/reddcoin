@@ -290,7 +290,7 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
         priv(new MintingTablePriv(walletModel, this)),
         cachedNumBlocks(0)
 {
-    columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("CoinDay") << tr("MintProbability");
+    columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("CoinDay") << tr("StakeProbability");
 
     priv->refreshWallet();
 
@@ -389,7 +389,7 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
                 unit = tr("days");
             }
 
-            QString str = QString(tr("You have %1 chance to find a POS block if you mint %2 %3 at current difficulty."));
+            QString str = QString(tr("You have %1 chance to find a POS block if you stake %2 %3 at current difficulty."));
             return str.arg(index.data().toString().toUtf8().constData()).arg(interval).arg(unit);
         }
         break;
@@ -519,7 +519,7 @@ QVariant MintingTableModel::headerData(int section, Qt::Orientation orientation,
             case CoinDay:
                 return tr("Coin age in the output.");
             case MintProbability:
-                return tr("Chance to mint a block within given time interval.");
+                return tr("Chance to stake a block within given time interval.");
             }
         }
     }
