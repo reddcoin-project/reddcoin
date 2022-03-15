@@ -26,7 +26,7 @@ To add more unit tests, add `BOOST_AUTO_TEST_CASE` functions to the existing
 .cpp files in the `test/` directory or add new .cpp files that
 implement new `BOOST_AUTO_TEST_SUITE` sections.
 
-To run the GUI unit tests manually, launch `src/qt/test/test_bitcoin-qt`
+To run the GUI unit tests manually, launch `src/qt/test/test_reddcoin-qt`
 
 To add more GUI unit tests, add them to the `src/qt/test/` directory and
 the `src/qt/test/test_main.cpp` file.
