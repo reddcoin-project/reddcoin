@@ -39,7 +39,7 @@ bilingual_str GetWarnings(bool verbose)
 
     // Pre-release build warning
     if (!CLIENT_VERSION_IS_RELEASE) {
-        warnings_concise = _("This is a pre-release test build - use at your own risk - do not use for mining or merchant applications");
+        warnings_concise = _("This is a pre-release test build - use at your own risk - do not use for mining, staking or merchant applications");
         warnings_verbose.emplace_back(warnings_concise);
     }
 
