@@ -553,10 +553,10 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
         LogPrintf("Set proof-of-stake timeout: %ums for %u UTXOs\n", pos_timio, vCoins.size());
     }
 
-    std::string strMintMessage = _("Info: Minting suspended due to locked wallet.").translated;
-    std::string strMintSyncMessage = _("Info: Minting suspended while synchronizing wallet.").translated;
-    std::string strMintDisabledMessage = _("Info: Minting disabled by 'nominting' option.").translated;
-    std::string strMintBlockMessage = _("Info: Minting suspended due to block creation failure.").translated;
+    std::string strMintMessage = _("Info: Staking suspended due to locked wallet.").translated;
+    std::string strMintSyncMessage = _("Info: Staking suspended while synchronizing wallet.").translated;
+    std::string strMintDisabledMessage = _("Info: Staking disabled by 'nominting' option.").translated;
+    std::string strMintBlockMessage = _("Info: Staking suspended due to block creation failure.").translated;
     std::string strMintEmpty = "";
     if (!gArgs.GetBoolArg("-minting", true) || !gArgs.GetBoolArg("-staking", true))
     {
