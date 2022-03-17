@@ -792,6 +792,10 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // Error if network-specific options (-addnode, -connect, etc) are
     // specified in default section of config file, but not overridden
     // on the command line or in this network's section of the config file.
+
+    // temporary measure for others to test wallet in full testnet mode
+    assert (Params().NetworkIDString() == CBaseChainParams::TESTNET);
+
     std::string network = args.GetChainName();
     if (network == CBaseChainParams::SIGNET) {
         LogPrintf("Signet derived magic (message start): %s\n", HexStr(chainparams.MessageStart()));
