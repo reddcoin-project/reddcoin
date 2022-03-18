@@ -2708,6 +2708,10 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
     walletInstance->m_signal_rbf = gArgs.GetBoolArg("-walletrbf", DEFAULT_WALLET_RBF);
 
     walletInstance->WalletLogPrintf("Wallet completed loading in %15dms\n", GetTimeMillis() - nStart);
+    walletInstance->m_check_github = gArgs.GetBoolArg("-checkupdates", DEFAULT_CHECK_GITHUB);
+    walletInstance->WalletLogPrintf("Wallet will%s check github for newer version on startup\n", walletInstance->m_check_github? "" : " not");
+
+
 
     // Try to top up keypool. No-op if the wallet is locked.
     walletInstance->TopUpKeyPool();
