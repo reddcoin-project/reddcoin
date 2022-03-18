@@ -86,6 +86,8 @@ constexpr CAmount HIGH_APS_FEE{COIN / 10000};
 static const CAmount WALLET_INCREMENTAL_RELAY_FEE = 5000;
 //! Default for -spendzeroconfchange
 static const bool DEFAULT_SPEND_ZEROCONF_CHANGE = true;
+//! Default for -checkgithub
+static const bool DEFAULT_CHECK_GITHUB = true;
 //! Default for -staking
 static const bool DEFAULT_ENABLE_STAKING = true;
 //! Default for -walletrejectlongchains
@@ -625,6 +627,7 @@ public:
     /** Allow Coin Selection to pick unconfirmed UTXOs that were sent from our own wallet if it
      * cannot fund the transaction otherwise. */
     bool m_spend_zero_conf_change{DEFAULT_SPEND_ZEROCONF_CHANGE};
+    bool m_check_github{DEFAULT_CHECK_GITHUB};
     bool m_signal_rbf{DEFAULT_WALLET_RBF};
     bool m_allow_fallback_fee{true}; //!< will be false if -fallbackfee=0
     CFeeRate m_min_fee{DEFAULT_TRANSACTION_MINFEE}; //!< Override with -mintxfee

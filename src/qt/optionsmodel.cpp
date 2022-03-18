@@ -19,6 +19,7 @@
 #include <txdb.h>       // for -dbcache defaults
 #include <util/string.h>
 #include <validation.h> // For DEFAULT_SCRIPTCHECK_THREADS
+#include <wallet/wallet.h> // for DEFAULT_CHECK_GITHUB
 
 #include <QDebug>
 #include <QLatin1Char>
@@ -124,6 +125,10 @@ void OptionsModel::Init(bool resetSettings)
     if (!gArgs.SoftSetArg("-signer", settings.value("external_signer_path").toString().toStdString())) {
         addOverriddenOption("-signer");
     }
+    if (!settings.contains("bCheckGithub"))
+        settings.setValue("bCheckGithub", DEFAULT_CHECK_GITHUB);
+    if (!gArgs.SoftSetBoolArg("-checkgithub", settings.value("bcheckgithub").toBool()))
+        addOverriddenOption("-checkgithub");
 #endif
 
     // Network
@@ -335,6 +340,8 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return settings.value("bSpendZeroConfChange");
         case ExternalSignerPath:
             return settings.value("external_signer_path");
+        case CheckGithub:
+            return settings.value("bCheckGithub");
 #endif
         case DisplayUnit:
             return nDisplayUnit;
@@ -457,6 +464,12 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
         case ExternalSignerPath:
             if (settings.value("external_signer_path") != value.toString()) {
                 settings.setValue("external_signer_path", value.toString());
+                setRestartRequired(true);
+            }
+            break;
+        case CheckGithub:
+            if (settings.value("bCheckGithub") != value) {
+                settings.setValue("bCheckGithub", value.toBool());
                 setRestartRequired(true);
             }
             break;

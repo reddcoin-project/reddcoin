@@ -67,6 +67,7 @@ public:
         DatabaseCache,          // int
         ExternalSignerPath,     // QString
         SpendZeroConfChange,    // bool
+		CheckGithub,            // bool
         Listen,                 // bool
         OptionIDRowCount,
     };

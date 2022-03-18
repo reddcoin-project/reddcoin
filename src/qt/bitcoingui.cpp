@@ -36,9 +36,12 @@
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
+#include <rpc/server.h>
+#include <univalue.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validation.h>
+#include <warnings.h>
 
 #include <QAction>
 #include <QApplication>
@@ -211,6 +214,39 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
 
     connect(labelBlocksIcon, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showModalOverlay);
     connect(progressBar, &GUIUtil::ClickableProgressBar::clicked, this, &BitcoinGUI::showModalOverlay);
+
+#ifdef ENABLE_WALLET
+    if(settings.value("bCheckGithub").toBool()) {
+
+        // Get checkforupdatesinfo from rpc server
+        UniValue result(UniValue::VOBJ);
+        checkforupdatesinfo(result);
+
+        std::string installedVersion = "";
+        std::string latestRepoVersion = "";
+        std::string message = "";
+        std::string warning = "";
+        std::string officialDownloadLink = "";
+        std::string errors = "";
+
+
+        if (result.exists("installedVersion")) {
+            installedVersion = result["installedVersion"].get_str();
+        }
+        if (result.exists("latestRepoVersion")) {
+            latestRepoVersion = result["latestRepoVersion"].get_str();
+        }
+
+        if (installedVersion != latestRepoVersion) {
+
+        	bilingual_str strMessage = strprintf(_("This client is not the most recent version available, please update to release %s from github or disable this check in settings."), latestRepoVersion);
+			SetMiscWarning(strMessage);
+			uiInterface.ThreadSafeMessageBox(strMessage, "", CClientUIInterface::MSG_WARNING);
+
+        }
+
+    }
+#endif
 
 #ifdef Q_OS_MAC
     m_app_nap_inhibitor = new CAppNapInhibitor;
