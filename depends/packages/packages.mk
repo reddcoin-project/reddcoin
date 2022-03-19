@@ -1,4 +1,4 @@
-packages:=boost libevent
+packages:=boost openssl libevent
 
 qrencode_packages = qrencode
 
