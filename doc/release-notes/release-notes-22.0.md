@@ -130,6 +130,7 @@ Build System
 
 - Release binaries are now produced using the new `guix`-based build system.
   The [/doc/release-process.md](/doc/release-process.md) document has been updated accordingly.
+- OpenSSL continues to be used by Reddcoin Core for external calls to https. 
 
 Files
 -----
