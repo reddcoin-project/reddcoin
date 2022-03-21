@@ -18,6 +18,7 @@ The following dependencies are **required**:
  [gmake](https://svnweb.freebsd.org/ports/head/devel/gmake/)           | Compile    | Generate executables
  [boost-libs](https://svnweb.freebsd.org/ports/head/devel/boost-libs/) | Utility    | Library for threading, data structures, etc
  [libevent](https://svnweb.freebsd.org/ports/head/devel/libevent/)     | Networking | OS independent asynchronous networking
+ [openssl](https://svnweb.freebsd.org/ports/head/security/openssl/)    | Crypto     | SSL support for https calls
 
 
 The following dependencies are **optional**:
@@ -39,7 +40,7 @@ The following dependencies are **optional**:
 Install the required dependencies the usual way you [install software on FreeBSD](https://www.freebsd.org/doc/en/books/handbook/ports.html) - either with `pkg` or via the Ports collection. The example commands below use `pkg` which is usually run as `root` or via `sudo`. If you want to use `sudo`, and you haven't set it up: [use this guide](http://www.freebsdwiki.net/index.php/Sudo%2C_configuring) to setup `sudo` access on FreeBSD.
 
 ```bash
-pkg install autoconf automake boost-libs git gmake libevent libtool pkgconf
+pkg install autoconf automake boost-libs git gmake libevent libtool openssl pkgconf
 
 ```
 

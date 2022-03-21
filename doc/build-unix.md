@@ -35,6 +35,7 @@ These dependencies are required:
  ------------|------------------|----------------------
  libboost    | Utility          | Library for threading, data structures, etc
  libevent    | Networking       | OS independent asynchronous networking
+ libssl      | Crypto           | SSL support for https calls
 
 Optional dependencies:
 
@@ -131,7 +132,7 @@ built by default.
 
 Build requirements:
 
-    sudo dnf install gcc-c++ libtool make autoconf automake python3
+    sudo dnf install gcc-c++ libtool make autoconf automake openssl-devel python3
 
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 

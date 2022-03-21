@@ -86,3 +86,4 @@ The Bitcoin repo's [root README](/README.md) contains relevant information on th
 License
 ---------------------
 Distributed under the [MIT software license](/COPYING).
+This product includes software developed by the OpenSSL Project for use in the [OpenSSL Toolkit](https://www.openssl.org/).
