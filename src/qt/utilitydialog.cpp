@@ -14,6 +14,8 @@
 
 #include <clientversion.h>
 #include <init.h>
+#include <rpc/server.h>
+#include <univalue.h>
 #include <util/system.h>
 #include <util/strencodings.h>
 
@@ -28,7 +30,7 @@
 #include <QVBoxLayout>
 
 /** "Help message" or "About" dialog box */
-HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about) :
+HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about, bool checkUpdates) :
     QDialog(parent, GUIUtil::dialog_flags),
     ui(new Ui::HelpMessageDialog)
 {
@@ -36,27 +38,90 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about) :
 
     QString version = QString{PACKAGE_NAME} + " " + tr("version") + " " + QString::fromStdString(FormatFullVersion());
 
-    if (about)
+    if (about || checkUpdates)
     {
-        setWindowTitle(tr("About %1").arg(PACKAGE_NAME));
-
-        std::string licenseInfo = LicenseInfo();
-        /// HTML-format the license message from the core
-        QString licenseInfoHTML = QString::fromStdString(LicenseInfo());
         // Make URLs clickable
         QRegExp uri("<(.*)>", Qt::CaseSensitive, QRegExp::RegExp2);
         uri.setMinimal(true); // use non-greedy matching
-        licenseInfoHTML.replace(uri, "<a href=\"\\1\">\\1</a>");
-        // Replace newlines with HTML breaks
-        licenseInfoHTML.replace("\n", "<br>");
 
         ui->aboutMessage->setTextFormat(Qt::RichText);
         ui->scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        text = version + "\n" + QString::fromStdString(FormatParagraph(licenseInfo));
-        ui->aboutMessage->setText(version + "<br><br>" + licenseInfoHTML);
         ui->aboutMessage->setWordWrap(true);
         ui->helpMessage->setVisible(false);
+
+        if (about) {
+            resize(780, 400);
+            setWindowTitle(tr("About %1").arg(PACKAGE_NAME));
+
+            std::string licenseInfo = LicenseInfo();
+            /// HTML-format the license message from the core
+            QString licenseInfoHTML = QString::fromStdString(LicenseInfo());
+            licenseInfoHTML.replace(uri, "<a href=\"\\1\">\\1</a>");
+            // Replace newlines with HTML breaks
+            licenseInfoHTML.replace("\n", "<br>");
+
+            text = version + "\n" + QString::fromStdString(FormatParagraph(licenseInfo));
+            ui->aboutMessage->setText(version + "<br><br>" + licenseInfoHTML);
+
+        } else {
+            resize(780, 240);
+
+            setWindowTitle(tr("Check for updates"));
+            text = "Checking for updates. Please wait...";
+            ui->aboutMessage->setText(text);
+
+            // Get checkforupdatesinfo from rpc server
+            UniValue result(UniValue::VOBJ);
+            checkforupdatesinfo(result);
+
+            //json_spirit::Object jsonObject = result.get_obj();
+            QString installedVersion = "";
+            QString latestRepoVersion = "";
+            QString message = "";
+            QString warning = "";
+            QString officialDownloadLink = "";
+            QString errors = "";
+
+            if (result.exists("installedVersion")) {
+                installedVersion = QString::fromStdString(result["installedVersion"].get_str());
+            }
+            if (result.exists("latestRepoVersion")) {
+                latestRepoVersion = QString::fromStdString(result["latestRepoVersion"].get_str());
+            }
+            if (result.exists("message")) {
+                message = QString::fromStdString(result["message"].get_str());
+            }
+            if (result.exists("warning")) {
+                warning = QString::fromStdString(result["warning"].get_str());
+            }
+            if (result.exists("warning")) {
+                officialDownloadLink = QString::fromStdString(result["officialDownloadLink"].get_str());
+            }
+            if (result.exists("error")) {
+                errors = QString::fromStdString(result["error"].get_str());
+            }
+
+            if (!errors.isEmpty()) {
+                text = "<font color = 'red'>Error: </font>";
+                text += errors;
+            } else if (installedVersion == latestRepoVersion) {
+                text = "Installed version: <b>" + installedVersion  + "</b><br>";
+                text += message;
+            } else {
+                QString url = "<a href=\""+ officialDownloadLink +"\">"+ officialDownloadLink +"</a>";
+
+                text = "Installed version: <b>" + installedVersion  + "</b><br>";
+                text += "Latest repository version: <b>" + latestRepoVersion + "</b><br><br>";
+                text += "Please download the latest version from our official website <br>(" + url + ").";
+            }
+
+            ui->aboutMessage->setText(text);
+
+        }
+
+
     } else {
+        resize(780, 400);
         setWindowTitle(tr("Command-line options"));
         QString header = "Usage:  bitcoin-qt [command-line options]                     \n";
         QTextCursor cursor(ui->helpMessage->document());

@@ -99,7 +99,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     updateWindowTitle();
 
     rpcConsole = new RPCConsole(node, _platformStyle, nullptr);
-    helpMessageDialog = new HelpMessageDialog(this, false);
+    helpMessageDialog = new HelpMessageDialog(this, false, false);
 #ifdef ENABLE_WALLET
     if(enableWallet)
     {
@@ -371,12 +371,16 @@ void BitcoinGUI::createActions()
     showHelpMessageAction->setMenuRole(QAction::NoRole);
     showHelpMessageAction->setStatusTip(tr("Show the %1 help message to get a list with possible Reddcoin command-line options").arg(PACKAGE_NAME));
 
+    checkUpdatesAction = new QAction(tr("&Check for software updates"), this);
+    checkUpdatesAction->setStatusTip(tr("Check for available %1 software updates").arg(PACKAGE_NAME));
+
     m_mask_values_action = new QAction(tr("&Mask values"), this);
     m_mask_values_action->setShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_M));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
     m_mask_values_action->setCheckable(true);
 
     connect(quitAction, &QAction::triggered, qApp, QApplication::quit);
+    connect(checkUpdatesAction, &QAction::triggered, this, &BitcoinGUI::showUpdatesClicked);
     connect(aboutAction, &QAction::triggered, this, &BitcoinGUI::aboutClicked);
     connect(aboutQtAction, &QAction::triggered, qApp, QApplication::aboutQt);
     connect(optionsAction, &QAction::triggered, this, &BitcoinGUI::optionsClicked);
@@ -542,6 +546,7 @@ void BitcoinGUI::createMenuBar()
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(showHelpMessageAction);
+    help->addAction(checkUpdatesAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
@@ -855,7 +860,16 @@ void BitcoinGUI::aboutClicked()
     if(!clientModel)
         return;
 
-    HelpMessageDialog dlg(this, true);
+    HelpMessageDialog dlg(this, true, false);
+    dlg.exec();
+}
+
+void BitcoinGUI::showUpdatesClicked()
+{
+    if(!clientModel)
+        return;
+
+    HelpMessageDialog dlg(this, false, true);
     dlg.exec();
 }
 

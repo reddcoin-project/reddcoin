@@ -19,6 +19,13 @@
 
 static const unsigned int DEFAULT_RPC_SERIALIZE_VERSION = 1;
 
+/**
+ * Check for available software updates
+ *
+ * @param result         JSON object where checkupdates results accumulate
+ */
+void checkforupdatesinfo(UniValue& result);
+
 class CRPCCommand;
 
 namespace RPCServer
