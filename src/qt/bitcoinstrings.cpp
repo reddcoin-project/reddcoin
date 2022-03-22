@@ -11,8 +11,8 @@
 static const char UNUSED *bitcoin_strings[] = {
 QT_TRANSLATE_NOOP("bitcoin-core", "The %s developers"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
-"%s corrupt. Try using the wallet tool bitcoin-wallet to salvage or restoring "
-"a backup."),
+"%s corrupt. Try using the wallet tool reddcoin-wallet to salvage or "
+"restoring a backup."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "-maxtxfee is set very high! Fees this large could be paid on a single "
 "transaction."),
@@ -39,7 +39,7 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Error: Dumpfile identifier record is incorrect. Got \"%s\", expected \"%s\"."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
-"Error: Dumpfile version is not supported. This version of bitcoin-wallet "
+"Error: Dumpfile version is not supported. This version of reddcoin-wallet "
 "only supports version 1 dumpfiles. Got dumpfile with version %s"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Error: Legacy wallets only support the \"legacy\", \"p2sh-segwit\", and "
@@ -78,9 +78,6 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Prune: last wallet synchronisation goes beyond pruned data. You need to -"
 "reindex (download the whole blockchain again in case of pruned node)"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
-"SQLiteDatabase: Unknown sqlite wallet schema version %d. Only version %d is "
-"supported"),
-QT_TRANSLATE_NOOP("bitcoin-core", ""
 "The block database contains a block which appears to be from the future. "
 "This may be due to your computer's date and time being set incorrectly. Only "
 "rebuild the block database if you are sure that your computer's date and "
@@ -93,7 +90,7 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 "the software that last loaded this wallet"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "This is a pre-release test build - use at your own risk - do not use for "
-"mining or merchant applications"),
+"mining, staking or merchant applications"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "This is the maximum transaction fee you pay (in addition to the normal fee) "
 "to prioritize partial spend avoidance over regular coin selection."),
@@ -102,6 +99,9 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 "at this level"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "This is the transaction fee you may pay when fee estimates are not available."),
+QT_TRANSLATE_NOOP("bitcoin-core", ""
+"This product includes software developed by the OpenSSL Project for use in "
+"the OpenSSL Toolkit %s."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Total length of network version string (%i) exceeds maximum length (%i). "
 "Reduce the number or size of uacomments."),
@@ -165,11 +165,14 @@ QT_TRANSLATE_NOOP("bitcoin-core", "Error: Unable to parse version %u as a uint32
 QT_TRANSLATE_NOOP("bitcoin-core", "Error: Unable to write record to new wallet"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Failed to listen on any port. Use -listen=0 if you want this."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Failed to rescan the wallet during initialization"),
-QT_TRANSLATE_NOOP("bitcoin-core", "Failed to verify database"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Fee rate (%s) is lower than the minimum fee rate setting (%s)"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Ignoring duplicate -wallet %s."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Importing…"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Incorrect or no genesis block found. Wrong datadir for network?"),
+QT_TRANSLATE_NOOP("bitcoin-core", "Info: Staking disabled by 'nominting' option."),
+QT_TRANSLATE_NOOP("bitcoin-core", "Info: Staking suspended due to block creation failure."),
+QT_TRANSLATE_NOOP("bitcoin-core", "Info: Staking suspended due to locked wallet."),
+QT_TRANSLATE_NOOP("bitcoin-core", "Info: Staking suspended while synchronizing wallet."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Initialization sanity check failed. %s is shutting down."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Insufficient funds"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Invalid -i2psam address or hostname: '%s'"),
@@ -195,10 +198,6 @@ QT_TRANSLATE_NOOP("bitcoin-core", "Pruning blockstore…"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Reducing -maxconnections from %d to %d, because of system limitations."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Replaying blocks…"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Rescanning…"),
-QT_TRANSLATE_NOOP("bitcoin-core", "SQLiteDatabase: Failed to execute statement to verify database: %s"),
-QT_TRANSLATE_NOOP("bitcoin-core", "SQLiteDatabase: Failed to prepare statement to verify database: %s"),
-QT_TRANSLATE_NOOP("bitcoin-core", "SQLiteDatabase: Failed to read database verification error: %s"),
-QT_TRANSLATE_NOOP("bitcoin-core", "SQLiteDatabase: Unexpected application id. Expected %u, got %u"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Section [%s] is not recognized."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Signing transaction failed"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Specified -walletdir \"%s\" does not exist"),
