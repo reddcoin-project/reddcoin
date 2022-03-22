@@ -39,6 +39,9 @@ static Mutex g_deadline_timers_mutex;
 static std::map<std::string, std::unique_ptr<RPCTimerBase> > deadlineTimers GUARDED_BY(g_deadline_timers_mutex);
 static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& request, UniValue& result, bool last_handler);
 
+static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
+static std::string strGithubLink = "/repos/reddcoin-project/reddcoin-0.22/releases/latest";
+
 struct RPCCommandExecutionInfo
 {
     std::string method;
@@ -308,7 +311,7 @@ void checkforupdatesinfo(UniValue& result) {
         // Send request
         boost::asio::streambuf request;
         std::ostream request_stream(&request);
-        request_stream << "GET /repos/reddcoin-project/reddcoin-0.22/releases/latest HTTP/1.1\r\n";  // note that you can change it if you wish to HTTP/1.0
+        request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n";  // note that you can change it if you wish to HTTP/1.0
         request_stream << "Host: api.github.com\r\n";
         request_stream << "User-Agent: C/1.0\r\n";
         request_stream << "Content-Type: application/json; charset=utf-8\r\n";
@@ -392,7 +395,7 @@ void checkforupdatesinfo(UniValue& result) {
             // Build direct download link
             std::string urlWalletVersion = latestRepoVersion;
             boost::replace_all(urlWalletVersion, "v", "");
-            officialDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-" + urlWalletVersion;
+            officialDownloadLink = strDownloadLink + urlWalletVersion;
 
             std::string preleaseWarning = "";
 
