@@ -5,6 +5,7 @@
 
 #include <rpc/server.h>
 
+#include <clientversion.h>
 #include <rpc/util.h>
 #include <shutdown.h>
 #include <sync.h>
@@ -26,6 +27,7 @@ using boost::asio::ip::tcp;
 #include <cassert>
 #include <memory> // for unique_ptr
 #include <mutex>
+#include <regex>
 #include <unordered_map>
 
 static Mutex g_rpc_warmup_mutex;
@@ -269,6 +271,10 @@ static RPCHelpMan checkupdates()
                     {
                         {RPCResult::Type::STR, "installedVersion", "Installed wallet version"},
                         {RPCResult::Type::STR, "latestRepoVersion", "Latest release wallet version available from Reddcoin GitHub"},
+						{RPCResult::Type::NUM, "localversion", "The local version number"},
+						{RPCResult::Type::NUM, "remoteversion", "The remote version number"},
+						{RPCResult::Type::STR, "type", "The type of release [full, release candidate, alpha, beta]"},
+						{RPCResult::Type::STR, "build", "The build count of this version type]"},
                         {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
                         {RPCResult::Type::STR, "warning", "Any warning messages"},
                         {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
@@ -291,10 +297,14 @@ static RPCHelpMan checkupdates()
 void checkforupdatesinfo(UniValue& result) {
     std::string installedVersion = "v" + std::to_string(CLIENT_VERSION_MAJOR) + "." + std::to_string(CLIENT_VERSION_MINOR) + "." + std::to_string(CLIENT_VERSION_BUILD);
     std::string latestRepoVersion = "";
+    std::string remotetype = "";
+    std::string remotebuild = "";
     std::string message = "";
     std::string warning = "";
     std::string officialDownloadLink = "";
     std::string errors = "";
+    std::string strVersion = "";
+    int newVersion=0;
 
     try {
         boost::asio::io_service svc;
@@ -385,6 +395,41 @@ void checkforupdatesinfo(UniValue& result) {
         if (success) {
                if (obj_response.exists("tag_name")) {
                    latestRepoVersion = obj_response["tag_name"].get_str();
+
+                   /** "tag_name": "v4.22.0-alpha-1",
+                    * "v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)"
+                    *
+                    * Match 1:	v4.22.0-alpha-1
+                    * Group 0:	4.22.0
+                    * Group 1:	4			<- this
+                    * Group 2:	22			<- this
+                    * Group 3:	0			<- this
+                    * Group 4:	-alpha-1
+                    * Group 5:	-alpha
+                    * Group 6:	alpha		<- this
+                    * Group 7:	-1
+                    * Group 8:	1			<- this
+                    *
+                    */
+
+                   std::regex versionRgx("v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)");
+                   std::smatch matches;
+
+                   if(std::regex_search(obj_response["tag_name"].get_str(), matches, versionRgx) && matches.size()>=5) {
+                	   strVersion = matches[1];
+                       newVersion = std::stoi(matches[2].str()) * 10000 + std::stoi(matches[3]) * 100 + std::stoi(matches[4]) * 1;
+                       for (auto match : matches) {
+                    	   LogPrintf("%s\n", match);
+                       }
+                       remotetype = matches[7].str();
+                       remotebuild = matches[9];
+                       if (newVersion >= CLIENT_VERSION) {
+                           char versionInfo[200];
+                           //snprintf(versionInfo, 200, "This client is not the most recent version available, please update to release %s from github or disable this check in settings.", obj["tag_name"].toString().toUtf8().constData());
+                           //std::string strVersionInfo = versionInfo;
+                       }
+                   }
+
                }
         }
 
@@ -395,7 +440,13 @@ void checkforupdatesinfo(UniValue& result) {
             // Build direct download link
             std::string urlWalletVersion = latestRepoVersion;
             boost::replace_all(urlWalletVersion, "v", "");
-            officialDownloadLink = strDownloadLink + urlWalletVersion;
+            officialDownloadLink = strDownloadLink + strVersion;
+            if (remotetype != "") {
+            	officialDownloadLink += "/" + remotetype;
+            	if (remotebuild != "") {
+            		officialDownloadLink += "/" + remotebuild;
+            	}
+            }
 
             std::string preleaseWarning = "";
 
@@ -414,6 +465,10 @@ void checkforupdatesinfo(UniValue& result) {
 
     result.pushKV("installedVersion", installedVersion);
     result.pushKV("latestRepoVersion", latestRepoVersion);
+    result.pushKV("localversion", CLIENT_VERSION);
+    result.pushKV("remoteversion", newVersion);
+    result.pushKV("type", remotetype);
+    result.pushKV("build", remotebuild);
     result.pushKV("message", message);
     result.pushKV("warning", warning);
     result.pushKV("officialDownloadLink", officialDownloadLink);
