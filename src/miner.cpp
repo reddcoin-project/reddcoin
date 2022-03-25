@@ -540,7 +540,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     // Compute timeout for pos as sqrt(numUTXO)
     unsigned int pos_timio;
     {
-        LOCK2(cs_main, pwallet->cs_wallet);
+        LOCK(pwallet->cs_wallet);
 
         std::string strError;
         if (!reservedest.GetReservedDestination(dest, true, strError))
@@ -616,7 +616,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
             {
-                LOCK2(cs_main, pwallet->cs_wallet);
+                LOCK(pwallet->cs_wallet);
                 pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet.get(), &fPoSCancel);
             }
 
@@ -643,7 +643,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             if (pblock->IsProofOfStake())
             {
                 {
-                    LOCK2(cs_main, pwallet->cs_wallet);
+                    LOCK(pwallet->cs_wallet);
                     if (!SignBlock(*pblock, *pwallet))
                     {
                         LogPrintf("PoSMiner(): failed to sign PoS block");
