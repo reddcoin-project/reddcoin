@@ -37,6 +37,13 @@
 std::thread threadStakeMinter;
 int64_t nLastCoinStakeSearchInterval = 0;
 
+static std::atomic<bool> fEnableStaking(true);
+
+bool EnableStaking()
+{
+    return fEnableStaking;
+}
+
 //! forward declaration for createnewblock
 CAmount GetBlockValue(int nHeight, const CAmount& nFees);
 
@@ -563,6 +570,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
         while (true) {
             if (ShutdownRequested())
                 return;
+            if (!EnableStaking())
+                return;
             while (pwallet->IsLocked()) {
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
@@ -678,14 +687,35 @@ void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManage
 }
 
 // reddcoin: stake minter
-void MintStake(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
 {
-    // reddcoin: mint proof-of-stake blocks in the background
-    threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
+    if (!fGenerate) {
+        fEnableStaking = false;
+        return;
+    }
+
+    if (!EnableStaking()) {
+        fEnableStaking = true;
+        // reddcoin: mint proof-of-stake blocks in the background
+        threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
+    }
+
 }
 
 void InterruptStaking()
 {
-    LogPrintf("ThreadStakeMinter interrupted\n");
-    threadStakeMinter.join();
+    LogPrintf("Interrupting ThreadStakeMinter\n");
+    if (threadStakeMinter.joinable()) {
+        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        threadStakeMinter.join();
+    }
+}
+
+void StopStaking()
+{
+    LogPrintf("Stopping ThreadStakeMinter\n");
+    if (threadStakeMinter.joinable()) {
+        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        threadStakeMinter.join();
+    }
 }
