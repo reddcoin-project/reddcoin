@@ -198,6 +198,7 @@ void Shutdown(NodeContext& node)
         client->flush();
     }
     StopMapPort();
+    StopStaking();
 
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
