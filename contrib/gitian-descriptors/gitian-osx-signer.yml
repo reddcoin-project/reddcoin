@@ -16,7 +16,7 @@ remotes:
   "dir": "signapple"
   "commit": "b084cbbf44d5330448ffce0c7d118f75781b64bd"
 files:
-- "bitcoin-osx-unsigned.tar.gz"
+- "reddcoin-osx-unsigned.tar.gz"
 script: |
   set -e -o pipefail
 
@@ -42,9 +42,9 @@ script: |
   export PATH="$HOME/.local/bin":$PATH
   cd ..
 
-  UNSIGNED_TARBALL=bitcoin-osx-unsigned.tar.gz
-  UNSIGNED_APP=dist/Bitcoin-Qt.app
-  SIGNED=bitcoin-osx-signed.dmg
+  UNSIGNED_TARBALL=reddcoin-osx-unsigned.tar.gz
+  UNSIGNED_APP=dist/Reddcoin-Qt.app
+  SIGNED=reddcoin-osx-signed.dmg
 
   tar -xf ${UNSIGNED_TARBALL}
   OSX_VOLNAME="$(cat osx_volname)"
