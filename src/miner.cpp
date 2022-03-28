@@ -37,7 +37,7 @@
 std::thread threadStakeMinter;
 int64_t nLastCoinStakeSearchInterval = 0;
 
-static std::atomic<bool> fEnableStaking(true);
+static std::atomic<bool> fEnableStaking(false);
 
 bool EnableStaking()
 {
@@ -705,6 +705,7 @@ void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManag
 void InterruptStaking()
 {
     LogPrintf("Interrupting ThreadStakeMinter\n");
+    fEnableStaking = false;
     if (threadStakeMinter.joinable()) {
         LogPrintf("Waiting for ThreadStakeMinter ...\n");
         threadStakeMinter.join();
