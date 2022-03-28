@@ -123,7 +123,7 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about, bool checkUpda
     } else {
         resize(780, 400);
         setWindowTitle(tr("Command-line options"));
-        QString header = "Usage:  bitcoin-qt [command-line options]                     \n";
+        QString header = "Usage:  reddcoin-qt [command-line options]                     \n";
         QTextCursor cursor(ui->helpMessage->document());
         cursor.insertText(version);
         cursor.insertBlock();
