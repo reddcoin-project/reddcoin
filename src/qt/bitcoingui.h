@@ -42,6 +42,8 @@ class HelpMessageDialog;
 class ModalOverlay;
 enum class SynchronizationState;
 
+class MintingView;
+
 namespace interfaces {
 class Handler;
 class Node;
@@ -135,6 +137,7 @@ private:
     QToolBar* appToolBar = nullptr;
     QAction* overviewAction = nullptr;
     QAction* historyAction = nullptr;
+    QAction* mintingAction = nullptr;
     QAction* quitAction = nullptr;
     QAction* sendCoinsAction = nullptr;
     QAction* sendCoinsMenuAction = nullptr;
@@ -171,6 +174,7 @@ private:
     QSystemTrayIcon* trayIcon = nullptr;
     const std::unique_ptr<QMenu> trayIconMenu;
     Notificator* notificator = nullptr;
+    MintingView* mintingView = nullptr;
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
     ModalOverlay* modalOverlay = nullptr;
@@ -276,6 +280,8 @@ public Q_SLOTS:
     void gotoOverviewPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
+    /** Switch to minting page */
+    void gotoMintingPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */

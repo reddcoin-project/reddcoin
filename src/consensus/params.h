@@ -113,7 +113,7 @@ struct Params {
 
     /** reddcoin-specific (oddities) */
     int nRevertCoinbase;
-    CScript devScript;
+    std::vector<CScript> devScript;
 
     /** reddcoin-specific (posv) */
     uint256 posLimit;

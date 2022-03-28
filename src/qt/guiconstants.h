@@ -49,6 +49,11 @@ static const int TOOLTIP_WRAP_THRESHOLD = 80;
 #define QAPP_APP_NAME_SIGNET "Reddcoin-Qt-signet"
 #define QAPP_APP_NAME_REGTEST "Reddcoin-Qt-regtest"
 
+/* Colors for minting tab for each coin age group */
+#define COLOR_MINT_YOUNG QColor(255, 224, 226)
+#define COLOR_MINT_MATURE QColor(204, 255, 207)
+#define COLOR_MINT_OLD QColor(111, 252, 141)
+
 /* One gigabyte (GB) in bytes */
 static constexpr uint64_t GB_BYTES{1000000000};
 

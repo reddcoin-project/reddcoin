@@ -41,7 +41,10 @@ unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const CBloc
     if (BlockLastSolved == nullptr || BlockLastSolved->nHeight == 0 || (uint64_t)BlockLastSolved->nHeight < PastBlocksMin) {
         return bnPowLimit.GetCompact();
     } else if (fProofOfStake && (uint64_t)(BlockLastSolved->nHeight - params.nLastPowHeight) < PastBlocksMin) {
-        return bnPosReset.GetCompact();
+        if (params.fPowAllowMinDifficultyBlocks)
+            return bnPosLimit.GetCompact();
+        else
+            return bnPosReset.GetCompact();
     }
 
     for (unsigned int i = 1; BlockReading && BlockReading->nHeight > (fProofOfStake ? params.nLastPowHeight : 0); i++) {
@@ -107,6 +110,11 @@ unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const CBloc
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader* pblock, const Consensus::Params& params)
 {
+    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
+
+    if (params.fPowAllowMinDifficultyBlocks && pindexLast->nHeight < params.nLastPowHeight)
+        return bnPowLimit.GetCompact();
+
     static const int64_t BlocksTargetSpacing = 1 * 60; // 1 Minute
     unsigned int TimeDaySeconds = 60 * 60 * 24;
 

@@ -22,6 +22,7 @@
 #include <pos/stake.h>
 #include <pow.h>
 #include <primitives/transaction.h>
+#include <shutdown.h>
 #include <timedata.h>
 #include <util/moneystr.h>
 #include <util/system.h>
@@ -30,10 +31,21 @@
 #include <warnings.h>
 
 #include <algorithm>
+#include <thread>
 #include <utility>
 
-std::vector<std::thread> threadGroup;
+std::thread threadStakeMinter;
 int64_t nLastCoinStakeSearchInterval = 0;
+
+static std::atomic<bool> fEnableStaking(true);
+
+bool EnableStaking()
+{
+    return fEnableStaking;
+}
+
+//! forward declaration for createnewblock
+CAmount GetBlockValue(int nHeight, const CAmount& nFees);
 
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
@@ -130,18 +142,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     // Set block version
     pblock->nVersion = CBlockHeader::CURRENT_VERSION;
 
-    // Create coinbase transaction.
-    CMutableTransaction coinbaseTx;
-    coinbaseTx.vin.resize(1);
-    coinbaseTx.vin[0].prevout.SetNull();
-    coinbaseTx.vout.resize(1);
-    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
-
-    if (pwallet == nullptr) {
-        //! peercoin allows this but really, a pos block requires a signature, so lets fail
-        return nullptr;
-    }
-
     // Add dummy coinbase tx as first transaction
     pblock->vtx.emplace_back();
     pblocktemplate->vTxFees.push_back(-1); // updated at end
@@ -149,6 +149,14 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     // reddcoin: if coinstake available add coinstake tx
     static int64_t nLastCoinStakeSearchTime = GetAdjustedTime();  // only initialized at startup
+
+    // Create coinbase transaction.
+    CMutableTransaction coinbaseTx;
+    coinbaseTx.vin.resize(1);
+    coinbaseTx.vin[0].prevout.SetNull();
+    coinbaseTx.vout.resize(1);
+    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
 
     if (pwallet)  // attempt to find a coinstake
     {
@@ -215,14 +223,12 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     if (pblock->IsProofOfStake())
         pblock->nTime      = pblock->vtx[1]->nTime; //same as coinstake timestamp
     else
-        pblock->nTime = GetAdjustedTime();
-    if (pblock->IsProofOfWork())
         UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
     pblock->nNonce         = 0;
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
 
     BlockValidationState state;
-    if (pwallet && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev, false, false)) {
+    if (pwallet && !pblock->IsProofOfStake() && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev, false, false)) {
         throw std::runtime_error(strprintf("%s: TestBlockValidity failed: %s", __func__, state.ToString()));
     }
     int64_t nTime2 = GetTimeMicros();
@@ -534,7 +540,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     // Compute timeout for pos as sqrt(numUTXO)
     unsigned int pos_timio;
     {
-        LOCK2(cs_main, pwallet->cs_wallet);
+        LOCK(pwallet->cs_wallet);
 
         std::string strError;
         if (!reservedest.GetReservedDestination(dest, true, strError))
@@ -562,6 +568,10 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     try {
         bool fNeedToClear = false;
         while (true) {
+            if (ShutdownRequested())
+                return;
+            if (!EnableStaking())
+                return;
             while (pwallet->IsLocked()) {
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
@@ -606,7 +616,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
             {
-                LOCK2(cs_main, pwallet->cs_wallet);
+                LOCK(pwallet->cs_wallet);
                 pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet.get(), &fPoSCancel);
             }
 
@@ -633,7 +643,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             if (pblock->IsProofOfStake())
             {
                 {
-                    LOCK2(cs_main, pwallet->cs_wallet);
+                    LOCK(pwallet->cs_wallet);
                     if (!SignBlock(*pblock, *pwallet))
                     {
                         LogPrintf("PoSMiner(): failed to sign PoS block");
@@ -647,6 +657,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
                     return;
             }
+            if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+                return;
 
             continue;
         }
@@ -675,8 +687,35 @@ void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManage
 }
 
 // reddcoin: stake minter
-void MintStake(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
 {
-    // reddcoin: mint proof-of-stake blocks in the background
-    threadGroup.push_back(std::thread(&ThreadStakeMinter, pwallet, chainman, chainstate, connman, mempool));
+    if (!fGenerate) {
+        fEnableStaking = false;
+        return;
+    }
+
+    if (!EnableStaking()) {
+        fEnableStaking = true;
+        // reddcoin: mint proof-of-stake blocks in the background
+        threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
+    }
+
+}
+
+void InterruptStaking()
+{
+    LogPrintf("Interrupting ThreadStakeMinter\n");
+    if (threadStakeMinter.joinable()) {
+        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        threadStakeMinter.join();
+    }
+}
+
+void StopStaking()
+{
+    LogPrintf("Stopping ThreadStakeMinter\n");
+    if (threadStakeMinter.joinable()) {
+        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        threadStakeMinter.join();
+    }
 }

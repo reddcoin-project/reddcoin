@@ -163,6 +163,7 @@ void Interrupt(NodeContext& node)
     InterruptREST();
     InterruptTorControl();
     InterruptMapPort();
+    InterruptStaking();
     if (node.connman)
         node.connman->Interrupt();
     if (g_txindex) {
@@ -197,6 +198,7 @@ void Shutdown(NodeContext& node)
         client->flush();
     }
     StopMapPort();
+    StopStaking();
 
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
@@ -1801,6 +1803,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 #if HAVE_SYSTEM
     StartupNotify(args);
 #endif
+
+    if (HasWallets() && GetWallets()[0]) {
+        MintStake(gArgs.GetBoolArg("-staking", true), GetWallets()[0], node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+    }
 
     return true;
 }

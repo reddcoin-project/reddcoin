@@ -13,6 +13,7 @@
 #include <string>
 
 class uint256;
+class uint512;
 
 class uint_error : public std::runtime_error {
 public:
@@ -23,6 +24,8 @@ public:
 template<unsigned int BITS>
 class base_uint
 {
+    friend class arith_uint512;
+    friend class arith_uint256;
 protected:
     static constexpr int WIDTH = BITS / 32;
     uint32_t pn[WIDTH];
@@ -239,12 +242,32 @@ public:
      */
     unsigned int bits() const;
 
+    unsigned int GetSerializeSize(int nType, int nVersion) const
+    {
+        return sizeof(pn);
+    }
+
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        s.write((char*)pn, sizeof(pn));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s)
+    {
+        s.read((char*)pn, sizeof(pn));
+    }
+
     uint64_t GetLow64() const
     {
         static_assert(WIDTH >= 2, "Assertion WIDTH >= 2 failed (WIDTH = BITS / 32). BITS is a template parameter.");
         return pn[0] | (uint64_t)pn[1] << 32;
     }
 };
+
+class arith_uint256;
+class arith_uint512;
 
 /** 256-bit unsigned big integer. */
 class arith_uint256 : public base_uint<256> {
@@ -279,9 +302,36 @@ public:
 
     friend uint256 ArithToUint256(const arith_uint256 &);
     friend arith_uint256 UintToArith256(const uint256 &);
+
+    static base_uint<256> Arith256FromArith512(const base_uint<512>& b)
+    {
+        base_uint<256> ret;
+
+        for (unsigned int i = 0; i < (unsigned int)ret.WIDTH; i++)
+	    ret.pn[i] = b.pn[i];
+	return ret;
+    }
 };
 
 uint256 ArithToUint256(const arith_uint256 &);
 arith_uint256 UintToArith256(const uint256 &);
+
+/** 512-bit unsigned big integer. */
+class arith_uint512 : public base_uint<512>
+{
+public:
+	arith_uint512() {}
+	arith_uint512(const base_uint<512>& b) : base_uint<512>(b) {}
+	arith_uint512(uint64_t b) : base_uint<512>(b) {}
+	explicit arith_uint512(const std::string& str) : base_uint<512>(str) {}
+
+	uint64_t GetHash(const arith_uint256& salt) const;
+
+	friend arith_uint512 UintToArith512(const uint512& a);
+	friend uint512 ArithToUint512(const arith_uint512& a);
+};
+
+uint512 ArithToUint512(const arith_uint512&);
+arith_uint512 UintToArith512(const uint512&);
 
 #endif // BITCOIN_ARITH_UINT256_H

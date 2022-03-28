@@ -217,14 +217,15 @@ bool CheckFinalTx(const CBlockIndex* active_chain_tip, const CTransaction &tx, i
     return IsFinalTx(tx, nBlockHeight, nBlockTime);
 }
 
-bool IsDevTx(const CTransaction& tx)
+bool IsDevTx(const CTransaction& tx, const Consensus::Params& chainparams)
 {
     if (tx.IsCoinStake()) {
         int i = tx.vout.size();
         CScript pkey(tx.vout[i - 1].scriptPubKey);
-        if (Params().GetConsensus().devScript == pkey) {
+        if (find(chainparams.devScript.begin(), chainparams.devScript.end(), pkey) != chainparams.devScript.end()) {
             return true;
         }
+        return true;
     }
     return false;
 }
@@ -1798,6 +1799,17 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return error("%s: Consensus::CheckBlock: %s", __func__, state.ToString());
     }
 
+    bool fProofOfWork = block.IsProofOfWork();
+    bool fProofOfStake = block.IsProofOfStake();
+
+    if (!fProofOfWork && !fProofOfStake) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-block-type");
+    }
+
+    if (fProofOfWork && (pindex->nHeight > m_params.GetConsensus().nLastPowHeight)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "pow-ended");
+    }
+
     // verify that the view's current state corresponds to the previous block
     uint256 hashPrevBlock = pindex->pprev == nullptr ? uint256() : pindex->pprev->GetBlockHash();
     assert(hashPrevBlock == view.GetBestBlock());
@@ -2085,7 +2097,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
             nCalculatedStakeReward = GetProofOfStakeReward(nCoinAge, nFees, fInflationAdjustment);
             LogPrintf("fInflationAdjustment=%s nCalculatedStakeReward2=%s\n", fInflationAdjustment, nCalculatedStakeReward);
 
-            if (!IsDevTx(*block.vtx[1])) {
+            if (!IsDevTx(*block.vtx[1], m_params.GetConsensus())) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dev-address");
             }
 
