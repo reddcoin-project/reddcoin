@@ -36,9 +36,12 @@
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
+#include <rpc/server.h>
+#include <univalue.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validation.h>
+#include <warnings.h>
 
 #include <QAction>
 #include <QApplication>
@@ -99,7 +102,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     updateWindowTitle();
 
     rpcConsole = new RPCConsole(node, _platformStyle, nullptr);
-    helpMessageDialog = new HelpMessageDialog(this, false);
+    helpMessageDialog = new HelpMessageDialog(this, false, false);
 #ifdef ENABLE_WALLET
     if(enableWallet)
     {
@@ -211,6 +214,39 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
 
     connect(labelBlocksIcon, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showModalOverlay);
     connect(progressBar, &GUIUtil::ClickableProgressBar::clicked, this, &BitcoinGUI::showModalOverlay);
+
+#ifdef ENABLE_WALLET
+    if(settings.value("bCheckGithub").toBool()) {
+
+        // Get checkforupdatesinfo from rpc server
+        UniValue result(UniValue::VOBJ);
+        checkforupdatesinfo(result);
+
+        std::string installedVersion = "";
+        std::string latestRepoVersion = "";
+        std::string message = "";
+        std::string warning = "";
+        std::string officialDownloadLink = "";
+        std::string errors = "";
+
+
+        if (result.exists("installedVersion")) {
+            installedVersion = result["installedVersion"].get_str();
+        }
+        if (result.exists("latestRepoVersion")) {
+            latestRepoVersion = result["latestRepoVersion"].get_str();
+        }
+
+        if (installedVersion != latestRepoVersion) {
+
+        	bilingual_str strMessage = strprintf(_("This client is not the most recent version available, please update to release %s from github or disable this check in settings."), latestRepoVersion);
+			SetMiscWarning(strMessage);
+			uiInterface.ThreadSafeMessageBox(strMessage, "", CClientUIInterface::MSG_WARNING);
+
+        }
+
+    }
+#endif
 
 #ifdef Q_OS_MAC
     m_app_nap_inhibitor = new CAppNapInhibitor;
@@ -371,12 +407,16 @@ void BitcoinGUI::createActions()
     showHelpMessageAction->setMenuRole(QAction::NoRole);
     showHelpMessageAction->setStatusTip(tr("Show the %1 help message to get a list with possible Reddcoin command-line options").arg(PACKAGE_NAME));
 
+    checkUpdatesAction = new QAction(tr("&Check for software updates"), this);
+    checkUpdatesAction->setStatusTip(tr("Check for available %1 software updates").arg(PACKAGE_NAME));
+
     m_mask_values_action = new QAction(tr("&Mask values"), this);
     m_mask_values_action->setShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_M));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
     m_mask_values_action->setCheckable(true);
 
     connect(quitAction, &QAction::triggered, qApp, QApplication::quit);
+    connect(checkUpdatesAction, &QAction::triggered, this, &BitcoinGUI::showUpdatesClicked);
     connect(aboutAction, &QAction::triggered, this, &BitcoinGUI::aboutClicked);
     connect(aboutQtAction, &QAction::triggered, qApp, QApplication::aboutQt);
     connect(optionsAction, &QAction::triggered, this, &BitcoinGUI::optionsClicked);
@@ -542,6 +582,7 @@ void BitcoinGUI::createMenuBar()
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(showHelpMessageAction);
+    help->addAction(checkUpdatesAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
@@ -855,7 +896,16 @@ void BitcoinGUI::aboutClicked()
     if(!clientModel)
         return;
 
-    HelpMessageDialog dlg(this, true);
+    HelpMessageDialog dlg(this, true, false);
+    dlg.exec();
+}
+
+void BitcoinGUI::showUpdatesClicked()
+{
+    if(!clientModel)
+        return;
+
+    HelpMessageDialog dlg(this, false, true);
     dlg.exec();
 }
 

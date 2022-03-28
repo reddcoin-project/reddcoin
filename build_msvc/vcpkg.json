@@ -9,6 +9,7 @@
     "boost-signals2",
     "boost-test",
     "sqlite3",
+    "openssl",
     "double-conversion",
     {
       "name": "libevent",

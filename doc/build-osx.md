@@ -17,6 +17,7 @@ Library                                                    | Purpose    | Descri
 [pkg-config](https://formulae.brew.sh/formula/pkg-config)  | Build      | Configure compiler and linker flags
 [boost](https://formulae.brew.sh/formula/boost)            | Utility    | Library for threading, data structures, etc
 [libevent](https://formulae.brew.sh/formula/libevent)      | Networking | OS independent asynchronous networking
+[openssl](https://formulae.brew.sh/formula/openssl)        | Crypto     | SSL support for https calls
 
 The following dependencies are **optional**:
 

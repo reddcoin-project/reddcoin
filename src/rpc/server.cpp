@@ -5,6 +5,7 @@
 
 #include <rpc/server.h>
 
+#include <clientversion.h>
 #include <rpc/util.h>
 #include <shutdown.h>
 #include <sync.h>
@@ -12,12 +13,21 @@
 #include <util/system.h>
 
 #include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/signals2/signal.hpp>
+
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/assign/list_of.hpp>
+
+using boost::asio::ip::tcp;
 
 #include <cassert>
 #include <memory> // for unique_ptr
 #include <mutex>
+#include <regex>
 #include <unordered_map>
 
 static Mutex g_rpc_warmup_mutex;
@@ -30,6 +40,9 @@ static RPCTimerInterface* timerInterface = nullptr;
 static Mutex g_deadline_timers_mutex;
 static std::map<std::string, std::unique_ptr<RPCTimerBase> > deadlineTimers GUARDED_BY(g_deadline_timers_mutex);
 static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& request, UniValue& result, bool last_handler);
+
+static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
+static std::string strGithubLink = "/repos/reddcoin-project/reddcoin-0.22/releases/latest";
 
 struct RPCCommandExecutionInfo
 {
@@ -248,6 +261,220 @@ static RPCHelpMan getrpcinfo()
     };
 }
 
+static RPCHelpMan checkupdates()
+{
+    return RPCHelpMan{"checkupdates",
+                "\nReturns details of the latest software update available.\n",
+                {},
+                RPCResult{
+                    RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::STR, "installedVersion", "Installed wallet version"},
+                        {RPCResult::Type::STR, "latestRepoVersion", "Latest release wallet version available from Reddcoin GitHub"},
+						{RPCResult::Type::NUM, "localversion", "The local version number"},
+						{RPCResult::Type::NUM, "remoteversion", "The remote version number"},
+						{RPCResult::Type::STR, "type", "The type of release [full, release candidate, alpha, beta]"},
+						{RPCResult::Type::STR, "build", "The build count of this version type]"},
+                        {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
+                        {RPCResult::Type::STR, "warning", "Any warning messages"},
+                        {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
+                        {RPCResult::Type::STR, "errors", "Any error messages"},
+                    }
+                },
+                RPCExamples{
+                    HelpExampleCli("checkupdates", "")
+                + HelpExampleRpc("checkupdates", "")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+
+    UniValue result(UniValue::VOBJ);
+    checkforupdatesinfo(result);
+    return result;
+}
+    };
+}
+
+void checkforupdatesinfo(UniValue& result) {
+    std::string installedVersion = "v" + std::to_string(CLIENT_VERSION_MAJOR) + "." + std::to_string(CLIENT_VERSION_MINOR) + "." + std::to_string(CLIENT_VERSION_BUILD);
+    std::string latestRepoVersion = "";
+    std::string remotetype = "";
+    std::string remotebuild = "";
+    std::string message = "";
+    std::string warning = "";
+    std::string officialDownloadLink = "";
+    std::string errors = "";
+    std::string strVersion = "";
+    int newVersion=0;
+
+    try {
+        boost::asio::io_service svc;
+        boost::asio::ssl::context ctx(boost::asio::ssl::context::method::sslv23_client);
+        boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssock(svc, ctx);
+        boost::asio::ip::tcp::resolver resolver(svc);
+        boost::asio::ip::tcp::resolver::query query("api.github.com", "https");
+        boost::asio::ip::tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
+
+        // Establish a connection.
+        boost::asio::connect(ssock.lowest_layer(), endpoint_iterator);
+        ssock.handshake(boost::asio::ssl::stream_base::handshake_type::client);
+
+        // Send request
+        boost::asio::streambuf request;
+        std::ostream request_stream(&request);
+        request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n";  // note that you can change it if you wish to HTTP/1.0
+        request_stream << "Host: api.github.com\r\n";
+        request_stream << "User-Agent: C/1.0\r\n";
+        request_stream << "Content-Type: application/json; charset=utf-8\r\n";
+        request_stream << "Accept: */*\r\n";
+        request_stream << "Connection: close\r\n\r\n";
+
+        boost::asio::write(ssock, request);
+
+        // Read the response status line. The response streambuf will automatically
+        // grow to accommodate the entire line. The growth may be limited by passing
+        // a maximum size to the streambuf constructor.
+        boost::asio::streambuf response;
+        boost::asio::read_until(ssock, response, "\r\n");
+
+        // Check that response is OK.
+        std::istream response_stream(&response);
+        std::string http_version;
+        response_stream >> http_version;
+        unsigned int status_code;
+        response_stream >> status_code;
+        std::string status_message;
+        std::getline(response_stream, status_message);
+        if (!response_stream || http_version.substr(0, 5) != "HTTP/")
+        {
+            errors = "Invalid response";
+        }
+        if (status_code != 200)
+        {
+            errors = "Response returned with status code " + std::to_string(status_code);
+        }
+
+        // Read the response headers, which are terminated by a blank line.
+        boost::asio::read_until(ssock, response, "\r\n\r\n");
+
+        std::string header;
+        while (std::getline(response_stream, header) && header != "\r") {
+            //cout << header << endl;
+        }
+
+        // Write whatever content we already have to output.
+        std::ostringstream ostringstream_content;
+        if (response.size() > 0) {
+            ostringstream_content << &response;
+        }
+
+        // Read until EOF, writing data to output as we go.
+        boost::system::error_code error;
+        while (true) {
+            size_t n = boost::asio::read(ssock, response, boost::asio::transfer_at_least(1), error);
+            if (!error) {
+                if (n) {
+                    ostringstream_content << &response;
+                }
+            }
+            if (error == boost::asio::error::eof) {
+                break;
+            }
+            if (error) {
+                std::string errorMsg = error.message();
+                errors = errorMsg + " " + std::to_string(error.value());
+                break;
+            }
+        }
+        // read response into Univalue Obj
+        UniValue obj_response(UniValue::VOBJ);
+
+        auto str_response = ostringstream_content.str();
+
+        auto success = obj_response.read(str_response);
+
+        if (success) {
+               if (obj_response.exists("tag_name")) {
+                   latestRepoVersion = obj_response["tag_name"].get_str();
+
+                   /** "tag_name": "v4.22.0-alpha-1",
+                    * "v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)"
+                    *
+                    * Match 1:	v4.22.0-alpha-1
+                    * Group 0:	4.22.0
+                    * Group 1:	4			<- this
+                    * Group 2:	22			<- this
+                    * Group 3:	0			<- this
+                    * Group 4:	-alpha-1
+                    * Group 5:	-alpha
+                    * Group 6:	alpha		<- this
+                    * Group 7:	-1
+                    * Group 8:	1			<- this
+                    *
+                    */
+
+                   std::regex versionRgx("v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)");
+                   std::smatch matches;
+
+                   if(std::regex_search(obj_response["tag_name"].get_str(), matches, versionRgx) && matches.size()>=5) {
+                	   strVersion = matches[1];
+                       newVersion = std::stoi(matches[2].str()) * 10000 + std::stoi(matches[3]) * 100 + std::stoi(matches[4]) * 1;
+                       for (auto match : matches) {
+                    	   LogPrintf("%s\n", match);
+                       }
+                       remotetype = matches[7].str();
+                       remotebuild = matches[9];
+                       if (newVersion >= CLIENT_VERSION) {
+                           char versionInfo[200];
+                           //snprintf(versionInfo, 200, "This client is not the most recent version available, please update to release %s from github or disable this check in settings.", obj["tag_name"].toString().toUtf8().constData());
+                           //std::string strVersionInfo = versionInfo;
+                       }
+                   }
+
+               }
+        }
+
+        // Compare installed and latest GitHub versions
+        if (installedVersion.compare(latestRepoVersion) == 0) {
+            message = "You're currently running the most recent version of Reddcoin Core (" + latestRepoVersion + ")";
+        } else {
+            // Build direct download link
+            std::string urlWalletVersion = latestRepoVersion;
+            boost::replace_all(urlWalletVersion, "v", "");
+            officialDownloadLink = strDownloadLink + strVersion;
+            if (remotetype != "") {
+            	officialDownloadLink += "/" + remotetype;
+            	if (remotebuild != "") {
+            		officialDownloadLink += "/" + remotebuild;
+            	}
+            }
+
+            std::string preleaseWarning = "";
+
+            // Display pre-release note if the installed version is a pre-release version
+            if (!CLIENT_VERSION_IS_RELEASE) {
+                warning = "This is a pre-release test build - use at your own risk - do not use for staking or merchant applications";
+            }
+
+            message = "Please download the latest version from our official website";
+        }
+    }
+    catch (std::exception& e)
+    {
+        errors = e.what();
+    }
+
+    result.pushKV("installedVersion", installedVersion);
+    result.pushKV("latestRepoVersion", latestRepoVersion);
+    result.pushKV("localversion", CLIENT_VERSION);
+    result.pushKV("remoteversion", newVersion);
+    result.pushKV("type", remotetype);
+    result.pushKV("build", remotebuild);
+    result.pushKV("message", message);
+    result.pushKV("warning", warning);
+    result.pushKV("officialDownloadLink", officialDownloadLink);
+    result.pushKV("errors", errors);
+}
+
 // clang-format off
 static const CRPCCommand vRPCCommands[] =
 { //  category               actor (function)
@@ -257,6 +484,7 @@ static const CRPCCommand vRPCCommands[] =
     { "control",             &help,                   },
     { "control",             &stop,                   },
     { "control",             &uptime,                 },
+    { "control",             &checkupdates,           },
 };
 // clang-format on
 
