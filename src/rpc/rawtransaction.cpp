@@ -59,7 +59,9 @@ static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& 
         if (pindex) {
             if (active_chainstate.m_chain.Contains(pindex)) {
                 entry.pushKV("confirmations", 1 + active_chainstate.m_chain.Height() - pindex->nHeight);
-                entry.pushKV("time", pindex->GetBlockTime());
+                if (!entry.exists("time")) {
+                	entry.pushKV("time", pindex->GetBlockTime());
+                }
                 entry.pushKV("blocktime", pindex->GetBlockTime());
             }
             else
@@ -146,7 +148,7 @@ static RPCHelpMan getrawtransaction()
                              {RPCResult::Type::STR_HEX, "blockhash", "the block hash"},
                              {RPCResult::Type::NUM, "confirmations", "The confirmations"},
                              {RPCResult::Type::NUM_TIME, "blocktime", "The block time expressed in " + UNIX_EPOCH_TIME},
-                             {RPCResult::Type::NUM, "time", "Same as \"blocktime\""},
+                             {RPCResult::Type::NUM_TIME, "time", "The transaction time expressed in " + UNIX_EPOCH_TIME},
                         }
                     },
                 },
@@ -468,6 +470,7 @@ static RPCHelpMan decoderawtransaction()
                         {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4 - 3 and vsize*4)"},
                         {RPCResult::Type::NUM, "version", "The version"},
                         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
+			{RPCResult::Type::NUM_TIME, "time", "The transaction time"},
                         {RPCResult::Type::ARR, "vin", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
