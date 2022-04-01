@@ -567,10 +567,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
 
     try {
         bool fNeedToClear = false;
-        while (true) {
+        while (EnableStaking()) {
             if (ShutdownRequested())
-                return;
-            if (!EnableStaking())
                 return;
             while (pwallet->IsLocked()) {
                 if (strMintWarning != strMintMessage) {
@@ -683,7 +681,7 @@ void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManage
     } catch (...) {
         PrintExceptionContinue(NULL, "ThreadStakeMinter()");
     }
-    LogPrintf("ThreadStakeMinter exiting\n");
+    LogPrintf("ThreadStakeMinter stopped\n");
 }
 
 // reddcoin: stake minter
@@ -707,16 +705,18 @@ void InterruptStaking()
     LogPrintf("Interrupting ThreadStakeMinter\n");
     fEnableStaking = false;
     if (threadStakeMinter.joinable()) {
-        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        LogPrintf("Waiting for Interrupt ThreadStakeMinter ...\n");
         threadStakeMinter.join();
     }
+    LogPrintf("ThreadStakeMinter Interrupt done!\n");
 }
 
 void StopStaking()
 {
     LogPrintf("Stopping ThreadStakeMinter\n");
     if (threadStakeMinter.joinable()) {
-        LogPrintf("Waiting for ThreadStakeMinter ...\n");
+        LogPrintf("Waiting for  Stop ThreadStakeMinter ...\n");
         threadStakeMinter.join();
     }
+    LogPrintf("ThreadStakeMinter Stop done!\n");
 }
