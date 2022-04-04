@@ -38,4 +38,12 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
 // Function to calculate the coin age weight
 int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const Consensus::Params& consensusParams);
 
+/**
+ * Get the difficulty of the net wrt to the given block index.
+ *
+ * @return A floating point number that is a multiple of the main net minimum
+ * difficulty (4295032833 hashes).
+ */
+double GetDifficulty(const CBlockIndex* blockindex);
+
 #endif // REDDCOIN_KERNEL_H

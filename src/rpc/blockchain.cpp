@@ -26,6 +26,7 @@
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <policy/rbf.h>
+#include <pos/kernel.h>
 #include <primitives/transaction.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
@@ -107,30 +108,6 @@ CBlockPolicyEstimator& EnsureFeeEstimator(const NodeContext& node)
 CBlockPolicyEstimator& EnsureAnyFeeEstimator(const std::any& context)
 {
     return EnsureFeeEstimator(EnsureAnyNodeContext(context));
-}
-
-/* Calculate the difficulty for a given block index.
- */
-double GetDifficulty(const CBlockIndex* blockindex)
-{
-    CHECK_NONFATAL(blockindex);
-
-    int nShift = (blockindex->nBits >> 24) & 0xff;
-    double dDiff =
-        (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
-
-    while (nShift < 29)
-    {
-        dDiff *= 256.0;
-        nShift++;
-    }
-    while (nShift > 29)
-    {
-        dDiff /= 256.0;
-        nShift--;
-    }
-
-    return dDiff;
 }
 
 static int ComputeNextBlockAndDepth(const CBlockIndex* tip, const CBlockIndex* blockindex, const CBlockIndex*& next)
