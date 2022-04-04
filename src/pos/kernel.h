@@ -46,4 +46,9 @@ int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const
  */
 double GetDifficulty(const CBlockIndex* blockindex);
 
+/**
+ * Get the POSV kernel of the net wrt to the given block index.
+ */
+double GetPoSVKernelPS(const CBlockIndex* blockindex);
+
 #endif // REDDCOIN_KERNEL_H
