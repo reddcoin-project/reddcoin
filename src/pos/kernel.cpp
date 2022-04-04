@@ -267,6 +267,7 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
     cachedModifier entry { nStakeModifierTime, nStakeModifierHeight };
     if (cacheCheck(entry, nCachedModifier)) {
         nStakeModifier = nCachedModifier;
+        LogPrint(BCLog::POS, "%s() : cachedModifier cache hit!\n",  __func__);
         return true;
     }
 
@@ -289,11 +290,14 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
     // loop to find the stake modifier later by a selection interval
     while (nStakeModifierTime < pindexFrom->GetBlockTime() + nStakeModifierSelectionInterval) {
         if (!active_chainstate->m_chain.Next(pindex)) {
-            if (fPrintProofOfStake || (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()))
+            if (fPrintProofOfStake || (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime())) {
+        	LogPrint(BCLog::POS, "%s() : reached best block at height %d from block at height %d. time = %d \n",  __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
                 return error("GetKernelStakeModifier() : reached best block at height %d from block at height %d",
                     pindex->nHeight, pindexFrom->nHeight);
-            else
+            }
+            else {
                 return false;
+            }
         }
         pindex = active_chainstate->m_chain.Next(pindex);
         if (pindex->GeneratedStakeModifier()) {
@@ -356,24 +360,26 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     int nStakeModifierHeight = 0;
     int64_t nStakeModifierTime = 0;
 
-    if (!GetKernelStakeModifier(active_chainstate, pindexPrev, hashBlockFrom, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake))
+    if (!GetKernelStakeModifier(active_chainstate, pindexPrev, hashBlockFrom, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake)){
+        LogPrintf("%s() : ERROR unable to determine stakemodifier nStakeModifier=%s, nStakeModifierHeight=%d, nStakeModifierTime=%d\n",  __func__, nStakeModifier, nStakeModifierHeight, nStakeModifierTime);
         return false;
+    }
+
     ss << nStakeModifier;
     ss << nTimeBlockFrom << nTxPrevOffset << nTimeTxPrev << prevout.n << nTimeTx;
     hashProofOfStake = Hash(ss);
 
-
-    if (fPrintProofOfStake) {
-        LogPrintf("CheckStakeKernelHash() : using modifier 0x%016x at height=%d timestamp=%s for block from height=%d timestamp=%s\n",
-            nStakeModifier, nStakeModifierHeight,
-            DateTimeStrFormat("%Y-%m-%d %H:%M:%S", nStakeModifierTime).c_str(),
-            active_chainstate->m_blockman.LookupBlockIndex(hashBlockFrom)->nHeight,
-            DateTimeStrFormat("%Y-%m-%d %H:%M:%S", blockFrom.GetBlockTime()).c_str());
-        LogPrintf("CheckStakeKernelHash() : check modifier=0x%016x nTimeBlockFrom=%u nTxPrevOffset=%u nTimeTxPrev=%u nPrevout=%u nTimeTx=%u hashProof=%s\n",
-            nStakeModifier,
-            nTimeBlockFrom, nTxPrevOffset, nTimeTxPrev, prevout.n, nTimeTx,
-            hashProofOfStake.ToString().c_str());
-    }
+    LogPrint(BCLog::POS, "%s : using modifier 0x%016x at height=%d timestamp=%s for block from height=%d timestamp=%s\n",
+        __func__,
+        nStakeModifier, nStakeModifierHeight,
+        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", nStakeModifierTime).c_str(),
+        active_chainstate->m_blockman.LookupBlockIndex(hashBlockFrom)->nHeight,
+        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", blockFrom.GetBlockTime()).c_str());
+    LogPrint(BCLog::POS, "%s : check modifier=0x%016x nTimeBlockFrom=%u nTxPrevOffset=%u nTimeTxPrev=%u nPrevout=%u nTimeTx=%u hashProof=%s\n",
+        __func__,
+        nStakeModifier,
+        nTimeBlockFrom, nTxPrevOffset, nTimeTxPrev, prevout.n, nTimeTx,
+        hashProofOfStake.ToString().c_str());
 
     // We need to convert type so it can be compared to target
     base_uint<512> targetProofOfStake512(bnTargetPerCoinDay.GetHex());
@@ -383,6 +389,9 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
 
     // Now check if proof-of-stake hash meets target protocol
     if (hashProofOfStake512 > targetProofOfStake512) {
+	LogPrint(BCLog::POS, "%s : WARNING Compare hashProofOfStake512 > targetProofOfStake512\n%s >\n%s\n",
+          __func__,
+          hashProofOfStake512.GetHex(), targetProofOfStake512.GetHex());
         return false;
     }
 
@@ -415,7 +424,7 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
             fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
             file >> txPrev;
         } catch (std::exception& e) {
-            return error("%s() : deserialize or I/O error in CheckProofOfStake()", __PRETTY_FUNCTION__);
+            return error("%s() : deserialize or I/O error in CheckProofOfStake()", __func__);
         }
     }
 

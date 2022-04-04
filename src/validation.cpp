@@ -1250,7 +1250,7 @@ CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees, double fIn
     // CoinAge=366 -> nSubsidy=10020
     CAmount nSubsidy = (nCoinAge * COIN_YEAR_REWARD * 33 / (365 * 33 + 8)) * fInflationAdjustment;
 
-    LogPrintf("GetProofOfStakeReward(): nSubsidy=%s nCoinAge=%s nFees=%s fInflationAdjustment=%s\n", FormatMoney(nSubsidy).c_str(), nCoinAge, FormatMoney(nFees), fInflationAdjustment);
+    LogPrint(BCLog::STAKE, "%s : nSubsidy=%s nCoinAge=%s nFees=%s fInflationAdjustment=%s\n", __func__, FormatMoney(nSubsidy).c_str(), nCoinAge, FormatMoney(nFees), fInflationAdjustment);
 
     if (gArgs.GetBoolArg("-printcreation", false))
         LogPrintf("GetProofOfStakeReward(): nSubsidy=%s nCoinAge=%s nFees=%s\n", FormatMoney(nSubsidy).c_str(), nCoinAge, FormatMoney(nFees));
@@ -2092,10 +2092,9 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         } else {
             // New PoSV stake reward calculation for ver 5 blocks
             double fInflationAdjustment = GetInflationAdjustment(this, m_params.GetConsensus());
-            LogPrintf("fInflationAdjustment=%s\n", fInflationAdjustment);
 
             nCalculatedStakeReward = GetProofOfStakeReward(nCoinAge, nFees, fInflationAdjustment);
-            LogPrintf("fInflationAdjustment=%s nCalculatedStakeReward2=%s\n", fInflationAdjustment, nCalculatedStakeReward);
+            LogPrint(BCLog::STAKE, "%s : fInflationAdjustment=%s nCalculatedStakeReward2=%s\n", __func__, fInflationAdjustment, nCalculatedStakeReward);
 
             if (!IsDevTx(*block.vtx[1], m_params.GetConsensus())) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dev-address");
@@ -3472,7 +3471,7 @@ bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, c
                 fValid = false;
                 LogPrintf("WARNING: VerifyHashTarget(): check proof-of-stake failed for block %s\n", hash.ToString());
             }
-            LogPrintf("%s - hashProof %s / nBits %08x\n", __func__, hashProof.ToString(), block.nBits);
+            LogPrint(BCLog::POS, "%s : hashProof %s / nBits %08x\n", __func__, hashProof.ToString(), block.nBits);
             return fValid;
         }
     }
@@ -5328,14 +5327,14 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
     int64_t nHeightPrev = active_chainstate->m_blockman.m_block_index[hash]->nHeight;
 
     nPoSVRewards = nMoneySupply - nMoneySupplyPrev;
-    LogPrintf("- PoSV rewards %s in last interval.\n", FormatMoney(nPoSVRewards));
+    LogPrint(BCLog::STAKE, "%s : PoSV rewards %s in last interval.\n", __func__, FormatMoney(nPoSVRewards));
 
     double nRatio = (double(nMoneySupply) / double(nPoSVRewards));
     double nRawInflationAdjustment = ((nInflationTarget / 12) * nRatio); // looking at the last month of blocks
     double nInflationAdjustment = std::max(std::min(nRawInflationAdjustment, dMaxThreshold), dMinThreshold);
 
-    LogPrintf("- Inflation = %s.\n", (double(nPoSVRewards) / double(nMoneySupply)) * 12 * 100);
-    LogPrintf("- Inflation Bound Adjustment = %s. Using Max %s | Min %s thresholds\n", nInflationAdjustment, dMaxThreshold, dMinThreshold);
+    LogPrint(BCLog::STAKE, "%s : Inflation = %s.\n", __func__, (double(nPoSVRewards) / double(nMoneySupply)) * 12 * 100);
+    LogPrint(BCLog::STAKE, "%s : Inflation Bound Adjustment = %s. Using Max %s | Min %s thresholds\n", __func__, nInflationAdjustment, dMaxThreshold, dMinThreshold);
 
     int64_t nTime = GetTimeMicros() - nStart;
 
