@@ -5,49 +5,13 @@
 
 #include <pos/stake.h>
 
-#include <chain.h>
-#include <consensus/consensus.h>
 #include <consensus/tx_verify.h>
-#include <consensus/validation.h>
-#include <external_signer.h>
-#include <fs.h>
 #include <index/disktxpos.h>
 #include <index/txindex.h>
-#include <interfaces/chain.h>
-#include <interfaces/wallet.h>
-#include <key.h>
-#include <key_io.h>
 #include <node/blockstorage.h>
-#include <outputtype.h>
-#include <policy/fees.h>
-#include <policy/policy.h>
 #include <pos/kernel.h>
-#include <pos/signer.h>
-#include <primitives/block.h>
-#include <primitives/transaction.h>
-#include <psbt.h>
-#include <script/descriptor.h>
-#include <script/script.h>
-#include <script/signingprovider.h>
 #include <index/txindex.h>
-#include <txmempool.h>
-#include <util/bip32.h>
-#include <util/check.h>
-#include <util/error.h>
-#include <util/fees.h>
-#include <util/moneystr.h>
-#include <util/rbf.h>
-#include <util/string.h>
-#include <util/translation.h>
 #include <wallet/coincontrol.h>
-#include <wallet/fees.h>
-#include <wallet/external_signer_scriptpubkeyman.h>
-
-#include <univalue.h>
-
-#include <algorithm>
-#include <assert.h>
-#include <optional>
 
 // peercoin: create coin stake transaction
 typedef std::vector<unsigned char> valtype;
