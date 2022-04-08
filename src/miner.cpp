@@ -540,7 +540,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     // Compute timeout for pos as sqrt(numUTXO)
     unsigned int pos_timio;
     {
-        LOCK2(cs_main, pwallet->cs_wallet);
+        LOCK(pwallet->cs_wallet);
 
         std::string strError;
         if (!reservedest.GetReservedDestination(dest, true, strError))
@@ -576,20 +576,22 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                     uiInterface.NotifyAlertChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(3)))
+                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
             // Busy-wait for the network to come online so we don't waste time mining
             // on an obsolete chain. In regtest mode we expect to fly solo.
             while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainstate->IsInitialBlockDownload()) {
+                if (ShutdownRequested())
+                    return;
                 LogPrintf("Staker thread sleeps while IBD at %d\n", chainstate->m_chain.Tip()->nHeight);
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
@@ -601,7 +603,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                     uiInterface.NotifyAlertChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
                         return;
             }
             if (fNeedToClear) {
@@ -620,7 +622,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
             {
-                LOCK2(cs_main, pwallet->cs_wallet);
+                LOCK(pwallet->cs_wallet);
                 pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet.get(), &fPoSCancel);
             }
 
@@ -647,7 +649,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             if (pblock->IsProofOfStake())
             {
                 {
-                    LOCK2(cs_main, pwallet->cs_wallet);
+                    LOCK(pwallet->cs_wallet);
                     if (!SignBlock(*pblock, *pwallet))
                     {
                         LogPrintf("PoSMiner(): failed to sign PoS block");
