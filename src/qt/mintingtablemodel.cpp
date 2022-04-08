@@ -16,6 +16,7 @@
 #include <node/ui_interface.h>
 
 #include <QColor>
+#include <QDebug>
 #include <QTimer>
 
 // Amount column is right-aligned it contains numbers
@@ -94,7 +95,7 @@ public:
      */
     void updateWallet(const uint256 &hash, int status)
     {
-        LogPrintf("minting updateWallet %s %i\n", hash.ToString(), status);
+        qDebug() << "MintingTablePriv::updateWallet: " + QString::fromStdString(hash.ToString()) + " " + QString::number(status);
         {
             // Find transaction in wallet
             auto wtx = walletModel->wallet().getWalletTx(hash);
@@ -129,20 +130,22 @@ public:
                     status = CT_DELETED; /* In model, but want to hide, treat as deleted */
             }
 
-            LogPrintf("   inWallet=%i inModel=%i Index=%i-%i showTransaction=%i derivedStatus=%i\n",
-                     inWallet, inModel, lowerIndex, upperIndex, showTransaction, status);
+            qDebug() << "    inWallet=" + QString::number(inWallet) +
+        	                " inModel=" + QString::number(inModel) +
+                                " Index=" + QString::number(lowerIndex) + "-" + QString::number(upperIndex) +
+                                " showTransaction=" + QString::number(showTransaction) + " derivedStatus=" + QString::number(status);
 
             switch(status)
             {
             case CT_NEW:
                 if(inModel)
                 {
-                    LogPrintf("Warning: updateWallet: Got CT_NEW, but transaction is already in model\n");
+                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_NEW, but transaction is already in model";
                     break;
                 }
                 if(!inWallet)
                 {
-                    LogPrintf("Warning: updateWallet: Got CT_NEW, but transaction is not in wallet\n");
+                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_NEW, but transaction is not in wallet";
                     break;
                 }
                 if(showTransaction)
@@ -169,7 +172,7 @@ public:
             case CT_DELETED:
                 if(!inModel)
                 {
-                    LogPrintf("Warning: updateWallet: Got CT_DELETED, but transaction is not in model\n");
+                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_DELETED, but transaction is not in model";
                     break;
                 }
                 // Removed -- remove entire transaction from table
@@ -190,7 +193,8 @@ public:
                             {
                                 if(i>=cachedWallet.size())
                                 {
-                                    LogPrintf("updateWallet: cachedWallet is smaller than expected, access item %d not in size %d\n", i, cachedWallet.size());
+                                    qWarning() << "MintingTablePriv::updateWallet: Warning: cachedWallet is smaller than expected, access item " + QString::number(i) +
+                                	" not in size " + QString::number(cachedWallet.size());
                                     break;
                                 }
                                 KernelRecord cachedRec = cachedWallet.at(i);
@@ -200,7 +204,8 @@ public:
                                 {
                                     if(i>=cachedWallet.size())
                                     {
-                                        LogPrintf("updateWallet: cachedWallet is smaller than expected, remove item %d not in size %d\n", i, cachedWallet.size());
+                                	qWarning() << "MintingTablePriv::updateWallet: Warning: cachedWallet is smaller than expected, remove item " + QString::number(i) +
+                                	    " not in size " + QString::number(cachedWallet.size());
                                         break;
                                     }
                                     parent->beginRemoveRows(QModelIndex(), i, i);
