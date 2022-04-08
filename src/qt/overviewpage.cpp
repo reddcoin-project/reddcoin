@@ -25,7 +25,7 @@
 #include <algorithm>
 #include <map>
 
-#define DECORATION_SIZE 54
+#define DECORATION_SIZE 42
 #define NUM_ITEMS 5
 
 Q_DECLARE_METATYPE(interfaces::WalletBalances)
