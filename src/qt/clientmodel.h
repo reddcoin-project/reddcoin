@@ -64,6 +64,7 @@ public:
     uint256 getBestBlockHash();
     int getHeaderTipHeight() const;
     int64_t getHeaderTipTime() const;
+    bool getStakingEnabled() const;
 
     //! Returns enum BlockSource of the current importing/syncing state
     enum BlockSource getBlockSource() const;
@@ -76,6 +77,7 @@ public:
     QString formatClientStartupTime() const;
     QString dataDir() const;
     QString blocksDir() const;
+    QString isStakingEnabled() const;
 
     bool getProxyInfo(std::string& ip_port) const;
 

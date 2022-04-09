@@ -543,10 +543,14 @@ RPCConsole::RPCConsole(interfaces::Node& node, const PlatformStyle *_platformSty
     connect(ui->fontBiggerButton, &QAbstractButton::clicked, this, &RPCConsole::fontBigger);
     connect(ui->fontSmallerButton, &QAbstractButton::clicked, this, &RPCConsole::fontSmaller);
     connect(ui->btnClearTrafficGraph, &QPushButton::clicked, ui->trafficGraph, &TrafficGraphWidget::clear);
+    connect(ui->stakingWalletSelector, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        [=](int index){RPCConsole::onChangeWallet(index);});
 
     // disable the wallet selector by default
     ui->WalletSelector->setVisible(false);
     ui->WalletSelectorLabel->setVisible(false);
+    ui->stakingWalletSelector->setVisible(false);
+    ui->stakingWalletSelectorLabel->setVisible(false);
 
     // Register RPC timer interface
     rpcTimerInterface = new QtRPCTimerInterface();
@@ -654,6 +658,9 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         setNumBlocks(bestblock_height, QDateTime::fromTime_t(bestblock_date), verification_progress, false);
         connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setNumBlocks);
 
+        setStakingInfo();
+        connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setStakingInfo);
+
         updateNetworkState();
         connect(model, &ClientModel::networkActiveChanged, this, &RPCConsole::setNetworkActive);
 
@@ -756,23 +763,37 @@ void RPCConsole::addWallet(WalletModel * const walletModel)
 {
     // use name for text and wallet model for internal data object (to allow to move to a wallet id later)
     ui->WalletSelector->addItem(walletModel->getDisplayName(), QVariant::fromValue(walletModel));
+    ui->stakingWalletSelector->addItem(walletModel->getDisplayName(), QVariant::fromValue(walletModel));
     if (ui->WalletSelector->count() == 2 && !isVisible()) {
         // First wallet added, set to default so long as the window isn't presently visible (and potentially in use)
         ui->WalletSelector->setCurrentIndex(1);
     }
+    if (ui->stakingWalletSelector->count() == 2 && !isVisible()) {
+            // First wallet added, set to default so long as the window isn't presently visible (and potentially in use)
+            ui->stakingWalletSelector->setCurrentIndex(1);
+        }
     if (ui->WalletSelector->count() > 2) {
         ui->WalletSelector->setVisible(true);
         ui->WalletSelectorLabel->setVisible(true);
     }
+    if (ui->stakingWalletSelector->count() > 2) {
+            ui->stakingWalletSelector->setVisible(true);
+            ui->stakingWalletSelectorLabel->setVisible(true);
+        }
 }
 
 void RPCConsole::removeWallet(WalletModel * const walletModel)
 {
     ui->WalletSelector->removeItem(ui->WalletSelector->findData(QVariant::fromValue(walletModel)));
+    ui->stakingWalletSelector->removeItem(ui->stakingWalletSelector->findData(QVariant::fromValue(walletModel)));
     if (ui->WalletSelector->count() == 2) {
         ui->WalletSelector->setVisible(false);
         ui->WalletSelectorLabel->setVisible(false);
     }
+    if (ui->stakingWalletSelector->count() == 2) {
+            ui->stakingWalletSelector->setVisible(false);
+            ui->stakingWalletSelectorLabel->setVisible(false);
+        }
 }
 #endif
 
@@ -952,6 +973,74 @@ void RPCConsole::setNumBlocks(int count, const QDateTime& blockDate, double nVer
         ui->numberOfBlocks->setText(QString::number(count));
         ui->lastBlockTime->setText(blockDate.toString());
     }
+}
+
+void RPCConsole::setStakingInfo()
+{
+    if (!clientModel)
+	return;
+
+#ifdef ENABLE_WALLET
+    WalletModel* wallet_model = ui->stakingWalletSelector->currentData().value<WalletModel*>();
+
+//    if (m_last_wallet_model != wallet_model) {
+//        if (wallet_model) {
+//            message(CMD_REQUEST, tr("Executing command using \"%1\" wallet").arg(wallet_model->getWalletName()));
+//        } else {
+//            message(CMD_REQUEST, tr("Executing command without any wallet"));
+//        }
+//        m_last_wallet_model = wallet_model;
+//    }
+
+    uint64_t nAverageWeight = 0, nTotalWeight = 0;
+    uint64_t nNetworkWeight = 0;
+    uint64_t nExpectedTime = 0;
+    int64_t nLastCoinStakeSearchInterval = 0;
+    bool staking = 0;
+    QString txtExpectedTime;
+
+    const Consensus::Params consensusParams = Params().GetConsensus();
+
+    nNetworkWeight = clientModel->node().getPoSVKernelPS();
+
+    if (wallet_model)
+        wallet_model->GetStakeWeight(nAverageWeight, nTotalWeight);
+
+    nLastCoinStakeSearchInterval = clientModel->node().getLastCoinStakeSearchInterval();
+
+    if (nLastCoinStakeSearchInterval && nAverageWeight)
+    {
+	staking = nLastCoinStakeSearchInterval && nAverageWeight;
+	nExpectedTime = consensusParams.nPowTargetSpacing * nNetworkWeight / nTotalWeight;
+
+        QString text;
+        if (nExpectedTime < 60)
+        {
+            txtExpectedTime = tr("%n second(s)", "", nExpectedTime);
+        }
+        else if (nExpectedTime < 60*60)
+        {
+            txtExpectedTime = tr("%n minute(s)", "", nExpectedTime/60);
+        }
+        else if (nExpectedTime < 24*60*60)
+        {
+            txtExpectedTime = tr("%n hour(s)", "", nExpectedTime/(60*60));
+        }
+        else
+        {
+            txtExpectedTime = tr("%n day(s)", "", nExpectedTime/(60*60*24));
+        }
+    }
+
+    ui->stakingEnabled->setText(clientModel->isStakingEnabled());
+    ui->stakingDifficulty->setText(QString::number(clientModel->node().getDifficulty()));
+    ui->stakingRunning->setText(QString(staking?"true":"false"));
+    ui->stakingAverageWeight->setText(QString::number(nAverageWeight));
+    ui->stakingTotalWeight->setText(QString::number(nTotalWeight));
+    ui->stakingNetworkWeight->setText(QString::number(nNetworkWeight));
+    ui->stakingEstimatedTime->setText(txtExpectedTime);
+
+#endif // ENABLE_WALLET
 }
 
 void RPCConsole::setMempoolSize(long numberOfTxs, size_t dynUsage)
@@ -1336,6 +1425,7 @@ QKeySequence RPCConsole::tabShortcut(TabTypes tab_type) const
     case TabTypes::CONSOLE: return QKeySequence(Qt::CTRL + Qt::Key_T);
     case TabTypes::GRAPH: return QKeySequence(Qt::CTRL + Qt::Key_N);
     case TabTypes::PEERS: return QKeySequence(Qt::CTRL + Qt::Key_P);
+    case TabTypes::STAKE: return QKeySequence(Qt::CTRL + Qt::Key_S);
     } // no default case, so the compiler can warn about missing cases
 
     assert(false);
@@ -1345,4 +1435,9 @@ void RPCConsole::updateAlerts(const QString& warnings)
 {
     this->ui->label_alerts->setVisible(!warnings.isEmpty());
     this->ui->label_alerts->setText(warnings);
+}
+
+void RPCConsole::onChangeWallet(int walletSelected)
+{
+    setStakingInfo();
 }

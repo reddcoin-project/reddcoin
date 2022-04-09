@@ -229,6 +229,16 @@ QString ClientModel::blocksDir() const
     return GUIUtil::boostPathToQString(gArgs.GetBlocksDirPath());
 }
 
+bool ClientModel::getStakingEnabled() const
+{
+    return gArgs.GetBoolArg("-staking", true);
+}
+
+QString ClientModel::isStakingEnabled() const
+{
+    return QString::fromStdString(getStakingEnabled()?"true":"false");
+}
+
 void ClientModel::updateBanlist()
 {
     banTableModel->refresh();

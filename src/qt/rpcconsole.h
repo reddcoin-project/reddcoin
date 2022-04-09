@@ -64,10 +64,11 @@ public:
         INFO,
         CONSOLE,
         GRAPH,
-        PEERS
+        PEERS,
+        STAKE
     };
 
-    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::GRAPH, TabTypes::PEERS}; }
+    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::GRAPH, TabTypes::PEERS, TabTypes::STAKE}; }
 
     QString tabTitle(TabTypes tab_type) const;
     QKeySequence tabShortcut(TabTypes tab_type) const;
@@ -99,6 +100,8 @@ private Q_SLOTS:
     void clearSelectedNode();
     /** show detailed information on ui about selected node */
     void updateDetailWidget();
+    /** show staking stats for each wallet */
+    void onChangeWallet(int idx);
 
 public Q_SLOTS:
     void clear(bool keep_prompt = false);
@@ -128,6 +131,8 @@ public Q_SLOTS:
     void unbanSelectedNode();
     /** set which tab has the focus (is visible) */
     void setTabFocus(enum TabTypes tabType);
+    /** set staking state shown in the UI */
+    void setStakingInfo();
 
 Q_SIGNALS:
     // For RPC command executor

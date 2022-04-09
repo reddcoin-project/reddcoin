@@ -35,6 +35,7 @@ class OptionsModel;
 class PlatformStyle;
 class RPCConsole;
 class SendCoinsRecipient;
+class StakingStatusBarControl;
 class UnitDisplayStatusBarControl;
 class WalletController;
 class WalletFrame;
@@ -131,6 +132,8 @@ private:
     GUIUtil::ClickableLabel* labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel* connectionsControl = nullptr;
     GUIUtil::ClickableLabel* labelBlocksIcon = nullptr;
+    GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
+    StakingStatusBarControl* stakingStatusControl = nullptr;
     QLabel* progressBarLabel = nullptr;
     GUIUtil::ClickableProgressBar* progressBar = nullptr;
     QProgressDialog* progressDialog = nullptr;
@@ -194,6 +197,7 @@ private:
 
     QMenu* m_network_context_menu = new QMenu(this);
     QMenu* m_lock_context_menu = new QMenu(this);
+    QMenu* m_staking_context_menu = new QMenu(this);
 
 #ifdef Q_OS_MAC
     CAppNapInhibitor* m_app_nap_inhibitor = nullptr;
@@ -262,6 +266,7 @@ public Q_SLOTS:
     /** Set the UI status indicators based on the currently selected wallet.
     */
     void updateWalletStatus();
+    void updateStakingStatus();
 
 private:
     /** Set the encryption status as shown in the UI.
@@ -419,6 +424,55 @@ private:
     void onLockWalletClicked(const QPoint& point);
     /** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
     void createContextMenu();
+
+private Q_SLOTS:
+    /** When wallet lock status is changed on walletFrame it will refresh the display text of the control on the status bar */
+    void updateLockWallet(int newUnits);
+    /** Tells underlying walletFrame to update its current status. */
+    void onMenuSelection(QAction* action);
+};
+
+class StakingStatusBarControl : public QLabel
+{
+  Q_OBJECT
+
+public:
+    explicit StakingStatusBarControl(const PlatformStyle *platformStyle);
+    /** Lets the control know about the Wallet Frame Model (and its signals) */
+    void setWalletFrame(WalletFrame *walletFrame);
+    /** Lets the control know about the RPC Console Model (and its signals) */
+    void setRPCConsole(RPCConsole* rpcConsole);
+    void setThemedPixmap(const QString& image_filename, int width, int height);
+    void setStakingActive(bool stake_active);
+
+protected:
+    /** So that it responds to left-button clicks */
+    void mousePressEvent(QMouseEvent *event) override;
+    void changeEvent(QEvent* e) override;
+
+private:
+    // OptionsModel *optionsModel;
+    WalletFrame *walletFrame;
+    RPCConsole* rpcConsole;
+    QMenu* menu;
+    QAction* enableStakingAction = nullptr;
+    QAction* disableStakingAction = nullptr;
+    QAction* displayStakingAction = nullptr;
+    const PlatformStyle* m_platform_style;
+    QString m_image_filename;
+    int m_pixmap_width;
+    int m_pixmap_height;
+    void updateThemedPixmap();
+    void showDebugWindow();
+
+    /** Shows context menu with Lock wallet options by the mouse coordinates */
+    void onLockWalletClicked(const QPoint& point);
+    /** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
+    void createContextMenu();
+
+Q_SIGNALS:
+    /** Signal raised when RPC console shown */
+    void consoleShown(RPCConsole* console);
 
 private Q_SLOTS:
     /** When wallet lock status is changed on walletFrame it will refresh the display text of the control on the status bar */
