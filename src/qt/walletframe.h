@@ -48,6 +48,7 @@ public:
 
 Q_SIGNALS:
     void createWalletButtonClicked();
+    void walletLockStatusChanged(int unit);
 
 private:
     QStackedWidget *walletStack;
@@ -92,6 +93,7 @@ public Q_SLOTS:
     void changePassphrase();
     /** Ask for passphrase to unlock wallet temporarily */
     void unlockWallet();
+    void lockWallet();
 
     /** Show used sending addresses */
     void usedSendingAddresses();

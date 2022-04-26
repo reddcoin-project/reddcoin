@@ -159,7 +159,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->setContentsMargins(3,0,3,0);
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
-    labelWalletEncryptionIcon = new GUIUtil::ThemedLabel(platformStyle);
+    lockWalletControl = new LockWalletStatusBarControl(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
     connectionsControl = new GUIUtil::ClickableLabel(platformStyle);
@@ -169,8 +169,10 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         frameBlocksLayout->addStretch();
         frameBlocksLayout->addWidget(unitDisplayControl);
         frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(labelWalletEncryptionIcon);
+        frameBlocksLayout->addWidget(lockWalletControl);
         frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
+
+        lockWalletControl->setWalletFrame(walletFrame);
     }
     frameBlocksLayout->addWidget(labelProxyIcon);
     frameBlocksLayout->addStretch();
@@ -365,6 +367,10 @@ void BitcoinGUI::createActions()
     backupWalletAction->setStatusTip(tr("Backup wallet to another location"));
     changePassphraseAction = new QAction(tr("&Change Passphrase…"), this);
     changePassphraseAction->setStatusTip(tr("Change the passphrase used for wallet encryption"));
+    unlockWalletAction = new QAction(tr("&Unlock Wallet"), this);
+    unlockWalletAction->setStatusTip(tr("Unlock wallet"));
+    lockWalletAction = new QAction(tr("&Lock Wallet"), this);
+    lockWalletAction->setStatusTip(tr("Lock wallet"));
     signMessageAction = new QAction(tr("Sign &message…"), this);
     signMessageAction->setStatusTip(tr("Sign messages with your Reddcoin addresses to prove you own them"));
     verifyMessageAction = new QAction(tr("&Verify message…"), this);
@@ -432,6 +438,8 @@ void BitcoinGUI::createActions()
         connect(encryptWalletAction, &QAction::triggered, walletFrame, &WalletFrame::encryptWallet);
         connect(backupWalletAction, &QAction::triggered, walletFrame, &WalletFrame::backupWallet);
         connect(changePassphraseAction, &QAction::triggered, walletFrame, &WalletFrame::changePassphrase);
+        connect(unlockWalletAction, &QAction::triggered, walletFrame, &WalletFrame::unlockWallet);
+        connect(lockWalletAction, &QAction::triggered, walletFrame, &WalletFrame::lockWallet);
         connect(signMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
         connect(signMessageAction, &QAction::triggered, [this]{ gotoSignMessageTab(); });
         connect(m_load_psbt_action, &QAction::triggered, [this]{ gotoLoadPSBT(); });
@@ -524,6 +532,8 @@ void BitcoinGUI::createMenuBar()
     {
         settings->addAction(encryptWalletAction);
         settings->addAction(changePassphraseAction);
+        settings->addAction(unlockWalletAction);
+        settings->addAction(lockWalletAction);
         settings->addSeparator();
         settings->addAction(m_mask_values_action);
         settings->addSeparator();
@@ -754,7 +764,7 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
     if (!walletFrame) return;
 
     labelWalletHDStatusIcon->hide();
-    labelWalletEncryptionIcon->hide();
+    lockWalletControl->hide();
 
     int index = m_wallet_selector->findData(QVariant::fromValue(walletModel));
     m_wallet_selector->removeItem(index);
@@ -810,6 +820,8 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
     changePassphraseAction->setEnabled(enabled);
+    unlockWalletAction->setEnabled(enabled);
+    lockWalletAction->setEnabled(enabled);
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
     usedSendingAddressesAction->setEnabled(enabled);
@@ -1038,6 +1050,7 @@ void BitcoinGUI::setNetworkActive(bool network_active)
             tr("Enable network activity"),
         [this, new_state = !network_active] { m_node.setNetworkActive(new_state); });
 }
+
 
 void BitcoinGUI::updateHeadersSyncProgressLabel()
 {
@@ -1377,26 +1390,34 @@ void BitcoinGUI::setEncryptionStatus(int status)
     switch(status)
     {
     case WalletModel::Unencrypted:
-        labelWalletEncryptionIcon->hide();
+        lockWalletControl->hide();
         encryptWalletAction->setChecked(false);
         changePassphraseAction->setEnabled(false);
+        unlockWalletAction->setVisible(false);
+        lockWalletAction->setVisible(false);
         encryptWalletAction->setEnabled(true);
         break;
     case WalletModel::Unlocked:
-        labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setThemedPixmap(QStringLiteral(":/icons/lock_open"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
+        lockWalletControl->show();
+        lockWalletControl->setThemedPixmap(QStringLiteral(":/icons/lock_open"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        lockWalletControl->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
+        unlockWalletAction->setVisible(false);
+        lockWalletAction->setVisible(true);
         encryptWalletAction->setEnabled(false);
+        lockWalletControl->setLockState(true);
         break;
     case WalletModel::Locked:
-        labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setThemedPixmap(QStringLiteral(":/icons/lock_closed"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
+        lockWalletControl->show();
+        lockWalletControl->setThemedPixmap(QStringLiteral(":/icons/lock_closed"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        lockWalletControl->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
+        unlockWalletAction->setVisible(true);
+        lockWalletAction->setVisible(false);
         encryptWalletAction->setEnabled(false);
+        lockWalletControl->setLockState(false);
         break;
     }
 }
@@ -1630,4 +1651,117 @@ void UnitDisplayStatusBarControl::onMenuSelection(QAction* action)
     {
         optionsModel->setDisplayUnit(action->data());
     }
+}
+
+LockWalletStatusBarControl::LockWalletStatusBarControl(const PlatformStyle *platformStyle)
+    : walletFrame(nullptr),
+      menu(nullptr),
+      m_platform_style{platformStyle}
+{
+    createContextMenu();
+    int max_width = 0;
+    setMinimumSize(max_width, 0);
+    setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    setStyleSheet(QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name()));
+}
+
+/** So that it responds to button clicks */
+void LockWalletStatusBarControl::mousePressEvent(QMouseEvent *event)
+{
+    onLockWalletClicked(event->pos());
+}
+
+void LockWalletStatusBarControl::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange) {
+        QString style = QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name());
+        if (style != styleSheet()) {
+            setStyleSheet(style);
+        }
+    }
+
+    QLabel::changeEvent(e);
+}
+
+/** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
+void LockWalletStatusBarControl::createContextMenu()
+{
+    menu = new QMenu(this);
+
+    lockWalletAction = new QAction(tr("Lock Wallet"));
+    lockWalletAction->setStatusTip(tr("Lock wallet"));
+    lockWalletAction->setData(QVariant(1));
+    unlockWalletAction = new QAction(tr("Unlock Wallet"));
+    unlockWalletAction->setStatusTip(tr("Unlock wallet"));
+    unlockWalletAction->setData(QVariant(0));
+
+    menu->addAction(lockWalletAction);
+    menu->addAction(unlockWalletAction);
+    connect(menu, &QMenu::triggered, this, &LockWalletStatusBarControl::onMenuSelection);
+}
+
+void LockWalletStatusBarControl::setWalletFrame(WalletFrame *_walletFrame)
+{
+  if (_walletFrame)
+  {
+      this->walletFrame = _walletFrame;
+
+      // be aware of wallet lock change reported by the WalletFrame object.
+      connect(_walletFrame, &WalletFrame::walletLockStatusChanged, this, &LockWalletStatusBarControl::updateLockWallet);
+
+      // initialize the wallet lock icon with the current value in the model.
+      //updateLockWallet();
+  }
+}
+
+/** When status is changed on walletFrame it will refresh the display text of the control on the status bar */
+void LockWalletStatusBarControl::updateLockWallet(int newUnits)
+{
+    setText(QString(""));
+}
+
+/** Shows context menu with lock wallet options by the mouse coordinates */
+void LockWalletStatusBarControl::onLockWalletClicked(const QPoint& point)
+{
+    QPoint globalPos = mapToGlobal(point);
+    menu->exec(globalPos);
+}
+
+/** Tells underlying walletFrame to update its current state. */
+void LockWalletStatusBarControl::onMenuSelection(QAction* action)
+{
+    if (action)
+    {
+	bool bLockWallet = action->data().toInt();
+        if(bLockWallet) {
+            walletFrame->lockWallet();
+	} else {
+	    walletFrame->unlockWallet();
+	}
+    }
+}
+
+/** Updates the menu items list. */
+void LockWalletStatusBarControl::setLockState(bool lock_active)
+{
+    menu->clear();
+    menu->addAction(
+	lock_active ?
+	    //: A context menu item.
+	    lockWalletAction :
+	    //: A context menu item. The lock state activity was disabled previously.
+	    unlockWalletAction);
+}
+
+void LockWalletStatusBarControl::setThemedPixmap(const QString& image_filename, int width, int height)
+{
+    m_image_filename = image_filename;
+    m_pixmap_width = width;
+    m_pixmap_height = height;
+    updateThemedPixmap();
+}
+
+void LockWalletStatusBarControl::updateThemedPixmap()
+{
+    setPixmap(m_platform_style->SingleColorIcon(m_image_filename).pixmap(m_pixmap_width, m_pixmap_height));
 }

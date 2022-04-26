@@ -121,6 +121,9 @@ void EnsureWalletIsUnlocked(const CWallet& wallet)
     if (wallet.IsLocked()) {
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
     }
+    if (wallet.IsStakingOnly()) {
+        throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Wallet is unlocked for staking only.");
+    }
 }
 
 WalletContext& EnsureWalletContext(const std::any& context)
@@ -1892,15 +1895,20 @@ static RPCHelpMan walletpassphrase()
                 {
                     {"passphrase", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet passphrase"},
                     {"timeout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The time to keep the decryption key in seconds; capped at 100000000 (~3 years)."},
+		    {"stakingonly", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "If the wallet is unlocked for staking only"},
                 },
                 RPCResult{RPCResult::Type::NONE, "", ""},
                 RPCExamples{
             "\nUnlock the wallet for 60 seconds\n"
             + HelpExampleCli("walletpassphrase", "\"my pass phrase\" 60") +
+	    "\nUnlock the wallet for 99999999 seconds for staking\n"
+            + HelpExampleCli("walletpassphrase", "\"my pass phrase\" 99999999 true") +
             "\nLock the wallet again (before 60 seconds)\n"
             + HelpExampleCli("walletlock", "") +
             "\nAs a JSON-RPC call\n"
-            + HelpExampleRpc("walletpassphrase", "\"my pass phrase\", 60")
+            + HelpExampleRpc("walletpassphrase", "\"my pass phrase\", 60") +
+	    "\nAs a JSON-RPC call\n"
+	    + HelpExampleRpc("walletpassphrase", "\"my pass phrase\", 99999999 true")
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1950,6 +1958,12 @@ static RPCHelpMan walletpassphrase()
 
         pwallet->nRelockTime = GetTime() + nSleepTime;
         relock_time = pwallet->nRelockTime;
+
+        if (request.params[2].isBool()) {
+            pwallet->SetIsStakingOnly(request.params[2].getBool());
+        } else {
+            pwallet->SetIsStakingOnly(false);
+        }
     }
 
     // rpcRunLater must be called without cs_wallet held otherwise a deadlock
