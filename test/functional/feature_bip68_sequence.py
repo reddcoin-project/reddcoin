@@ -24,8 +24,8 @@ from test_framework.util import (
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
+    get_bip9_status,
     satoshi_round,
-    softfork_active,
 )
 from test_framework.script_util import DUMMY_P2WPKH_SCRIPT
 
