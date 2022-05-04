@@ -336,8 +336,8 @@ void BitcoinGUI::createActions()
     connect(receiveCoinsMenuAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
     connect(historyAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
-    connect(mintingAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
-    connect(mintingAction, SIGNAL(triggered()), this, SLOT(gotoMintingPage()));
+    connect(mintingAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+    connect(mintingAction, &QAction::triggered, this, &BitcoinGUI::gotoMintingPage);
 #endif // ENABLE_WALLET
 
     quitAction = new QAction(tr("E&xit"), this);
@@ -806,6 +806,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     receiveCoinsAction->setEnabled(enabled);
     receiveCoinsMenuAction->setEnabled(enabled);
     historyAction->setEnabled(enabled);
+    mintingAction->setEnabled(enabled);
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
     changePassphraseAction->setEnabled(enabled);
