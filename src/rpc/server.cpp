@@ -271,10 +271,9 @@ static RPCHelpMan checkupdates()
                     {
                         {RPCResult::Type::STR, "installedVersion", "Installed wallet version"},
                         {RPCResult::Type::STR, "latestRepoVersion", "Latest release wallet version available from Reddcoin GitHub"},
-						{RPCResult::Type::NUM, "localversion", "The local version number"},
-						{RPCResult::Type::NUM, "remoteversion", "The remote version number"},
-						{RPCResult::Type::STR, "type", "The type of release [full, release candidate, alpha, beta]"},
-						{RPCResult::Type::STR, "build", "The build count of this version type]"},
+                        {RPCResult::Type::NUM, "localversion", "The local version number"},
+                        {RPCResult::Type::NUM, "remoteversion", "The remote version number"},
+                        {RPCResult::Type::STR, "remotetype", "The type of release [full, rc (release candidate), alpha, beta]"},
                         {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
                         {RPCResult::Type::STR, "warning", "Any warning messages"},
                         {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
@@ -298,13 +297,12 @@ void checkforupdatesinfo(UniValue& result) {
     std::string installedVersion = "v" + std::to_string(CLIENT_VERSION_MAJOR) + "." + std::to_string(CLIENT_VERSION_MINOR) + "." + std::to_string(CLIENT_VERSION_BUILD);
     std::string latestRepoVersion = "";
     std::string remotetype = "";
-    std::string remotebuild = "";
     std::string message = "";
     std::string warning = "";
     std::string officialDownloadLink = "";
     std::string errors = "";
     std::string strVersion = "";
-    int newVersion=0;
+    int remoteVersion=0;
 
     try {
         boost::asio::io_service svc;
@@ -417,46 +415,40 @@ void checkforupdatesinfo(UniValue& result) {
 
                    if(std::regex_search(obj_response["tag_name"].get_str(), matches, versionRgx) && matches.size()>=5) {
                 	   strVersion = matches[1];
-                       newVersion = std::stoi(matches[2].str()) * 10000 + std::stoi(matches[3]) * 100 + std::stoi(matches[4]) * 1;
+                       remoteVersion = std::stoi(matches[2].str()) * 10000 + std::stoi(matches[3]) * 100 + std::stoi(matches[4]) * 1;
                        for (auto match : matches) {
                     	   LogPrintf("%s\n", match);
                        }
                        remotetype = matches[7].str();
-                       remotebuild = matches[9];
-                       if (newVersion >= CLIENT_VERSION) {
-                           char versionInfo[200];
-                           //snprintf(versionInfo, 200, "This client is not the most recent version available, please update to release %s from github or disable this check in settings.", obj["tag_name"].toString().toUtf8().constData());
-                           //std::string strVersionInfo = versionInfo;
-                       }
                    }
 
                }
         }
 
         // Compare installed and latest GitHub versions
-        if (installedVersion.compare(latestRepoVersion) == 0) {
+        if (CLIENT_VERSION > remoteVersion) {
+            message = "You're currently running a newer version than the official version of Reddcoin Core (" + latestRepoVersion + ")";
+        } else if (CLIENT_VERSION == remoteVersion) {
             message = "You're currently running the most recent version of Reddcoin Core (" + latestRepoVersion + ")";
         } else {
-            // Build direct download link
-            std::string urlWalletVersion = latestRepoVersion;
-            boost::replace_all(urlWalletVersion, "v", "");
-            officialDownloadLink = strDownloadLink + strVersion;
-            if (remotetype != "") {
-            	officialDownloadLink += "/" + remotetype;
-            	if (remotebuild != "") {
-            		officialDownloadLink += "/" + remotebuild;
-            	}
-            }
-
-            std::string preleaseWarning = "";
-
-            // Display pre-release note if the installed version is a pre-release version
-            if (!CLIENT_VERSION_IS_RELEASE) {
-                warning = "This is a pre-release test build - use at your own risk - do not use for staking or merchant applications";
-            }
-
             message = "Please download the latest version from our official website";
         }
+
+        // Build direct download link
+        std::string urlWalletVersion = latestRepoVersion;
+        boost::replace_all(urlWalletVersion, "v", "");
+        officialDownloadLink = strDownloadLink + strVersion;
+        if (remotetype != "") {
+        	officialDownloadLink += "/" + remotetype;
+        }
+
+        std::string preleaseWarning = "";
+
+        // Display pre-release note if the installed version is a pre-release version
+        if (!CLIENT_VERSION_IS_RELEASE) {
+            warning = "This is a pre-release test build - use at your own risk - do not use for staking or merchant applications";
+        }
+
     }
     catch (std::exception& e)
     {
@@ -466,9 +458,8 @@ void checkforupdatesinfo(UniValue& result) {
     result.pushKV("installedVersion", installedVersion);
     result.pushKV("latestRepoVersion", latestRepoVersion);
     result.pushKV("localversion", CLIENT_VERSION);
-    result.pushKV("remoteversion", newVersion);
-    result.pushKV("type", remotetype);
-    result.pushKV("build", remotebuild);
+    result.pushKV("remoteversion", remoteVersion);
+    result.pushKV("remotetype", remotetype);
     result.pushKV("message", message);
     result.pushKV("warning", warning);
     result.pushKV("officialDownloadLink", officialDownloadLink);
