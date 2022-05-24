@@ -2940,6 +2940,11 @@ bool CWallet::IsLocked() const
     return vMasterKey.empty();
 }
 
+bool CWallet::IsStakingOnly() const
+{
+    return GetIsStakingOnly();
+}
+
 bool CWallet::Lock()
 {
     if (!IsCrypted())
