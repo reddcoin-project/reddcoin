@@ -158,8 +158,12 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
     coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
 
-    if (pwallet)  // attempt to find a coinstake
+    if (pwallet)
     {
+        // flush orphaned coinstakes
+        pwallet->AbandonOrphanedCoinstakes();
+
+        // attempt to find a coinstake
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;

@@ -805,6 +805,9 @@ public:
     /* Returns true if the wallet can give out new addresses. This means it has keys in the keypool or can generate new keys */
     bool CanGetAddresses(bool internal = false) const;
 
+    /* Function that will remove potentially abandoned coinstakes, returning the input to the wallet. */
+    void AbandonOrphanedCoinstakes();
+
     /**
      * Blocks until the wallet state is up-to-date to /at least/ the current
      * chain at the time this function is entered
