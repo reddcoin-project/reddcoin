@@ -511,3 +511,39 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CBlock& block, const C
     return nCoinAge;
 }
 
+/* Calculate the difficulty for a given block index.
+ */
+double GetDifficulty(const CBlockIndex* blockindex)
+{
+    CHECK_NONFATAL(blockindex);
+
+    int nShift = (blockindex->nBits >> 24) & 0xff;
+    double dDiff =
+        (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
+
+    while (nShift < 29)
+    {
+        dDiff *= 256.0;
+        nShift++;
+    }
+    while (nShift > 29)
+    {
+        dDiff /= 256.0;
+        nShift--;
+    }
+
+    return dDiff;
+}
+
+/* Calculate PoSV Kernel
+ */
+double GetPoSVKernelPS(const CBlockIndex* blockindex)
+{
+    const Consensus::Params params = Params().GetConsensus();
+
+    if (blockindex == NULL || blockindex->nHeight <= params.nLastPowHeight || blockindex->IsProofOfWork())
+        return 0;
+
+    double dStakeKernelsTriedAvg = GetDifficulty(blockindex) * 4294967296.0; // 2^32
+    return dStakeKernelsTriedAvg / params.nPowTargetSpacing;
+}
