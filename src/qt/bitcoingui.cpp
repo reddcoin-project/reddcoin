@@ -417,6 +417,10 @@ void BitcoinGUI::createActions()
     checkUpdatesAction = new QAction(tr("&Check for software updates"), this);
     checkUpdatesAction->setStatusTip(tr("Check for available %1 software updates").arg(PACKAGE_NAME));
 
+    openWebSocialAction = new QAction(tr("Open Social Websites"), this);
+    openWebSocialAction->setStatusTip(tr("Open Social Websites"));
+    openWebSocialMenu = new QMenu(this);
+
     openWebReddcoinAction = new QAction(tr("&Website - reddcoin.com"), this);
     openWebReddcoinAction->setStatusTip(tr("Open the Reddcoin website in a web browser."));
 
@@ -613,13 +617,18 @@ void BitcoinGUI::createMenuBar()
     }
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
-    help->addAction(openWebReddcoinAction);
-    help->addAction(openWebReddloveAction);
-    help->addAction(openWebWikiAction);
-    help->addAction(openChatroomAction);
-    help->addAction(openForumAction);
+
+    openWebSocialMenu->addAction(openWebReddcoinAction);
+    openWebSocialMenu->addAction(openWebReddloveAction);
+    openWebSocialMenu->addAction(openWebWikiAction);
+    openWebSocialMenu->addAction(openChatroomAction);
+    openWebSocialMenu->addAction(openForumAction);
+    openWebSocialAction->setMenu(openWebSocialMenu);
+
     help->addAction(showHelpMessageAction);
     help->addAction(checkUpdatesAction);
+    help->addSeparator();
+    help->addAction(openWebSocialAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
