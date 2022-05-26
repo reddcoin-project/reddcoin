@@ -170,6 +170,13 @@ private:
     QAction* m_close_wallet_action{nullptr};
     QAction* m_close_all_wallets_action{nullptr};
     QAction* m_wallet_selector_label_action = nullptr;
+    QAction* openWebSocialAction = nullptr;
+    QMenu* openWebSocialMenu{nullptr};
+    QAction* openWebReddcoinAction = nullptr;
+    QAction* openWebReddloveAction = nullptr;
+    QAction* openWebWikiAction = nullptr;
+    QAction* openChatroomAction = nullptr;
+    QAction* openForumAction = nullptr;
     QAction* m_wallet_selector_action = nullptr;
     QAction* m_mask_values_action{nullptr};
 
@@ -315,6 +322,16 @@ public Q_SLOTS:
     void showDebugWindowActivateConsole();
     /** Show help message dialog */
     void showHelpMessageClicked();
+    /** Open reddcoin.com URL in the system's browser */
+    void openWebReddcoin();
+    /** Open redd.love URL in the system's browser */
+    void openWebReddlove();
+    /** Open reddcoin wiki URL in the system's browser */
+    void openWebWiki();
+    /** Open Discord invite in the system's browser */
+    void openChatroom();
+    /** Open reddcointalk.org URL in the system's browser */
+    void openForum();
 #ifndef Q_OS_MAC
     /** Handle tray icon clicked */
     void trayIconActivated(QSystemTrayIcon::ActivationReason reason);

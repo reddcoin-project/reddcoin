@@ -48,6 +48,7 @@
 #include <QComboBox>
 #include <QCursor>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QListWidget>
 #include <QMenu>
@@ -416,6 +417,25 @@ void BitcoinGUI::createActions()
     checkUpdatesAction = new QAction(tr("&Check for software updates"), this);
     checkUpdatesAction->setStatusTip(tr("Check for available %1 software updates").arg(PACKAGE_NAME));
 
+    openWebSocialAction = new QAction(tr("Open Social Websites"), this);
+    openWebSocialAction->setStatusTip(tr("Open Social Websites"));
+    openWebSocialMenu = new QMenu(this);
+
+    openWebReddcoinAction = new QAction(tr("&Website - reddcoin.com"), this);
+    openWebReddcoinAction->setStatusTip(tr("Open the Reddcoin website in a web browser."));
+
+    openWebReddloveAction = new QAction(tr("&Website - redd.love"), this);
+    openWebReddloveAction->setStatusTip(tr("Open the Redd Love website in a web browser."));
+
+    openWebWikiAction = new QAction(tr("&Website - Reddcoin Wiki"), this);
+    openWebWikiAction->setStatusTip(tr("Open the Reddcoin Wiki website in a web browser."));
+
+    openChatroomAction = new QAction(tr("&Chatroom - Discord"), this);
+    openChatroomAction->setStatusTip(tr("Open the Reddcoin Discord chat in a web browser."));
+
+    openForumAction = new QAction(tr("&Forum"), this);
+    openForumAction->setStatusTip(tr("Open reddcointalk.org in a web browser."));
+
     m_mask_values_action = new QAction(tr("&Mask values"), this);
     m_mask_values_action->setShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_M));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
@@ -431,6 +451,12 @@ void BitcoinGUI::createActions()
     connect(openRPCConsoleAction, &QAction::triggered, this, &BitcoinGUI::showDebugWindow);
     // prevents an open debug window from becoming stuck/unusable on client shutdown
     connect(quitAction, &QAction::triggered, rpcConsole, &QWidget::hide);
+
+    connect(openWebReddcoinAction, &QAction::triggered, this, &BitcoinGUI::openWebReddcoin);
+    connect(openWebReddloveAction, &QAction::triggered, this, &BitcoinGUI::openWebReddlove);
+    connect(openWebWikiAction, &QAction::triggered, this, &BitcoinGUI::openWebWiki);
+    connect(openChatroomAction, &QAction::triggered, this, &BitcoinGUI::openChatroom);
+    connect(openForumAction, &QAction::triggered, this, &BitcoinGUI::openForum);
 
 #ifdef ENABLE_WALLET
     if(walletFrame)
@@ -591,8 +617,18 @@ void BitcoinGUI::createMenuBar()
     }
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
+
+    openWebSocialMenu->addAction(openWebReddcoinAction);
+    openWebSocialMenu->addAction(openWebReddloveAction);
+    openWebSocialMenu->addAction(openWebWikiAction);
+    openWebSocialMenu->addAction(openChatroomAction);
+    openWebSocialMenu->addAction(openForumAction);
+    openWebSocialAction->setMenu(openWebSocialMenu);
+
     help->addAction(showHelpMessageAction);
     help->addAction(checkUpdatesAction);
+    help->addSeparator();
+    help->addAction(openWebSocialAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
@@ -990,6 +1026,26 @@ void BitcoinGUI::gotoVerifyMessageTab(QString addr)
 void BitcoinGUI::gotoLoadPSBT(bool from_clipboard)
 {
     if (walletFrame) walletFrame->gotoLoadPSBT(from_clipboard);
+}
+
+void BitcoinGUI::openWebReddcoin() {
+    QDesktopServices::openUrl(QUrl("https://reddcoin.com"));
+}
+
+void BitcoinGUI::openWebReddlove() {
+    QDesktopServices::openUrl(QUrl("https://redd.love"));
+}
+
+void BitcoinGUI::openWebWiki() {
+    QDesktopServices::openUrl(QUrl("https://wiki.reddcoin.com"));
+}
+
+void BitcoinGUI::openChatroom() {
+    QDesktopServices::openUrl(QUrl("https://discord.gg/ZHbzsz56V5"));
+}
+
+void BitcoinGUI::openForum() {
+    QDesktopServices::openUrl(QUrl("https://reddcointalk.org/"));
 }
 #endif // ENABLE_WALLET
 
