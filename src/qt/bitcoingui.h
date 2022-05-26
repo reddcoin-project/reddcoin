@@ -172,6 +172,7 @@ private:
     QAction* m_wallet_selector_label_action = nullptr;
     QAction* openWebReddcoinAction = nullptr;
     QAction* openWebReddloveAction = nullptr;
+    QAction* openWebWikiAction = nullptr;
     QAction* openChatroomAction = nullptr;
     QAction* openForumAction = nullptr;
     QAction* m_wallet_selector_action = nullptr;
@@ -323,6 +324,8 @@ public Q_SLOTS:
     void openWebReddcoin();
     /** Open redd.love URL in the system's browser */
     void openWebReddlove();
+    /** Open reddcoin wiki URL in the system's browser */
+    void openWebWiki();
     /** Open Discord invite in the system's browser */
     void openChatroom();
     /** Open reddcointalk.org URL in the system's browser */

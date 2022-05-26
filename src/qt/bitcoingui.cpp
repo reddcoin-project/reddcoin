@@ -423,6 +423,9 @@ void BitcoinGUI::createActions()
     openWebReddloveAction = new QAction(tr("&Website - redd.love"), this);
     openWebReddloveAction->setStatusTip(tr("Open the Redd Love website in a web browser."));
 
+    openWebWikiAction = new QAction(tr("&Website - Reddcoin Wiki"), this);
+    openWebWikiAction->setStatusTip(tr("Open the Reddcoin Wiki website in a web browser."));
+
     openChatroomAction = new QAction(tr("&Chatroom - Discord"), this);
     openChatroomAction->setStatusTip(tr("Open the Reddcoin Discord chat in a web browser."));
 
@@ -447,6 +450,7 @@ void BitcoinGUI::createActions()
 
     connect(openWebReddcoinAction, &QAction::triggered, this, &BitcoinGUI::openWebReddcoin);
     connect(openWebReddloveAction, &QAction::triggered, this, &BitcoinGUI::openWebReddlove);
+    connect(openWebWikiAction, &QAction::triggered, this, &BitcoinGUI::openWebWiki);
     connect(openChatroomAction, &QAction::triggered, this, &BitcoinGUI::openChatroom);
     connect(openForumAction, &QAction::triggered, this, &BitcoinGUI::openForum);
 
@@ -611,6 +615,7 @@ void BitcoinGUI::createMenuBar()
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(openWebReddcoinAction);
     help->addAction(openWebReddloveAction);
+    help->addAction(openWebWikiAction);
     help->addAction(openChatroomAction);
     help->addAction(openForumAction);
     help->addAction(showHelpMessageAction);
@@ -1020,6 +1025,10 @@ void BitcoinGUI::openWebReddcoin() {
 
 void BitcoinGUI::openWebReddlove() {
     QDesktopServices::openUrl(QUrl("https://redd.love"));
+}
+
+void BitcoinGUI::openWebWiki() {
+    QDesktopServices::openUrl(QUrl("https://wiki.reddcoin.com"));
 }
 
 void BitcoinGUI::openChatroom() {
