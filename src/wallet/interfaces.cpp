@@ -143,6 +143,15 @@ public:
         }
         return false;
     }
+    bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) override
+    {
+        if (!m_wallet->GetStakeWeightSet(setCoins))
+          return false;
+        if (setCoins.empty())
+          return false;
+
+        return true;
+    }
     SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) override
     {
         return m_wallet->SignMessage(message, pkhash, str_sig);

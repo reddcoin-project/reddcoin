@@ -5,6 +5,7 @@
 
 #include <pos/stake.h>
 
+#include <chainparams.h>
 #include <consensus/tx_verify.h>
 #include <index/disktxpos.h>
 #include <index/txindex.h>
@@ -12,6 +13,58 @@
 #include <pos/kernel.h>
 #include <index/txindex.h>
 #include <wallet/coincontrol.h>
+
+bool GetStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t & nTotalWeight)
+{
+    CChainParams chainparams(Params());
+
+    const Consensus::Params consensusParams = chainparams.GetConsensus();
+
+    std::vector<CTransactionRef> vwtxPrev;
+
+    nAverageWeight = nTotalWeight = 0;
+    uint64_t nWeightCount = 0;
+
+    for (const CInputCoin& pcoin : setCoins)
+    {
+        CDiskTxPos postx;
+        if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
+            continue;
+
+        // Read block header
+        CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+        CBlockHeader header;
+        CTransactionRef txRef;
+        try {
+            file >> header;
+            fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+            file >> txRef;
+        } catch (std::exception &e) {
+            return error("%s() : deserialize or I/O error in GetStakeWeight()", __PRETTY_FUNCTION__);
+        }
+
+        CMutableTransaction tx(*txRef);
+
+        // Deal with transaction timestmap
+        unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
+
+        int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
+        arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
+
+        // Weight is greater than zero
+        if (nTimeWeight > 0)
+        {
+            nTotalWeight += bnCoinDayWeight.GetLow64();
+            nWeightCount++;
+        }
+
+    }
+
+    if (nWeightCount > 0)
+    nAverageWeight = nTotalWeight / nWeightCount;
+
+    return true;
+}
 
 bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t & nTotalWeight, const Consensus::Params& consensusParams)
 {
@@ -34,45 +87,45 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
       CoinSelectionParams coin_selection_params;
       pwallet->AvailableCoins(vAvailableCoins, &temp);
       if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
-	  return false;
+          return false;
       if (setCoins.empty())
-	  return false;
+          return false;
 
       nAverageWeight = nTotalWeight = 0;
       uint64_t nWeightCount = 0;
 
       for (const auto& pcoin : setCoins)
       {
-	  CDiskTxPos postx;
-	  if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
-	      continue;
+          CDiskTxPos postx;
+          if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
+              continue;
 
-	  // Read block header
-	  CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
-	  CBlockHeader header;
-	  CTransactionRef txRef;
-	  try {
-	      file >> header;
-	      fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
-	      file >> txRef;
-	  } catch (std::exception &e) {
-	      return error("%s() : deserialize or I/O error in GetStakeWeight()", __PRETTY_FUNCTION__);
-	  }
+          // Read block header
+          CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+          CBlockHeader header;
+          CTransactionRef txRef;
+          try {
+              file >> header;
+              fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+              file >> txRef;
+          } catch (std::exception &e) {
+              return error("%s() : deserialize or I/O error in GetStakeWeight()", __PRETTY_FUNCTION__);
+          }
 
-	  CMutableTransaction tx(*txRef);
+          CMutableTransaction tx(*txRef);
 
-	  // Deal with transaction timestmap
-	  unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
+          // Deal with transaction timestmap
+          unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
 
-	  int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
-	  arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
+          int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
+          arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
 
-	  // Weight is greater than zero
-	  if (nTimeWeight > 0)
-	  {
-	      nTotalWeight += bnCoinDayWeight.GetLow64();
-	      nWeightCount++;
-	  }
+          // Weight is greater than zero
+          if (nTimeWeight > 0)
+          {
+              nTotalWeight += bnCoinDayWeight.GetLow64();
+              nWeightCount++;
+          }
 
       }
 

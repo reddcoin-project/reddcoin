@@ -396,6 +396,8 @@ public:
 
     bool IsStakingOnly() const;
 
+    bool GetStakeWeightSet(std::set<CInputCoin>& setCoins);
+
     /** Interface to assert chain access */
     bool HaveChain() const { return m_chain ? true : false; }
 
