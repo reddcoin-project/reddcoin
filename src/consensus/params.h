@@ -75,6 +75,8 @@ struct Params {
     int nSubsidyHalvingInterval;
     /* Block hash that is excepted from BIP16 enforcement */
     uint256 BIP16Exception;
+    /* The amount of confirmations coinbase/stake needs before being spent */
+    int nCoinbaseMaturity;
     /** Block height and hash at which BIP34 becomes active */
     int BIP34Height;
     uint256 BIP34Hash;
@@ -126,6 +128,11 @@ struct Params {
      */
     bool signet_blocks{false};
     std::vector<uint8_t> signet_challenge;
+
+    int GetCoinbaseMaturity() const
+    {
+        return nCoinbaseMaturity;
+    }
 
     int DeploymentHeight(BuriedDeployment dep) const
     {

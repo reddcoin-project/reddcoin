@@ -6,6 +6,7 @@
 #define BITCOIN_WALLET_TRANSACTION_H
 
 #include <amount.h>
+#include <consensus/params.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <wallet/ismine.h>
@@ -329,7 +330,7 @@ public:
      *  0 : is not a coinbase transaction, or is a mature coinbase transaction
      * >0 : is a coinbase transaction which matures in this many blocks
      */
-    int GetBlocksToMaturity() const;
+    int GetBlocksToMaturity(const Consensus::Params& params = Consensus::Params()) const;
     bool isAbandoned() const { return m_confirm.status == CWalletTx::ABANDONED; }
     void setAbandoned()
     {

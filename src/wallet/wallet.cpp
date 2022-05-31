@@ -2925,14 +2925,14 @@ int CWalletTx::GetDepthInMainChain() const
     return (pwallet->GetLastBlockHeight() - m_confirm.block_height + 1) * (isConflicted() ? -1 : 1);
 }
 
-int CWalletTx::GetBlocksToMaturity() const
+int CWalletTx::GetBlocksToMaturity(const Consensus::Params& params) const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
     int chain_depth = GetDepthInMainChain();
     if (!IsCoinStake())
         assert(chain_depth >= 0); // coinbase tx should not be conflicted
-    return std::max(0, (COINBASE_MATURITY+1) - chain_depth);
+    return std::max(0, (params.GetCoinbaseMaturity()+1) - chain_depth);
 }
 
 bool CWalletTx::IsImmatureCoinBase() const
