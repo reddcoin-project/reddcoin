@@ -19,8 +19,6 @@
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 
-extern int64_t nLastCoinStakeSearchInterval;
-
 class CBlockIndex;
 class CChainParams;
 class CScript;
