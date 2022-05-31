@@ -24,6 +24,7 @@ const TestingSetup* g_setup;
 void initialize_process_messages()
 {
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
+    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
     g_setup = testing_setup.get();
     for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);

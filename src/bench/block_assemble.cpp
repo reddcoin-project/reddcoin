@@ -3,6 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <bench/bench.h>
+#include <chainparams.h>
+#include <consensus/consensus.h>
+#include <consensus/params.h>
 #include <consensus/validation.h>
 #include <crypto/sha256.h>
 #include <test/util/mining.h>
@@ -12,19 +15,20 @@
 #include <txmempool.h>
 #include <validation.h>
 
-
 #include <vector>
 
 static void AssembleBlock(benchmark::Bench& bench)
 {
+    const CChainParams& chainparams = Params();
     const auto test_setup = MakeNoLogFileContext<const TestingSetup>();
 
     CScriptWitness witness;
     witness.stack.push_back(WITNESS_STACK_ELEM_OP_TRUE);
 
     // Collect some loose transactions that spend the coinbases of our mined blocks
-    constexpr size_t NUM_BLOCKS{200};
-    std::array<CTransactionRef, NUM_BLOCKS - COINBASE_MATURITY + 1> txs;
+    const int NUM_BLOCKS{200};
+    const int COINBASE_MATURITY = chainparams.GetConsensus().GetCoinbaseMaturity();
+    std::vector<CTransactionRef> txs;
     for (size_t b{0}; b < NUM_BLOCKS; ++b) {
         CMutableTransaction tx;
         tx.vin.push_back(MineBlock(test_setup->m_node, P2WSH_OP_TRUE));

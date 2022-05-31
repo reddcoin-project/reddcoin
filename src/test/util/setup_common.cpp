@@ -210,13 +210,15 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 
 TestChain100Setup::TestChain100Setup()
 {
+    const Consensus::Params& params = Params().GetConsensus();
+
     SetMockTime(1598887952);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
 
     // Generate a 100-block chain:
-    this->mineBlocks(COINBASE_MATURITY);
+    this->mineBlocks(params.GetCoinbaseMaturity());
 
     {
         LOCK(::cs_main);
