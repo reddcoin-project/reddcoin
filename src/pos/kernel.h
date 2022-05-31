@@ -19,6 +19,11 @@ class CChainState;
 // ratio of group interval length between the last group and the first group
 static const int MODIFIER_INTERVAL_RATIO = 3;
 
+// Logging defaults
+static const bool DEFAULT_PRINTSTAKEMODIFIER = false;
+static const bool DEFAULT_PRINTHASHPROOF = false;
+static const bool DEFAULT_PRINTCOINAGE = false;
+
 // Compute the hash modifier for proof-of-stake
 bool ComputeNextStakeModifier(CChainState* active_chainstate, const CBlockIndex* pindexPrev, uint64_t &nStakeModifier, bool& fGeneratedStakeModifier);
 
