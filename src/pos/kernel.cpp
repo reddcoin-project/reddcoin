@@ -388,17 +388,19 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
         hashProofOfStake.ToString());
 
     // We need to convert type so it can be compared to target
-    base_uint<512> targetProofOfStake512(bnTargetPerCoinDay.GetHex());
-    targetProofOfStake512 *= bnCoinDayWeight;
-
-    base_uint<512> hashProofOfStake512(hashProofOfStake.GetHex());
+    arith_uint512 hashProof(hashProofOfStake.GetHex());
+    arith_uint512 targetProof(bnTargetPerCoinDay.GetHex());
+    targetProof *= bnCoinDayWeight;
 
     // Now check if proof-of-stake hash meets target protocol
-    if (hashProofOfStake512 > targetProofOfStake512) {
-       LogPrint(BCLog::POS, "%s : WARNING Compare hashProofOfStake512 > targetProofOfStake512\n%s >\n%s\n",
-          __func__,
-          hashProofOfStake512.GetHex(), targetProofOfStake512.GetHex());
-       return false;
+    if (hashProof > targetProof) {
+        if (gArgs.GetBoolArg("-printhashproof", DEFAULT_PRINTHASHPROOF)) {
+            LogPrint(BCLog::POS, "%s: WARNING high-hash for proof of stake block\n"
+                                 "              hash: %s\n"
+                                 "            target: %s\n",
+                                 __func__, hashProof.ToString().substr(64,64), targetProof.ToString().substr(64,64));
+        }
+        return false;
     }
 
     return true;
