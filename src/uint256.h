@@ -205,6 +205,7 @@ public:
         }
         return ret;
     }
+    std::string ToString() const;
 };
 
 inline uint512 uint512S(const std::string& str)
