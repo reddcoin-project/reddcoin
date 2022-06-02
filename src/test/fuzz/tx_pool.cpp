@@ -32,6 +32,7 @@ struct MockedTxPool : public CTxMemPool {
 void initialize_tx_pool()
 {
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
+    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
     g_setup = testing_setup.get();
 
     for (int i = 0; i < 2 * COINBASE_MATURITY; ++i) {
@@ -115,6 +116,7 @@ FUZZ_TARGET_INIT(tx_pool_standard, initialize_tx_pool)
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     const auto& node = g_setup->m_node;
     auto& chainstate = node.chainman->ActiveChainstate();
+    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
 
     MockTime(fuzzed_data_provider, chainstate);
     SetMempoolConstraints(*node.args, fuzzed_data_provider);
@@ -129,7 +131,7 @@ FUZZ_TARGET_INIT(tx_pool_standard, initialize_tx_pool)
     outpoints_rbf = outpoints_supply;
 
     // The sum of the values of all spendable outpoints
-    constexpr CAmount SUPPLY_TOTAL{COINBASE_MATURITY * 50 * COIN};
+    const CAmount SUPPLY_TOTAL{COINBASE_MATURITY * 50 * COIN};
 
     CTxMemPool tx_pool_{/* estimator */ nullptr, /* check_ratio */ 1};
     MockedTxPool& tx_pool = *static_cast<MockedTxPool*>(&tx_pool_);

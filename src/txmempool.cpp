@@ -7,6 +7,7 @@
 
 #include <consensus/consensus.h>
 #include <consensus/tx_verify.h>
+#include <consensus/params.h>
 #include <consensus/validation.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
@@ -510,6 +511,7 @@ void CTxMemPool::removeForReorg(CChainState& active_chainstate, int flags)
     // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
     AssertLockHeld(cs);
     setEntries txToRemove;
+    const Consensus::Params& params = Consensus::Params();
     for (indexed_transaction_set::const_iterator it = mapTx.begin(); it != mapTx.end(); it++) {
         const CTransaction& tx = it->GetTx();
         LockPoints lp = it->GetLockPoints();
@@ -528,7 +530,7 @@ void CTxMemPool::removeForReorg(CChainState& active_chainstate, int flags)
                 const Coin &coin = active_chainstate.CoinsTip().AccessCoin(txin.prevout);
                 if (m_check_ratio != 0) assert(!coin.IsSpent());
                 unsigned int nMemPoolHeight = active_chainstate.m_chain.Tip()->nHeight + 1;
-                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < COINBASE_MATURITY)) {
+                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < params.GetCoinbaseMaturity())) {
                     txToRemove.insert(it);
                     break;
                 }
