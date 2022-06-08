@@ -2933,7 +2933,7 @@ int CWalletTx::GetBlocksToMaturity(const Consensus::Params& params) const
     int chain_depth = GetDepthInMainChain();
     if (!IsCoinStake())
         assert(chain_depth >= 0); // coinbase tx should not be conflicted
-    return std::max(0, (params.GetCoinbaseMaturity()+1) - chain_depth);
+    return std::max(0, (params.GetCoinbaseMaturity()+20) - chain_depth);
 }
 
 bool CWalletTx::IsImmatureCoinBase() const
