@@ -5,6 +5,7 @@
 
 #include <txmempool.h>
 
+#include <chainparams.h>
 #include <consensus/consensus.h>
 #include <consensus/tx_verify.h>
 #include <consensus/params.h>
@@ -511,7 +512,7 @@ void CTxMemPool::removeForReorg(CChainState& active_chainstate, int flags)
     // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
     AssertLockHeld(cs);
     setEntries txToRemove;
-    const Consensus::Params& params = Consensus::Params();
+    const Consensus::Params& params = Params().GetConsensus();
     for (indexed_transaction_set::const_iterator it = mapTx.begin(); it != mapTx.end(); it++) {
         const CTransaction& tx = it->GetTx();
         LockPoints lp = it->GetLockPoints();
@@ -617,9 +618,10 @@ void CTxMemPool::clear()
 
 static void CheckInputsAndUpdateCoins(const CTransaction& tx, CCoinsViewCache& mempoolDuplicate, const int64_t spendheight)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     TxValidationState dummy_state; // Not used. CheckTxInputs() should always pass
     CAmount txfee = 0;
-    bool fCheckResult = tx.IsCoinBase() || Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee);
+    bool fCheckResult = tx.IsCoinBase() || Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee, params);
     assert(fCheckResult);
     UpdateCoins(tx, mempoolDuplicate, std::numeric_limits<int>::max());
 }

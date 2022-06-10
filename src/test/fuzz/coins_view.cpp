@@ -45,6 +45,7 @@ void initialize_coins_view()
 
 FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     CCoinsView backend_coins_view;
     CCoinsViewCache coins_view_cache{&backend_coins_view};
@@ -238,7 +239,7 @@ FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
                     // It is not allowed to call CheckTxInputs if CheckTransaction failed
                     return;
                 }
-                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
+                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out, params)) {
                     assert(MoneyRange(tx_fee_out));
                 }
             },
