@@ -23,12 +23,11 @@
  */
 
 
+#include <crypto/pkcs5_pbkdf2_hmac_sha512.h>
 #include <crypto/sha256.h>
 #include <random.h>
 #include <wallet/bip39.h>
 #include <wallet/bip39_english.h>
-
-#include <openssl/evp.h>
 
 SecureString CMnemonic::Generate(int strength)
 {
@@ -154,5 +153,5 @@ void CMnemonic::ToSeed(SecureString mnemonic, SecureString passphrase, SecureVec
     SecureString ssSalt = SecureString("mnemonic") + passphrase;
     SecureVector vchSalt(ssSalt.begin(), ssSalt.end());
     seedRet.resize(64);
-    PKCS5_PBKDF2_HMAC(mnemonic.c_str(), mnemonic.size(), &vchSalt[0], vchSalt.size(), 2048, EVP_sha512(), 64, &seedRet[0]);
+    PKCS5_PBKDF2_HMAC_SHA512(mnemonic.c_str(), mnemonic.size(), vchSalt.data(), vchSalt.size(), 2048, 64, seedRet.data());
 }
