@@ -2,13 +2,13 @@
 // Created by ROSHii on 2019-06-01.
 //
 
-#include "base58.h"
-#include "data/bip39_vectors.json.h"
-#include "key.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "test/test_raven.h"
-#include "wallet/bip39.h"
+#include <base58.h>
+#include <key.h>
+#include <key_io.h>
+#include <test/data/bip39_vectors.json.h>
+#include <test/util/setup_common.h>
+#include <util/strencodings.h>
+#include <wallet/bip39.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -57,10 +57,8 @@ BOOST_AUTO_TEST_CASE(bip39_vectors)
         key.SetSeed(&seed[0], 64);
         pubkey = key.Neuter();
 
-        CRavenExtKey b58key;
-        b58key.SetKey(key);
-        // printf("CRavenExtKey: %s\n", b58key.ToString().c_str());
-        BOOST_CHECK(b58key.ToString() == test[3].get_str());
+        // printf("CBitcoinExtKey: %s\n", EncodeExtKey(key).c_str());
+        BOOST_CHECK(EncodeExtKey(key) == test[3].get_str());
     }
 }
 
