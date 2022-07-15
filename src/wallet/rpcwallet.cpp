@@ -4628,6 +4628,7 @@ RPCHelpMan dumpprivkey();
 RPCHelpMan importprivkey();
 RPCHelpMan importaddress();
 RPCHelpMan importpubkey();
+RPCHelpMan gethdwalletinfo();
 RPCHelpMan dumpwallet();
 RPCHelpMan importwallet();
 RPCHelpMan importprunedfunds();
@@ -4650,6 +4651,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &bumpfee,                        },
     { "wallet",             &psbtbumpfee,                    },
     { "wallet",             &createwallet,                   },
+    { "wallet",             &gethdwalletinfo,                },
     { "wallet",             &dumpprivkey,                    },
     { "wallet",             &dumpwallet,                     },
     { "wallet",             &encryptwallet,                  },

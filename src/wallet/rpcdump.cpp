@@ -707,6 +707,80 @@ RPCHelpMan dumpprivkey()
     };
 }
 
+RPCHelpMan gethdwalletinfo()
+{
+    return RPCHelpMan{"gethdwalletinfo",
+                "\nReturns an object containing sensitive private info about this HD wallet.\n",
+                {},
+                RPCResult{
+                    RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::STR, "hdseed", "The HD seed (bip32, in hex)"},
+                        {RPCResult::Type::STR, "mnemonic", "The mnemonic for this HD wallet (bip39, english words)"},
+                        {RPCResult::Type::STR, "mnemonicpassphrase", "The mnemonic passphrase for this HD wallet (bip39)"},
+                        {RPCResult::Type::STR, "rootprivkey", "The bip32 root private key"},
+                        {RPCResult::Type::STR, "extendedprivkey", "The bip32 extended private key"},
+                        {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"}
+                    }
+                },
+                RPCExamples{
+                    HelpExampleCli("gethdwalletinfo", "")
+            + HelpExampleCli("gethdwalletinfo", "")
+            + HelpExampleRpc("gethdwalletinfo", "")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    CWallet& wallet = *pwallet;
+    LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(wallet);
+
+    LOCK(wallet.cs_wallet);
+
+    EnsureWalletIsUnlocked(wallet);
+
+    LOCK(spk_man.cs_KeyStore);
+
+    SecureVector vchSeed = spk_man.GetHDChain().vchSeed;
+
+    if (spk_man.GetHDChain().vchSeed.size() > 0)
+    {
+        UniValue result(UniValue::VOBJ);
+        CExtKey masterKey;
+        CExtKey accountKey;
+        CExtKey chainKey;
+
+        masterKey.SetSeed(spk_man.GetHDChain().vchSeed.data(), spk_man.GetHDChain().vchSeed.size());
+
+        // Derive new account keys
+        masterKey.Derive(accountKey, 0x80000000);
+
+        // Derive new chain keys
+        accountKey.Derive(chainKey, 0x80000000);
+        CExtPubKey chainpubKey = chainKey.Neuter();
+
+        if(spk_man.GetHDChain().vchMnemonic.size() > 0)
+        {
+            SecureString ssMnemonic(spk_man.GetHDChain().vchMnemonic.begin(), spk_man.GetHDChain().vchMnemonic.end());
+            SecureString ssMnemonicPassphrase(spk_man.GetHDChain().vchMnemonicPassphrase.begin(), spk_man.GetHDChain().vchMnemonicPassphrase.end());
+
+            result.pushKV("mnemonic", ssMnemonic.c_str());
+            result.pushKV("mnemonicpassphrase", ssMnemonicPassphrase.c_str());
+        }
+
+        result.pushKV("hdseed", HexStr(spk_man.GetHDChain().vchSeed));
+        result.pushKV("rootprivkey", EncodeExtKey(masterKey));
+        result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
+        result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
+
+        return result;
+    }
+
+    return NullUniValue;
+},
+    };
+}
 
 RPCHelpMan dumpwallet()
 {
@@ -799,6 +873,22 @@ RPCHelpMan dumpwallet()
             masterKey.SetSeed(seed.begin(), seed.size());
 
             file << "# extended private masterkey: " << EncodeExtKey(masterKey) << "\n\n";
+        }
+
+        if(spk_man.GetHDChain().vchMnemonic.size() > 0)
+        {
+                SecureString ssMnemonic(spk_man.GetHDChain().vchMnemonic.begin(), spk_man.GetHDChain().vchMnemonic.end());
+                SecureString ssMnemonicPassphrase(spk_man.GetHDChain().vchMnemonicPassphrase.begin(), spk_man.GetHDChain().vchMnemonicPassphrase.end());
+
+                CExtKey masterKey;
+                masterKey.SetSeed(seed.begin(), seed.size());
+
+                file << "# extended private masterkey: " << EncodeExtKey(masterKey) << "\n\n";
+
+                //hdChainCurrent.GetMnemonic(ssMnemonic, ssMnemonicPassphrase);
+                file << "# HD seed: " << HexStr(spk_man.GetHDChain().vchSeed) << "\n";
+                file << "# mnemonic: " << ssMnemonic << "\n";
+                file << "# mnemonic passphrase: " << ssMnemonicPassphrase << "\n\n";
         }
     }
     for (std::vector<std::pair<int64_t, CKeyID> >::const_iterator it = vKeyBirth.begin(); it != vKeyBirth.end(); it++) {
