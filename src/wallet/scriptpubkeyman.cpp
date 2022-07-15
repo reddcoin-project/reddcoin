@@ -427,7 +427,12 @@ bool LegacyScriptPubKeyMan::SetupGeneration(bool force)
         return false;
     }
 
-    SetHDSeed(GenerateNewSeed());
+    if (!gArgs.GetBoolArg("-bip39", "true")) {
+        SetHDSeed(GenerateNewSeed());
+    } else {
+        GenerateNewBip39Seed();
+    }
+
     if (!NewKeyPool()) {
         return false;
     }
@@ -1081,11 +1086,16 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
     CExtKey chainChildKey;         //key at m/0'/0' (external) or m/0'/1' (internal)
     CExtKey childKey;              //key at m/0'/0'/<n>'
 
-    // try to get the seed
-    if (!GetKey(hd_chain.seed_id, seed))
-        throw std::runtime_error(std::string(__func__) + ": seed not found");
+    if (hd_chain.vchSeed.size() > 0) {
+        masterKey.SetSeed(hd_chain.vchSeed.data(), hd_chain.vchSeed.size());
+    } else {
+        // try to get the seed
+        if (!GetKey(hd_chain.seed_id, seed))
+            throw std::runtime_error(std::string(__func__) + ": seed not found");
 
-    masterKey.SetSeed(seed.begin(), seed.size());
+        masterKey.SetSeed(seed.begin(), seed.size());
+    }
+
 
     // derive m/0'
     // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
@@ -1162,6 +1172,62 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewSeed()
     key.MakeNewKey(true);
     return DeriveNewSeed(key);
 }
+
+CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed()
+{
+    assert(!m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));
+
+    // LogPrintf("%s: \n", __func__);
+
+    CHDChain newHdChain;
+    std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
+
+
+    if(IsHex(strSeed)) { // that means gArgs.IsArgSet("-hdseed") == true
+		std::vector<unsigned char> vchSeed = ParseHex(strSeed);
+
+		SecureVector svchSeed(vchSeed.begin(), vchSeed.end());
+		CPubKey seed(vchSeed.begin(), vchSeed.end());
+
+		newHdChain.vchSeed = svchSeed;
+		newHdChain.seed_id = seed.GetID();
+		// TODO OMARI how to verify the seed
+
+		AddHDChain(newHdChain);
+
+		return seed;
+	}
+
+    if (gArgs.IsArgSet("-hdseed") && !IsHex(strSeed))
+       LogPrintf("%s: -- Incorrect seed, generating random one instead\n", __func__);
+
+    // NOTE: empty mnemonic means "generate a new one for me"
+    std::string strMnemonic = gArgs.GetArg("-mnemonic", "");
+    // NOTE: default mnemonic passphrase is an empty string
+    std::string strMnemonicPassphrase = gArgs.GetArg("-mnemonicpassphrase", "");
+
+    SecureString vchMnemonic(strMnemonic.begin(), strMnemonic.end());
+    SecureString vchMnemonicPassphrase(strMnemonicPassphrase.begin(), strMnemonicPassphrase.end());
+
+    SecureVector& vchSeed = newHdChain.vchSeed;
+    if (!newHdChain.SetMnemonic(vchMnemonic, vchMnemonicPassphrase, vchSeed))
+	    throw std::runtime_error(std::string(__func__) + ": SetMnemonic failed");
+
+    CPubKey seed(vchSeed.begin(), vchSeed.end());
+
+    newHdChain.seed_id = seed.GetID();
+
+    LOCK(cs_KeyStore);
+
+    newHdChain.nVersion = m_storage.CanSupportFeature(FEATURE_HD_SPLIT) ? CHDChain::VERSION_HD_BIP39 : CHDChain::VERSION_HD_BASE;
+    AddHDChain(newHdChain);
+    NotifyCanGetAddressesChanged();
+    WalletBatch batch(m_storage.GetDatabase());
+    m_storage.UnsetBlankWalletFlag(batch);
+
+    return seed;
+}
+
 
 CPubKey LegacyScriptPubKeyMan::DeriveNewSeed(const CKey& key)
 {

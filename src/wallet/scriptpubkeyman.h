@@ -468,6 +468,9 @@ public:
     /* Generates a new HD seed (will not be activated) */
     CPubKey GenerateNewSeed();
 
+    /* Generates a new bip39 HD seed (will not be activated) */
+    CPubKey GenerateNewBip39Seed();
+
     /* Derives a new HD seed (will not be activated) */
     CPubKey DeriveNewSeed(const CKey& key);
 
