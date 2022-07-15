@@ -59,6 +59,76 @@ const std::string WATCHMETA{"watchmeta"};
 const std::string WATCHS{"watchs"};
 } // namespace DBKeys
 
+
+//
+// CHDChain
+//
+
+bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed)
+{
+        SecureString ssMnemonicTmp = ssMnemonic;
+
+        // can't (re)set mnemonic if seed was already set
+        if (!IsNull())
+                return false;
+
+        // empty mnemonic i.e. "generate a new one"
+        if (ssMnemonic.empty()) {
+                ssMnemonicTmp = CMnemonic::Generate(256);
+        }
+
+        // LogPrintf("mnemonic: %s\n", ssMnemonicTmp.c_str());
+
+        // NOTE: default mnemonic passphrase is an empty string
+        if (!CMnemonic::Check(ssMnemonicTmp)) {
+                throw std::runtime_error(std::string(__func__) + ": invalid mnemonic: `" + std::string(ssMnemonicTmp.c_str()) + "`");
+        }
+
+        CMnemonic::ToSeed(ssMnemonicTmp, ssMnemonicPassphrase, vchSeed);
+
+        vchMnemonic = SecureVector(ssMnemonicTmp.begin(), ssMnemonicTmp.end());
+        vchMnemonicPassphrase = SecureVector(ssMnemonicPassphrase.begin(), ssMnemonicPassphrase.end());
+
+        // Debug();
+
+        return true;
+
+}
+
+void CHDChain::Debug()
+{
+        std::cout << "mnemonic: " << std::string(vchMnemonic.begin(), vchMnemonic.end()).c_str() << std::endl;
+        std::cout << "mnemonicpassphrase: " << std::string(vchMnemonicPassphrase.begin(), vchMnemonicPassphrase.end()).c_str() << std::endl;
+        std::cout << "seed: " << HexStr(vchSeed).c_str() << std::endl;
+
+        CExtKey masterkey;
+
+        masterkey.SetSeed(&vchSeed[0], vchSeed.size());
+
+        std::cout << "bip32 root key: " << EncodeExtKey(masterkey) << std::endl;
+
+        // Derive new account keys
+        CExtKey accountkey;
+        masterkey.Derive(accountkey, 0x80000000);
+
+        // Derive new chain keys
+        CExtKey chainkey;
+        accountkey.Derive(chainkey, 0x80000000);
+        CExtPubKey chainpubkey = chainkey.Neuter();
+        std::cout << "bip32 extended private key: " << EncodeExtKey(chainkey) << std::endl;
+        std::cout << "bip32 extended public key: " << EncodeExtPubKey(chainpubkey) << std::endl;
+}
+
+void CHDChain::SetSeedFromSeedId()
+{
+    // try to get the seed
+    CKey seed;
+    if (!pwallet || !pwallet->GetLegacyScriptPubKeyMan()->GetKey(seed_id, seed))
+	throw std::runtime_error(std::string(__func__) + ": seed not found");
+
+    vchSeed = SecureVector(seed.begin(), seed.end());
+}
+
 //
 // WalletBatch
 //
@@ -585,7 +655,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             ssValue >> strValue;
             pwallet->LoadDestData(DecodeDestination(strAddress), strKey, strValue);
         } else if (strType == DBKeys::HDCHAIN) {
-            CHDChain chain;
+            CHDChain chain(pwallet);
             ssValue >> chain;
             pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDChain(chain);
         } else if (strType == DBKeys::OLD_KEY) {

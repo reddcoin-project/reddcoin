@@ -11,6 +11,7 @@
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
 #include <key.h>
+#include <wallet/bip39.h>
 
 #include <stdint.h>
 #include <string>
@@ -89,12 +90,20 @@ public:
     uint32_t nInternalChainCounter;
     CKeyID seed_id; //!< seed hash160
 
+    SecureVector vchMnemonic;
+    SecureVector vchMnemonicPassphrase;
+    SecureVector vchSeed;
+
     static const int VERSION_HD_BASE        = 1;
     static const int VERSION_HD_CHAIN_SPLIT = 2;
-    static const int CURRENT_VERSION        = VERSION_HD_CHAIN_SPLIT;
+    static const int VERSION_HD_BIP39 = 3;
+    static const int CURRENT_VERSION        = VERSION_HD_BIP39;
     int nVersion;
 
-    CHDChain() { SetNull(); }
+    CWallet* pwallet;
+
+    CHDChain(): nVersion(CHDChain::CURRENT_VERSION) { SetNull(); }
+    CHDChain(CWallet* pw): pwallet(pw), nVersion(CHDChain::CURRENT_VERSION) { SetNull(); }
 
     SERIALIZE_METHODS(CHDChain, obj)
     {
@@ -102,7 +111,23 @@ public:
         if (obj.nVersion >= VERSION_HD_CHAIN_SPLIT) {
             READWRITE(obj.nInternalChainCounter);
         }
+
+        if(VERSION_HD_BIP39 == obj.nVersion) {
+            READWRITE(obj.vchMnemonic);
+            READWRITE(obj.vchMnemonicPassphrase);
+            READWRITE(obj.vchSeed);
+        }
+        else {
+            // when loading an old bip32 only wallet, get vchSeed from seed_id
+            if(ser_action.ForRead())
+            {
+                SER_READ(obj, obj.SetSeedFromSeedId());
+            }
+        }
     }
+
+    void SetSeedFromSeedId();
+    void Debug();
 
     void SetNull()
     {
@@ -116,6 +141,11 @@ public:
     {
         return seed_id == chain.seed_id;
     }
+
+    bool IsNull() { return seed_id.IsNull();}
+
+    bool SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed);
+
 };
 
 class CKeyMetadata
