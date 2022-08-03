@@ -74,7 +74,16 @@ void ForceActivation();
 
 namespace GUIUtil {
 
-QString dateTimeStr(const QDateTime &date)
+fs::path qstringToPath(const QString& path)
+{
+    return fs::path(path.toStdString());
+}
+QString pathToQString(const fs::path& path)
+{
+    return QString::fromStdString(path.string());
+}
+
+QString dateTimeStr(const QDateTime& date)
 {
     return QLocale::system().toString(date.date(), QLocale::ShortFormat) + QString(" ") + date.toString("hh:mm");
 }

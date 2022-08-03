@@ -55,6 +55,10 @@ QT_END_NAMESPACE
  */
 namespace GUIUtil
 {
+    // filepath to/from string
+    fs::path qstringToPath(const QString& path);
+    QString pathToQString(const fs::path& path);
+
     // Use this flags to prevent a "What's This" button in the title bar of the dialog on Windows.
     constexpr auto dialog_flags = Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint;
 

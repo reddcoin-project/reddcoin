@@ -7,6 +7,7 @@
 #include <qt/askpassphrasedialog.h>
 #include <qt/clientmodel.h>
 #include <qt/createwalletdialog.h>
+#include <qt/createwalletwizard.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/walletmodel.h>
@@ -315,6 +316,100 @@ void CreateWalletActivity::create()
     });
     connect(m_create_wallet_dialog, &QDialog::accepted, [this] {
         if (m_create_wallet_dialog->isEncryptWalletChecked()) {
+            askPassphrase();
+        } else {
+            createWallet();
+        }
+    });
+}
+
+CreateWalletWizardActivity::CreateWalletWizardActivity(WalletController* wallet_controller, QWidget* parent_widget)
+    : WalletControllerActivity(wallet_controller, parent_widget)
+{
+    m_passphrase.reserve(MAX_PASSPHRASE_SIZE);
+}
+
+CreateWalletWizardActivity::~CreateWalletWizardActivity()
+{
+    delete m_create_wallet_wizard;
+    delete m_passphrase_dialog;
+}
+
+void CreateWalletWizardActivity::askPassphrase()
+{
+    m_passphrase_dialog = new AskPassphraseDialog(AskPassphraseDialog::Encrypt, m_parent_widget, &m_passphrase);
+    m_passphrase_dialog->setWindowModality(Qt::ApplicationModal);
+    m_passphrase_dialog->show();
+
+    connect(m_passphrase_dialog, &QObject::destroyed, [this] {
+        m_passphrase_dialog = nullptr;
+    });
+    connect(m_passphrase_dialog, &QDialog::accepted, [this] {
+        createWallet();
+    });
+    connect(m_passphrase_dialog, &QDialog::rejected, [this] {
+        Q_EMIT finished();
+    });
+}
+
+void CreateWalletWizardActivity::createWallet()
+{
+    showProgressDialog(tr("Creating Wallet <b>%1</b>…").arg(m_create_wallet_wizard->walletName().toHtmlEscaped()));
+
+    std::string name = m_create_wallet_wizard->walletName().toStdString();
+    uint64_t flags = 0;
+    if (m_create_wallet_wizard->isDisablePrivateKeysChecked()) {
+        flags |= WALLET_FLAG_DISABLE_PRIVATE_KEYS;
+    }
+    if (m_create_wallet_wizard->isMakeBlankWalletChecked()) {
+        flags |= WALLET_FLAG_BLANK_WALLET;
+    }
+    if (m_create_wallet_wizard->isDescriptorWalletChecked()) {
+        flags |= WALLET_FLAG_DESCRIPTORS;
+    }
+    if (m_create_wallet_wizard->isExternalSignerChecked()) {
+        flags |= WALLET_FLAG_EXTERNAL_SIGNER;
+    }
+
+    QTimer::singleShot(500, worker(), [this, name, flags] {
+        std::unique_ptr<interfaces::Wallet> wallet = node().walletClient().createWallet(name, m_passphrase, flags, m_error_message, m_warning_message);
+
+        if (wallet) m_wallet_model = m_wallet_controller->getOrCreateWallet(std::move(wallet));
+
+        QTimer::singleShot(500, this, &CreateWalletWizardActivity::finish);
+    });
+}
+
+void CreateWalletWizardActivity::finish()
+{
+    destroyProgressDialog();
+
+    if (!m_error_message.empty()) {
+        QMessageBox::critical(m_parent_widget, tr("Create wallet failed"), QString::fromStdString(m_error_message.translated));
+    } else if (!m_warning_message.empty()) {
+        QMessageBox::warning(m_parent_widget, tr("Create wallet warning"), QString::fromStdString(Join(m_warning_message, Untranslated("\n")).translated));
+    }
+
+    if (m_wallet_model) Q_EMIT created(m_wallet_model);
+
+    Q_EMIT finished();
+}
+
+void CreateWalletWizardActivity::create()
+{
+    m_create_wallet_wizard = new CreateWalletWizard(m_parent_widget);
+
+    m_create_wallet_wizard->setWindowModality(Qt::ApplicationModal);
+    m_create_wallet_wizard->show();
+
+    connect(m_create_wallet_wizard, &QObject::destroyed, [this] {
+      m_create_wallet_wizard = nullptr;
+    });
+    connect(m_create_wallet_wizard, &QDialog::rejected, [this] {
+        Q_EMIT finished();
+    });
+    connect(m_create_wallet_wizard, &QDialog::accepted, [this] {
+        if (m_create_wallet_wizard->isEncryptWalletChecked()) {
             askPassphrase();
         } else {
             createWallet();
