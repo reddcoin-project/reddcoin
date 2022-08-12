@@ -34,8 +34,11 @@
 #include <QWizardPage>
 
 
-CreateWalletWizard::CreateWalletWizard(QWidget* parent) : QWizard(parent, GUIUtil::dialog_flags),
-                                                          ui(new Ui::CreateWalletWizard)
+CreateWalletWizard::CreateWalletWizard(QWidget* parent, SecureString* ssMnemonic_out, SecureString* ssMnemonicPassphrase_out, int* walletType_out) : QWizard(parent, GUIUtil::dialog_flags),
+                                                                                                                                                     ui(new Ui::CreateWalletWizard),
+                                                                                                                                                     m_ssMnemonic_out(ssMnemonic_out),
+                                                                                                                                                     m_ssMnemonicPassphrase_out(ssMnemonicPassphrase_out),
+                                                                                                                                                     m_wallettype_out(walletType_out)
 {
     ui->setupUi(this);
 
@@ -89,6 +92,11 @@ bool CreateWalletWizard::isMakeBlankWalletChecked() const
 bool CreateWalletWizard::isDescriptorWalletChecked() const
 {
     return this->field("type.descriptorWallet").toBool();
+}
+
+int CreateWalletWizard::getWalletType() const
+{
+    return this->field("type.wallet").toInt();
 }
 
 void CreateWalletWizard::setSigners(const std::vector<ExternalSigner>& signers)
@@ -227,10 +235,10 @@ wizPage_walletType::wizPage_walletType(QWidget* parent)
     walletType->setVisible(false);
 
 
-    buttonGroup->addButton(radioButton_bip32Wallet, 0);
-    buttonGroup->addButton(radioButton_bip39Wallet, 1);
-    buttonGroup->addButton(radioButton_bip44Wallet, 2);
-    buttonGroup->addButton(radioButton_blankWallet, 3);
+    buttonGroup->addButton(radioButton_bip32Wallet, walletType::bip32Wallet);
+    buttonGroup->addButton(radioButton_bip39Wallet, walletType::bip39Wallet);
+    buttonGroup->addButton(radioButton_bip44Wallet, walletType::bip44Wallet);
+    buttonGroup->addButton(radioButton_blankWallet, walletType::blankWallet);
 
     verticalLayout->addWidget(groupBox_1);
 

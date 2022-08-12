@@ -33,8 +33,8 @@
 #include <util/string.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
-#include <wallet/fees.h>
 #include <wallet/external_signer_scriptpubkeyman.h>
+#include <wallet/fees.h>
 
 #include <univalue.h>
 
@@ -218,8 +218,10 @@ std::shared_ptr<CWallet> LoadWalletInternal(interfaces::Chain& chain, const std:
             return nullptr;
         }
 
+        WalletOptions walletoptions;
+
         chain.initMessage(_("Loading wallet…").translated);
-        std::shared_ptr<CWallet> wallet = CWallet::Create(&chain, name, std::move(database), options.create_flags, error, warnings);
+        std::shared_ptr<CWallet> wallet = CWallet::Create(&chain, name, std::move(database), options.create_flags, walletoptions, error, warnings);
         if (!wallet) {
             error = Untranslated("Wallet loading failed.") + Untranslated(" ") + error;
             status = DatabaseStatus::FAILED_LOAD;
@@ -253,10 +255,15 @@ std::shared_ptr<CWallet> LoadWallet(interfaces::Chain& chain, const std::string&
     return wallet;
 }
 
-std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, DatabaseOptions& options, DatabaseStatus& status, bilingual_str& error, std::vector<bilingual_str>& warnings)
+std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, DatabaseOptions& options, WalletOptions& walletoptions, DatabaseStatus& status, bilingual_str& error, std::vector<bilingual_str>& warnings)
 {
     uint64_t wallet_creation_flags = options.create_flags;
     const SecureString& passphrase = options.create_passphrase;
+    const SecureString& seed = walletoptions.ssMnemonic;
+    const SecureString& pass = walletoptions.ssMnemonicPassphrase;
+    const int& type = walletoptions.walletType;
+
+    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\nwaletType=%i\n", __func__, seed.c_str(), pass.c_str(), type);
 
     if (wallet_creation_flags & WALLET_FLAG_DESCRIPTORS) options.require_format = DatabaseFormat::SQLITE;
 
@@ -299,7 +306,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
 
     // Make the wallet
     chain.initMessage(_("Loading wallet…").translated);
-    std::shared_ptr<CWallet> wallet = CWallet::Create(&chain, name, std::move(database), wallet_creation_flags, error, warnings);
+    std::shared_ptr<CWallet> wallet = CWallet::Create(&chain, name, std::move(database), wallet_creation_flags, walletoptions, error, warnings);
     if (!wallet) {
         error = Untranslated("Wallet creation failed.") + Untranslated(" ") + error;
         status = DatabaseStatus::FAILED_CREATE;
@@ -328,7 +335,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
                     wallet->SetupDescriptorScriptPubKeyMans();
                 } else {
                     for (auto spk_man : wallet->GetActiveScriptPubKeyMans()) {
-                        if (!spk_man->SetupGeneration()) {
+                        if (!spk_man->SetupGeneration(walletoptions)) {
                             error = Untranslated("Unable to generate initial keys");
                             status = DatabaseStatus::FAILED_CREATE;
                             return nullptr;
@@ -617,6 +624,8 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     if (IsCrypted())
         return false;
 
+    WalletOptions walletoptions;
+
     CKeyingMaterial _vMasterKey;
 
     _vMasterKey.resize(WALLET_CRYPTO_KEY_SIZE);
@@ -692,7 +701,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         } else if (auto spk_man = GetLegacyScriptPubKeyMan()) {
             // if we are using HD, replace the HD seed with a new one
             if (spk_man->IsHDEnabled()) {
-                if (!spk_man->SetupGeneration(true)) {
+                if (!spk_man->SetupGeneration(walletoptions, true)) {
                     return false;
                 }
             }
@@ -2524,9 +2533,14 @@ std::unique_ptr<WalletDatabase> MakeWalletDatabase(const std::string& name, cons
     return MakeDatabase(wallet_path, options, status, error_string);
 }
 
-std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::string& name, std::unique_ptr<WalletDatabase> database, uint64_t wallet_creation_flags, bilingual_str& error, std::vector<bilingual_str>& warnings)
+std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::string& name, std::unique_ptr<WalletDatabase> database, uint64_t wallet_creation_flags, const WalletOptions& walletoptions, bilingual_str& error, std::vector<bilingual_str>& warnings)
 {
     const std::string& walletFile = database->Filename();
+
+    const SecureString& seed = walletoptions.ssMnemonic;
+    const SecureString& pass = walletoptions.ssMnemonicPassphrase;
+
+    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed.c_str(), pass.c_str());
 
     int64_t nStart = GetTimeMillis();
     // TODO: Can't use std::make_shared because we need a custom deleter but
@@ -2583,7 +2597,7 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
             } else {
                 // Legacy wallets need SetupGeneration here.
                 for (auto spk_man : walletInstance->GetActiveScriptPubKeyMans()) {
-                    if (!spk_man->SetupGeneration()) {
+                    if (!spk_man->SetupGeneration(walletoptions)) {
                         error = _("Unable to generate initial keys");
                         return nullptr;
                     }

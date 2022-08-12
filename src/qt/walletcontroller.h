@@ -18,9 +18,9 @@
 #include <QMessageBox>
 #include <QMutex>
 #include <QProgressDialog>
+#include <QString>
 #include <QThread>
 #include <QTimer>
-#include <QString>
 
 class ClientModel;
 class OptionsModel;
@@ -130,7 +130,10 @@ private:
     void createWallet();
     void finish();
 
+    int m_walletType;
     SecureString m_passphrase;
+    SecureString m_ssMnemonic;
+    SecureString m_ssMnemonicPassphrase;
     CreateWalletDialog* m_create_wallet_dialog{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };
@@ -153,7 +156,10 @@ private:
     void createWallet();
     void finish();
 
+    int m_walletType;
     SecureString m_passphrase;
+    SecureString m_ssMnemonic;
+    SecureString m_ssMnemonicPassphrase;
     CreateWalletWizard* m_create_wallet_wizard{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };

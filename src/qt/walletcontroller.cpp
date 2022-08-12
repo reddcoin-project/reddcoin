@@ -270,7 +270,7 @@ void CreateWalletActivity::createWallet()
     }
 
     QTimer::singleShot(500, worker(), [this, name, flags] {
-        std::unique_ptr<interfaces::Wallet> wallet = node().walletClient().createWallet(name, m_passphrase, flags, m_error_message, m_warning_message);
+        std::unique_ptr<interfaces::Wallet> wallet = node().walletClient().createWallet(name, m_ssMnemonic, m_ssMnemonicPassphrase, m_passphrase, m_walletType, flags, m_error_message, m_warning_message);
 
         if (wallet) m_wallet_model = m_wallet_controller->getOrCreateWallet(std::move(wallet));
 
@@ -372,7 +372,7 @@ void CreateWalletWizardActivity::createWallet()
     }
 
     QTimer::singleShot(500, worker(), [this, name, flags] {
-        std::unique_ptr<interfaces::Wallet> wallet = node().walletClient().createWallet(name, m_passphrase, flags, m_error_message, m_warning_message);
+        std::unique_ptr<interfaces::Wallet> wallet = node().walletClient().createWallet(name, m_ssMnemonic, m_ssMnemonicPassphrase, m_passphrase, m_walletType, flags, m_error_message, m_warning_message);
 
         if (wallet) m_wallet_model = m_wallet_controller->getOrCreateWallet(std::move(wallet));
 
@@ -397,18 +397,27 @@ void CreateWalletWizardActivity::finish()
 
 void CreateWalletWizardActivity::create()
 {
-    m_create_wallet_wizard = new CreateWalletWizard(m_parent_widget);
+    m_create_wallet_wizard = new CreateWalletWizard(m_parent_widget, &m_ssMnemonic, &m_ssMnemonicPassphrase, &m_walletType);
+
+    std::vector<ExternalSigner> signers;
+    try {
+        signers = node().externalSigners();
+    } catch (const std::runtime_error& e) {
+        QMessageBox::critical(nullptr, tr("Can't list signers"), e.what());
+    }
+    m_create_wallet_wizard->setSigners(signers);
 
     m_create_wallet_wizard->setWindowModality(Qt::ApplicationModal);
     m_create_wallet_wizard->show();
 
     connect(m_create_wallet_wizard, &QObject::destroyed, [this] {
-      m_create_wallet_wizard = nullptr;
+        m_create_wallet_wizard = nullptr;
     });
     connect(m_create_wallet_wizard, &QDialog::rejected, [this] {
         Q_EMIT finished();
     });
     connect(m_create_wallet_wizard, &QDialog::accepted, [this] {
+        m_walletType = m_create_wallet_wizard->getWalletType();
         if (m_create_wallet_wizard->isEncryptWalletChecked()) {
             askPassphrase();
         } else {

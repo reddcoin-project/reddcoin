@@ -2786,12 +2786,13 @@ static RPCHelpMan createwallet()
 
     DatabaseOptions options;
     DatabaseStatus status;
+    WalletOptions walletoptions;
     options.require_create = true;
     options.create_flags = flags;
     options.create_passphrase = passphrase;
     bilingual_str error;
     std::optional<bool> load_on_start = request.params[6].isNull() ? std::nullopt : std::optional<bool>(request.params[6].get_bool());
-    std::shared_ptr<CWallet> wallet = CreateWallet(*context.chain, request.params[0].get_str(), load_on_start, options, status, error, warnings);
+    std::shared_ptr<CWallet> wallet = CreateWallet(*context.chain, request.params[0].get_str(), load_on_start, options, walletoptions, status, error, warnings);
     if (!wallet) {
         RPCErrorCode code = status == DatabaseStatus::FAILED_ENCRYPT ? RPC_WALLET_ENCRYPTION_FAILED : RPC_WALLET_ERROR;
         throw JSONRPCError(code, error.original);

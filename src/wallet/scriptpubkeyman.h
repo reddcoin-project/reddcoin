@@ -198,7 +198,7 @@ public:
       * Returns false if already setup or setup fails, true if setup is successful
       * Set force=true to make it re-setup if already setup, used for upgrades
       */
-    virtual bool SetupGeneration(bool force = false) { return false; }
+    virtual bool SetupGeneration(const WalletOptions& walletoptions, bool force = false) { return false; }
 
     /* Returns true if HD is enabled */
     virtual bool IsHDEnabled() const { return false; }
@@ -374,7 +374,7 @@ public:
 
     bool IsHDEnabled() const override;
 
-    bool SetupGeneration(bool force = false) override;
+    bool SetupGeneration(const WalletOptions& walletoptions, bool force = false) override;
 
     bool Upgrade(int prev_version, int new_version, bilingual_str& error) override;
 
@@ -469,7 +469,7 @@ public:
     CPubKey GenerateNewSeed();
 
     /* Generates a new bip39 HD seed (will not be activated) */
-    CPubKey GenerateNewBip39Seed();
+    CPubKey GenerateNewBip39Seed(const WalletOptions& walletoptions);
 
     /* Derives a new HD seed (will not be activated) */
     CPubKey DeriveNewSeed(const CKey& key);

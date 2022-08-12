@@ -209,6 +209,20 @@ struct DatabaseOptions {
     bool verify = true;
 };
 
+enum walletType {
+  bip32Wallet,
+  bip39Wallet,
+  bip44Wallet,
+  blankWallet
+};
+
+struct WalletOptions {
+    int walletType;
+    int bits;
+    SecureString ssMnemonic;
+    SecureString ssMnemonicPassphrase;
+};
+
 enum class DatabaseStatus {
     SUCCESS,
     FAILED_BAD_PATH,

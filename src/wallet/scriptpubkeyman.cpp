@@ -421,16 +421,19 @@ void LegacyScriptPubKeyMan::UpgradeKeyMetadata()
     }
 }
 
-bool LegacyScriptPubKeyMan::SetupGeneration(bool force)
+bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, bool force)
 {
     if ((CanGenerateKeys() && !force) || m_storage.IsLocked()) {
         return false;
     }
 
-    if (!gArgs.GetBoolArg("-bip39", "true")) {
+    switch (walletoptions.walletType) {
+    case walletType::bip32Wallet: {
         SetHDSeed(GenerateNewSeed());
-    } else {
-        GenerateNewBip39Seed();
+        break;
+    }
+    default:
+        GenerateNewBip39Seed(walletoptions);
     }
 
     if (!NewKeyPool()) {
@@ -1173,11 +1176,14 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewSeed()
     return DeriveNewSeed(key);
 }
 
-CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed()
+CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walletoptions)
 {
     assert(!m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));
 
-    // LogPrintf("%s: \n", __func__);
+    const SecureString& seed0 = walletoptions.ssMnemonic;
+    const SecureString& pass0 = walletoptions.ssMnemonicPassphrase;
+
+    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed0.c_str(), pass0.c_str());
 
     CHDChain newHdChain;
     std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
@@ -1210,7 +1216,8 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed()
     SecureString vchMnemonicPassphrase(strMnemonicPassphrase.begin(), strMnemonicPassphrase.end());
 
     SecureVector& vchSeed = newHdChain.vchSeed;
-    if (!newHdChain.SetMnemonic(vchMnemonic, vchMnemonicPassphrase, vchSeed))
+//if (!newHdChain.SetMnemonic(vchMnemonic, vchMnemonicPassphrase, vchSeed))
+    if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed))
 	    throw std::runtime_error(std::string(__func__) + ": SetMnemonic failed");
 
     CPubKey seed(vchSeed.begin(), vchSeed.end());

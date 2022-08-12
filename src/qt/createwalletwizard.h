@@ -7,6 +7,8 @@
 
 #include <QWizard>
 
+#include <support/allocators/secure.h>
+
 class ExternalSigner;
 class WalletModel;
 
@@ -45,10 +47,10 @@ public:
            Page5_confirmSeed,
            Page7_enterSeed,
            Page8_finish };
-    explicit CreateWalletWizard(QWidget* parent);
+    explicit CreateWalletWizard(QWidget* parent, SecureString* m_ssMnemonic_out = nullptr, SecureString* m_ssMnemonicPassphrase_out = nullptr, int* m_wallettype_out = nullptr);
     virtual ~CreateWalletWizard();
 
-    // void accept() override;
+    void accept() override;
 
     void setSigners(const std::vector<ExternalSigner>& signers);
     //
@@ -59,10 +61,14 @@ public:
     bool isMakeBlankWalletChecked() const;
     bool isDescriptorWalletChecked() const;
     bool isExternalSignerChecked() const;
+    int getWalletType() const;
 
 private:
     Ui::CreateWalletWizard* ui;
     bool m_has_signers = false;
+    SecureString* m_ssMnemonic_out;
+    SecureString* m_ssMnemonicPassphrase_out;
+    int* m_wallettype_out;
 };
 
 
