@@ -154,6 +154,9 @@ public:
 
         bech32_hrp = "rdd";
 
+        // Reddcoin BIP44 cointype in mainnet is '4'
+        nExtCoinType = 4;
+
         vFixedSeeds.clear();
 
         fDefaultConsistencyChecks = false;
@@ -362,6 +365,9 @@ public:
 
         bech32_hrp = "trdd";
 
+        // Reddcoin BIP44 cointype in testnet is '1'
+        nExtCoinType = 1;
+
         vFixedSeeds.clear();
 
         fDefaultConsistencyChecks = false;
@@ -503,6 +509,9 @@ public:
 
         bech32_hrp = "rdd";
 
+        // Reddcoin BIP44 cointype in testnet is '1'
+        nExtCoinType = 1;
+
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
         m_is_test_chain = true;
@@ -581,6 +590,9 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
 
         bech32_hrp = "rcrt";
+
+        // Reddcoin BIP44 cointype in testnet is '1'
+        nExtCoinType = 1;
 
         fDefaultConsistencyChecks = true;
         fRequireStandard = true;

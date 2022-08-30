@@ -1085,6 +1085,8 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
     // for now we use a fixed keypath scheme of m/0'/0'/k
     CKey seed;                     //seed (256bit)
     CExtKey masterKey;             //hd master key
+    CExtKey purposeKey;            //key at m/purpose'
+    CExtKey coinTypeKey;           //key at m/purpose'/coin_type'
     CExtKey accountKey;            //key at m/0'
     CExtKey chainChildKey;         //key at m/0'/0' (external) or m/0'/1' (internal)
     CExtKey childKey;              //key at m/0'/0'/<n>'
@@ -1099,36 +1101,57 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
         masterKey.SetSeed(seed.begin(), seed.size());
     }
 
+    uint32_t nAccountIndex = 0; // TODO add HDAccounts management
 
-    // derive m/0'
-    // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
-    masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
+    uint32_t& nChildIndex = internal ? hd_chain.nInternalChainCounter : hd_chain.nExternalChainCounter;
 
-    // derive m/0'/0' (external chain) OR m/0'/1' (internal chain)
-    assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
-    accountKey.Derive(chainChildKey, BIP32_HARDENED_KEY_LIMIT+(internal ? 1 : 0));
-
-    // derive child key at next index, skip keys already known to the wallet
     do {
-        // always derive hardened keys
-        // childIndex | BIP32_HARDENED_KEY_LIMIT = derive childIndex in hardened child-index-range
-        // example: 1 | BIP32_HARDENED_KEY_LIMIT == 0x80000001 == 2147483649
-        if (internal) {
-            chainChildKey.Derive(childKey, hd_chain.nInternalChainCounter | BIP32_HARDENED_KEY_LIMIT);
-            metadata.hdKeypath = "m/0'/1'/" + ToString(hd_chain.nInternalChainCounter) + "'";
-            metadata.key_origin.path.push_back(0 | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(1 | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(hd_chain.nInternalChainCounter | BIP32_HARDENED_KEY_LIMIT);
-            hd_chain.nInternalChainCounter++;
+        if (hd_chain.IsBip44()) {
+            // derive m/purpose'
+            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
+            masterKey.Derive(purposeKey, 44 | BIP32_HARDENED_KEY_LIMIT);
+
+            // derive m/purpose'/coin_type'
+            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | BIP32_HARDENED_KEY_LIMIT);
+
+            // derive m/purpose'/coin_type'/account'
+            coinTypeKey.Derive(accountKey, nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
+
+            // derive m/purpose'/coin_type'/account'/change (external chain) OR m/purpose'/coin_type'/account'/1' (internal chain)
+            assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
+            accountKey.Derive(chainChildKey, (internal ? 1 : 0));
+
+            // derive m/purpose'/coin_type'/account'/change/address_index
+            chainChildKey.Derive(childKey, BIP32_HARDENED_KEY_LIMIT | nChildIndex);
+
+            metadata.hdKeypath = strprintf("m/44'/%d'/%d'/%d/%d'", Params().ExtCoinType(), nAccountIndex, internal, nChildIndex);
+            metadata.key_origin.path.push_back(44 | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(Params().ExtCoinType() | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(internal);
+            metadata.key_origin.path.push_back(nChildIndex | BIP32_HARDENED_KEY_LIMIT);
+
+        } else {
+            // derive m/account'
+            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
+            masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
+
+            // derive m/account'/change' (external chain) OR m/0'/1' (internal chain)
+            assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
+            accountKey.Derive(chainChildKey, BIP32_HARDENED_KEY_LIMIT + (internal ? 1 : 0));
+
+            // derive m/account'/change'/address_index'
+            chainChildKey.Derive(childKey, BIP32_HARDENED_KEY_LIMIT | nChildIndex);
+
+            metadata.hdKeypath = strprintf("m/%d'/%d'/%d'", nAccountIndex, internal, nChildIndex);
+            metadata.key_origin.path.push_back(nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(internal | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(nChildIndex | BIP32_HARDENED_KEY_LIMIT);
         }
-        else {
-            chainChildKey.Derive(childKey, hd_chain.nExternalChainCounter | BIP32_HARDENED_KEY_LIMIT);
-            metadata.hdKeypath = "m/0'/0'/" + ToString(hd_chain.nExternalChainCounter) + "'";
-            metadata.key_origin.path.push_back(0 | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(0 | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(hd_chain.nExternalChainCounter | BIP32_HARDENED_KEY_LIMIT);
-            hd_chain.nExternalChainCounter++;
-        }
+
+        // increment childkey index
+        nChildIndex++;
+
     } while (HaveKey(childKey.key.GetPubKey().GetID()));
     secret = childKey.key;
     metadata.hd_seed_id = hd_chain.seed_id;
@@ -1183,9 +1206,12 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     const SecureString& seed0 = walletoptions.ssMnemonic;
     const SecureString& pass0 = walletoptions.ssMnemonicPassphrase;
 
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed0.c_str(), pass0.c_str());
+    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\ntype: %d\n", __func__, seed0.c_str(), pass0.c_str(), walletoptions.walletType);
 
     CHDChain newHdChain;
+    if (walletoptions.walletType == walletType::bip44Wallet) {
+        newHdChain.SetBip44();
+    }
     std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
 
 

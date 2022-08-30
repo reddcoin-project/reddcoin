@@ -99,6 +99,7 @@ public:
     static const int VERSION_HD_BIP39 = 3;
     static const int CURRENT_VERSION        = VERSION_HD_BIP39;
     int nVersion;
+    bool bBip44;
 
     CWallet* pwallet;
 
@@ -116,6 +117,7 @@ public:
             READWRITE(obj.vchMnemonic);
             READWRITE(obj.vchMnemonicPassphrase);
             READWRITE(obj.vchSeed);
+            READWRITE(obj.bBip44);
         }
         else {
             // when loading an old bip32 only wallet, get vchSeed from seed_id
@@ -143,6 +145,9 @@ public:
     }
 
     bool IsNull() { return seed_id.IsNull();}
+
+    void SetBip44( bool b = true)   { bBip44 = b;}
+    bool IsBip44() const            { return bBip44 == true;}
 
     bool SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed);
 

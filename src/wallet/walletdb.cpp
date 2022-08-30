@@ -100,6 +100,7 @@ void CHDChain::Debug()
         std::cout << "mnemonic: " << std::string(vchMnemonic.begin(), vchMnemonic.end()).c_str() << std::endl;
         std::cout << "mnemonicpassphrase: " << std::string(vchMnemonicPassphrase.begin(), vchMnemonicPassphrase.end()).c_str() << std::endl;
         std::cout << "seed: " << HexStr(vchSeed).c_str() << std::endl;
+        std::cout << "isBip44: " << (IsBip44()? "true" : "false") << std::endl;
 
         CExtKey masterkey;
 
@@ -108,12 +109,29 @@ void CHDChain::Debug()
         std::cout << "bip32 root key: " << EncodeExtKey(masterkey) << std::endl;
 
         // Derive new account keys
+        CExtKey purposeKey;
+        CExtKey coinTypeKey;
         CExtKey accountkey;
-        masterkey.Derive(accountkey, 0x80000000);
-
-        // Derive new chain keys
         CExtKey chainkey;
-        accountkey.Derive(chainkey, 0x80000000);
+
+        int nAccountIndex = 0;
+        bool internal = false;
+
+        if (IsBip44()) {
+            masterkey.Derive(purposeKey, 44 | 0x80000000);
+            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
+            coinTypeKey.Derive(accountkey, nAccountIndex | 0x80000000);
+            accountkey.Derive(chainkey, (internal ? 1 : 0));
+
+            CExtPubKey accountpubKey = accountkey.Neuter();
+            std::cout << "account extended private key: " << EncodeExtKey(accountkey) << std::endl;
+            std::cout << "account extended public key: " << EncodeExtPubKey(accountpubKey) << std::endl;
+
+        } else {
+            masterkey.Derive(accountkey, 0x80000000);
+            accountkey.Derive(chainkey, 0x80000000);
+        }
+
         CExtPubKey chainpubkey = chainkey.Neuter();
         std::cout << "bip32 extended private key: " << EncodeExtKey(chainkey) << std::endl;
         std::cout << "bip32 extended public key: " << EncodeExtPubKey(chainpubkey) << std::endl;
@@ -575,27 +593,39 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     }
 
                     // Extract the index and internal from the path
-                    // Path string is m/0'/k'/i'
+                    // Path string is either m/0'/k'/i' || m/44'/type'/0'/k/i'
                     // Path vector is [0', k', i'] (but as ints OR'd with the hardened bit
                     // k == 0 for external, 1 for internal. i is the index
-                    if (path.size() != 3) {
+                    if ((path.size() != 3) && (path.size() != 5)) {
                         strErr = "Error reading wallet database: keymeta found with unexpected path";
                         return false;
                     }
-                    if (path[0] != 0x80000000) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
+
+                    int idx = path.size();
+
+                    if (path[idx - 3] != 0x80000000) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[idx - 3]);
                         return false;
                     }
-                    if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000)) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[1]);
+
+                    if (path.size() == 3) {
+                        if (path[idx - 2] != 0x80000000 && path[idx - 2] != (1 | 0x80000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[idx - 2]);
+                            return false;
+                        }
+                    } else {
+                        if (path[idx - 2] != 0x00000000 && path[idx - 2] != (1 | 0x00000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x00000000 or 0x00000001) for the element at index 1", path[idx - 2]);
+                            return false;
+                        }
+                    }
+                    if ((path[idx - 1] & 0x80000000) == 0) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000)", path[idx - 1]);
                         return false;
                     }
-                    if ((path[2] & 0x80000000) == 0) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000)", path[2]);
-                        return false;
-                    }
-                    internal = path[1] == (1 | 0x80000000);
-                    index = path[2] & ~0x80000000;
+
+                    internal = path[idx - 2] == ((path.size() == 3) ? 1 | 0x80000000 : 1);
+                    index = path[idx - 1] & ~0x80000000;
                 }
 
                 // Insert a new CHDChain, or get the one that already exists

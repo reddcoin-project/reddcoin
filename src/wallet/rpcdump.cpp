@@ -744,24 +744,20 @@ RPCHelpMan gethdwalletinfo()
 
     SecureVector vchSeed = spk_man.GetHDChain().vchSeed;
 
-    if (spk_man.GetHDChain().vchSeed.size() > 0)
-    {
+    if (spk_man.GetHDChain().vchSeed.size() > 0) {
         UniValue result(UniValue::VOBJ);
         CExtKey masterKey;
+        CExtKey purposeKey;
+        CExtKey coinTypeKey;
         CExtKey accountKey;
         CExtKey chainKey;
 
         masterKey.SetSeed(spk_man.GetHDChain().vchSeed.data(), spk_man.GetHDChain().vchSeed.size());
 
-        // Derive new account keys
-        masterKey.Derive(accountKey, 0x80000000);
+        int nAccountIndex = 0;
+        bool internal = false;
 
-        // Derive new chain keys
-        accountKey.Derive(chainKey, 0x80000000);
-        CExtPubKey chainpubKey = chainKey.Neuter();
-
-        if(spk_man.GetHDChain().vchMnemonic.size() > 0)
-        {
+        if (spk_man.GetHDChain().vchMnemonic.size() > 0) {
             SecureString ssMnemonic(spk_man.GetHDChain().vchMnemonic.begin(), spk_man.GetHDChain().vchMnemonic.end());
             SecureString ssMnemonicPassphrase(spk_man.GetHDChain().vchMnemonicPassphrase.begin(), spk_man.GetHDChain().vchMnemonicPassphrase.end());
 
@@ -771,6 +767,37 @@ RPCHelpMan gethdwalletinfo()
 
         result.pushKV("hdseed", HexStr(spk_man.GetHDChain().vchSeed));
         result.pushKV("rootprivkey", EncodeExtKey(masterKey));
+
+        if (!spk_man.GetHDChain().IsBip44()) {
+            // Derive new account keys
+            masterKey.Derive(accountKey, 0x80000000);
+
+            // Derive new chain keys
+            accountKey.Derive(chainKey, 0x80000000);
+
+        } else {
+            // derive m/purpose'
+            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
+            masterKey.Derive(purposeKey, 44 | 0x80000000);
+
+            // derive m/purpose'/coin_type'
+            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
+
+            // derive m/purpose'/coin_type'/account'
+            coinTypeKey.Derive(accountKey, nAccountIndex | 0x80000000);
+
+            CExtPubKey accountpubKey = accountKey.Neuter();
+
+            result.pushKV("accountextendedprivkey", EncodeExtKey(accountKey));
+            result.pushKV("accountextendedpubkey", EncodeExtPubKey(accountpubKey));
+
+            // Derive new chain keys
+            accountKey.Derive(chainKey, (internal ? 1 : 0));
+        }
+
+
+        CExtPubKey chainpubKey = chainKey.Neuter();
+
         result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
         result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
 
