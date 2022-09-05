@@ -35,6 +35,7 @@ public:
     static bool Check(SecureString mnemonic);
     // passphrase must be at most 256 characters or code may crash
     static void ToSeed(SecureString mnemonic, SecureString passphrase, SecureVector& seedRet);
+    static int getStrength(SecureString mnemonic);
 };
 
 #endif
