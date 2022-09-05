@@ -249,6 +249,9 @@ public:
     // Return whether HD enabled.
     virtual bool hdEnabled() = 0;
 
+    // Return whether BIP39 enabled.
+    virtual bool bip39Enabled() = 0;
+
     // Return whether the wallet is blank.
     virtual bool canGetAddresses() = 0;
 

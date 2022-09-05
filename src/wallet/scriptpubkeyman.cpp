@@ -447,6 +447,11 @@ bool LegacyScriptPubKeyMan::IsHDEnabled() const
     return !m_hd_chain.seed_id.IsNull();
 }
 
+bool LegacyScriptPubKeyMan::IsBip39Enabled() const
+{
+    return m_hd_chain.vchMnemonic.size() > 0;
+}
+
 bool LegacyScriptPubKeyMan::CanGetAddresses(bool internal) const
 {
     LOCK(cs_KeyStore);
