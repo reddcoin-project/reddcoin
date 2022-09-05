@@ -147,6 +147,27 @@ bool CMnemonic::Check(SecureString mnemonic)
     return fResult;
 }
 
+int CMnemonic::getWordCount(SecureString mnemonic)
+{
+    if (mnemonic.empty()) {
+        return -1;
+    }
+
+    uint32_t nWordCount{};
+
+    for (size_t i = 0; i < mnemonic.size(); ++i) {
+        if (mnemonic[i] == ' ') {
+            nWordCount++;
+        }
+    }
+    nWordCount++;
+    // check number of words
+    if (nWordCount != 12 && nWordCount != 15 && nWordCount != 18 && nWordCount != 21 && nWordCount != 24) {
+        return -1;
+    }
+
+    return nWordCount;
+}
 
 int CMnemonic::getStrength(SecureString mnemonic)
 {
@@ -171,6 +192,7 @@ int CMnemonic::getStrength(SecureString mnemonic)
 
     return nStrength;
 }
+
 // passphrase must be at most 256 characters or code may crash
 void CMnemonic::ToSeed(SecureString mnemonic, SecureString passphrase, SecureVector& seedRet)
 {
