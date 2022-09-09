@@ -20,17 +20,17 @@ namespace Consensus {
  */
 enum BuriedDeployment : int16_t {
     // buried deployments get negative values to avoid overlap with DeploymentPos
-    DEPLOYMENT_HEIGHTINCB = std::numeric_limits<int16_t>::min(),
-    DEPLOYMENT_CLTV,
-    DEPLOYMENT_DERSIG,
+    DEPLOYMENT_DERSIG = std::numeric_limits<int16_t>::min(),
 };
 constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_DERSIG; }
 
 enum DeploymentPos : uint16_t {
     DEPLOYMENT_TESTDUMMY,
-    DEPLOYMENT_CSV, // Deployment of BIP68, BIP112, and BIP113.
-    DEPLOYMENT_SEGWIT, // Deployment of BIP141, BIP143, and BIP147.
-    DEPLOYMENT_TAPROOT, // Deployment of Schnorr/Taproot (BIPs 340-342)
+    DEPLOYMENT_HEIGHTINCB, // Deployment of BIP34.
+    DEPLOYMENT_CLTV,       // Deployment of BIP65.
+    DEPLOYMENT_CSV,        // Deployment of BIP68, BIP112, and BIP113.
+    DEPLOYMENT_SEGWIT,     // Deployment of BIP141, BIP143, and BIP147.
+    DEPLOYMENT_TAPROOT,    // Deployment of Schnorr/Taproot (BIPs 340-342)
     // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
     MAX_VERSION_BITS_DEPLOYMENTS
 };
@@ -137,10 +137,6 @@ struct Params {
     int DeploymentHeight(BuriedDeployment dep) const
     {
         switch (dep) {
-        case DEPLOYMENT_HEIGHTINCB:
-            return BIP34Height;
-        case DEPLOYMENT_CLTV:
-            return BIP65Height;
         case DEPLOYMENT_DERSIG:
             return BIP66Height;
         } // no default case, so the compiler can warn about missing cases

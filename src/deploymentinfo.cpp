@@ -12,6 +12,14 @@ const struct VBDeploymentInfo VersionBitsDeploymentInfo[Consensus::MAX_VERSION_B
         /*.gbt_force =*/ true,
     },
     {
+        /*.name =*/ "heightincb",
+        /*.gbt_force =*/ true,
+    },
+    {
+        /*.name =*/ "cltv",
+        /*.gbt_force =*/ true,
+    },
+    {
         /*.name =*/ "csv",
         /*.gbt_force =*/ true,
     },
