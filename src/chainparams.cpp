@@ -97,21 +97,31 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].min_activation_height = 0; // No activation delay
 
+        // Deployment of BIP34.
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].bit = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Sat Oct 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Sun Oct 01 2023 00:00:00 GMT+0000
+
+        // Deployment of BIP65.
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Tue Nov 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Wed Nov 01 2023 00:00:00 GMT+0000
+
         // Deployment of BIP68, BIP112, and BIP113.
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Thu Dec 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Fri Dec 01 2023 00:00:00 GMT+0000
 
         // Deployment of SegWit (BIP141, BIP143, and BIP147)
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 3;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Sun Jan 01 2023 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Mon Jan 01 2024 00:00:00 GMT+0000
 
         // Deployment of Taproot (BIPs 340-342)
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 709632; // Approximately November 12th, 2021
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
         consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
@@ -317,19 +327,28 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].min_activation_height = 0; // No activation delay
 
+        // Deployment of BIP34.
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].bit = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = 1664582400; // Sat Oct 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = 1696118400; // Sun Oct 01 2023 00:00:00 GMT+0000
+
+        // Deployment of BIP65.
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = 1667260800; // Tue Nov 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = 1698796800; // Wed Nov 01 2023 00:00:00 GMT+0000
 
         // Deployment of BIP68, BIP112, and BIP113.
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 1669852800; // Thu Dec 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = 1701388800; // Fri Dec 01 2023 00:00:00 GMT+0000
 
         // Deployment of SegWit (BIP141, BIP143, and BIP147)
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 3;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = 1672531200; // Sun Jan 01 2023 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = 1704067200; // Mon Jan 01 2024 00:00:00 GMT+0000
 
         // Deployment of Taproot (BIPs 340-342)
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
