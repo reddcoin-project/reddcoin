@@ -140,7 +140,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     nHeight = pindexPrev->nHeight + 1;
 
     // Set block version
-    pblock->nVersion = CBlockHeader::CURRENT_VERSION;
+    pblock->nVersion = g_versionbitscache.ComputeBlockVersion(pindexPrev, chainparams.GetConsensus());
 
     // Add dummy coinbase tx as first transaction
     pblock->vtx.emplace_back();
