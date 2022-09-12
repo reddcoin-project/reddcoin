@@ -593,7 +593,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     }
 
                     // Extract the index and internal from the path
-                    // Path string is either m/0'/k'/i' || m/44'/type'/0'/k/i'
+                    // Path string is either m/0'/k'/i' || m/44'/type'/0'/k/i
                     // Path vector is [0', k', i'] (but as ints OR'd with the hardened bit
                     // k == 0 for external, 1 for internal. i is the index
                     if ((path.size() != 3) && (path.size() != 5)) {
@@ -601,31 +601,47 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                         return false;
                     }
 
-                    int idx = path.size();
-
-                    if (path[idx - 3] != 0x80000000) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[idx - 3]);
-                        return false;
-                    }
-
                     if (path.size() == 3) {
-                        if (path[idx - 2] != 0x80000000 && path[idx - 2] != (1 | 0x80000000)) {
-                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[idx - 2]);
+                        if (path[0] != 0x80000000) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
                             return false;
                         }
-                    } else {
-                        if (path[idx - 2] != 0x00000000 && path[idx - 2] != (1 | 0x00000000)) {
-                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x00000000 or 0x00000001) for the element at index 1", path[idx - 2]);
+                        if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[1]);
                             return false;
                         }
-                    }
-                    if ((path[idx - 1] & 0x80000000) == 0) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000)", path[idx - 1]);
-                        return false;
+                        if ((path[2] & 0x80000000) == 0) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000) for the element at index 2", path[2]);
+                            return false;
+                        }
+                        internal = path[1] == (1 | 0x80000000);
+                        index = path[2] & ~0x80000000;
                     }
 
-                    internal = path[idx - 2] == ((path.size() == 3) ? 1 | 0x80000000 : 1);
-                    index = path[idx - 1] & ~0x80000000;
+                    if (path.size() == 5) {
+                        if (path[0] != (44 | 0x80000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 0", path[0]);
+                            return false;
+                        }
+                        if (path[1] != (Params().ExtCoinType() | 0x80000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[1]);
+                            return false;
+                        }
+                        if ((path[2] & 0x80000000) == 0) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000) for the element at index 2", path[2]);
+                            return false;
+                        }
+                        if (path[3] != 0x00000000 && path[3] != (1 | 0x00000000)) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x00000000 or 0x00000001) for the element at index 3", path[3]);
+                            return false;
+                        }
+                        if ((path[4] & 0x00000000) != 0) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x00000000) = (0x%08x) for the element at index 4", path[4], (path[4] & 0x00000000));
+                            return false;
+                        }
+                        internal = path[3] == (1 | 0x00000000);
+                        index = path[4] & ~0x00000000;
+                    }
                 }
 
                 // Insert a new CHDChain, or get the one that already exists

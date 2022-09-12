@@ -1127,14 +1127,14 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
             accountKey.Derive(chainChildKey, (internal ? 1 : 0));
 
             // derive m/purpose'/coin_type'/account'/change/address_index
-            chainChildKey.Derive(childKey, BIP32_HARDENED_KEY_LIMIT | nChildIndex);
+            chainChildKey.Derive(childKey, nChildIndex);
 
-            metadata.hdKeypath = strprintf("m/44'/%d'/%d'/%d/%d'", Params().ExtCoinType(), nAccountIndex, internal, nChildIndex);
+            metadata.hdKeypath = strprintf("m/44'/%d'/%d'/%d/%d", Params().ExtCoinType(), nAccountIndex, internal, nChildIndex);
             metadata.key_origin.path.push_back(44 | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back(Params().ExtCoinType() | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back(nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back(internal);
-            metadata.key_origin.path.push_back(nChildIndex | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(nChildIndex);
 
         } else {
             // derive m/account'
