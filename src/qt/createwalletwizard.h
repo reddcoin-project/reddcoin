@@ -199,6 +199,8 @@ private:
     QSpacerItem* horizontalSpacer;
     QLabel* label_13;
     QComboBox* comboBox;
+    QLabel* label_14;
+    QComboBox* comboBoxLanguage;
 
     bool fCapsLock;
 
@@ -211,7 +213,9 @@ protected:
     bool eventFilter(QObject *object, QEvent *event) override;
 
 private Q_SLOTS:
-    void generateWords(int value);
+    void generateWords(int strength, int languageSelected);
+    void onChangeWords(int idx);
+    void onChangeLanguage(int idx);
     void toggleShowPassword(bool);
 };
 

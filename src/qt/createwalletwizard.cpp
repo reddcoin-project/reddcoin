@@ -541,6 +541,19 @@ wizPage_generateSeed::wizPage_generateSeed(QWidget* parent)
     comboBox->addItems(wordCountList);
 
     horizontalLayout1->addWidget(comboBox);
+
+    label_14 = new QLabel(tr("Language"));
+    horizontalLayout1->addWidget(label_14);
+    comboBoxLanguage = new QComboBox();
+    std::array<LanguageDetails, NUM_LANGUAGES_BIP39_SUPPORTED> languagesDetails = CMnemonic::GetLanguagesDetails();
+    for (int langNum = 0; langNum < NUM_LANGUAGES_BIP39_SUPPORTED; langNum++) {
+        comboBoxLanguage->addItem(languagesDetails[langNum].label);
+    }
+
+    comboBoxLanguage->installEventFilter(this);
+
+    horizontalLayout1->addWidget(comboBoxLanguage);
+
     verticalLayout->addLayout(horizontalLayout1);
 
     horizontalLayout0 = new QHBoxLayout();
@@ -588,7 +601,12 @@ wizPage_generateSeed::wizPage_generateSeed(QWidget* parent)
     registerField("generateWords.seed", textEdit_newMnemonic, "plainText");
     registerField("generateWords.password", lineEdit_password);
     connect(textEdit_newMnemonic, SIGNAL(textChanged()), this, SIGNAL(completeChanged()));
-    connect(comboBox, SIGNAL(currentIndexChanged(int)), SLOT(generateWords(int)));
+    connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index){
+        onChangeWords(index);
+    });
+    connect(comboBoxLanguage, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index){
+        onChangeLanguage(index);
+    });
     connect(checkBox_showPassword, &QCheckBox::toggled, [this](bool checked) {
         toggleShowPassword(checked);
     });
@@ -617,13 +635,25 @@ int wizPage_generateSeed::getStrength(int idx = 0)
     return strength[idx];
 }
 
-void wizPage_generateSeed::generateWords(int idx = 0)
+void wizPage_generateSeed::generateWords(int strength, int languageSelected)
 {
-    int strength = getStrength(idx);
-
-    SecureString words = CMnemonic::Generate(strength);
+    SecureString words = CMnemonic::Generate(strength, languageSelected);
     std::string str_words = std::string(words.begin(), words.end());
     textEdit_newMnemonic->setText(QString::fromStdString(str_words));
+}
+
+void wizPage_generateSeed::onChangeWords(int idx)
+{
+  int strength = getStrength(idx);
+  int languageSelected = comboBoxLanguage->currentIndex();
+
+  generateWords(strength, languageSelected);
+}
+
+void wizPage_generateSeed::onChangeLanguage(int languageSelected)
+{
+  int strength = getStrength(comboBox->currentIndex());
+  generateWords(strength, languageSelected);
 }
 
 bool wizPage_generateSeed::event(QEvent* event)
@@ -679,7 +709,7 @@ bool wizPage_generateSeed::eventFilter(QObject* object, QEvent* event)
 
 void wizPage_generateSeed::initializePage()
 {
-    generateWords(comboBox->currentIndex());
+    generateWords(getStrength(comboBox->currentIndex()), comboBoxLanguage->currentIndex());
 }
 
 bool wizPage_generateSeed::isComplete() const
@@ -690,11 +720,23 @@ bool wizPage_generateSeed::isComplete() const
     SecureString my_words(words.begin(), words.end());
     SecureString my_passphrase(passphrase.begin(), passphrase.end());
 
+    QFont font;
+    font.setBold(true);
+    font.setWeight(75);
+    lblHelp->setFont(font);
+
     lblHelp->setText("");
 
+    if (words.find("\u3000") != std::string::npos) {
+	lblHelp->setText(tr("Please use standard space, the use of ideographic japanese spaces is not supported"));
+        my_words.clear();
+        my_passphrase.clear();
+	return false;
+    };
+
     // NOTE: default mnemonic passphrase is an empty string
-    if (!CMnemonic::Check(my_words)) {
-        lblHelp->setText(tr("<b>Words are not valid, please check the words and try again</b>"));
+    if (!CMnemonic::Check(my_words, comboBoxLanguage->currentIndex())) {
+        lblHelp->setText(tr("Words are not valid, please check the words and language and try again"));
         my_words.clear();
         my_passphrase.clear();
         return false;
