@@ -18,6 +18,7 @@ JSON_TEST_FILES = \
   test/data/script_tests.json \
   test/data/base58_encode_decode.json \
   test/data/bip39_vectors.json \
+  test/data/bip44_vectors.json \
   test/data/blockfilters.json \
   test/data/key_io_valid.json \
   test/data/key_io_invalid.json \
@@ -77,6 +78,7 @@ BITCOIN_TESTS =\
   test/bech32_tests.cpp \
   test/bip32_tests.cpp \
   test/bip39_tests.cpp \
+  test/bip44_tests.cpp \
   test/blockchain_tests.cpp \
   test/blockencodings_tests.cpp \
   test/blockfilter_tests.cpp \

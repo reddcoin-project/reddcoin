@@ -229,6 +229,20 @@ int CMnemonic::DetectLanguageSeed(SecureString mnemonic)
     return lang_detected;
 }
 
+int CMnemonic::getLanguageIndex(const char* languageName)
+{
+    int lang_index = -1;
+
+    for (int lang = 0; lang <= NUM_LANGUAGES_BIP39_SUPPORTED - 1 && lang_index == -1; lang++) {
+        if (strcmp(CMnemonic::GetLanguagesDetails()[lang].name, languageName) == 0) {
+            lang_index = lang;
+            break;
+        }
+    }
+
+    return lang_index;
+}
+
 int CMnemonic::getWordCount(SecureString mnemonic)
 {
     if (mnemonic.empty()) {

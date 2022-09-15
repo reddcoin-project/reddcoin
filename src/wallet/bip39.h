@@ -57,6 +57,7 @@ public:
     static bool Check(SecureString mnemonic, int languageSelected = NOT_LANG_DEFINED);
     static int DetectLanguageSeed(SecureString mnemonic);
     static std::array<LanguageDetails, NUM_LANGUAGES_BIP39_SUPPORTED> GetLanguagesDetails();
+    static int getLanguageIndex(const char* languageName);
     static const char* const* GetLanguageWords(int lang);
     static void ToSeed(SecureString mnemonic, SecureString passphrase, SecureVector& seedRet);
     static int getWordCount(SecureString mnemonic);
