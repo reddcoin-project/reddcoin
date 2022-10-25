@@ -18,9 +18,9 @@
 #include <QMessageBox>
 #include <QMutex>
 #include <QProgressDialog>
+#include <QString>
 #include <QThread>
 #include <QTimer>
-#include <QString>
 
 class ClientModel;
 class OptionsModel;
@@ -36,6 +36,7 @@ class Wallet;
 class AskPassphraseDialog;
 class CreateWalletActivity;
 class CreateWalletDialog;
+class CreateWalletWizard;
 class OpenWalletActivity;
 class WalletControllerActivity;
 
@@ -129,8 +130,37 @@ private:
     void createWallet();
     void finish();
 
+    int m_walletType;
     SecureString m_passphrase;
+    SecureString m_ssMnemonic;
+    SecureString m_ssMnemonicPassphrase;
     CreateWalletDialog* m_create_wallet_dialog{nullptr};
+    AskPassphraseDialog* m_passphrase_dialog{nullptr};
+};
+
+class CreateWalletWizardActivity : public WalletControllerActivity
+{
+    Q_OBJECT
+
+public:
+    CreateWalletWizardActivity(WalletController* wallet_controller, QWidget* parent_widget);
+    virtual ~CreateWalletWizardActivity();
+
+    void create();
+
+Q_SIGNALS:
+    void created(WalletModel* wallet_model);
+
+private:
+    void askPassphrase();
+    void createWallet();
+    void finish();
+
+    int m_walletType;
+    SecureString m_passphrase;
+    SecureString m_ssMnemonic;
+    SecureString m_ssMnemonicPassphrase;
+    CreateWalletWizard* m_create_wallet_wizard{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };
 

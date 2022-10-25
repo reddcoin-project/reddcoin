@@ -97,6 +97,7 @@ bool LoadWallets(interfaces::Chain& chain)
             }
             DatabaseOptions options;
             DatabaseStatus status;
+            WalletOptions walletoptions;
             options.require_existing = true;
             options.verify = false; // No need to verify, assuming verified earlier in VerifyWallets()
             bilingual_str error;
@@ -106,7 +107,7 @@ bool LoadWallets(interfaces::Chain& chain)
                 continue;
             }
             chain.initMessage(_("Loading wallet…").translated);
-            std::shared_ptr<CWallet> pwallet = database ? CWallet::Create(&chain, name, std::move(database), options.create_flags, error, warnings) : nullptr;
+            std::shared_ptr<CWallet> pwallet = database ? CWallet::Create(&chain, name, std::move(database), options.create_flags, walletoptions, error, warnings) : nullptr;
             if (!warnings.empty()) chain.initWarning(Join(warnings, Untranslated("\n")));
             if (!pwallet) {
                 chain.initError(error);

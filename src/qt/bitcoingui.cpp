@@ -7,6 +7,7 @@
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/createwalletdialog.h>
+#include <qt/createwalletwizard.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/modaloverlay.h>
@@ -407,6 +408,10 @@ void BitcoinGUI::createActions()
     m_create_wallet_action->setEnabled(false);
     m_create_wallet_action->setStatusTip(tr("Create a new wallet"));
 
+    m_create_wallet_wiz_action = new QAction(tr("Create/ Restore Wallet…"), this);
+    m_create_wallet_wiz_action->setEnabled(false);
+    m_create_wallet_wiz_action->setStatusTip(tr("Create or restore a new HD wallet"));
+
     m_close_all_wallets_action = new QAction(tr("Close All Wallets…"), this);
     m_close_all_wallets_action->setStatusTip(tr("Close all wallets"));
 
@@ -513,6 +518,13 @@ void BitcoinGUI::createActions()
             connect(activity, &CreateWalletActivity::finished, activity, &QObject::deleteLater);
             activity->create();
         });
+
+	connect(m_create_wallet_wiz_action, &QAction::triggered, [this] {
+	    auto activity = new CreateWalletWizardActivity(m_wallet_controller, this);
+	    connect(activity, &CreateWalletWizardActivity::created, this, &BitcoinGUI::setCurrentWallet);
+	    connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
+	    activity->create();
+	});
         connect(m_close_all_wallets_action, &QAction::triggered, [this] {
             m_wallet_controller->closeAllWallets(this);
         });
@@ -539,6 +551,7 @@ void BitcoinGUI::createMenuBar()
     if(walletFrame)
     {
         file->addAction(m_create_wallet_action);
+        file->addAction(m_create_wallet_wiz_action);
         file->addAction(m_open_wallet_action);
         file->addAction(m_close_wallet_action);
         file->addAction(m_close_all_wallets_action);
@@ -749,6 +762,7 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller)
     m_wallet_controller = wallet_controller;
 
     m_create_wallet_action->setEnabled(true);
+    m_create_wallet_wiz_action->setEnabled(true);
     m_open_wallet_action->setEnabled(true);
     m_open_wallet_action->setMenu(m_open_wallet_menu);
 

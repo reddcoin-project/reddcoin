@@ -453,6 +453,7 @@ public:
     }
     unsigned int getConfirmTarget() override { return m_wallet->m_confirm_target; }
     bool hdEnabled() override { return m_wallet->IsHDEnabled(); }
+    bool bip39Enabled() override { return m_wallet->IsBip39Enabled(); }
     bool canGetAddresses() override { return m_wallet->CanGetAddresses(); }
     bool hasExternalSigner() override { return m_wallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER); }
     bool privateKeysDisabled() override { return m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS); }
@@ -529,15 +530,19 @@ public:
     void setMockTime(int64_t time) override { return SetMockTime(time); }
 
     //! WalletClient methods
-    std::unique_ptr<Wallet> createWallet(const std::string& name, const SecureString& passphrase, uint64_t wallet_creation_flags, bilingual_str& error, std::vector<bilingual_str>& warnings) override
+    std::unique_ptr<Wallet> createWallet(const std::string& name, const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, const SecureString& passphrase, const int& walletType, uint64_t wallet_creation_flags, bilingual_str& error, std::vector<bilingual_str>& warnings) override
     {
         std::shared_ptr<CWallet> wallet;
         DatabaseOptions options;
         DatabaseStatus status;
+        WalletOptions walletOptions;
         options.require_create = true;
         options.create_flags = wallet_creation_flags;
         options.create_passphrase = passphrase;
-        return MakeWallet(CreateWallet(*m_context.chain, name, true /* load_on_start */, options, status, error, warnings));
+        walletOptions.ssMnemonic = ssMnemonic;
+        walletOptions.ssMnemonicPassphrase = ssMnemonicPassphrase;
+        walletOptions.walletType = walletType;
+        return MakeWallet(CreateWallet(*m_context.chain, name, true /* load_on_start */, options, walletOptions, status, error, warnings));
     }
     std::unique_ptr<Wallet> loadWallet(const std::string& name, bilingual_str& error, std::vector<bilingual_str>& warnings) override
     {
