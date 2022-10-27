@@ -71,7 +71,7 @@ std::string KernelRecord::getTxID()
 
 int64_t KernelRecord::getAge() const
 {
-    return (GetAdjustedTime() - nTime) / 86400;
+    return (GetAdjustedTime() - nTime) / 3600;
 }
 
 int64_t KernelRecord::getCoinAge() const
