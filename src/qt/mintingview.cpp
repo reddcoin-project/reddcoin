@@ -63,7 +63,9 @@ MintingView::MintingView(QWidget *parent) :
 
     QLabel *mintingLabel = new QLabel(tr("Display staking probability within : "));
     mintingCombo = new QComboBox();
+    mintingCombo->addItem(tr("1 min"), Minting1min);
     mintingCombo->addItem(tr("10 min"), Minting10min);
+    mintingCombo->addItem(tr("1 hour"), Minting1hour);
     mintingCombo->addItem(tr("24 hours"), Minting1day);
     mintingCombo->addItem(tr("30 days"), Minting30days);
     mintingCombo->addItem(tr("90 days"), Minting90days);
@@ -154,11 +156,17 @@ void MintingView::setModel(WalletModel *model)
 
 void MintingView::chooseMintingInterval(int idx)
 {
-    int interval = 10;
+    int interval = 1;
     switch(mintingCombo->itemData(idx).toInt())
     {
+        case Minting1min:
+            interval = 1;
+            break;
         case Minting10min:
             interval = 10;
+            break;
+        case Minting1hour:
+            interval = 60;
             break;
         case Minting1day:
             interval = 60*24;
