@@ -138,15 +138,18 @@ void MintingView::setModel(WalletModel *model)
 #if QT_VERSION < 0x050000
         mintingView->horizontalHeader()->setResizeMode(
                 MintingTableModel::TxHash, QHeaderView::Stretch);
+        mintingView->horizontalHeader()->resizeSection(
+                MintingTableModel::Age, QHeaderView::ResizeToContents);
+        mintingView->horizontalHeader()->resizeSection(
+                MintingTableModel::Balance, ResizeToContents);
 #else
         mintingView->horizontalHeader()->setSectionResizeMode(
                 MintingTableModel::TxHash, QHeaderView::Stretch);
+        mintingView->horizontalHeader()->setSectionResizeMode(
+                MintingTableModel::Age, QHeaderView::ResizeToContents);
+        mintingView->horizontalHeader()->setSectionResizeMode(
+                MintingTableModel::Balance, QHeaderView::ResizeToContents);
 #endif
-
-        mintingView->horizontalHeader()->resizeSection(
-                MintingTableModel::Age, 60);
-        mintingView->horizontalHeader()->resizeSection(
-                MintingTableModel::Balance, 100);
         mintingView->horizontalHeader()->resizeSection(
                 MintingTableModel::CoinDay,100);
         mintingView->horizontalHeader()->resizeSection(
