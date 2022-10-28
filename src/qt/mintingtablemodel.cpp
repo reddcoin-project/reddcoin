@@ -491,7 +491,16 @@ QString MintingTableModel::formatTxCoinDay(const KernelRecord *wtx) const
 QString MintingTableModel::formatTxAge(const KernelRecord *wtx) const
 {
     int64_t nAge = wtx->getAge();
-    return QString::number(nAge);
+    QString txtAge;
+    if (nAge < 24)
+    {
+	txtAge = tr("%n hour(s)", "", nAge);
+    }
+    else
+    {
+	txtAge = tr("%n day(s)", "", nAge/24);
+    }
+    return txtAge;
 }
 
 QString MintingTableModel::formatTxBalance(const KernelRecord *wtx) const
