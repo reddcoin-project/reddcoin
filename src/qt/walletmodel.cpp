@@ -150,6 +150,20 @@ bool WalletModel::validateAddress(const QString &address)
     return IsValidDestinationString(address.toStdString());
 }
 
+bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight)
+{
+    std::set<CInputCoin> setCoins;
+    if(!m_wallet->GetStakeWeightSet(setCoins))
+        return false;
+    if (setCoins.empty())
+        return false;
+
+    if(!m_node.getStakeWeight(setCoins, nAverageWeight, nTotalWeight))
+        return false;
+
+    return true;
+}
+
 WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransaction &transaction, const CCoinControl& coinControl)
 {
     CAmount total = 0;

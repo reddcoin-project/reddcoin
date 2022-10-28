@@ -28,6 +28,8 @@
 #include <policy/policy.h>
 #include <policy/rbf.h>
 #include <policy/settings.h>
+#include <pos/kernel.h>
+#include <pos/stake.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <rpc/protocol.h>
@@ -233,6 +235,32 @@ public:
     }
     bool isInitialBlockDownload() override {
         return chainman().ActiveChainstate().IsInitialBlockDownload();
+    }
+    double getDifficulty() override
+    {
+         const CBlockIndex* tip;
+	    {
+		LOCK(::cs_main);
+		tip = chainman().ActiveChain().Tip();
+	    }
+        return GetDifficulty(tip);
+    }
+    uint64_t getPoSVKernelPS() override
+    {
+         const CBlockIndex* tip;
+	    {
+		LOCK(::cs_main);
+		tip = chainman().ActiveChain().Tip();
+	    }
+        return GetPoSVKernelPS(tip);
+    }
+    bool getLastCoinStakeSearchInterval()
+    {
+        return nLastCoinStakeSearchInterval;
+    }
+    bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t& nTotalWeight) override
+    {
+      return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);
     }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }

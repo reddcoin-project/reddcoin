@@ -152,6 +152,8 @@ public:
 
     bool isMultiwallet();
 
+    bool GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight);
+
     AddressTableModel* getAddressTableModel() const { return addressTableModel; }
 
     void refresh(bool pk_hash_only = false);

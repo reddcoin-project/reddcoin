@@ -3277,6 +3277,31 @@ bool CWallet::IsLegacy() const
     return spk_man != nullptr;
 }
 
+bool CWallet::GetStakeWeightSet(std::set<CInputCoin>& setCoins)
+{
+    // Choose coins to use
+    LOCK(cs_wallet);
+    CAmount nBalance = GetBalance().m_mine_trusted;
+    CAmount nReserveBalance = 0;
+    if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
+        return error("GetStakeWeightSet : invalid reserve balance amount");
+    if (nBalance <= nReserveBalance)
+        return false;
+
+    CAmount nValueIn = 0;
+
+    std::vector<COutput> vAvailableCoins;
+    CCoinControl temp;
+    CoinSelectionParams coin_selection_params;
+    AvailableCoins(vAvailableCoins, &temp);
+    if (!SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
+        return false;
+    if (setCoins.empty())
+        return false;
+
+    return true;
+}
+
 DescriptorScriptPubKeyMan* CWallet::GetDescriptorScriptPubKeyMan(const WalletDescriptor& desc) const
 {
     for (auto& spk_man_pair : m_spk_managers) {
