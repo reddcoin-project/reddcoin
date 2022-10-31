@@ -1,6 +1,7 @@
 #include <qt/mintingtablemodel.h>
 #include <qt/mintingfilterproxy.h>
 
+#include <interfaces/node.h>
 #include <pos/kernelrecord.h>
 #include <qt/transactiondesc.h>
 #include <qt/transactionrecord.h>
@@ -291,7 +292,7 @@ static void NotifyTransactionChanged(MintingTableModel *ttm, const uint256 &hash
 MintingTableModel::MintingTableModel(WalletModel *parent) :
         QAbstractTableModel(parent),
         walletModel(parent),
-        mintingInterval(10),
+        mintingInterval(1),
         priv(new MintingTablePriv(walletModel, this)),
         cachedNumBlocks(0)
 {
@@ -416,8 +417,8 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
         }
         break;
       case Qt::BackgroundColorRole:
-        int minAge = params.nStakeMinAge / 60 / 60 / 24;
-        int maxAge = params.nStakeMaxAge / 60 / 60 / 24;
+        int minAge = params.nStakeMinAge / 60 / 60;  // minAge in hours
+        int maxAge = params.nStakeMaxAge / 60 / 60;  // maxAge in hours
         if(rec->getAge() < minAge)
         {
             return COLOR_MINT_YOUNG;
@@ -458,8 +459,8 @@ QString MintingTableModel::lookupAddress(const std::string &address, bool toolti
 
 double MintingTableModel::getDayToMint(KernelRecord *wtx) const
 {
-    //const CBlockIndex *p = GetLastBlockIndex(::ChainActive().Tip(), true);
-    double difficulty = 1; //p->GetBlockDifficulty();
+    // const CBlockIndex *p = GetLastBlockIndex(::ChainActive().Tip(), true);
+    double difficulty = walletModel->node().getDifficulty(); //p->GetBlockDifficulty();
 
     double prob = wtx->getProbToMintWithinNMinutes(difficulty, mintingInterval);
     prob = prob * 100;
@@ -490,7 +491,16 @@ QString MintingTableModel::formatTxCoinDay(const KernelRecord *wtx) const
 QString MintingTableModel::formatTxAge(const KernelRecord *wtx) const
 {
     int64_t nAge = wtx->getAge();
-    return QString::number(nAge);
+    QString txtAge;
+    if (nAge < 24)
+    {
+	txtAge = tr("%n hour(s)", "", nAge);
+    }
+    else
+    {
+	txtAge = tr("%n day(s)", "", nAge/24);
+    }
+    return txtAge;
 }
 
 QString MintingTableModel::formatTxBalance(const KernelRecord *wtx) const
