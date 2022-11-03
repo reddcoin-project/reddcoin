@@ -25,6 +25,12 @@ class CBlockHeader
 {
 public:
     // header
+    // Block versions
+    // Block Version 1 : Genesis Block
+    // Block Version 2 : Introduction of POW Block
+    // Block Version 3 : Introduction of POSV Block
+    // Block Version 4 : Introduction of BIP66
+    // Block Version 5 : Introduction of Developers Funding
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
