@@ -72,7 +72,7 @@ public:
         consensus.BIP34Height = std::numeric_limits<int>::max();
         consensus.BIP34Hash = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
         consensus.BIP65Height = std::numeric_limits<int>::max();
-        consensus.BIP66Height = std::numeric_limits<int>::max();
+        consensus.BIP66Height = 1564232; // a6e944cc38a0d8c7c5740569501e622ec2a011e7c9dd97a78e5fba40a45b8c61
         consensus.MinBIP9WarningHeight = std::numeric_limits<int>::max();
         consensus.devScript = { CScript() << ParseHex("03c8fc5c87f00bcc32b5ce5c036957f8befeff05bf4d88d2dcde720249f78d9313") << OP_CHECKSIG };
 
