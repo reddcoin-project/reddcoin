@@ -90,8 +90,8 @@ public:
         consensus.nStakeMaxAge = 45 * 24 *  60 * 60; // 45 days
         consensus.nModifierInterval = 13 * 60;
 
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.nRuleChangeActivationThreshold = 12960; // 90% of 14400
+        consensus.nMinerConfirmationWindow = 14400; // (nPowTargetTimespan / nPowTargetSpacing) * 10 (10 Days)
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
