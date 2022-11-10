@@ -21,8 +21,9 @@ namespace Consensus {
 enum BuriedDeployment : int16_t {
     // buried deployments get negative values to avoid overlap with DeploymentPos
     DEPLOYMENT_DERSIG = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_DEV,
 };
-constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_DERSIG; }
+constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_DEV; }
 
 enum DeploymentPos : uint16_t {
     DEPLOYMENT_TESTDUMMY,
@@ -84,6 +85,8 @@ struct Params {
     int BIP65Height;
     /** Block height at which BIP66 becomes active */
     int BIP66Height;
+    /** Block height at which Developer donation address becomes active */
+    int DonationHeight;
     /** Don't warn about unknown BIP 9 activations below this height.
      * This prevents us from warning about the CSV and segwit activations. */
     int MinBIP9WarningHeight;
@@ -139,6 +142,8 @@ struct Params {
         switch (dep) {
         case DEPLOYMENT_DERSIG:
             return BIP66Height;
+        case DEPLOYMENT_DEV:
+            return DonationHeight;
         } // no default case, so the compiler can warn about missing cases
         return std::numeric_limits<int>::max();
     }

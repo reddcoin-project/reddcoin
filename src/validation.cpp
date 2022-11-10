@@ -2102,13 +2102,13 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
             }
 
             // Check output values
-            if (block.nVersion >= 5 && CBlockIndex::IsSuperMajority(5, pindex->pprev, 9000)) {
+            if (block.nVersion >= 5 && pindex->pprev->nHeight >= m_params.GetConsensus().DonationHeight) {
 
                 nCalculatedPoSVEndCredit = nCalculatedStakeReward * 0.92;
                 nCalculatedDevEndCredit = nCalculatedStakeReward - nCalculatedPoSVEndCredit;
                 nDevEndCredit = block.vtx[1]->vout[block.vtx[1]->vout.size() - 1].nValue;
 
-                if (nDevEndCredit != nCalculatedDevEndCredit && CBlockIndex::IsSuperMajority(5, pindex->pprev->pprev, 9000)) {
+                if (nDevEndCredit != nCalculatedDevEndCredit && pindex->pprev->pprev->nHeight >= m_params.GetConsensus().DonationHeight) {
                     LogPrintf("WARNING: nDevEndCredit=%.f != nCalculatedDevEndCredit=%.2f\n", nDevEndCredit, nCalculatedDevEndCredit);
                     if (nDevEndCredit > nCalculatedDevEndCredit) {
                         LogPrintf("ERROR: nDevEndCredit=%.f > nCalculatedDevEndCredit=%.2f\n", nDevEndCredit, nCalculatedDevEndCredit);
