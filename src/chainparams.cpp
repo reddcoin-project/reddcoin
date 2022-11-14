@@ -69,9 +69,6 @@ public:
         consensus.nRevertCoinbase = 254208; //! disregard bip34 from this height (?)
         consensus.nCoinbaseMaturity = 30;
         consensus.BIP16Exception = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
-        consensus.BIP34Height = std::numeric_limits<int>::max();
-        consensus.BIP34Hash = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
-        consensus.BIP65Height = std::numeric_limits<int>::max();
         consensus.POSVHeight = 260800;
         consensus.BIP66Height = 1564232; // a6e944cc38a0d8c7c5740569501e622ec2a011e7c9dd97a78e5fba40a45b8c61
         consensus.DonationHeight = 3382229; // 77ee468ea88227404a53bad63029a8d0aa58f9f6a470a076a2aa91c8494449ac
@@ -300,9 +297,6 @@ public:
         consensus.nLastPowHeight = 1439;
         consensus.nCoinbaseMaturity = 50;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
-        consensus.BIP34Height = 1227931;
-        consensus.BIP34Hash = uint256S("0x000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8");
-        consensus.BIP65Height = 388381; // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
         consensus.POSVHeight = 1440;
         consensus.BIP66Height = 2189; // 84c24e7ec0023d9cf2ba50366f2a1806c30e7256606aaeb31ebd17a4c0a82e9b
         consensus.DonationHeight = 13260; // 7e62ee9c868aa8414909dff2c68d5f9a137d9eb8e9b93c28511cbf8a5cac7280
@@ -471,9 +465,6 @@ public:
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.nCoinbaseMaturity = 30;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
-        consensus.BIP34Height = 227931;
-        consensus.BIP34Hash = uint256S("0x000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8");
-        consensus.BIP65Height = 388381; // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
         consensus.BIP66Height = 363725; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
         consensus.DonationHeight = 3382229; //
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -556,9 +547,6 @@ public:
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.nCoinbaseMaturity = 30;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
-        consensus.BIP34Height = 227931;
-        consensus.BIP34Hash = uint256S("0x000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8");
-        consensus.BIP65Height = 388381; // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
         consensus.BIP66Height = 363725; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
         consensus.DonationHeight = 3382229; //
         consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
