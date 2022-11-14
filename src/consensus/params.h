@@ -20,7 +20,8 @@ namespace Consensus {
  */
 enum BuriedDeployment : int16_t {
     // buried deployments get negative values to avoid overlap with DeploymentPos
-    DEPLOYMENT_DERSIG = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_POSV = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_DERSIG,
     DEPLOYMENT_DEV,
 };
 constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_DEV; }
@@ -81,6 +82,8 @@ struct Params {
     /** Block height and hash at which BIP34 becomes active */
     int BIP34Height;
     uint256 BIP34Hash;
+    /** Block height at which POSV becomes active */
+    int POSVHeight;
     /** Block height at which BIP65 becomes active */
     int BIP65Height;
     /** Block height at which BIP66 becomes active */
@@ -140,6 +143,8 @@ struct Params {
     int DeploymentHeight(BuriedDeployment dep) const
     {
         switch (dep) {
+        case DEPLOYMENT_POSV:
+            return POSVHeight;
         case DEPLOYMENT_DERSIG:
             return BIP66Height;
         case DEPLOYMENT_DEV:
