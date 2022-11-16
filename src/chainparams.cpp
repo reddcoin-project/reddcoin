@@ -98,13 +98,13 @@ public:
 
         // Deployment of BIP34.
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Sat Oct 01 2022 00:00:00 GMT+0000
-        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Sun Oct 01 2023 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = 1667260800; // Tue Nov 01 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = 1698796800; // Wed Nov 01 2023 00:00:00 GMT+0000
 
         // Deployment of BIP65.
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE; // Tue Nov 01 2022 00:00:00 GMT+0000
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT; // Wed Nov 01 2023 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = 1668384000; // Tue Nov 14 2022 00:00:00 GMT+0000
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = 1699920000; // Wed Nov 14 2023 00:00:00 GMT+0000
 
         // Deployment of BIP68, BIP112, and BIP113.
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
