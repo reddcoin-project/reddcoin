@@ -281,7 +281,14 @@ BITCOIN_CORE_H = \
   versionbits.h \
   wallet/bdb.h \
   wallet/bip39.h \
+  wallet/bip39_chinese_simplified.h \
+  wallet/bip39_chinese_traditional.h \
   wallet/bip39_english.h \
+  wallet/bip39_french.h \
+  wallet/bip39_italian.h \
+  wallet/bip39_japanese.h \
+  wallet/bip39_korean.h \
+  wallet/bip39_spanish.h \
   wallet/coincontrol.h \
   wallet/coinselection.h \
   wallet/context.h \
