@@ -557,9 +557,12 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-rpcworkqueue=<n>", strprintf("Set the depth of the work queue to service RPC calls (default: %d)", DEFAULT_HTTP_WORKQUEUE), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::RPC);
     argsman.AddArg("-server", "Accept command line and JSON-RPC commands", ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
 
-    argsman.AddArg("-printstakemodifier", strprintf("Print stake-modifier selection parameters (default: %d)", DEFAULT_PRINTSTAKEMODIFIER), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
-    argsman.AddArg("-printhashproof", strprintf("Print hashproof upon failed proof of stake block (default: %d)", DEFAULT_PRINTHASHPROOF), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-printcoinage", strprintf("Print coin-age for a given input (default: %d)", DEFAULT_PRINTCOINAGE), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-printcoinstake", strprintf("Print coin stake found (default: %d)", DEFAULT_PRINTCOINSTAKE), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-printfee", strprintf("Print fee contained in coin stake. (default: %d)", DEFAULT_PRINTFEE), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-printcreation", strprintf("Print proof of stake reward details. (default: %d)", DEFAULT_PRINTCREATION), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-printhashproof", strprintf("Print hashproof upon failed proof of stake block (default: %d)", DEFAULT_PRINTHASHPROOF), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-printstakemodifier", strprintf("Print stake-modifier selection parameters (default: %d)", DEFAULT_PRINTSTAKEMODIFIER), ArgsManager::ALLOW_BOOL, OptionsCategory::DEBUG_TEST);
 
 #if HAVE_DECL_FORK
     argsman.AddArg("-daemon", strprintf("Run in the background as a daemon and accept commands (default: %d)", DEFAULT_DAEMON), ArgsManager::ALLOW_BOOL, OptionsCategory::OPTIONS);

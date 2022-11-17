@@ -213,7 +213,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             if (foundStake)
             {
                 // Found a kernel
-                if (gArgs.GetBoolArg("-debug", false) && gArgs.GetBoolArg("-printcoinstake", false))
+                if (gArgs.GetBoolArg("-debug", false) && gArgs.GetBoolArg("-printcoinstake", DEFAULT_PRINTCOINSTAKE))
                     LogPrintf("CreateCoinStake : kernel found\n");
                 std::vector<valtype> vSolutions;
                 CScript scriptPubKeyOut;
