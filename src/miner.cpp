@@ -562,7 +562,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     std::string strMintDisabledMessage = _("Info: Staking disabled by 'nominting' option.").translated;
     std::string strMintBlockMessage = _("Info: Staking suspended due to block creation failure.").translated;
     std::string strMintEmpty = "";
-    if (!gArgs.GetBoolArg("-minting", true) || !gArgs.GetBoolArg("-staking", true))
+    if (!gArgs.GetBoolArg("-staking", true))
     {
         strMintWarning = strMintDisabledMessage;
         LogPrintf("proof-of-stake minter disabled\n");
