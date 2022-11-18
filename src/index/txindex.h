@@ -7,9 +7,8 @@
 
 #include <chain.h>
 #include <index/base.h>
+#include <index/disktxpos.h>
 #include <txdb.h>
-
-class CDiskTxPos;
 
 /**
  * TxIndex is used to look up transactions included in the blockchain by hash.
