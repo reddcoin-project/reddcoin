@@ -4,7 +4,7 @@
 
 #include <pos/modifiercache.h>
 
-int cacheHit, cacheMiss;
+unsigned int cacheHit, cacheMiss;
 std::map<cachedModifier, uint64_t> cachedModifiers;
 
 void cacheInit()
