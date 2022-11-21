@@ -61,9 +61,9 @@ CLEAN_BITCOIN_QT_TEST = $(TEST_QT_MOC_CPP) qt/test/*.gcda qt/test/*.gcno
 
 CLEANFILES += $(CLEAN_BITCOIN_QT_TEST)
 
-test_reddcoin_qt : qt/test/test_bitcoin-qt$(EXEEXT)
+test_reddcoin_qt : qt/test/test_reddcoin-qt$(EXEEXT)
 
-test_reddcoin_qt_check : qt/test/test_bitcoin-qt$(EXEEXT) FORCE
+test_reddcoin_qt_check : qt/test/test_reddcoin-qt$(EXEEXT) FORCE
 	$(MAKE) check-TESTS TESTS=$^
 
 test_reddcoin_qt_clean: FORCE
