@@ -1931,15 +1931,18 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     // be reset before it reaches block 1,983,702 and starts doing unnecessary
     // BIP30 checking again.
     assert(pindex->pprev);
-    CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(m_params.GetConsensus().BIP34Height);
+    // TODO: revisit BIP30 optimisation checks after BIP34 activation, for now
+    // CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(m_params.GetConsensus().BIP34Height);
 
     //Only continue to enforce if we're below BIP34 activation height or the block hash at that height doesn't correspond.
-    fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == m_params.GetConsensus().BIP34Hash));
+    // fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == m_params.GetConsensus().BIP34Hash));
 
     // TODO: Remove BIP30 checking from block height 1,983,702 on, once we have a
     // consensus change that ensures coinbases at those heights can not
     // duplicate earlier coinbases.
-    if (fEnforceBIP30 || pindex->nHeight >= BIP34_IMPLIES_BIP30_LIMIT) {
+    // TODO: revisit BIP30 optimisation checks after BIP34 activation, for now
+    // if (fEnforceBIP30 || pindex->nHeight >= BIP34_IMPLIES_BIP30_LIMIT) {
+    if (fEnforceBIP30) {
         bool fProofOfStake = pindex->nHeight > Params().GetConsensus().nLastPowHeight;
         for (const auto& tx : block.vtx) {
             for (size_t o = 0; o < tx->vout.size(); o++) {
@@ -2102,13 +2105,13 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
             }
 
             // Check output values
-            if (block.nVersion >= 5 && CBlockIndex::IsSuperMajority(5, pindex->pprev, 9000)) {
+            if (block.nVersion >= 5 && pindex->pprev->nHeight >= m_params.GetConsensus().DonationHeight) {
 
                 nCalculatedPoSVEndCredit = nCalculatedStakeReward * 0.92;
                 nCalculatedDevEndCredit = nCalculatedStakeReward - nCalculatedPoSVEndCredit;
                 nDevEndCredit = block.vtx[1]->vout[block.vtx[1]->vout.size() - 1].nValue;
 
-                if (nDevEndCredit != nCalculatedDevEndCredit && CBlockIndex::IsSuperMajority(5, pindex->pprev->pprev, 9000)) {
+                if (nDevEndCredit != nCalculatedDevEndCredit && pindex->pprev->pprev->nHeight >= m_params.GetConsensus().DonationHeight) {
                     LogPrintf("WARNING: nDevEndCredit=%.f != nCalculatedDevEndCredit=%.2f\n", nDevEndCredit, nCalculatedDevEndCredit);
                     if (nDevEndCredit > nCalculatedDevEndCredit) {
                         LogPrintf("ERROR: nDevEndCredit=%.f > nCalculatedDevEndCredit=%.2f\n", nDevEndCredit, nCalculatedDevEndCredit);
@@ -3361,8 +3364,9 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
 
     // Reject blocks with outdated version
     if ((block.nVersion < 2 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_HEIGHTINCB)) ||
-        (block.nVersion < 3 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DERSIG)) ||
-        (block.nVersion < 4 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_CLTV))) {
+        (block.nVersion < 3 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_POSV)) ||
+        (block.nVersion < 4 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DERSIG)) ||
+        (block.nVersion < 5 && DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DEV))) {
             return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, strprintf("bad-version(0x%08x)", block.nVersion),
                                  strprintf("rejected nVersion=0x%08x block", block.nVersion));
     }
