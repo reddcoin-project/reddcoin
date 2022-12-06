@@ -1900,7 +1900,8 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     // future consensus change to do a new and improved version of BIP34 that
     // will actually prevent ever creating any duplicate coinbases in the
     // future.
-    static constexpr int BIP34_IMPLIES_BIP30_LIMIT = 1983702;
+
+    // static constexpr int BIP34_IMPLIES_BIP30_LIMIT = 1983702;
 
     // There is no potential to create a duplicate coinbase at block 209,921
     // because this is still before the BIP34 height and so explicit BIP30
