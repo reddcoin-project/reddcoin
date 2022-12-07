@@ -74,6 +74,7 @@ These variables may be set to override or append their default values.
     $(package)_objcxx
     $(package)_ar
     $(package)_ranlib
+    $(package)_windres
     $(package)_libtool
     $(package)_nm
     $(package)_cflags
