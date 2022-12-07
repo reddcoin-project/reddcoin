@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(bip39_vectors)
     }
 
     std::vector<std::string> keys = json.getKeys();
-    for (int i = 0; i < keys.size(); i++) {
+    for (unsigned int i = 0; i < keys.size(); i++) {
 
 	int nLanguage = CMnemonic::getLanguageIndex(keys.at(i).c_str());
 
