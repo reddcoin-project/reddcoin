@@ -11,7 +11,6 @@
 #include <index/txindex.h>
 #include <node/blockstorage.h>
 #include <pos/kernel.h>
-#include <index/txindex.h>
 #include <wallet/coincontrol.h>
 
 bool GetStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t & nTotalWeight)
