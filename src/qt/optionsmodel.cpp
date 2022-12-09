@@ -127,8 +127,8 @@ void OptionsModel::Init(bool resetSettings)
     }
     if (!settings.contains("bCheckGithub"))
         settings.setValue("bCheckGithub", DEFAULT_CHECK_GITHUB);
-    if (!gArgs.SoftSetBoolArg("-checkgithub", settings.value("bcheckgithub").toBool()))
-        addOverriddenOption("-checkgithub");
+    if (!gArgs.SoftSetBoolArg("-checkupdates", settings.value("bcheckgithub").toBool()))
+        addOverriddenOption("-checkupdates");
 #endif
 
     // Network

@@ -553,7 +553,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
         std::vector<COutput> vCoins;
         CCoinControl coincontrol;
         pwallet->AvailableCoins(vCoins, &coincontrol);
-        pos_timio = gArgs.GetArg("-staketimio", 500) + 30 * sqrt(vCoins.size());
+        pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(vCoins.size());
         LogPrintf("Set proof-of-stake timeout: %ums for %u UTXOs\n", pos_timio, vCoins.size());
     }
 
@@ -562,7 +562,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     std::string strMintDisabledMessage = _("Info: Staking disabled by 'nominting' option.").translated;
     std::string strMintBlockMessage = _("Info: Staking suspended due to block creation failure.").translated;
     std::string strMintEmpty = "";
-    if (!gArgs.GetBoolArg("-minting", true) || !gArgs.GetBoolArg("-staking", true))
+    if (!gArgs.GetBoolArg("-staking", true))
     {
         strMintWarning = strMintDisabledMessage;
         LogPrintf("proof-of-stake minter disabled\n");
