@@ -1,43 +1,43 @@
-22.0 Release Notes
+4.22.0 Release Notes
 ==================
 
-Bitcoin Core version 22.0 is now available from:
+Reddcoin Core version 4.22.0 is now available from:
 
-  <https://bitcoincore.org/bin/bitcoin-core-22.0/>
+  <https://download.reddcoin.com/bin/reddcoin-core-4.22/>
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
 
 Please report bugs using the issue tracker at GitHub:
 
-  <https://github.com/bitcoin/bitcoin/issues>
+  <https://github.com/reddcoin-project/reddcoin/issues>
 
 To receive security and update notifications, please subscribe to:
 
-  <https://bitcoincore.org/en/list/announcements/join/>
+  [Discord]<https://discord.com/channels/314599721039691776/610562116688281611>
 
 How to Upgrade
 ==============
 
 If you are running an older version, shut it down. Wait until it has completely
 shut down (which might take a few minutes in some cases), then run the
-installer (on Windows) or just copy over `/Applications/Bitcoin-Qt` (on Mac)
-or `bitcoind`/`bitcoin-qt` (on Linux).
+installer (on Windows) or just copy over `/Applications/Reddcoin-Qt` (on Mac)
+or `reddcoind`/`reddcoin-qt` (on Linux).
 
-Upgrading directly from a version of Bitcoin Core that has reached its EOL is
+Upgrading directly from a version of Reddcoin Core that has reached its EOL is
 possible, but it might take some time if the data directory needs to be migrated. Old
-wallet versions of Bitcoin Core are generally supported.
+wallet versions of Reddcoin Core are generally supported.
 
 Compatibility
 ==============
 
-Bitcoin Core is supported and extensively tested on operating systems
-using the Linux kernel, macOS 10.14+, and Windows 7 and newer.  Bitcoin
+Reddcoin Core is supported and extensively tested on operating systems
+using the Linux kernel, macOS 10.14+, and Windows 7 and newer.  Reddcoin
 Core should also work on most other Unix-like systems but is not as
-frequently tested on them.  It is not recommended to use Bitcoin Core on
+frequently tested on them.  It is not recommended to use Reddcoin Core on
 unsupported systems.
 
-From Bitcoin Core 22.0 onwards, macOS versions earlier than 10.14 are no longer supported.
+From Reddcoin Core 4.22.0 onwards, macOS versions earlier than 10.14 are no longer supported.
 
 Notable changes
 ===============
@@ -59,12 +59,6 @@ New settings
 
 Updated settings
 ----------------
-
-- In previous releases, the meaning of the command line option
-  `-persistmempool` (without a value provided) incorrectly disabled mempool
-  persistence.  `-persistmempool` is now treated like other boolean options to
-  mean `-persistmempool=1`. Passing `-persistmempool=0`, `-persistmempool=1`
-  and `-nopersistmempool` is unaffected. (#23061)
 
 Tools and Utilities
 -------------------
@@ -119,4 +113,4 @@ Credits
 Thanks to everyone who directly contributed to this release:
 
 As well as to everyone that helped with translations on
-[Transifex](https://www.transifex.com/bitcoin/bitcoin/).
+[Transifex](https://www.transifex.com/reddcoin/reddcoin/).
