@@ -9,16 +9,16 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* Version Build */
-#define CLIENT_VERSION_BUILD 0
+#define CLIENT_VERSION_BUILD 5
 
 /* Version is release */
-#define CLIENT_VERSION_IS_RELEASE true
+#define CLIENT_VERSION_IS_RELEASE false
 
 /* Major version */
-#define CLIENT_VERSION_MAJOR 22
+#define CLIENT_VERSION_MAJOR 4
 
 /* Minor version */
-#define CLIENT_VERSION_MINOR 0
+#define CLIENT_VERSION_MINOR 22
 
 /* Copyright holder(s) before %s replacement */
 #define COPYRIGHT_HOLDERS "The %s developers"
@@ -248,22 +248,22 @@
 #define LT_OBJDIR ".libs/"
 
 /* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "https://github.com/bitcoin/bitcoin/issues"
+#define PACKAGE_BUGREPORT "https://github.com/reddcoin-project/reddcoin-0.22/issues"
 
 /* Define to the full name of this package. */
-#define PACKAGE_NAME "Bitcoin Core"
+#define PACKAGE_NAME "Reddcoin Core"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Bitcoin Core 22.0.0"
+#define PACKAGE_STRING "Reddcoin Core 4.22.5"
 
 /* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "bitcoin"
+#define PACKAGE_TARNAME "reddcoin"
 
 /* Define to the home page for this package. */
-#define PACKAGE_URL "https://bitcoincore.org/"
+#define PACKAGE_URL "https://reddcoin.com/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "22.0.0"
+#define PACKAGE_VERSION "4.22.5"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */
