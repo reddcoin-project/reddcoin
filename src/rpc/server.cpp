@@ -7,6 +7,7 @@
 
 #include <clientversion.h>
 #include <rpc/util.h>
+#include <rpc/semver.h>
 #include <shutdown.h>
 #include <sync.h>
 #include <util/strencodings.h>
@@ -264,25 +265,19 @@ static RPCHelpMan getrpcinfo()
 static RPCHelpMan checkupdates()
 {
     return RPCHelpMan{"checkupdates",
-                "\nReturns details of the latest software update available.\n",
-                {},
-                RPCResult{
-                    RPCResult::Type::OBJ, "", "",
-                    {
-                        {RPCResult::Type::STR, "installedVersion", "Installed wallet version"},
-                        {RPCResult::Type::STR, "latestRepoVersion", "Latest release wallet version available from Reddcoin GitHub"},
-                        {RPCResult::Type::NUM, "localversion", "The local version number"},
-                        {RPCResult::Type::NUM, "remoteversion", "The remote version number"},
-                        {RPCResult::Type::STR, "remotetype", "The type of release [full, rc (release candidate), alpha, beta]"},
-                        {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
-                        {RPCResult::Type::STR, "warning", "Any warning messages"},
-                        {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
-                        {RPCResult::Type::STR, "errors", "Any error messages"},
-                    }
-                },
-                RPCExamples{
-                    HelpExampleCli("checkupdates", "")
-                + HelpExampleRpc("checkupdates", "")},
+        "\nReturns details of the latest software update available.\n",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "", {
+                {RPCResult::Type::NUM, "localversion", "The local version number"},
+                {RPCResult::Type::NUM, "remoteversion", "The remote version number"},
+                {RPCResult::Type::BOOL, "updateavailable", "Is a remote update available"},
+                {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
+                {RPCResult::Type::STR, "warning", "Any warning messages"},
+                {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
+                {RPCResult::Type::STR, "errors", "Any error messages"},
+            }},
+        RPCExamples{HelpExampleCli("checkupdates", "") + HelpExampleRpc("checkupdates", "")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
 
@@ -293,16 +288,17 @@ static RPCHelpMan checkupdates()
     };
 }
 
-void checkforupdatesinfo(UniValue& result) {
-    std::string installedVersion = "v" + std::to_string(CLIENT_VERSION_MAJOR) + "." + std::to_string(CLIENT_VERSION_MINOR) + "." + std::to_string(CLIENT_VERSION_BUILD);
-    std::string latestRepoVersion = "";
-    std::string remotetype = "";
+void checkforupdatesinfo(UniValue& result)
+{
+    std::string installedVersion = PACKAGE_VERSION;
+    std::string repositoryVersion = "";
+    std::string localVersion = "";
+    std::string remoteVersion = "";
+    bool updateAvailable = false;
     std::string message = "";
     std::string warning = "";
     std::string officialDownloadLink = "";
     std::string errors = "";
-    std::string strVersion = "";
-    int remoteVersion=0;
 
     try {
         boost::asio::io_service svc;
@@ -319,7 +315,7 @@ void checkforupdatesinfo(UniValue& result) {
         // Send request
         boost::asio::streambuf request;
         std::ostream request_stream(&request);
-        request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n";  // note that you can change it if you wish to HTTP/1.0
+        request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n"; // note that you can change it if you wish to HTTP/1.0
         request_stream << "Host: api.github.com\r\n";
         request_stream << "User-Agent: C/1.0\r\n";
         request_stream << "Content-Type: application/json; charset=utf-8\r\n";
@@ -342,12 +338,10 @@ void checkforupdatesinfo(UniValue& result) {
         response_stream >> status_code;
         std::string status_message;
         std::getline(response_stream, status_message);
-        if (!response_stream || http_version.substr(0, 5) != "HTTP/")
-        {
+        if (!response_stream || http_version.substr(0, 5) != "HTTP/") {
             errors = "Invalid response";
         }
-        if (status_code != 200)
-        {
+        if (status_code != 200) {
             errors = "Response returned with status code " + std::to_string(status_code);
         }
 
@@ -356,7 +350,7 @@ void checkforupdatesinfo(UniValue& result) {
 
         std::string header;
         while (std::getline(response_stream, header) && header != "\r") {
-            //cout << header << endl;
+            // cout << header << endl;
         }
 
         // Write whatever content we already have to output.
@@ -391,55 +385,59 @@ void checkforupdatesinfo(UniValue& result) {
         auto success = obj_response.read(str_response);
 
         if (success) {
-               if (obj_response.exists("tag_name")) {
-                   latestRepoVersion = obj_response["tag_name"].get_str();
+            if (obj_response.exists("tag_name")) {
+                repositoryVersion = obj_response["tag_name"].get_str();
 
-                   /** "tag_name": "v4.22.0-alpha-1",
-                    * "v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)"
-                    *
-                    * Match 1:	v4.22.0-alpha-1
-                    * Group 0:	4.22.0
-                    * Group 1:	4			<- this
-                    * Group 2:	22			<- this
-                    * Group 3:	0			<- this
-                    * Group 4:	-alpha-1
-                    * Group 5:	-alpha
-                    * Group 6:	alpha		<- this
-                    * Group 7:	-1
-                    * Group 8:	1			<- this
-                    *
-                    */
+                /** "tag_name": "v4.22.0-alpha-1",
+                 * "v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)"
+                 *
+                 * Match 0:    v4.22.0-alpha-1
+                 * Match 1:    4.22.0
+                 * Match 2:    4             <- this
+                 * Match 3:    22            <- this
+                 * Match 4:    0             <- this
+                 * Match 5:    -alpha-1
+                 * Match 6:    -alpha
+                 * Match 7:    alpha         <- this
+                 * Match 8:    -1
+                 * Match 9:    1             <- this
+                 *
+                 */
 
-                   std::regex versionRgx("v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)");
-                   std::smatch matches;
+                std::regex versionRgx("(([0-9]+).([0-9]+).([0-9]+))([-|.]?((alpha|beta|rc)([-|\.]?(.*)))|$)");
+                std::smatch remoteMatches;
+                std::smatch localMatches;
 
-                   if(std::regex_search(obj_response["tag_name"].get_str(), matches, versionRgx) && matches.size()>=5) {
-                	   strVersion = matches[1];
-                       remoteVersion = std::stoi(matches[2].str()) * 10000 + std::stoi(matches[3]) * 100 + std::stoi(matches[4]) * 1;
-                       for (auto match : matches) {
-                    	   LogPrintf("%s\n", match);
-                       }
-                       remotetype = matches[7].str();
-                   }
+                std::regex_search(installedVersion, localMatches, versionRgx);
+                std::regex_search(repositoryVersion, remoteMatches, versionRgx);
 
-               }
-        }
+                std::string strRemotePrerelease = "";
+                if (remoteMatches[6] != "") {
+                    strRemotePrerelease += "-" + remoteMatches[7].str() + "." + remoteMatches[9].str();
+                }
+                auto remoteV = semver::version::parse(remoteMatches[1].str() + strRemotePrerelease, false);
+                remoteVersion = remoteV.str();
 
-        // Compare installed and latest GitHub versions
-        if (CLIENT_VERSION > remoteVersion) {
-            message = "You're currently running a newer version than the official version of Reddcoin Core (" + latestRepoVersion + ")";
-        } else if (CLIENT_VERSION == remoteVersion) {
-            message = "You're currently running the most recent version of Reddcoin Core (" + latestRepoVersion + ")";
-        } else {
-            message = "Please download the latest version from our official website";
-        }
+                std::string strLocalPrerelease = "";
+                if (localMatches[6] != "") {
+                    strLocalPrerelease += "-" + localMatches[7].str() + "." + localMatches[9].str();
+                }
+                auto localV = semver::version::parse(localMatches[1].str() + strLocalPrerelease, false);
+                localVersion = localV.str();
 
-        // Build direct download link
-        std::string urlWalletVersion = latestRepoVersion;
-        boost::replace_all(urlWalletVersion, "v", "");
-        officialDownloadLink = strDownloadLink + strVersion;
-        if (remotetype != "") {
-        	officialDownloadLink += "/" + remotetype;
+                if (remoteV > localV) {
+                    updateAvailable = true;
+                    message = "Please download the latest version (" + remoteV.str() + ") from our official website";
+                } else if (remoteV == localV) {
+                    message = "You're running the most recent version of Reddcoin Core (" + localV.str() + ")";
+                }
+
+                // Build direct download link
+                officialDownloadLink = strDownloadLink + remoteMatches[1].str();
+                if (remoteV.is_prerelease()) {
+                    officialDownloadLink += "/" + remoteMatches[7].str() + remoteMatches[9].str();
+                }
+            }
         }
 
         std::string preleaseWarning = "";
@@ -449,17 +447,13 @@ void checkforupdatesinfo(UniValue& result) {
             warning = "This is a pre-release test build - use at your own risk - do not use for staking or merchant applications";
         }
 
-    }
-    catch (std::exception& e)
-    {
+    } catch (std::exception& e) {
         errors = e.what();
     }
 
-    result.pushKV("installedVersion", installedVersion);
-    result.pushKV("latestRepoVersion", latestRepoVersion);
-    result.pushKV("localversion", CLIENT_VERSION);
+    result.pushKV("localversion", localVersion);
     result.pushKV("remoteversion", remoteVersion);
-    result.pushKV("remotetype", remotetype);
+    result.pushKV("updateavailable", updateAvailable);
     result.pushKV("message", message);
     result.pushKV("warning", warning);
     result.pushKV("officialDownloadLink", officialDownloadLink);
