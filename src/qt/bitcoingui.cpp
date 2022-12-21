@@ -204,8 +204,13 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         progressBar->setStyleSheet("QProgressBar { background-color: #e8e8e8; border: 1px solid grey; border-radius: 7px; padding: 1px; text-align: center; } QProgressBar::chunk { background: QLinearGradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #FF8000, stop: 1 orange); border-radius: 7px; margin: 0px; }");
     }
 
+    // Check update label for update feedback download
+    labelCheckUpdate = new GUIUtil::ClickableLabel(platformStyle);
+    labelCheckUpdate->setVisible(false);
+
     statusBar()->addWidget(progressBarLabel);
     statusBar()->addWidget(progressBar);
+    statusBar()->addWidget(labelCheckUpdate);
     statusBar()->addPermanentWidget(frameBlocks);
 
     // Install event filter to be able to catch status tip events (QEvent::StatusTip)
@@ -223,39 +228,14 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
 
     connect(labelBlocksIcon, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showModalOverlay);
     connect(progressBar, &GUIUtil::ClickableProgressBar::clicked, this, &BitcoinGUI::showModalOverlay);
+    connect(labelCheckUpdate, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showUpdatesClicked);
 
-#ifdef ENABLE_WALLET
-    if(settings.value("bCheckGithub").toBool()) {
+    QTimer *timer = new QTimer(this);
+    connect(timer, SIGNAL(timeout()), this, SLOT(checkUpdates()));
+    timer->start(CHECK_UPDATE_DELAY);
 
-        // Get checkforupdatesinfo from rpc server
-        UniValue result(UniValue::VOBJ);
-        checkforupdatesinfo(result);
-
-        std::string installedVersion = "";
-        std::string latestRepoVersion = "";
-        std::string message = "";
-        std::string warning = "";
-        std::string officialDownloadLink = "";
-        std::string errors = "";
-
-
-        if (result.exists("installedVersion")) {
-            installedVersion = result["installedVersion"].get_str();
-        }
-        if (result.exists("latestRepoVersion")) {
-            latestRepoVersion = result["latestRepoVersion"].get_str();
-        }
-
-        if (installedVersion != latestRepoVersion) {
-
-        	bilingual_str strMessage = strprintf(_("This client is not the most recent version available, please update to release %s from github or disable this check in settings."), latestRepoVersion);
-			SetMiscWarning(strMessage);
-			uiInterface.ThreadSafeMessageBox(strMessage, "", CClientUIInterface::MSG_WARNING);
-
-        }
-
-    }
-#endif
+    // check update on initial start
+    checkUpdates();
 
 #ifdef Q_OS_MAC
     m_app_nap_inhibitor = new CAppNapInhibitor;
@@ -280,6 +260,45 @@ BitcoinGUI::~BitcoinGUI()
 #endif
 
     delete rpcConsole;
+}
+
+void BitcoinGUI::checkUpdates()
+{
+#ifdef ENABLE_WALLET
+
+    QSettings settings;
+    if (settings.value("bCheckGithub").toBool()) {
+        // Get checkforupdatesinfo from rpc server
+        UniValue result(UniValue::VOBJ);
+        checkforupdatesinfo(result);
+
+        std::string localversion = "";
+        std::string remoteversion = "";
+        bool updateavailable = false;
+        std::string message = "";
+        std::string warning = "";
+        std::string officialDownloadLink = "";
+        std::string errors = "";
+
+        if (result.exists("localversion")) {
+            localversion = result["localversion"].get_str();
+        }
+        if (result.exists("remoteversion")) {
+            remoteversion = result["remoteversion"].get_str();
+        }
+        if (result.exists("updateavailable")) {
+            updateavailable = result["updateavailable"].get_bool();
+        }
+
+        if (updateavailable) {
+            labelCheckUpdate->setText(tr("Update to %1 is available.").arg(QString::fromStdString(localversion)));
+            labelCheckUpdate->setVisible(true);
+        } else {
+            labelCheckUpdate->setVisible(false);
+            labelCheckUpdate->setText(QString(""));
+        }
+    }
+#endif
 }
 
 void BitcoinGUI::createActions()

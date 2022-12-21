@@ -75,18 +75,18 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about, bool checkUpda
             checkforupdatesinfo(result);
 
             //json_spirit::Object jsonObject = result.get_obj();
-            QString installedVersion = "";
-            QString latestRepoVersion = "";
+            QString localversion = "";
+            QString remoteversion = "";
             QString message = "";
             QString warning = "";
             QString officialDownloadLink = "";
             QString errors = "";
 
-            if (result.exists("installedVersion")) {
-                installedVersion = QString::fromStdString(result["installedVersion"].get_str());
+            if (result.exists("localversion")) {
+                localversion = QString::fromStdString(result["localversion"].get_str());
             }
-            if (result.exists("latestRepoVersion")) {
-                latestRepoVersion = QString::fromStdString(result["latestRepoVersion"].get_str());
+            if (result.exists("remoteversion")) {
+                remoteversion = QString::fromStdString(result["remoteversion"].get_str());
             }
             if (result.exists("message")) {
                 message = QString::fromStdString(result["message"].get_str());
@@ -94,7 +94,7 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about, bool checkUpda
             if (result.exists("warning")) {
                 warning = QString::fromStdString(result["warning"].get_str());
             }
-            if (result.exists("warning")) {
+            if (result.exists("officialDownloadLink")) {
                 officialDownloadLink = QString::fromStdString(result["officialDownloadLink"].get_str());
             }
             if (result.exists("error")) {
@@ -104,14 +104,14 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, bool about, bool checkUpda
             if (!errors.isEmpty()) {
                 text = "<font color = 'red'>Error: </font>";
                 text += errors;
-            } else if (installedVersion == latestRepoVersion) {
-                text = "Installed version: <b>" + installedVersion  + "</b><br>";
+            } else if (localversion == remoteversion) {
+                text = "Installed version: <b>" + localversion  + "</b><br>";
                 text += message;
             } else {
                 QString url = "<a href=\""+ officialDownloadLink +"\">"+ officialDownloadLink +"</a>";
 
-                text = "Installed version: <b>" + installedVersion  + "</b><br>";
-                text += "Latest repository version: <b>" + latestRepoVersion + "</b><br><br>";
+                text = "Installed version: <b>" + localversion  + "</b><br>";
+                text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
                 text += "Please download the latest version from our official website <br>(" + url + ").";
             }
 
