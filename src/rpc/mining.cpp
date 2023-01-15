@@ -277,11 +277,13 @@ static RPCHelpMan staking()
         NodeContext& node = EnsureAnyNodeContext(request.context);
         gArgs.ForceSetArg("-staking", fGenerate ? "1" : "0");
 
-        MintStake(gArgs.GetBoolArg("-staking", true), GetWallets()[0], node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+        if (HasWallets() && GetWallets()[0]) {
+            MintStake(gArgs.GetBoolArg("-staking", true), GetWallets()[0], node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
 
-        if (!fGenerate) {
-            InterruptStaking();
-            StopStaking();
+            if (!fGenerate) {
+                InterruptStaking();
+                StopStaking();
+            }
         }
     }
 
