@@ -575,6 +575,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             if (ShutdownRequested())
                 return;
             while (pwallet->IsLocked()) {
+                if (ShutdownRequested())
+                    return;
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
                     uiInterface.NotifyAlertChanged();
@@ -601,6 +603,8 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
 
             while (GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()) < 0.996)
             {
+                if (ShutdownRequested())
+                    return;
                 LogPrintf("Minter thread sleeps while sync at %f\n", GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()));
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
