@@ -703,7 +703,7 @@ void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManage
 // reddcoin: stake minter
 void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
 {
-    if (!fGenerate) {
+    if (!fGenerate or pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
         fEnableStaking = false;
         return;
     }
