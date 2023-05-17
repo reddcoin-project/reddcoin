@@ -240,8 +240,9 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 nCredit += pcoin.txout.nValue;
                 vwtxPrev.push_back(tx);
                 txNew.vout.push_back(CTxOut(0, scriptPubKeyOut));
-                if (header.GetBlockTime() + nStakeSplitAge > txNew.nTime)
-                    txNew.vout.push_back(CTxOut(0, scriptPubKeyOut));
+                if (GetCoinAgeWeight(header.GetBlockTime(), (int64_t)txNew.nTime, consensusParams) < nStakeSplitAge && nCredit >= nCombineThreshold)
+                    txNew.vout.push_back(CTxOut(0, scriptPubKeyOut)); // Split stake
+                LogPrintf("CreateCoinStake : added kernel type=%s\n", GetTxnOutputType(whichType));
                 fKernelFound = true;
                 break;
             }
