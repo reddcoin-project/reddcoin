@@ -5,6 +5,7 @@
 
 #include <pos/kernelrecord.h>
 
+#include <arith_uint256.h>
 #include <base58.h>
 #include <chainparams.h>
 #include <key_io.h>
@@ -77,8 +78,25 @@ int64_t KernelRecord::getAge() const
 int64_t KernelRecord::getCoinAge() const
 {
     const Consensus::Params& params = Params().GetConsensus();
-    int nDayWeight = (std::min((GetAdjustedTime() - nTime), params.nStakeMaxAge) - params.nStakeMinAge) / 86400;
-    return std::max(nValue * nDayWeight / COIN, (int64_t) 0);
+    arith_uint256 bnCoinDay = arith_uint256(nValue) * getCoinAgeWeight() / COIN / (24 * 60 * 60);
+    int64_t nCoinAge = ArithToUint256(bnCoinDay).GetUint64(0);
+    return std::max(nCoinAge, (int64_t)0);
+}
+
+int64_t KernelRecord::getCoinAgeWeight(int nTimeOffset) const
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    int64_t nSeconds = std::max((int64_t)0, GetAdjustedTime() - nTime - params.nStakeMinAge + nTimeOffset);
+    double days = double(nSeconds) / (24 * 60 * 60);
+    double weight = 0;
+
+    if (days <= 7) {
+        weight = -0.00408163 * pow(days, 3) + 0.05714286 * pow(days, 2) + days;
+    } else {
+        weight = 8.4 * log(days) - 7.94564525;
+    }
+
+    return std::min((int64_t)(weight * 24 * 60 * 60), params.nStakeMaxAge);
 }
 
 double KernelRecord::getProbToMintStake(double difficulty, int timeOffset) const
@@ -86,8 +104,10 @@ double KernelRecord::getProbToMintStake(double difficulty, int timeOffset) const
     const Consensus::Params& params = Params().GetConsensus();
     double maxTarget = pow(static_cast<double>(2), 224);
     double target = maxTarget / difficulty;
-    int dayWeight = (std::min((GetAdjustedTime() - nTime) + timeOffset, params.nStakeMaxAge) - params.nStakeMinAge) / 86400;
-    uint64_t coinAge = std::max(nValue * dayWeight / COIN, (int64_t)0);
+
+    arith_uint256 bnCoinDay = arith_uint256(nValue) * getCoinAgeWeight(timeOffset) / COIN / (24 * 60 * 60);
+    int64_t nCoinAge = ArithToUint256(bnCoinDay).GetUint64(0);
+    uint64_t coinAge = std::max((int64_t)0, nCoinAge);
     return target * coinAge / std::pow(static_cast<double>(2), 256);
 }
 
