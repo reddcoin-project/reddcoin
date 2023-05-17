@@ -140,8 +140,8 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
 {
     // The following split & combine thresholds are important to security
     // Should not be adjusted if you don't understand the consequences
-    static unsigned int nStakeSplitAge = (60 * 60 * 24 * 90);
-    int64_t nCombineThreshold = 2000 * COIN;
+    static unsigned int nStakeSplitAge = (60 * 60 * 24 * 45);
+    int64_t nCombineThreshold = 2000000 * COIN;
 
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
