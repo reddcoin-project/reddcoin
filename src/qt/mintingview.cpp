@@ -159,27 +159,26 @@ void MintingView::setModel(WalletModel *model)
 
 void MintingView::chooseMintingInterval(int idx)
 {
-    int interval = 1;
-    switch(mintingCombo->itemData(idx).toInt())
-    {
-        case Minting1min:
-            interval = 1;
-            break;
-        case Minting10min:
-            interval = 10;
-            break;
-        case Minting1hour:
-            interval = 60;
-            break;
-        case Minting1day:
-            interval = 60*24;
-            break;
-        case Minting30days:
-            interval = 60*24*30;
-            break;
-        case Minting90days:
-            interval = 60*24*90;
-            break;
+    int interval = 60;
+    switch (mintingCombo->itemData(idx).toInt()) {
+    case Minting1min:
+        interval = 60;
+        break;
+    case Minting10min:
+        interval = 60 * 10;
+        break;
+    case Minting1hour:
+        interval = 60 * 60;
+        break;
+    case Minting1day:
+        interval = 60 * 60 * 24;
+        break;
+    case Minting30days:
+        interval = 60 * 60 * 24 * 30;
+        break;
+    case Minting90days:
+        interval = 60 * 60 * 24 * 90;
+        break;
     }
     model->getMintingTableModel()->setMintingInterval(interval);
     mintingProxyModel->invalidate();
