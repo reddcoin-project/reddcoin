@@ -292,7 +292,7 @@ static void NotifyTransactionChanged(MintingTableModel *ttm, const uint256 &hash
 MintingTableModel::MintingTableModel(WalletModel *parent) :
         QAbstractTableModel(parent),
         walletModel(parent),
-        mintingInterval(1),
+        mintingInterval(60),
         priv(new MintingTablePriv(walletModel, this)),
         cachedNumBlocks(0)
 {
@@ -380,7 +380,7 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
         switch(index.column())
         {
         case MintProbability:
-            int interval = this->mintingInterval;
+            int interval = this->mintingInterval / 60;
             QString unit = tr("minutes");
 
             int hours = interval / 60;
@@ -461,8 +461,9 @@ double MintingTableModel::getDayToMint(KernelRecord *wtx) const
 {
     // const CBlockIndex *p = GetLastBlockIndex(::ChainActive().Tip(), true);
     double difficulty = walletModel->node().getDifficulty(); //p->GetBlockDifficulty();
+    int nIntervalMins = mintingInterval / 60;
 
-    double prob = wtx->getProbToMintWithinNMinutes(difficulty, mintingInterval);
+    double prob = wtx->getProbToMintWithinNMinutes(difficulty, nIntervalMins);
     prob = prob * 100;
     return prob;
 }
