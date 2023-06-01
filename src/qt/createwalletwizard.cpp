@@ -220,10 +220,14 @@ wizPage_walletType::wizPage_walletType(QWidget* parent)
     buttonGroup = new QButtonGroup();
 
     radioButton_bip32Wallet = new QRadioButton(tr("Bip32 Wallet"), groupBox_1);
+    radioButton_bip32Wallet->setToolTip(tr("Standard HD wallet (No seed phrase)"));
     radioButton_bip39Wallet = new QRadioButton(tr("Bip39 Wallet"), groupBox_1);
+    radioButton_bip39Wallet->setToolTip(tr("HD wallet with seed phrase"));
     radioButton_bip39Wallet->setChecked(true);
     radioButton_bip44Wallet = new QRadioButton(tr("Bip44 Wallet"), groupBox_1);
+    radioButton_bip44Wallet->setToolTip(tr("HD wallet with seed phrase and coin purpose set."));
     radioButton_blankWallet = new QRadioButton(tr("Blank Wallet"), groupBox_1);
+    radioButton_blankWallet->setToolTip(tr("Make a blank wallet. Blank wallets do not initially have private keys or scripts. Private keys and addresses can be imported, or an HD seed can be set, at a later time."));
 
 
     verticalLayout_1->addWidget(radioButton_bip32Wallet);
@@ -246,6 +250,7 @@ wizPage_walletType::wizPage_walletType(QWidget* parent)
     verticalLayout_2 = new QVBoxLayout(groupBox_2);
 
     checkbox_encryptWallet = new QCheckBox(tr("Encrypt Wallet"), groupBox_2);
+    checkbox_encryptWallet->setToolTip(tr("Encrypt the wallet. The wallet will be encrypted with a passphrase of your choice."));
 
     verticalLayout_2->addWidget(checkbox_encryptWallet);
 
@@ -255,8 +260,11 @@ wizPage_walletType::wizPage_walletType(QWidget* parent)
     verticalLayout_3 = new QVBoxLayout(groupBox_3);
 
     checkBox_disablePrivateKeys = new QCheckBox(tr("Disable Priv Keys"), groupBox_3);
+    checkBox_disablePrivateKeys->setToolTip(tr("Disable private keys for this wallet. Wallets with private keys disabled will have no private keys and cannot have an HD seed or imported private keys. This is ideal for watch-only wallets."));
     checkBox_descriptorWallet = new QCheckBox(tr("Descriptor Wallet"), groupBox_3);
+    checkBox_descriptorWallet->setToolTip(tr("Use descriptors for scriptPubKey management."));
     checkBox_externalSigner = new QCheckBox(tr("External Signer"), groupBox_3);
+    checkBox_externalSigner->setToolTip(tr("Use an external signing device such as a hardware wallet. Configure the external signer script in wallet preferences first."));
 
     verticalLayout_3->addWidget(checkBox_disablePrivateKeys);
     verticalLayout_3->addWidget(checkBox_descriptorWallet);
@@ -421,7 +429,7 @@ wizPage_walletKeystore::wizPage_walletKeystore(QWidget* parent)
 
     radioButton_createSeed = new QRadioButton(tr("Create a new seed"), groupBox_1);
     radioButton_createSeed->setChecked(true);
-    radioButton_importSeed = new QRadioButton(tr("I already have a seed"), groupBox_1);
+    radioButton_importSeed = new QRadioButton(tr("Already have a seed"), groupBox_1);
     radioButton_masterKey = new QRadioButton(tr("Use a master key"), groupBox_1);
     radioButton_hardware = new QRadioButton(tr("Use a hardware device"), groupBox_1);
 
