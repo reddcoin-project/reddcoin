@@ -855,6 +855,71 @@ static RPCHelpMan getunconfirmedbalance()
     };
 }
 
+static RPCHelpMan getinterest()
+{
+    return RPCHelpMan{"getinterest",
+                "\nReturns the total available balance.\n"
+                "The available balance is what the wallet considers currently spendable, and is\n"
+                "thus affected by options which limit spendability such as -spendzeroconfchange.\n",
+                {
+					{"start", RPCArg::Type::NUM, RPCArg::Default{0}, "Start time (unixtime)."},
+					{"end", RPCArg::Type::NUM, RPCArg::Default{-1}, "End time (unixtime)."},
+                },
+                RPCResult{
+                    RPCResult::Type::STR_AMOUNT, "amount", "The total amount in " + CURRENCY_UNIT + " interest generated for this wallet."
+                },
+                RPCExamples{
+            "\nThe total amount of interest generated for this wallet\n"
+            + HelpExampleCli("getinterest", "") +
+            "\nThe total amount of interest generated for this wallet from start time\n"
+            + HelpExampleCli("getinterest", "16123456789") +
+			"\nThe total amount of interest generated for this wallet between start and end time\n"
+			+ HelpExampleCli("getinterest", "16123456789 1685591657") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("getinterest", "16123456789")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    LOCK(pwallet->cs_wallet);
+
+    unsigned int nTimeStart = 0;
+    if (!request.params[0].isNull()) {
+    	nTimeStart = (unsigned int)request.params[0].get_int();
+    }
+    unsigned int nTimeEnd = -1;
+    if (!request.params[1].isNull()) {
+        	nTimeStart = (unsigned int)request.params[1].get_int();
+	}
+
+    isminefilter filter = ISMINE_SPENDABLE;
+
+    int64_t nInterest = 0;
+    for (const std::pair<const uint256, CWalletTx>& pairWtx : pwallet->mapWallet) {
+        const CWalletTx& wtx = pairWtx.second;
+        if (!wtx.IsCoinStake() || wtx.tx->nTime < nTimeStart || wtx.tx->nTime > nTimeEnd)
+			continue;
+
+        int64_t nDebit = wtx.GetDebit(filter);
+		int64_t nCredit = wtx.GetCredit(filter);
+
+        if (nDebit <= 0 || nCredit <= 0 || nDebit >= nCredit)
+            continue;
+        else
+            nInterest += nCredit - nDebit;
+    }
+
+    return  ValueFromAmount(nInterest);
+
+},
+    };
+}
 
 static RPCHelpMan sendmany()
 {
@@ -4659,6 +4724,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &getaddressesbylabel,            },
     { "wallet",             &getaddressinfo,                 },
     { "wallet",             &getbalance,                     },
+	{ "wallet",             &getinterest,                    },
     { "wallet",             &getnewaddress,                  },
     { "wallet",             &getrawchangeaddress,            },
     { "wallet",             &getreceivedbyaddress,           },
