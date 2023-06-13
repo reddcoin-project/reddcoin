@@ -152,7 +152,7 @@ static void WalletTxToJSON(interfaces::Chain& chain, const CWalletTx& wtx, UniVa
 {
     int confirms = wtx.GetDepthInMainChain();
     entry.pushKV("confirmations", confirms);
-    if (wtx.IsCoinBase())
+    if (wtx.IsCoinBase() || wtx.IsCoinStake())
         entry.pushKV("generated", true);
     if (confirms > 0)
     {
@@ -1382,6 +1382,9 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
     {
         for (const COutputEntry& s : listSent)
         {
+        	if (wtx.IsCoinStake() && s.vout != listSent.size()) {
+        		continue;
+        	}
             UniValue entry(UniValue::VOBJ);
             if (involvesWatchonly || (wallet.IsMine(s.destination) & ISMINE_WATCH_ONLY)) {
                 entry.pushKV("involvesWatchonly", true);
@@ -1394,7 +1397,8 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("label", address_book_entry->GetLabel());
             }
             entry.pushKV("vout", s.vout);
-            entry.pushKV("fee", ValueFromAmount(-nFee));
+            if (!wtx.IsCoinStake())
+                entry.pushKV("fee", ValueFromAmount(-nFee));
             if (fLong)
                 WalletTxToJSON(wallet.chain(), wtx, entry);
             entry.pushKV("abandoned", wtx.isAbandoned());
@@ -1404,6 +1408,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
 
     // Received
     if (listReceived.size() > 0 && wtx.GetDepthInMainChain() >= nMinDepth) {
+    	bool stop = false;
         for (const COutputEntry& r : listReceived)
         {
             std::string label;
@@ -1419,12 +1424,14 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("involvesWatchonly", true);
             }
             MaybePushAddress(entry, r.destination);
-            if (wtx.IsCoinBase())
+            if (wtx.IsCoinBase() || wtx.IsCoinStake())
             {
                 if (wtx.GetDepthInMainChain() < 1)
                     entry.pushKV("category", "orphan");
                 else if (wtx.IsImmatureCoinBase())
                     entry.pushKV("category", "immature");
+                else if (wtx.IsCoinStake())
+					entry.pushKV("category", "stake");
                 else
                     entry.pushKV("category", "generate");
             }
@@ -1432,7 +1439,15 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             {
                 entry.pushKV("category", "receive");
             }
-            entry.pushKV("amount", ValueFromAmount(r.amount));
+            if (!wtx.IsCoinStake())
+            {
+                entry.pushKV("amount", ValueFromAmount(r.amount));
+            }
+            else
+            {
+                entry.pushKV("amount", ValueFromAmount(-nFee));
+                stop = true; // only one coinstake output
+            }
             if (address_book_entry) {
                 entry.pushKV("label", label);
             }
@@ -1440,6 +1455,8 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             if (fLong)
                 WalletTxToJSON(wallet.chain(), wtx, entry);
             ret.push_back(entry);
+            if (stop)
+                break;
         }
     }
 }
@@ -1804,9 +1821,14 @@ static RPCHelpMan gettransaction()
     CAmount nNet = nCredit - nDebit;
     CAmount nFee = (wtx.IsFromMe(filter) ? wtx.tx->GetValueOut() - nDebit : 0);
 
-    entry.pushKV("amount", ValueFromAmount(nNet - nFee));
-    if (wtx.IsFromMe(filter))
-        entry.pushKV("fee", ValueFromAmount(nFee));
+    if (wtx.IsCoinStake()) {
+    	entry.pushKV("amount", ValueFromAmount(nFee));
+    } else {
+    	entry.pushKV("amount", ValueFromAmount(nNet - nFee));
+        if (wtx.IsFromMe(filter))
+            entry.pushKV("fee", ValueFromAmount(nFee));
+    }
+
 
     WalletTxToJSON(pwallet->chain(), wtx, entry);
 
