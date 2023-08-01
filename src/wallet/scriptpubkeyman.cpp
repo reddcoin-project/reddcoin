@@ -429,7 +429,7 @@ bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, 
 
     switch (walletoptions.walletType) {
     case walletType::bip32Wallet: {
-        SetHDSeed(GenerateNewSeed());
+        SetHDSeed(GenerateNewSeed(walletoptions));
         break;
     }
     default:
@@ -1201,6 +1201,26 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewSeed()
     assert(!m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));
     CKey key;
     key.MakeNewKey(true);
+    return DeriveNewSeed(key);
+}
+
+CPubKey LegacyScriptPubKeyMan::GenerateNewSeed(const WalletOptions& walletoptions)
+{
+    assert(!m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));
+
+    const SecureString& masterkey = walletoptions.ssMasterKey;
+    CKey key;
+
+    if (!masterkey.empty()) {
+        key = DecodeSecret(masterkey.c_str());
+        if (!key.IsValid()) {
+            throw std::runtime_error(std::string(__func__) + ": Invalid private key");
+        }
+    } else {
+        key.MakeNewKey(true);
+    }
+
+
     return DeriveNewSeed(key);
 }
 

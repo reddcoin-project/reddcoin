@@ -34,11 +34,12 @@
 #include <QWizardPage>
 
 
-CreateWalletWizard::CreateWalletWizard(QWidget* parent, SecureString* ssMnemonic_out, SecureString* ssMnemonicPassphrase_out, int* walletType_out) : QWizard(parent, GUIUtil::dialog_flags),
-                                                                                                                                                     ui(new Ui::CreateWalletWizard),
-                                                                                                                                                     m_ssMnemonic_out(ssMnemonic_out),
-                                                                                                                                                     m_ssMnemonicPassphrase_out(ssMnemonicPassphrase_out),
-                                                                                                                                                     m_wallettype_out(walletType_out)
+CreateWalletWizard::CreateWalletWizard(QWidget* parent, SecureString* ssMnemonic_out, SecureString* ssMnemonicPassphrase_out, SecureString* ssMasterKey_out, int* walletType_out) : QWizard(parent, GUIUtil::dialog_flags),
+                                                                                                                                                                                    ui(new Ui::CreateWalletWizard),
+                                                                                                                                                                                    m_ssMnemonic_out(ssMnemonic_out),
+                                                                                                                                                                                    m_ssMnemonicPassphrase_out(ssMnemonicPassphrase_out),
+                                                                                                                                                                                    m_ssMasterKey_out(ssMasterKey_out),
+                                                                                                                                                                                    m_wallettype_out(walletType_out)
 {
     ui->setupUi(this);
 
@@ -115,10 +116,12 @@ void CreateWalletWizard::accept()
 {
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
+    SecureString ssMasterKey;
     int wallettype;
 
     ssMnemonic.reserve(MAX_PASSPHRASE_SIZE);
     ssMnemonicPassphrase.reserve(MAX_PASSPHRASE_SIZE);
+    ssMasterKey.reserve(MAX_PASSPHRASE_SIZE);
 
     if (!this->field("generateWords.seed").toString().isEmpty()) {
         ssMnemonic.assign(this->field("generateWords.seed").toString().toStdString().c_str());
@@ -128,8 +131,13 @@ void CreateWalletWizard::accept()
         ssMnemonicPassphrase.assign(this->field("enter.pass").toString().toStdString().c_str());
     }
 
+    if (!this->field("importmaster.key").toString().isEmpty()) {
+	ssMasterKey.assign(this->field("importmaster.key").toString().toStdString().c_str());
+    }
+
     m_ssMnemonic_out->assign(ssMnemonic);
     m_ssMnemonicPassphrase_out->assign(ssMnemonicPassphrase);
+    m_ssMasterKey_out->assign(ssMasterKey);
 
     wallettype = this->field("type.wallet").toInt();
     m_wallettype_out = &wallettype;
@@ -497,6 +505,8 @@ wizPage_walletMasterKey::wizPage_walletMasterKey(QWidget* parent)
     verticalLayout->addItem(verticalSpacer);
 
     setLayout(verticalLayout);
+
+    registerField("importmaster.key", textEdit_importMasterKey, "plainText");
 }
 
 int wizPage_walletMasterKey::nextId() const
