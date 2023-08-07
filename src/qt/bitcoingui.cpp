@@ -111,8 +111,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         /** Create wallet frame and make it the central widget */
         walletFrame = new WalletFrame(_platformStyle, this);
         connect(walletFrame, &WalletFrame::createWalletButtonClicked, [this] {
-            auto activity = new CreateWalletActivity(getWalletController(), this);
-            connect(activity, &CreateWalletActivity::finished, activity, &QObject::deleteLater);
+            auto activity = new CreateWalletWizardActivity(getWalletController(), this);
+            connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
             activity->create();
         });
         setCentralWidget(walletFrame);
