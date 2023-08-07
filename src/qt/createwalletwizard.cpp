@@ -455,6 +455,29 @@ wizPage_walletKeystore::wizPage_walletKeystore(QWidget* parent)
     setLayout(verticalLayout);
 }
 
+void wizPage_walletKeystore::initializePage()
+{
+    switch (field("type.wallet").toInt()) {
+    case 0: // BIP32
+        radioButton_importSeed->hide();
+        radioButton_masterKey->show();
+        radioButton_hardware->hide();
+        break;
+    case 1: // BIP39
+        radioButton_importSeed->show();
+        radioButton_masterKey->hide();
+        radioButton_hardware->hide();
+        break;
+    case 2: // BIP44
+        radioButton_importSeed->show();
+        radioButton_masterKey->hide();
+        radioButton_hardware->hide();
+        break;
+    case 4: // Blank
+        break;
+    }
+}
+
 int wizPage_walletKeystore::nextId() const
 {
     if (radioButton_createSeed->isChecked()) {

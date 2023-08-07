@@ -137,6 +137,7 @@ class wizPage_walletKeystore : public QWizardPage
 public:
     wizPage_walletKeystore(QWidget* parent = nullptr);
 
+    void initializePage() override;
     int nextId() const override;
 
 private:
