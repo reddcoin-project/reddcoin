@@ -508,7 +508,7 @@ wizPage_walletMasterKey::wizPage_walletMasterKey(QWidget* parent)
     this->setSubTitle(tr("Please enter your masterkey in order to restore your wallet."));
     verticalLayout = new QVBoxLayout();
 
-    label_12 = new QLabel(tr("To create a watching-only wallet, please enter your master public key (xpub/ypub/zpub). To create a spending wallet, please enter a master private key (xprv/yprv/zprv)."));
+    label_12 = new QLabel(tr("The WIF private key to use as the new HD seed.\nThe seed value can be retrieved using the dumpwallet command or gethdwalletinfo.\nIt is the private key marked hdseed=1."));
     label_12->setWordWrap(true);
 
     verticalLayout->addWidget(label_12);
