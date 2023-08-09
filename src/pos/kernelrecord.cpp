@@ -28,6 +28,22 @@ bool KernelRecord::showTransaction(bool isCoinbase, int depth)
     return true;
 }
 
+bool KernelRecord::showTransaction(bool isCoinbase, bool isCoinstake, int depth)
+{
+    if (isCoinbase) {
+        if (depth < 2)
+            return false;
+    } else if (isCoinstake) {
+        if (depth < 0)
+            return false;
+    } else {
+        if (depth <= 0)
+            return false;
+    }
+
+    return true;
+}
+
 std::vector<KernelRecord> KernelRecord::decomposeOutput(interfaces::Wallet& wallet, const interfaces::WalletTx &wtx)
 {
     std::vector<KernelRecord> parts;
@@ -41,7 +57,7 @@ std::vector<KernelRecord> KernelRecord::decomposeOutput(interfaces::Wallet& wall
     bool inMempool;
     wallet.getWalletTxDetails(hash, status, orderForm, inMempool, numBlocks);
 
-    if (showTransaction(wtx.is_coinbase, status.depth_in_main_chain)) {
+    if (showTransaction(wtx.is_coinbase, wtx.is_coinstake, status.depth_in_main_chain)) {
         for (size_t nOut = 0; nOut < wtx.tx->vout.size(); nOut++) {
             CTxOut txOut = wtx.tx->vout[nOut];
             if (wallet.txoutIsMine(txOut)) {
