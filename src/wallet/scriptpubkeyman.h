@@ -473,6 +473,9 @@ public:
     /* Generates a new HD seed (will not be activated) */
     CPubKey GenerateNewSeed();
 
+    /* Generates a new HD seed (will not be activated) */
+    CPubKey GenerateNewSeed(const WalletOptions& walletoptions);
+
     /* Generates a new bip39 HD seed (will not be activated) */
     CPubKey GenerateNewBip39Seed(const WalletOptions& walletoptions);
 

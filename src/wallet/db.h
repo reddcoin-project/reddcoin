@@ -221,6 +221,7 @@ struct WalletOptions {
     int bits;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
+    SecureString ssMasterKey;
 };
 
 enum class DatabaseStatus {

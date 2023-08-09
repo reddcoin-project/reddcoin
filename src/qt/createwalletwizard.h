@@ -47,7 +47,7 @@ public:
            Page5_confirmSeed,
            Page7_enterSeed,
            Page8_finish };
-    explicit CreateWalletWizard(QWidget* parent, SecureString* m_ssMnemonic_out = nullptr, SecureString* m_ssMnemonicPassphrase_out = nullptr, int* m_wallettype_out = nullptr);
+    explicit CreateWalletWizard(QWidget* parent, SecureString* m_ssMnemonic_out = nullptr, SecureString* m_ssMnemonicPassphrase_out = nullptr, SecureString* m_ssMasterKey_out = nullptr, int* m_wallettype_out = nullptr);
     virtual ~CreateWalletWizard();
 
     void accept() override;
@@ -68,6 +68,7 @@ private:
     bool m_has_signers = false;
     SecureString* m_ssMnemonic_out;
     SecureString* m_ssMnemonicPassphrase_out;
+    SecureString* m_ssMasterKey_out;
     int* m_wallettype_out;
 };
 
@@ -136,6 +137,7 @@ class wizPage_walletKeystore : public QWizardPage
 public:
     wizPage_walletKeystore(QWidget* parent = nullptr);
 
+    void initializePage() override;
     int nextId() const override;
 
 private:

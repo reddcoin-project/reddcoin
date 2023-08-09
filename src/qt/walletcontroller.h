@@ -134,6 +134,7 @@ private:
     SecureString m_passphrase;
     SecureString m_ssMnemonic;
     SecureString m_ssMnemonicPassphrase;
+    SecureString m_ssMasterKey;
     CreateWalletDialog* m_create_wallet_dialog{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };
@@ -160,6 +161,7 @@ private:
     SecureString m_passphrase;
     SecureString m_ssMnemonic;
     SecureString m_ssMnemonicPassphrase;
+    SecureString m_ssMasterKey;
     CreateWalletWizard* m_create_wallet_wizard{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };

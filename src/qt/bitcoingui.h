@@ -167,7 +167,6 @@ private:
     QAction* openAction = nullptr;
     QAction* showHelpMessageAction = nullptr;
     QAction* checkUpdatesAction = nullptr;
-    QAction* m_create_wallet_action{nullptr};
     QAction* m_create_wallet_wiz_action{nullptr};
     QAction* m_open_wallet_action{nullptr};
     QMenu* m_open_wallet_menu{nullptr};

@@ -111,8 +111,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         /** Create wallet frame and make it the central widget */
         walletFrame = new WalletFrame(_platformStyle, this);
         connect(walletFrame, &WalletFrame::createWalletButtonClicked, [this] {
-            auto activity = new CreateWalletActivity(getWalletController(), this);
-            connect(activity, &CreateWalletActivity::finished, activity, &QObject::deleteLater);
+            auto activity = new CreateWalletWizardActivity(getWalletController(), this);
+            connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
             activity->create();
         });
         setCentralWidget(walletFrame);
@@ -409,10 +409,6 @@ void BitcoinGUI::createActions()
     m_close_wallet_action = new QAction(tr("Close Wallet…"), this);
     m_close_wallet_action->setStatusTip(tr("Close wallet"));
 
-    m_create_wallet_action = new QAction(tr("Create Wallet…"), this);
-    m_create_wallet_action->setEnabled(false);
-    m_create_wallet_action->setStatusTip(tr("Create a new wallet"));
-
     m_create_wallet_wiz_action = new QAction(tr("Create/ Restore Wallet…"), this);
     m_create_wallet_wiz_action->setEnabled(false);
     m_create_wallet_wiz_action->setStatusTip(tr("Create or restore a new HD wallet"));
@@ -517,12 +513,6 @@ void BitcoinGUI::createActions()
         connect(m_close_wallet_action, &QAction::triggered, [this] {
             m_wallet_controller->closeWallet(walletFrame->currentWalletModel(), this);
         });
-        connect(m_create_wallet_action, &QAction::triggered, [this] {
-            auto activity = new CreateWalletActivity(m_wallet_controller, this);
-            connect(activity, &CreateWalletActivity::created, this, &BitcoinGUI::setCurrentWallet);
-            connect(activity, &CreateWalletActivity::finished, activity, &QObject::deleteLater);
-            activity->create();
-        });
 
 	connect(m_create_wallet_wiz_action, &QAction::triggered, [this] {
 	    auto activity = new CreateWalletWizardActivity(m_wallet_controller, this);
@@ -555,7 +545,6 @@ void BitcoinGUI::createMenuBar()
     QMenu *file = appMenuBar->addMenu(tr("&File"));
     if(walletFrame)
     {
-        file->addAction(m_create_wallet_action);
         file->addAction(m_create_wallet_wiz_action);
         file->addAction(m_open_wallet_action);
         file->addAction(m_close_wallet_action);
@@ -769,7 +758,6 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller)
 
     m_wallet_controller = wallet_controller;
 
-    m_create_wallet_action->setEnabled(true);
     m_create_wallet_wiz_action->setEnabled(true);
     m_open_wallet_action->setEnabled(true);
     m_open_wallet_action->setMenu(m_open_wallet_menu);
