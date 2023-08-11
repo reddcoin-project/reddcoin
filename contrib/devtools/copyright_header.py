@@ -41,6 +41,8 @@ EXCLUDE_DIRS = [
 INCLUDE = ['*.h', '*.cpp', '*.cc', '*.c', '*.mm', '*.py', '*.sh', '*.bash-completion']
 INCLUDE_COMPILED = re.compile('|'.join([fnmatch.translate(m) for m in INCLUDE]))
 
+DEV_TEAM = 'Reddcoin'
+
 def applies_to_file(filename):
     for excluded_dir in EXCLUDE_DIRS:
         if filename.startswith(excluded_dir):
@@ -54,7 +56,7 @@ def applies_to_file(filename):
 
 GIT_LS_CMD = 'git ls-files --full-name'.split(' ')
 GIT_TOPLEVEL_CMD = 'git rev-parse --show-toplevel'.split(' ')
-
+GIT_DIFF_SINCE = 'git diff --name-only 80b9c562'.split(' ')
 def call_git_ls(base_directory):
     out = subprocess.check_output([*GIT_LS_CMD, base_directory])
     return [f for f in out.decode("utf-8").split('\n') if f != '']
@@ -63,10 +65,19 @@ def call_git_toplevel():
     "Returns the absolute path to the project root"
     return subprocess.check_output(GIT_TOPLEVEL_CMD).strip().decode("utf-8")
 
-def get_filenames_to_examine(base_directory):
+def call_git_diff(base_directory):
+    "Returns list of files since commit"
+    out = subprocess.check_output([*GIT_DIFF_SINCE, base_directory])
+    return [f for f in out.decode("utf-8").split('\n') if f != '']
+
+
+def get_filenames_to_examine(base_directory, type):
     "Returns an array of absolute paths to any project files in the base_directory that pass the include/exclude filters"
     root = call_git_toplevel()
-    filenames = call_git_ls(base_directory)
+    if type == 'full':
+        filenames = call_git_ls(base_directory)
+    else:
+        filenames = call_git_diff(base_directory)
     return sorted([os.path.join(root, filename) for filename in filenames if
                    applies_to_file(filename)])
 
@@ -94,6 +105,9 @@ def compile_copyright_regex(copyright_style, year_style, name):
 EXPECTED_HOLDER_NAMES = [
     r"Satoshi Nakamoto",
     r"The Bitcoin Core developers",
+    r"The Reddcoin Core developers",
+    r"The Dash Core developers",
+    r"The Peercoin Core developers",
     r"BitPay Inc\.",
     r"University of Illinois at Urbana-Champaign\.",
     r"Pieter Wuille",
@@ -104,6 +118,10 @@ EXPECTED_HOLDER_NAMES = [
     r"Intel Corporation ?",
     r"The Zcash developers",
     r"Jeremy Rubin",
+    r"Colin Percival",
+    r"Peter Csajtai",
+    r"Tomas Dzetkulic",
+    r"Pavol Rusnak",
 ]
 
 DOMINANT_STYLE_COMPILED = {}
@@ -257,7 +275,7 @@ def print_report(file_infos, verbose):
     print(SEPARATOR)
 
 def exec_report(base_directory, verbose):
-    filenames = get_filenames_to_examine(base_directory)
+    filenames = get_filenames_to_examine(base_directory, 'full')
     file_infos = [gather_file_info(f) for f in filenames]
     print_report(file_infos, verbose)
 
@@ -336,8 +354,18 @@ def write_file_lines(filename, file_lines):
 COPYRIGHT = r'Copyright \(c\)'
 YEAR = "20[0-9][0-9]"
 YEAR_RANGE = '(%s)(-%s)?' % (YEAR, YEAR)
-HOLDER = 'The Bitcoin Core developers'
+HOLDER_BITCOIN = 'The Bitcoin Core developers'
+HOLDER = 'The Reddcoin Core developers'
+BITCOIN_LINE_COMPILED = re.compile(' '.join([COPYRIGHT, YEAR_RANGE, HOLDER_BITCOIN]))
 UPDATEABLE_LINE_COMPILED = re.compile(' '.join([COPYRIGHT, YEAR_RANGE, HOLDER]))
+
+def get_bitcoin_copyright_line(file_lines):
+    index = 0
+    for line in file_lines:
+        if BITCOIN_LINE_COMPILED.search(line) is not None:
+            return index, line
+        index = index + 1
+    return None, None
 
 def get_updatable_copyright_line(file_lines):
     index = 0
@@ -350,6 +378,8 @@ def get_updatable_copyright_line(file_lines):
 def parse_year_range(year_range):
     year_split = year_range.split('-')
     start_year = year_split[0]
+    if int(start_year) < 2014:
+        start_year = '2014'
     if len(year_split) == 1:
         return start_year, start_year
     return start_year, year_split[1]
@@ -376,6 +406,24 @@ def create_updated_copyright_line(line, last_git_change_year):
             year_range_to_str(start_year, last_git_change_year) + ' ' +
             ' '.join(space_split[1:]))
 
+def create_copyright_line(line, last_git_change_year):
+    copyright_splitter = 'Copyright (c) '
+    copyright_split = line.split(copyright_splitter)
+    # Preserve characters on line that are ahead of the start of the copyright
+    # notice - they are part of the comment block and vary from file-to-file.
+    before_copyright = copyright_split[0]
+    after_copyright = copyright_split[1]
+
+    space_split = after_copyright.split(' ')
+    space_split[2] = DEV_TEAM
+    year_range = space_split[0]
+    start_year, end_year = parse_year_range(year_range)
+    if end_year == last_git_change_year:
+        return line
+    return (before_copyright + copyright_splitter +
+            year_range_to_str(start_year, last_git_change_year) + ' ' +
+            ' '.join(space_split[1:]))
+
 def update_updatable_copyright(filename):
     file_lines = read_file_lines(filename)
     index, line = get_updatable_copyright_line(file_lines)
@@ -393,7 +441,7 @@ def update_updatable_copyright(filename):
                               "Copyright updated! -> %s" % last_git_change_year)
 
 def exec_update_header_year(base_directory):
-    for filename in get_filenames_to_examine(base_directory):
+    for filename in get_filenames_to_examine(base_directory, 'full'):
         update_updatable_copyright(filename)
 
 ################################################################################
@@ -451,7 +499,7 @@ def get_header_lines(header, start_year, end_year):
     return [line + '\n' for line in lines]
 
 CPP_HEADER = '''
-// Copyright (c) %s The Bitcoin Core developers
+// Copyright (c) %s The Reddcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -460,7 +508,7 @@ def get_cpp_header_lines_to_insert(start_year, end_year):
     return reversed(get_header_lines(CPP_HEADER, start_year, end_year))
 
 SCRIPT_HEADER = '''
-# Copyright (c) %s The Bitcoin Core developers
+# Copyright (c) %s The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -571,12 +619,81 @@ def insert_cmd(argv):
         style = 'cpp'
     exec_insert_header(filename, style)
 
+def modify_updatable_copyright(filename):
+    file_lines = read_file_lines(filename)
+    btc_index, btc_line = get_bitcoin_copyright_line(file_lines)
+    rdd_index, rdd_line = get_updatable_copyright_line(file_lines)
+
+    if not btc_line:
+        print_file_action_message(filename, "No modifiable copyright.")
+        return
+
+    if rdd_line:
+        print_file_action_message(filename, "Already have copyright.")
+        return
+
+    last_git_change_year = get_most_recent_git_change_year(filename)
+    new_line = create_copyright_line(btc_line, last_git_change_year)
+
+    file_lines.insert(btc_index + 1, new_line)
+    write_file_lines(filename, file_lines)
+    print_file_action_message(filename,
+                              "Copyright updated! -> %s" % last_git_change_year)
+
+def exec_modify_header_year(base_directory):
+    for filename in get_filenames_to_examine(base_directory, 'diff'):
+        modify_updatable_copyright(filename)
+
+################################################################################
+# modify cmd
+################################################################################
+
+UPDATE_USAGE = """
+Modifies all the copyright headers of "The Bitcoin Core developers" since commit #80b9c562
+It inserts a new "The Reddcoin Core developers" to the copyright header following the preceeding.
+
+It will also update a file changed in a year more recent than is listed. For example:
+
+// Copyright (c) <firstYear>-<lastYear> The Reddcoin Core developers
+
+will be updated to:
+
+// Copyright (c) <firstYear>-<lastModifiedYear> The Reddcoin Core developers
+
+where <lastModifiedYear> is obtained from the 'git log' history.
+
+This subcommand also handles copyright headers that have only a single year. In those cases:
+
+// Copyright (c) <year> The Reddcoin Core developers
+
+will be updated to:
+
+// Copyright (c) <year>-<lastModifiedYear> The Reddcoin Core developers
+
+where the update is appropriate.
+
+Usage:
+    $ ./copyright_header.py modify <base_directory>
+
+Arguments:
+    <base_directory> - The base directory of a reddcoin source code repository.
+"""
+
+def modify_cmd(argv):
+    if len(argv) != 3:
+        sys.exit(UPDATE_USAGE)
+
+    base_directory = argv[2]
+    if not os.path.exists(base_directory):
+        sys.exit("*** bad base_directory: %s" % base_directory)
+    exec_modify_header_year(base_directory)
+
 ################################################################################
 # UI
 ################################################################################
 
 USAGE = """
-copyright_header.py - utilities for managing copyright headers of 'The Bitcoin
+copyright_header.py - utilities for managing copyright headers of 'The Reddcoin
 Core developers' in repository source files.
 
 Usage:
@@ -586,11 +703,12 @@ Subcommands:
     report
     update
     insert
+    modify
 
 To see subcommand usage, run them without arguments.
 """
 
-SUBCOMMANDS = ['report', 'update', 'insert']
+SUBCOMMANDS = ['report', 'update', 'insert', 'modify']
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -604,3 +722,5 @@ if __name__ == "__main__":
         update_cmd(sys.argv)
     elif subcommand == 'insert':
         insert_cmd(sys.argv)
+    elif subcommand == 'modify':
+        modify_cmd(sys.argv)
