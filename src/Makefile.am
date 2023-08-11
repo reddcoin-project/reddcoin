@@ -218,6 +218,7 @@ BITCOIN_CORE_H = \
   rpc/rawtransaction_util.h \
   rpc/register.h \
   rpc/request.h \
+  rpc/semver.h \
   rpc/server.h \
   rpc/util.h \
   scheduler.h \

@@ -133,6 +133,7 @@ private:
     GUIUtil::ClickableLabel* labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel* connectionsControl = nullptr;
     GUIUtil::ClickableLabel* labelBlocksIcon = nullptr;
+    GUIUtil::ClickableLabel* labelCheckUpdate = nullptr;
     GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
     StakingStatusBarControl* stakingStatusControl = nullptr;
     QLabel* progressBarLabel = nullptr;
@@ -316,6 +317,8 @@ public Q_SLOTS:
     /** Show open dialog */
     void openClicked();
 #endif // ENABLE_WALLET
+    /** Check github version */
+    void checkUpdates();
     /** Show configuration dialog */
     void optionsClicked();
     /** Show about dialog with update details*/
