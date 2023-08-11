@@ -123,8 +123,7 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Warning: We do not appear to fully agree with our peers! You may need to "
 "upgrade, or other nodes may need to upgrade."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
-"Witness data for blocks after height %d requires validation. Please restart "
-"with -reindex."),
+"Witness data for blocks requires validation. Please restart with -reindex."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "You need to rebuild the database using -reindex to go back to unpruned "
 "mode.  This will redownload the entire blockchain"),
