@@ -35,7 +35,7 @@
 #include <thread>
 #include <utility>
 
-std::thread threadStakeMinter;
+std::vector<std::thread> threadStakeMinterGroup;
 int64_t nLastCoinStakeSearchInterval = 0;
 
 static std::atomic<bool> fEnableStaking(false);
@@ -531,15 +531,15 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
-    LogPrintf("CPUMiner started for proof-of-stake\n");
-    util::ThreadRename("reddcoin-stake-minter");
+    LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
+    util::ThreadRename(strprintf("reddcoin-stake-minter-%d", thread_id));
 
     unsigned int nExtraNonce = 0;
 
     OutputType output_type = pwallet->m_default_address_type;
-    ReserveDestination reservedest(pwallet.get(), output_type);
+    ReserveDestination reservedest(pwallet, output_type);
     CTxDestination dest;
 
     // Compute timeout for pos as sqrt(numUTXO)
@@ -555,7 +555,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
         CCoinControl coincontrol;
         pwallet->AvailableCoins(vCoins, &coincontrol);
         pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(vCoins.size());
-        LogPrintf("Set proof-of-stake timeout: %ums for %u UTXOs\n", pos_timio, vCoins.size());
+        LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, vCoins.size());
     }
 
     std::string strMintMessage = _("Info: Staking suspended due to locked wallet.").translated;
@@ -566,7 +566,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     if (!gArgs.GetBoolArg("-staking", true))
     {
         strMintWarning = strMintDisabledMessage;
-        LogPrintf("proof-of-stake minter disabled\n");
+        LogPrintf("Staker thread [%d]: proof-of-stake minter disabled\n", thread_id);
         return;
     }
 
@@ -592,7 +592,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainstate->IsInitialBlockDownload()) {
                 if (ShutdownRequested())
                     return;
-                LogPrintf("Staker thread sleeps while IBD at %d\n", chainstate->m_chain.Tip()->nHeight);
+                LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainstate->m_chain.Tip()->nHeight);
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
@@ -606,7 +606,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
             {
                 if (ShutdownRequested())
                     return;
-                LogPrintf("Minter thread sleeps while sync at %f\n", GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()));
+                LogPrintf("Staker thread [%d]: sleeps while sync at %f\n", thread_id, GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()));
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
@@ -632,7 +632,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
 
             {
                 LOCK(pwallet->cs_wallet);
-                pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet.get(), &fPoSCancel);
+                pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
             }
 
             if (!pblocktemplate.get())
@@ -645,7 +645,7 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                 }
                 strMintWarning = strMintBlockMessage;
                 uiInterface.NotifyAlertChanged();
-                LogPrintf("Error in ReddcoinMiner: Keypool ran out, please call keypoolrefill before restarting the mining thread\n");
+                LogPrintf("Staker thread [%d]: Error in ReddcoinMiner: Keypool ran out, please call keypoolrefill before restarting the mining thread\n", thread_id);
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
                    return;
 
@@ -661,11 +661,11 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
                     LOCK(pwallet->cs_wallet);
                     if (!SignBlock(*pblock, *pwallet))
                     {
-                        LogPrintf("PoSMiner(): failed to sign PoS block");
+                        LogPrintf("Staker thread [%d]: failed to sign PoS block", thread_id);
                         continue;
                     }
                 }
-                LogPrintf("CPUMiner : proof-of-stake block found %s\n", pblock->GetHash().ToString());
+                LogPrintf("Staker thread [%d]: proof-of-stake block found %s\n", thread_id, pblock->GetHash().ToString());
                 ProcessBlockFound(pblock, chainman, chainstate, Params());
                 reservedest.KeepDestination();
                 // Rest for ~3 minutes after successful block to preserve close quick
@@ -680,25 +680,25 @@ void PoSMiner(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CCh
     }
     catch (const std::runtime_error &e)
     {
-        LogPrintf("ReddcoinMiner runtime error: %s\n", e.what());
+        LogPrintf("Staker thread [%d]: ReddcoinMiner runtime error: %s\n", thread_id, e.what());
         return;
     }
 }
 
 // reddcoin: stake minter thread
-void static ThreadStakeMinter(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
-    LogPrintf("ThreadStakeMinter started\n");
+    LogPrintf("Staking thread [%s] starting\n", thread_id);
     try
     {
-        PoSMiner(pwallet, chainman, chainstate, connman, mempool);
+        PoSMiner(pwallet, chainman, chainstate, connman, mempool, thread_id);
     }
     catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
     } catch (...) {
         PrintExceptionContinue(NULL, "ThreadStakeMinter()");
     }
-    LogPrintf("ThreadStakeMinter stopped\n");
+    LogPrintf("Staking thread [%s] stopped\n", thread_id);
 }
 
 // reddcoin: stake minter
@@ -709,31 +709,36 @@ void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManag
         return;
     }
 
-    if (!EnableStaking()) {
-        fEnableStaking = true;
-        // reddcoin: mint proof-of-stake blocks in the background
-        threadStakeMinter = std::thread(&ThreadStakeMinter, std::move(pwallet), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool));
+    int thread_id = 0;
+
+    fEnableStaking = true;
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto &wallet : m_stake_wallets) {
+         LogPrintf("launching staking thread [%s] for wallet...%s\n", thread_id, wallet->GetName());
+
+         threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool), std::move(thread_id)));
+         thread_id++;
     }
 
 }
 
 void InterruptStaking()
 {
-    LogPrintf("Interrupting ThreadStakeMinter\n");
+    LogPrintf("Interrupting ThreadStakeMinter threads\n");
     fEnableStaking = false;
-    if (threadStakeMinter.joinable()) {
-        LogPrintf("Waiting for Interrupt ThreadStakeMinter ...\n");
-        threadStakeMinter.join();
+    for (std::thread& t : threadStakeMinterGroup) {
+        if (t.joinable()) t.join();
     }
     LogPrintf("ThreadStakeMinter Interrupt done!\n");
 }
 
 void StopStaking()
 {
-    LogPrintf("Stopping ThreadStakeMinter\n");
-    if (threadStakeMinter.joinable()) {
-        LogPrintf("Waiting for  Stop ThreadStakeMinter ...\n");
-        threadStakeMinter.join();
+    LogPrintf("Stopping ThreadStakeMinter threads\n");
+    LogPrintf("Waiting for Staking threads to exit\n");
+    for (std::thread& t : threadStakeMinterGroup) {
+        if (t.joinable()) t.join();
     }
+    threadStakeMinterGroup.clear();
     LogPrintf("ThreadStakeMinter Stop done!\n");
 }
