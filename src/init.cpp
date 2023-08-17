@@ -1815,7 +1815,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    MintStake(node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+    MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
 
     return true;
 }

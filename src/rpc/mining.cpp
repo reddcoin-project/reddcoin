@@ -280,7 +280,7 @@ static RPCHelpMan staking()
         gArgs.ForceSetArg("-staking", fGenerate ? "1" : "0");
 
         if (HasWallets() && GetWallets().size() > 0) {
-            MintStake(node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+            MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
 
             if (!fGenerate) {
                 InterruptStaking();

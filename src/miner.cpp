@@ -531,7 +531,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool, int thread_id)
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
     util::ThreadRename(strprintf("reddcoin-stake-minter-%d", thread_id));
@@ -589,10 +589,10 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
 
             // Busy-wait for the network to come online so we don't waste time mining
             // on an obsolete chain. In regtest mode we expect to fly solo.
-            while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainstate->IsInitialBlockDownload()) {
+            while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainman->ActiveChainstate().IsInitialBlockDownload()) {
                 if (ShutdownRequested())
                     return;
-                LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainstate->m_chain.Tip()->nHeight);
+                LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainman->ActiveChain().Tip()->nHeight);
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
@@ -602,11 +602,11 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
                     return;
             }
 
-            while (GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()) < 0.996)
+            while (GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.996)
             {
                 if (ShutdownRequested())
                     return;
-                LogPrintf("Staker thread [%d]: sleeps while sync at %f\n", thread_id, GuessVerificationProgress(Params().TxData(), chainstate->m_chain.Tip()));
+                LogPrintf("Staker thread [%d]: sleeps while sync at %f\n", thread_id, GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()));
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
@@ -624,7 +624,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
             //
             // Create new block
             //
-            CBlockIndex* pindexPrev = chainstate->m_chain.Tip();
+            CBlockIndex* pindexPrev = chainman->ActiveChain().Tip();
             bool fPoSCancel = false;
             CScript scriptPubKey = GetScriptForDestination(dest);
             CBlock *pblock;
@@ -632,7 +632,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
 
             {
                 LOCK(pwallet->cs_wallet);
-                pblocktemplate = BlockAssembler(*chainstate, *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+                pblocktemplate = BlockAssembler(chainman->ActiveChainstate(), *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
             }
 
             if (!pblocktemplate.get())
@@ -666,7 +666,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
                     }
                 }
                 LogPrintf("Staker thread [%d]: proof-of-stake block found %s\n", thread_id, pblock->GetHash().ToString());
-                ProcessBlockFound(pblock, chainman, chainstate, Params());
+                ProcessBlockFound(pblock, chainman, &chainman->ActiveChainstate(), Params());
                 reservedest.KeepDestination();
                 // Rest for ~3 minutes after successful block to preserve close quick
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
@@ -722,12 +722,12 @@ static void UpdateStakeSetting(interfaces::Chain& chain,
 }
 
 // reddcoin: stake minter thread
-void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool, int thread_id)
+void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
     LogPrintf("Staking thread [%s] starting\n", thread_id);
     try
     {
-        PoSMiner(pwallet, chainman, chainstate, connman, mempool, thread_id);
+        PoSMiner(pwallet, chainman, connman, mempool, thread_id);
     }
     catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
@@ -738,7 +738,7 @@ void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CCh
 }
 
 // reddcoin: stake minter
-void MintStake(ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool)
 {
     if (!gArgs.GetBoolArg("-staking", true) || !GetWallets().size() > 0) {
         fEnableStaking = false;
@@ -756,7 +756,7 @@ void MintStake(ChainstateManager* chainman, CChainState* chainstate, CConnman* c
              continue;
          }
 
-         threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool), std::move(thread_id)));
+         threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(connman), std::move(mempool), std::move(thread_id)));
          thread_id++;
     }
 
