@@ -702,9 +702,9 @@ void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CCh
 }
 
 // reddcoin: stake minter
-void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
+void MintStake(ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool)
 {
-    if (!fGenerate or pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+    if (!gArgs.GetBoolArg("-staking", true) || !GetWallets().size() > 0) {
         fEnableStaking = false;
         return;
     }
@@ -714,7 +714,11 @@ void MintStake(bool fGenerate, std::shared_ptr<CWallet> pwallet, ChainstateManag
     fEnableStaking = true;
     std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
     for (const auto &wallet : m_stake_wallets) {
-         LogPrintf("launching staking thread [%s] for wallet...%s\n", thread_id, wallet->GetName());
+         LogPrintf("launching staking thread [%d] for wallet...%s\n", thread_id, wallet->GetName());
+         if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+             LogPrintf("Disable private keys flag set.. skipping [%s]\n", wallet->GetName());
+             continue;
+         }
 
          threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(chainstate), std::move(connman), std::move(mempool), std::move(thread_id)));
          thread_id++;
