@@ -257,6 +257,7 @@ static RPCHelpMan staking()
             "When called with an argument, enables or disables staking.\n",
             {
                 {"generate", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "To enable or disable staking."},
+                {"load_on_startup", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "Save wallet name to persistent settings and load on startup. True to add wallet to staking list, false to remove, null to leave unchanged."},
 
             },
             RPCResult{
