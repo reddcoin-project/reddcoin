@@ -685,6 +685,42 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CChainState* chains
     }
 }
 
+bool AddStakeSetting(interfaces::Chain& chain, const std::string& wallet_name)
+{
+    util::SettingsValue setting_value = chain.getRwSetting("stake");
+    if (!setting_value.isArray()) setting_value.setArray();
+    for (const util::SettingsValue& value : setting_value.getValues()) {
+        if (value.isStr() && value.get_str() == wallet_name) return true;
+    }
+    setting_value.push_back(wallet_name);
+    return chain.updateRwSetting("stake", setting_value);
+}
+
+bool RemoveStakeSetting(interfaces::Chain& chain, const std::string& wallet_name)
+{
+    util::SettingsValue setting_value = chain.getRwSetting("stake");
+    if (!setting_value.isArray()) return true;
+    util::SettingsValue new_value(util::SettingsValue::VARR);
+    for (const util::SettingsValue& value : setting_value.getValues()) {
+        if (!value.isStr() || value.get_str() != wallet_name) new_value.push_back(value);
+    }
+    if (new_value.size() == setting_value.size()) return true;
+    return chain.updateRwSetting("stake", new_value);
+}
+
+static void UpdateStakeSetting(interfaces::Chain& chain,
+                                const std::string& wallet_name,
+                                std::optional<bool> load_on_startup,
+                                std::vector<bilingual_str>& warnings)
+{
+    if (!load_on_startup) return;
+    if (load_on_startup.value() && !AddStakeSetting(chain, wallet_name)) {
+        warnings.emplace_back(Untranslated("Wallet stake on startup setting could not be updated, so wallet may not stake next node startup."));
+    } else if (!load_on_startup.value() && !RemoveStakeSetting(chain, wallet_name)) {
+        warnings.emplace_back(Untranslated("Wallet stake on startup setting could not be updated, so wallet may still be staking next node startup."));
+    }
+}
+
 // reddcoin: stake minter thread
 void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CChainState* chainstate, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
