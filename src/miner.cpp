@@ -534,7 +534,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
 void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
-    util::ThreadRename(strprintf("reddcoin-stake-minter-%d", thread_id));
+    util::ThreadRename(strprintf("staker-%d", thread_id));
 
     unsigned int nExtraNonce = 0;
 
