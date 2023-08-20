@@ -759,8 +759,10 @@ void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempo
              continue;
          }
 
-         threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(connman), std::move(mempool), std::move(thread_id)));
-         thread_id++;
+         if (wallet->GetEnableStaking()) {
+             threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(connman), std::move(mempool), std::move(thread_id)));
+             thread_id++;
+         }
     }
 
 }

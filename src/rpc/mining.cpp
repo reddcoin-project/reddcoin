@@ -272,7 +272,31 @@ static RPCHelpMan staking()
             },
             [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return NullUniValue;
+    CWallet* const pwallet = wallet.get();
 
+    UniValue result(UniValue::VOBJ);
+
+    UniValue msg(UniValue::VOBJ);
+    if (request.params[0].isBool()) {
+        if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+            msg.pushKV("error", "Disable private keys flag set.");
+        } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+            msg.pushKV("error", "Blank wallet flag set.");
+        } else {
+            pwallet->SetEnableStaking(request.params[0].getBool());
+        }
+    }
+
+    UniValue staking(UniValue::VARR);
+
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto &wallet : m_stake_wallets) {
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV(wallet->GetName(), wallet->GetEnableStaking());
+        staking.push_back(entry);
+    }
 
     bool fGenerate = request.params[0].isNull() ? gArgs.GetBoolArg("-staking", true) : request.params[0].get_bool();
     if (!request.params[0].isNull()) {
@@ -289,8 +313,9 @@ static RPCHelpMan staking()
         }
     }
 
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("generate", fGenerate);
+    result.pushKV("generate", gArgs.GetBoolArg("-staking",true));
+    result.pushKV("enabled_wallet", staking);
+    result.pushKV("result", msg);
     return result;
 },
     };

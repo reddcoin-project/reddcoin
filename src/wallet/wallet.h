@@ -263,6 +263,10 @@ private:
      * serves to disable the trivial sendmoney when OS account compromised
      * provides no real security */
     bool fWalletUnlockStakingOnly = false;
+    /** optional setting to enable wallet for staking
+     * serves to disable the trivial sendmoney when OS account compromised
+     * provides no real security */
+    bool fEnableStaking = false;
     /**
      * Used to keep track of spent outpoints, and
      * detect and report conflicts (double-spends or
@@ -788,6 +792,11 @@ public:
     bool GetIsStakingOnly() const { return fWalletUnlockStakingOnly; }
     /** Set whether this wallet unlocked for staking only. */
     void SetIsStakingOnly(bool stakingOnly) { fWalletUnlockStakingOnly = stakingOnly; }
+
+    /** Inquire whether this wallet unlocked for staking only. */
+    bool GetEnableStaking() const { return fEnableStaking; }
+    /** Set whether this wallet unlocked for staking only. */
+    void SetEnableStaking(bool enableStaking) { fEnableStaking = enableStaking; }
 
     /** Return whether transaction can be abandoned */
     bool TransactionCanBeAbandoned(const uint256& hashTx) const;
