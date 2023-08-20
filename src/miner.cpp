@@ -754,6 +754,9 @@ void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempo
          if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
              LogPrintf("Disable private keys flag set.. skipping [%s]\n", wallet->GetName());
              continue;
+         } else if (wallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+             LogPrintf("Blank wallet flag set.. skipping [%s]\n", wallet->GetName());
+             continue;
          }
 
          threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(connman), std::move(mempool), std::move(thread_id)));
