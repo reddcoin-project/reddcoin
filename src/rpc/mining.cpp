@@ -329,8 +329,6 @@ static RPCHelpMan staking()
             "When called with an argument, enables or disables staking.\n",
             {
                 {"enabled", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "To enable or disable staking."},
-                {"load_on_startup", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "Save wallet name to persistent settings and load on startup. True to add wallet to staking list, false to remove, null to leave unchanged."},
-
             },
             RPCResult{
                 RPCResult::Type::OBJ, "", "",
@@ -352,23 +350,7 @@ static RPCHelpMan staking()
             },
             [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
-    CWallet* const pwallet = wallet.get();
-
     UniValue result(UniValue::VOBJ);
-
-    UniValue msg(UniValue::VOBJ);
-    if (request.params[0].isBool()) {
-        if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-            msg.pushKV("error", "Disable private keys flag set.");
-        } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
-            msg.pushKV("error", "Blank wallet flag set.");
-        } else {
-            pwallet->SetEnableStaking(request.params[0].getBool());
-        }
-    }
-
     UniValue staking(UniValue::VARR);
 
     std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
@@ -395,7 +377,6 @@ static RPCHelpMan staking()
 
     result.pushKV("enabled", gArgs.GetBoolArg("-staking",true));
     result.pushKV("enabled_wallet", staking);
-    result.pushKV("result", msg);
     return result;
 },
     };
