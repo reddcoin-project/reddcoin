@@ -721,6 +721,11 @@ static void UpdateStakeSetting(interfaces::Chain& chain,
     }
 }
 
+void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings)
+{
+    UpdateStakeSetting(chain, name, load_on_start, warnings);
+}
+
 // reddcoin: stake minter thread
 void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
 {
