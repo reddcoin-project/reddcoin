@@ -336,6 +336,14 @@ static RPCHelpMan staking()
                 RPCResult::Type::OBJ, "", "",
                 {
                     {RPCResult::Type::BOOL, "enabled", "if staking is active or not. false:inactive, true:active"},
+                    {RPCResult::Type::ARR, "enabled_wallet", "",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::BOOL, "wallet_name", "If staking is enabled for wallet or not. false:inactive, true:active"},
+                            }},
+                        }
+                    },
                 }
             },
             RPCExamples{
