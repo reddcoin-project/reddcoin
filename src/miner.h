@@ -213,6 +213,7 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
 void InitStakeWallet();
 void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool);
+int GetStakingThreadCount();
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings);
 
 

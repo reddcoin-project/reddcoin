@@ -376,6 +376,7 @@ static RPCHelpMan staking()
     }
 
     result.pushKV("enabled", gArgs.GetBoolArg("-staking",true));
+    result.pushKV("running", GetStakingThreadCount() > 0 ? true : false);
     result.pushKV("enabled_wallet", staking);
     return result;
 },

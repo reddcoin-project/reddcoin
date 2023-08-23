@@ -807,6 +807,11 @@ void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempo
 
 }
 
+int GetStakingThreadCount()
+{
+    return threadStakeMinterGroup.size();
+}
+
 void InterruptStaking()
 {
     LogPrintf("Interrupting ThreadStakeMinter threads\n");
