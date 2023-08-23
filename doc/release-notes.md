@@ -1,9 +1,9 @@
-4.22.5rc1 Release Notes
+4.22.5rc2 Release Notes
 ==================
 
-Reddcoin Core version 4.22.5rc1 is now available from:
+Reddcoin Core version 4.22.5rc2 is now available from:
 
-  <https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc1/>
+  <https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/>
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -65,9 +65,12 @@ P2P and network changes
 New and Updated RPCs
 --------------------
 
-- New `checkupdates` RPC will return an object with the currently installed version and the latest available remote version from githubs.
+- New `setstaking` RPC will return the current staking state for all loaded wallets. Setting a boolean value (true|false) will 
+  enable/ disable staking for the selected wallet according. Additionally the state for the selected wallet can be stored to load during startup (settings.json).  
 
-- New `staking` RPC will return the current staking state. Setting a boolean value (true|false) will enable/ disable staking accordingly.
+- Updated `checkupdates` RPC will return an object with the currently installed version and the latest available remote version from github.
+
+- Updated `staking` RPC will return the current staking state. Setting a boolean value (true|false) will enable/ disable staking accordingly.
 
 - New `gethdwalletinfo` RPC returns an object containing the following fields, `hdseed`, `mnemonic`,
   `mnemonicpassphrase`, `rootprivkey`, `extendedprivkey`, `extendedpubkey` if hdseed is available.
@@ -167,6 +170,7 @@ Files
 New settings
 ------------
 
+- The `-stake` option has been added to load wallets for staking. The option can be called multiple times to load more than 1 wallet.
 - The `-checkupdates` option has been added to detect if a newer version is available to download.
 
 - The `-natpmp` option has been added to use NAT-PMP to map the listening port.
