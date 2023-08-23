@@ -1815,6 +1815,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
+    InitStakeWallet();
     MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
 
     return true;

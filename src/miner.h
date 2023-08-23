@@ -211,8 +211,10 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
+void InitStakeWallet();
 void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool);
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings);
+
 
 /** Returns true if a staking is enabled, false otherwise. */
 bool EnableStaking();

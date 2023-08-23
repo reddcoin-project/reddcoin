@@ -721,6 +721,41 @@ static void UpdateStakeSetting(interfaces::Chain& chain,
     }
 }
 
+void InitStakeWallet()
+{
+    try {
+        std::set<fs::path> wallet_paths;
+        for (const std::string& wallet_name : gArgs.GetArgs("-stake")) {
+            if (!wallet_paths.insert(wallet_name).second) {
+                continue;
+            }
+
+            std::shared_ptr<CWallet> pwallet = GetWallet(wallet_name);
+            if (!pwallet) {
+                return;
+            }
+
+            LogPrintf("[%s] Init for staking\n", wallet_name);
+
+            if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                LogPrintf("[%s] error: Disable private keys flag set.\n", wallet_name);
+                continue;
+            } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+                LogPrintf("[%s] error: Blank wallet flag set.\n", wallet_name);
+                continue;
+            } else {
+                pwallet->SetEnableStaking(true);
+            }
+        }
+
+        return;
+    } catch (const std::runtime_error& e) {
+        LogPrintf("%s\n", e.what());
+
+        return;
+    }
+}
+
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings)
 {
     UpdateStakeSetting(chain, name, load_on_start, warnings);
