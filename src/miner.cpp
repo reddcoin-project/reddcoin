@@ -787,6 +787,11 @@ void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempo
 
     int thread_id = 0;
 
+    if (GetStakingThreadCount() > 0) {
+        InterruptStaking();
+        StopStaking();
+    }
+
     fEnableStaking = true;
     std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
     for (const auto &wallet : m_stake_wallets) {
