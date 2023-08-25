@@ -255,10 +255,6 @@ public:
 	    }
         return GetPoSVKernelPS(tip);
     }
-    bool getLastCoinStakeSearchInterval()
-    {
-        return nLastCoinStakeSearchInterval;
-    }
     bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t& nTotalWeight) override
     {
       return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);

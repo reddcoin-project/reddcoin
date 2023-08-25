@@ -153,6 +153,10 @@ public:
 
         return true;
     }
+    int64_t getLastCoinStakeSearchInterval() override
+    {
+        return m_wallet->GetLastCoinStakeSearchInterval();
+    }
     SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) override
     {
         return m_wallet->SignMessage(message, pkhash, str_sig);
