@@ -135,6 +135,10 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
         connect(_walletModel, &WalletModel::encryptionStatusChanged, this, &WalletView::encryptionStatusChanged);
         updateEncryptionStatus();
 
+        // Handle changes in staking status
+        connect(_walletModel, &WalletModel::stakingStatusChanged, this, &WalletView::stakingStatusChanged);
+        updateStakingStatus();
+
         // update HD status
         Q_EMIT hdEnabledStatusChanged();
 
@@ -272,6 +276,11 @@ void WalletView::showOutOfSyncWarning(bool fShow)
 void WalletView::updateEncryptionStatus()
 {
     Q_EMIT encryptionStatusChanged();
+}
+
+void WalletView::updateStakingStatus()
+{
+    Q_EMIT stakingStatusChanged();
 }
 
 void WalletView::encryptWallet()

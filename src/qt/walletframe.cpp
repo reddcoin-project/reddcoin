@@ -105,6 +105,7 @@ void WalletFrame::setCurrentWallet(WalletModel* wallet_model)
 
     walletStack->setCurrentWidget(walletView);
     walletView->updateEncryptionStatus();
+    walletView->updateStakingStatus();
 }
 
 void WalletFrame::removeWallet(WalletModel* wallet_model)
