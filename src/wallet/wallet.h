@@ -268,6 +268,9 @@ private:
      * provides no real security */
     bool fEnableStaking = false;
     /**
+     * Used to keep track of last coinstake interval */
+    int64_t nLastCoinStakeSearchInterval = 0;
+    /**
      * Used to keep track of spent outpoints, and
      * detect and report conflicts (double-spends or
      * mutated transactions where the mutant gets mined).
@@ -797,6 +800,11 @@ public:
     bool GetEnableStaking() const { return fEnableStaking; }
     /** Set whether this wallet unlocked for staking only. */
     void SetEnableStaking(bool enableStaking) { fEnableStaking = enableStaking; }
+
+    /** Inquire for this wallet last coinstake search interval. */
+    int64_t GetLastCoinStakeSearchInterval() const { return nLastCoinStakeSearchInterval; }
+    /** Set this wallet last coinstake search interval. */
+    void SetLastCoinStakeSearchInterval(int64_t searchInterval) { nLastCoinStakeSearchInterval = searchInterval; }
 
     /** Return whether transaction can be abandoned */
     bool TransactionCanBeAbandoned(const uint256& hashTx) const;

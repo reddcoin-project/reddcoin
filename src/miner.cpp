@@ -36,7 +36,6 @@
 #include <utility>
 
 std::vector<std::thread> threadStakeMinterGroup;
-int64_t nLastCoinStakeSearchInterval = 0;
 
 static std::atomic<bool> fEnableStaking(false);
 
@@ -182,7 +181,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     *pfPoSCancel = false;
                 }
             }
-            nLastCoinStakeSearchInterval = nSearchTime - nLastCoinStakeSearchTime;
+            pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
             nLastCoinStakeSearchTime = nSearchTime;
         }
         if (*pfPoSCancel)
