@@ -984,35 +984,25 @@ void RPCConsole::setStakingInfo()
 #ifdef ENABLE_WALLET
     WalletModel* wallet_model = ui->stakingWalletSelector->currentData().value<WalletModel*>();
 
-//    if (m_last_wallet_model != wallet_model) {
-//        if (wallet_model) {
-//            message(CMD_REQUEST, tr("Executing command using \"%1\" wallet").arg(wallet_model->getWalletName()));
-//        } else {
-//            message(CMD_REQUEST, tr("Executing command without any wallet"));
-//        }
-//        m_last_wallet_model = wallet_model;
-//    }
-
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
     uint64_t nNetworkWeight = 0;
     uint64_t nExpectedTime = 0;
     int64_t nLastCoinStakeSearchInterval = 0;
-    bool staking = 0;
+    bool staking = false;;
     QString txtExpectedTime;
 
     const Consensus::Params consensusParams = Params().GetConsensus();
 
     nNetworkWeight = clientModel->node().getPoSVKernelPS();
 
-    if (wallet_model)
+    if (wallet_model) {
         wallet_model->GetStakeWeight(nAverageWeight, nTotalWeight);
+        nLastCoinStakeSearchInterval = wallet_model->wallet().getLastCoinStakeSearchInterval();
+        staking = nLastCoinStakeSearchInterval && nAverageWeight;
+    }
 
-    nLastCoinStakeSearchInterval = clientModel->node().getLastCoinStakeSearchInterval();
-
-    if (nLastCoinStakeSearchInterval && nAverageWeight)
-    {
-	staking = nLastCoinStakeSearchInterval && nAverageWeight;
-	nExpectedTime = consensusParams.nPowTargetSpacing * nNetworkWeight / nTotalWeight;
+    if (staking) {
+        nExpectedTime = consensusParams.nPowTargetSpacing * nNetworkWeight / nTotalWeight;
 
         QString text;
         if (nExpectedTime < 60)
@@ -1034,8 +1024,8 @@ void RPCConsole::setStakingInfo()
     }
 
     ui->stakingEnabled->setText(clientModel->isStakingEnabled());
-    ui->stakingDifficulty->setText(QString::number(clientModel->node().getDifficulty()));
     ui->stakingRunning->setText(QString(staking?"true":"false"));
+    ui->stakingDifficulty->setText(QString::number(clientModel->node().getDifficulty()));
     ui->stakingAverageWeight->setText(QString::number(nAverageWeight));
     ui->stakingTotalWeight->setText(QString::number(nTotalWeight));
     ui->stakingNetworkWeight->setText(QString::number(nNetworkWeight));
