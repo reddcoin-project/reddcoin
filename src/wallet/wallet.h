@@ -824,6 +824,9 @@ public:
     /* Returns true if BIP39 is enabled */
     bool IsBip39Enabled() const;
 
+    /* Returns true if BIP44 is enabled */
+    bool IsBip44Enabled() const;
+
     /* Returns true if the wallet can give out new addresses. This means it has keys in the keypool or can generate new keys */
     bool CanGetAddresses(bool internal = false) const;
 
