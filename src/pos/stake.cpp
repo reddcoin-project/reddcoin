@@ -135,7 +135,7 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
   return true;
 }
 
-// peercoin: create coin stake transaction
+// Reddcoin: create coin stake transaction
 typedef std::vector<unsigned char> valtype;
 bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams)
 {

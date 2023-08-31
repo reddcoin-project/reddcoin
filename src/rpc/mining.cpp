@@ -248,6 +248,78 @@ static RPCHelpMan generatetodescriptor()
     };
 }
 
+static RPCHelpMan setstaking()
+{
+    return RPCHelpMan{
+        "setstaking",
+        "Gets or sets the current staking configuration.\n"
+        "When called without an argument, returns the current status of staking for all loaded wallets.\n"
+        "When called with an argument, enables or disables staking for the currently selected wallet.\n",
+        {
+            {"enabled", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "To enable or disable staking."},
+            {"load_on_startup", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "Save wallet name to persistent settings and load on startup. True to add wallet to staking list, false to remove, null to leave unchanged."},
+
+        },
+        {
+            RPCResult{"for enabled = null",
+                      RPCResult::Type::ARR,
+                      "",
+                      "",
+                      {
+                          {RPCResult::Type::OBJ, "", "", {
+                                                             {RPCResult::Type::BOOL, "wallet_name", "If staking is enabled for wallet or not. false:inactive, true:active"},
+                                                         }},
+                      }},
+            RPCResult{"for enabled = true|false", RPCResult::Type::OBJ, "", "", {
+                                                                                    {RPCResult::Type::BOOL, "enabled", "If staking is enabled for wallet or not. false:inactive, true:active"},
+                                                                                    {RPCResult::Type::STR, "error", "Error Message"},
+                                                                                    {RPCResult::Type::STR, "warning", "Warning Message"},
+                                                                                }},
+        },
+        RPCExamples{HelpExampleCli("staking", "\"[\\\"all\\\"]\" \"[\\\"http\\\"]\"") + HelpExampleRpc("staking", "[\"all\"], [\"libevent\"]")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+            if (!wallet) return NullUniValue;
+            CWallet* const pwallet = wallet.get();
+
+            if (request.params[0].isNull()) {
+                UniValue result(UniValue::VARR);
+
+                std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+                for (const auto& wallet : m_stake_wallets) {
+                    UniValue entry(UniValue::VOBJ);
+                    entry.pushKV(wallet->GetName(), wallet->GetEnableStaking());
+                    result.push_back(entry);
+                }
+                return result;
+            }
+
+            UniValue result(UniValue::VOBJ);
+            std::vector<bilingual_str> warnings;
+
+            if (!request.params[0].isNull()) {
+                if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                    result.pushKV("error", "Disable private keys flag set.");
+                } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+                    result.pushKV("error", "Blank wallet flag set.");
+                } else {
+                    pwallet->SetEnableStaking(request.params[0].getBool());
+                    if (!request.params[1].isNull()) {
+                        interfaces::Chain& chain = pwallet->chain();
+                        std::string name = pwallet->GetName();
+                        std::optional<bool> load_on_start = request.params[1].isNull() ? std::nullopt : std::optional<bool>(request.params[1].get_bool());
+
+                        StakeWallet(chain, name, load_on_start, warnings);
+                    }
+                }
+            }
+
+            result.pushKV("enabled", wallet->GetEnableStaking());
+            result.pushKV("warning", Join(warnings, Untranslated("\n")).original);
+            return result;
+        },
+    };
+}
 
 static RPCHelpMan staking()
 {
@@ -256,13 +328,20 @@ static RPCHelpMan staking()
             "When called without an argument, returns the current status of staking.\n"
             "When called with an argument, enables or disables staking.\n",
             {
-                {"generate", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "To enable or disable staking."},
-
+                {"enabled", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "To enable or disable staking."},
             },
             RPCResult{
                 RPCResult::Type::OBJ, "", "",
                 {
-                    {RPCResult::Type::BOOL, "staking", "if staking is active or not. false:inactive, true:active"},
+                    {RPCResult::Type::BOOL, "enabled", "if staking is active or not. false:inactive, true:active"},
+                    {RPCResult::Type::ARR, "enabled_wallet", "",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::BOOL, "wallet_name", "If staking is enabled for wallet or not. false:inactive, true:active"},
+                            }},
+                        }
+                    },
                 }
             },
             RPCExamples{
@@ -271,15 +350,23 @@ static RPCHelpMan staking()
             },
             [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    UniValue result(UniValue::VOBJ);
+    UniValue staking(UniValue::VARR);
 
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto &wallet : m_stake_wallets) {
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV(wallet->GetName(), wallet->GetEnableStaking());
+        staking.push_back(entry);
+    }
 
     bool fGenerate = request.params[0].isNull() ? gArgs.GetBoolArg("-staking", true) : request.params[0].get_bool();
     if (!request.params[0].isNull()) {
         NodeContext& node = EnsureAnyNodeContext(request.context);
         gArgs.ForceSetArg("-staking", fGenerate ? "1" : "0");
 
-        if (HasWallets() && GetWallets()[0]) {
-            MintStake(gArgs.GetBoolArg("-staking", true), GetWallets()[0], node.chainman.get(), &node.chainman->ActiveChainstate(), node.connman.get(), node.mempool.get());
+        if (HasWallets() && GetWallets().size() > 0) {
+            MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
 
             if (!fGenerate) {
                 InterruptStaking();
@@ -288,8 +375,9 @@ static RPCHelpMan staking()
         }
     }
 
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("generate", fGenerate);
+    result.pushKV("enabled", gArgs.GetBoolArg("-staking",true));
+    result.pushKV("running", GetStakingThreadCount() > 0 ? true : false);
+    result.pushKV("enabled_wallet", staking);
     return result;
 },
     };
@@ -1395,6 +1483,7 @@ static const CRPCCommand commands[] =
     { "generating",          &generatetodescriptor,    },
     { "generating",          &generateblock,           },
     { "generating",          &staking,                 },
+    { "generating",          &setstaking,              },
 
     { "util",                &estimatesmartfee,        },
 

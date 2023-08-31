@@ -72,6 +72,7 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
 #endif
     argsman.AddArg("-spendzeroconfchange", strprintf("Spend unconfirmed change when sending transactions (default: %u)", DEFAULT_SPEND_ZEROCONF_CHANGE), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-checkupdates", strprintf("Check github for newer version (default: %u)", DEFAULT_CHECK_GITHUB), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-stake=<path>", "Specify wallet name to stake at startup. Can be used multiple times to load multiple wallets. Path is to a directory containing wallet data and log files. If the path is not absolute, it is interpreted relative to <walletdir>. This only loads existing wallets.", ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::WALLET);
     argsman.AddArg("-staking", strprintf("Enable staking (default: %u)", DEFAULT_ENABLE_STAKING), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-staketimio=<n>", strprintf("Proof of stake timeout. (default: %u)", DEFAULT_STAKETIMIO), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-txconfirmtarget=<n>", strprintf("If paytxfee is not set, include enough fee so transactions begin confirmation on average within n blocks (default: %u)", DEFAULT_TX_CONFIRM_TARGET), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
@@ -113,6 +114,10 @@ bool WalletInit::ParameterInteraction() const
     if (gArgs.GetBoolArg("-disablewallet", DEFAULT_DISABLE_WALLET)) {
         for (const std::string& wallet : gArgs.GetArgs("-wallet")) {
             LogPrintf("%s: parameter interaction: -disablewallet -> ignoring -wallet=%s\n", __func__, wallet);
+        }
+
+        for (const std::string& wallet : gArgs.GetArgs("-stake")) {
+            LogPrintf("%s: parameter interaction: -disablewallet -> ignoring -stake=%s\n", __func__, wallet);
         }
 
         return true;
