@@ -1422,6 +1422,17 @@ bool CWallet::IsBip39Enabled() const
     return result;
 }
 
+bool CWallet::IsBip44Enabled() const
+{
+    // All Active ScriptPubKeyMans must be HD for this to be true
+    bool result = false;
+    for (const auto& spk_man : GetActiveScriptPubKeyMans()) {
+        if (!spk_man->IsBip44Enabled()) return false;
+        result = true;
+    }
+    return result;
+}
+
 bool CWallet::CanGetAddresses(bool internal) const
 {
     LOCK(cs_wallet);

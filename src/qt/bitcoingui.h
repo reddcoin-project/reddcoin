@@ -100,6 +100,13 @@ public:
 #endif // ENABLE_WALLET
     bool enableWallet = false;
 
+    enum {
+        HD_DISABLED = 0,
+        HD_ENABLED_32 = 1,
+        HD_ENABLED_39 = 2,
+        HD_ENABLED_44 = 3
+    };
+
     /** Get the tray icon status.
         Some systems have not "system tray" or "notification area" available.
     */

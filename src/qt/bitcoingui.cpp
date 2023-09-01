@@ -1467,11 +1467,22 @@ bool BitcoinGUI::handlePaymentRequest(const SendCoinsRecipient& recipient)
 
 void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
 {
-    labelWalletHDStatusIcon->setThemedPixmap(privkeyDisabled ? QStringLiteral(":/icons/eye") : hdEnabled ? QStringLiteral(":/icons/hd_enabled") : QStringLiteral(":/icons/hd_disabled"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-    labelWalletHDStatusIcon->setToolTip(privkeyDisabled ? tr("Private key <b>disabled</b>") : hdEnabled ? tr("HD key generation is <b>enabled</b>") : tr("HD key generation is <b>disabled</b>"));
+    QString icon = "";
+    if (hdEnabled == HD_DISABLED) {
+        icon = ":/icons/hd_disabled";
+    } else if (hdEnabled == HD_ENABLED_32) {
+        icon = ":/icons/hd_enabled_32";
+    } else if (hdEnabled == HD_ENABLED_39) {
+        icon = ":/icons/hd_enabled_39";
+    } else if (hdEnabled == HD_ENABLED_44) {
+        icon = ":/icons/hd_enabled_44";
+    }
+
+    labelWalletHDStatusIcon->setThemedPixmap(privkeyDisabled ? QStringLiteral(":/icons/eye") : icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+    labelWalletHDStatusIcon->setToolTip(privkeyDisabled ? tr("Private key <b>disabled</b>") : hdEnabled > 0 ? tr("HD key generation is <b>enabled</b>") : tr("HD key generation is <b>disabled</b>"));
     labelWalletHDStatusIcon->show();
     // eventually disable the QLabel to set its opacity to 50%
-    labelWalletHDStatusIcon->setEnabled(hdEnabled);
+    labelWalletHDStatusIcon->setEnabled(hdEnabled > 0);
 }
 
 void BitcoinGUI::setEncryptionStatus(int status)
@@ -1571,7 +1582,15 @@ void BitcoinGUI::updateWalletStatus()
     }
     WalletModel * const walletModel = walletView->getWalletModel();
     setEncryptionStatus(walletModel->getEncryptionStatus());
-    setHDStatus(walletModel->wallet().privateKeysDisabled(), walletModel->wallet().hdEnabled());
+    int hdType = HD_DISABLED;
+    if (walletModel->wallet().bip44Enabled()) {
+        hdType = HD_ENABLED_44;
+    } else if (walletModel->wallet().bip39Enabled()) {
+        hdType = HD_ENABLED_39;
+    } else if (walletModel->wallet().hdEnabled()) {
+        hdType = HD_ENABLED_32;
+    }
+    setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
     stakingStatusControl->setStakingActive(clientModel->getStakingEnabled());
 }
 #endif // ENABLE_WALLET

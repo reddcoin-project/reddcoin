@@ -204,8 +204,11 @@ public:
     /* Returns true if HD is enabled */
     virtual bool IsHDEnabled() const { return false; }
 
-    /* Returns true if HD is enabled */
+    /* Returns true if HD bip39 is enabled */
     virtual bool IsBip39Enabled() const { return false; }
+
+    /* Returns true if HD bip44 is enabled */
+    virtual bool IsBip44Enabled() const { return false; }
 
     /* Returns true if the wallet can give out new addresses. This means it has keys in the keypool or can generate new keys */
     virtual bool CanGetAddresses(bool internal = false) const { return false; }
@@ -379,6 +382,8 @@ public:
     bool IsHDEnabled() const override;
 
     bool IsBip39Enabled() const override;
+
+    bool IsBip44Enabled() const override;
 
     bool SetupGeneration(const WalletOptions& walletoptions, bool force = false) override;
 

@@ -450,7 +450,12 @@ bool LegacyScriptPubKeyMan::IsHDEnabled() const
 
 bool LegacyScriptPubKeyMan::IsBip39Enabled() const
 {
-    return m_hd_chain.vchMnemonic.size() > 0;
+    return IsHDEnabled() && m_hd_chain.vchMnemonic.size() > 0;
+}
+
+bool LegacyScriptPubKeyMan::IsBip44Enabled() const
+{
+    return IsBip39Enabled() && m_hd_chain.bBip44;
 }
 
 bool LegacyScriptPubKeyMan::CanGetAddresses(bool internal) const

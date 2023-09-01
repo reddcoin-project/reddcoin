@@ -257,6 +257,9 @@ public:
     // Return whether BIP39 enabled.
     virtual bool bip39Enabled() = 0;
 
+    // Return whether BIP44 enabled.
+    virtual bool bip44Enabled() = 0;
+
     // Return whether the wallet is blank.
     virtual bool canGetAddresses() = 0;
 
