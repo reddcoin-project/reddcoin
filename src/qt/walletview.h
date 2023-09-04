@@ -115,6 +115,9 @@ public Q_SLOTS:
     /** Re-emit encryption status signal */
     void updateEncryptionStatus();
 
+    /** Re-emit staking status signal */
+    void updateStakingStatus();
+
     /** Show progress dialog e.g. for rescan */
     void showProgress(const QString &title, int nProgress);
 
@@ -126,6 +129,8 @@ Q_SIGNALS:
     void message(const QString &title, const QString &message, unsigned int style);
     /** Encryption status of wallet changed */
     void encryptionStatusChanged();
+    /** Staking status of wallet changed */
+    void stakingStatusChanged();
     /** HD-Enabled status of wallet changed (only possible during startup) */
     void hdEnabledStatusChanged();
     /** Notify that a new transaction appeared */

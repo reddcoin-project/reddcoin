@@ -28,6 +28,9 @@ bool GetStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, ui
     for (const CInputCoin& pcoin : setCoins)
     {
         CDiskTxPos postx;
+        if (!g_txindex) {
+            return error("GetStakeWeight() : tx index not available");
+        }
         if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
             continue;
 

@@ -719,9 +719,6 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         setNumBlocks(tip_info->block_height, QDateTime::fromTime_t(tip_info->block_time), tip_info->verification_progress, false, SynchronizationState::INIT_DOWNLOAD);
         connect(_clientModel, &ClientModel::numBlocksChanged, this, &BitcoinGUI::setNumBlocks);
 
-        updateStakingStatus();
-        connect(_clientModel, &ClientModel::numBlocksChanged, this, &BitcoinGUI::updateStakingStatus);
-
         // Receive and report messages from client model
         connect(_clientModel, &ClientModel::message, [this](const QString &title, const QString &message, unsigned int style){
             this->message(title, message, style);
@@ -817,6 +814,7 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
         this->message(title, message, style);
     });
     connect(wallet_view, &WalletView::encryptionStatusChanged, this, &BitcoinGUI::updateWalletStatus);
+    connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateStakingStatus);
     connect(wallet_view, &WalletView::incomingTransaction, this, &BitcoinGUI::incomingTransaction);
     connect(wallet_view, &WalletView::hdEnabledStatusChanged, this, &BitcoinGUI::updateWalletStatus);
     connect(this, &BitcoinGUI::setPrivacy, wallet_view, &WalletView::setPrivacy);
@@ -1180,8 +1178,6 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
     if (!clientModel)
         return;
 
-    updateStakingStatus();
-
     // Prevent orphan statusbar messages (e.g. hover Quit in main menu, wait until chain-sync starts -> garbled text)
     statusBar()->clearMessage();
 
@@ -1229,6 +1225,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
 #ifdef ENABLE_WALLET
         if(walletFrame)
         {
+            updateStakingStatus();
             walletFrame->showOutOfSyncWarning(false);
             modalOverlay->showHide(true, true);
         }
@@ -1527,48 +1524,45 @@ void BitcoinGUI::updateStakingStatus()
     if (!walletFrame) {
         return;
     }
-    WalletView * const walletView = walletFrame->currentWalletView();
+    WalletView* const walletView = walletFrame->currentWalletView();
     if (!walletView) {
         return;
     }
-    WalletModel * const walletModel = walletView->getWalletModel();
+    WalletModel* const walletModel = walletView->getWalletModel();
+    if (!walletModel) {
+        return;
+    }
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
+    int64_t nLastCoinStakeSearchInterval = 0;
+    bool staking = false;
 
     QString msg;
+    if (walletModel) {
+        walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
+        nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
+        staking = nLastCoinStakeSearchInterval && nAverageWeight;
+    }
 
-    if(m_node.getLastCoinStakeSearchInterval() && nAverageWeight)
-    {
+    if (staking) {
         msg = tr("Wallet is staking");
         stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-    }
-    else
-    {
-            if(walletModel->getEncryptionStatus() == WalletModel::Locked)
-            {
-                msg = tr("Not staking because wallet is locked");
-            }
-            else if (!m_node.getNetworkActive())
-            {
-                msg = tr("Not staking because wallet is offline");
-            }
-            else if (m_node.isInitialBlockDownload())
-            {
-                msg = tr("Not staking because wallet is syncing");
-            }
-            else if (!nAverageWeight)
-            {
-                msg = tr("Not staking because you don't have mature coins");
-            }
-            else if (!clientModel->getStakingEnabled())
-            {
-                msg = tr("Wallet staking is disabled");
-            }
+    } else {
+        if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
+            msg = tr("Not staking because wallet is locked");
+        } else if (!m_node.getNetworkActive()) {
+            msg = tr("Not staking because wallet is offline");
+        } else if (m_node.isInitialBlockDownload()) {
+            msg = tr("Not staking because wallet is syncing");
+        } else if (!nAverageWeight) {
+            msg = tr("Not staking because you don't have mature coins");
+        } else if (!clientModel->getStakingEnabled()) {
+            msg = tr("Wallet staking is disabled");
+        }
 
-            stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
     stakingStatusControl->setToolTip(msg);
-
 }
 
 void BitcoinGUI::updateWalletStatus()

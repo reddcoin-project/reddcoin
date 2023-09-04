@@ -152,9 +152,6 @@ public:
     //! Get PoSVKernelPS.
     virtual uint64_t getPoSVKernelPS() = 0;
 
-    //! Get Last CoinStake SearchInterval.
-    virtual bool getLastCoinStakeSearchInterval() = 0;
-
     //! Get the total and average weights from the wallet for staking.
     virtual bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t & nTotalWeight) = 0;
 

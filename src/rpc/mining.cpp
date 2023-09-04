@@ -628,6 +628,7 @@ static RPCHelpMan getstakinginfo()
     pwallet->BlockUntilSyncedToCurrentChain();
 
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
+    int64_t nLastCoinStakeSearchInterval = pwallet->GetLastCoinStakeSearchInterval();
 
     GetStakeWeight(pwallet.get(), nAverageWeight, nTotalWeight, chainparams.GetConsensus());
 
