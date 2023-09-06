@@ -44,6 +44,13 @@ bilingual_str GetWarnings(bool verbose)
         warnings_verbose.emplace_back(warnings_concise);
     }
 
+    // reddcoin: wallet warnings for staking
+    if (strMintWarning != "")
+    {
+        warnings_concise = Untranslated(strMintWarning);
+        warnings_verbose.emplace_back(warnings_concise);
+    }
+
     // Misc warnings like out of disk space and clock is wrong
     if (!g_misc_warnings.empty()) {
         warnings_concise = g_misc_warnings;
