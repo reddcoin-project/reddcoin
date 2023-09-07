@@ -3,18 +3,18 @@
 
 Reddcoin Core version 4.22.5rc2 is now available from:
 
-  <https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/>
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
 
 Please report bugs using the issue tracker at GitHub:
 
-  <https://github.com/reddcoin-project/reddcoin/issues>
+[Reddcoin Github Issues](https://github.com/reddcoin-project/reddcoin-0.22/issues)
 
 To receive security and update notifications, please subscribe to:
 
-  [Discord]<https://discord.com/channels/314599721039691776/610562116688281611>
+[Reddcoin Discord Channel](https://discord.com/channels/314599721039691776/610562116688281611)
 
 How to Upgrade
 ==============
@@ -66,7 +66,9 @@ New and Updated RPCs
 --------------------
 
 - New `setstaking` RPC will return the current staking state for all loaded wallets. Setting a boolean value (true|false) will 
-  enable/ disable staking for the selected wallet according. Additionally the state for the selected wallet can be stored to load during startup (settings.json).  
+  enable/ disable staking for the selected wallet according. Additionally the state for the selected wallet can be stored to load during startup (settings.json).
+  
+- New `getinterest` RPC will return the current amount of interest earned. Accepts two additional arguments to indicate the `start` and `end` period to query.
 
 - Updated `checkupdates` RPC will return an object with the currently installed version and the latest available remote version from github.
 
@@ -254,15 +256,17 @@ GUI changes
     - checking for correctness of mnemonic sentence words
     - incorporation of mnemonic password
 
-- A new tab has been added to display the staking probability of available utxo's
+- A new tab has been added to display the staking probability of available utxo's for each wallet.
 
 - A new `Check for Software Updates` menu item. Help -> Check for Software Updates. Can be used to determine if there is a later version available.
 
 - A new `Open Social Websites` menu item. Help -> Open Social Websites. Providing a quick access to `reddcoin.com` ,`redd.love`, `Reddcoin Wiki`,  `Discord Chatroom`, `reddcointalk.org`.
 
-- A new `Staking` menu item Window -> Staking. Providing further information on staking.
+- A new `Staking` menu item. Window -> Staking. Providing further information on staking.
 
 - A new `Staking` status icon in the statusbar area providing visual feedback on current staking.
+
+- An updated `Wallet` type status icon in the statusbar area providing visual feedback on current wallet type (non-hd, bip32, bip39, bip44).
 
 - External signers such as hardware wallets can now be used. These require an external tool such as [HWI](https://github.com/bitcoin-core/HWI) to be installed and configured under Options -> Wallet. When creating a new wallet a new option "External signer" will appear in the dialog. If the device is detected, its name is suggested as the wallet name. The watch-only keys are then automatically imported. Receive addresses can be verified on the device. The send dialog will automatically use the connected device. This feature is experimental and the UI may freeze for a few seconds when performing these actions.
 
@@ -292,13 +296,80 @@ Tests
 
 - Unit test cases for bip44
   
-22.0 change log
+4.22.0 change log
 ===============
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
 ### Reddcoin commit history
- - #4391bf131 doc: update release notes (John Nash)
+ - #1898fa09c doc: Update release notes (John Nash)
+ - #905d03009 doc: update source url in github links (John Nash)
+ - #c53b713ea doc: generate example reddcoin.conf for v4.22.5rc2 (John Nash)
+ - #f0a9380cf doc: Update manual pages for 4.22.2rc2 (John Nash)
+ - #43a146324 build: Bump version to 4.22.5rc2 (John Nash)
+ - #c9155f9c1 build: update copyright year 2023 (John Nash)
+ - #8abeb73e4 qt: update transifex configuration slug (John Nash)
+ - #a0d34e94d doc: update init.cpp -conf help text (josibake)
+ - #5427a5f78 doc: update devtools, release-process readmes (josibake)
+ - #22dd09efe build: include reddcoin.conf in build outputs (josibake)
+ - #40a011e57 doc: update reddcoin-conf.md (Josiah Baker)
+ - #22efbe113 script: add script to generate example reddcoin.conf (josibake)
+ - #21eb04349 doc: replace reddcoin.conf with placeholder file (josibake)
+ - #c2cd0d1fd update gen-manpages to support reddcoin (John Nash)
+ - #a344a87f0 Updated stats for blockchain transactions (John Nash)
+ - #f45aa527c qt: display a warning on GUI if unable to stake (John Nash)
+ - #4cef3789b update versionbit timeouts for the following versionbits (John Nash)
+ - #c4c8a93e3 small update for plural changes (John Nash)
+ - #04472d789 fix segfault during shutdown while staking (John Nash)
+ - #498768526 update staking status (John Nash)
+ - #93db5350b move nLastCoinStakeSearchInterval to wallet rather than extern (John Nash)
+ - #a18b336b3 move function (John Nash)
+ - #bd8c0e1b4 emit stakingstatusupdate (John Nash)
+ - #a6191cb4b enable the HD wallet icon to display whether it is bip32, 39, 44 (John Nash)
+ - #6fb7789df update release notes (John Nash)
+ - #6e1b895be if already staking, stop existing threads (John Nash)
+ - #24297ccab get the running stake thread count (John Nash)
+ - #8cd66c2fe read settings file and update wallets for staking (John Nash)
+ - #1fbf90e32 add -stake to the wallet initialisation arguments (John Nash)
+ - #992fffdd9 add read/write set staking to load on startup (John Nash)
+ - #adc406ea2 remove unnecessary parameter (John Nash)
+ - #40f184267 fix help message (John Nash)
+ - #bcff6bf02 add setstaking rpc call and rename value (John Nash)
+ - #1e7a258fa add get/set enable staking per wallet (John Nash)
+ - #d1c4a228e dont attempt to stake blank wallet (John Nash)
+ - #f4b2651f3 shorten staking thread name for improved monitoring (John Nash)
+ - #580b1b141 replace chainstate with chainstatemanager (John Nash)
+ - #71b51d646 add functions to save stake settings to file (John Nash)
+ - #306765a30 stake on startup (John Nash)
+ - #e16a98843 stake multiple wallets concurrently (John Nash)
+ - #303c88e4a stake multiple wallets concurrently (John Nash)
+ - #99aa9c5bd consider IsCoinStake in ReacceptWalletTransactions (John Nash)
+ - #551da65ed qt: English translations update (John Nash)
+ - #28c1ef4f6 scripted-diff: Bump copyright headers (John Nash)
+ - #25235ad0d scripted-diff: Bump copyright headers (John Nash)
+ - #ece5204fe add missing copyright headers (John Nash)
+ - #023170acc script: update copyright_header for reddcoin (John Nash)
+ - #1521f69ee qt: rework checkupdate to display a statusbar label (John Nash)
+ - #39f49907f use semver for version formatting and checking (John Nash)
+ - #36e8d1241 remove create wallet from menu (John Nash)
+ - #2ff3a76a9 filter transactions that cannot be staked (John Nash)
+ - #e892e19f6 connect wizard (John Nash)
+ - #a4b24512f change wording to reflect the usage (John Nash)
+ - #34fd106b4 add page initialisation (John Nash)
+ - #4be22e746 import masterkey (John Nash)
+ - #7de69ca01 update reddcoin-node (John Nash)
+ - #fd2d753b4 update branding in rpc calls (John Nash)
+ - #c31d21e8d add -stakenotify (John Nash)
+ - #187b86d7f fix gettransaction rpc (John Nash)
+ - #e4a9fbf76 add getinterest rpc command (John Nash)
+ - #66d5f8133 add tooltips for some wallet types (John Nash)
+ - #5e4955352 use seconds (John Nash)
+ - #c8d415e1b fix kernal record probability display (John Nash)
+ - #1b4a8a1af Split stake when threshold reached (John Nash)
+ - #0704861c0 Use the correct parameters for Reddcoin during stake splitting and combining (John Nash)
+ - #a9d0d25de Do not start staking thread if private keys are disabled (lateminer)
+ - #aa9f8add5 Avoid getting into infinite loops in staking thread (lateminer)
+ - #3d402b78f Check if a wallet is loaded before working with stake thread (lateminer)
  - #dc35bbf95 build: update version (John Nash)
  - #406b9e3f3 doc: reset release notes (John Nash)
  - #b3f2f92a3 update NSI pixmap (John Nash)
@@ -505,6 +576,13 @@ A detailed list of changes in this version follows. To keep the list to a manage
  - #b23c03f1a add block signing components (barrystyle)
  - #6d1b826dd store hashproof in block index, display pos data in block index json output (barrystyle)
  - #80b9c562c Migrate reddcoin basic consensus functions/posv2 over bitcoin 22.x; including several fixes from reddink (redd@redd.ink). (barrystyle)
+ 
+### Reddcoin Credits
+- barrystyle
+- BlackcoinDev
+- John Nash
+- lateminer
+- TechAdeptRDD
  
 ### Consensus
 - bitcoin/bitcoin#19438 Introduce deploymentstatus (ajtowns)
