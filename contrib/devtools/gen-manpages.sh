@@ -10,12 +10,12 @@ BUILDDIR=${BUILDDIR:-$TOPDIR}
 BINDIR=${BINDIR:-$BUILDDIR/src}
 MANDIR=${MANDIR:-$TOPDIR/doc/man}
 
-BITCOIND=${BITCOIND:-$BINDIR/bitcoind}
-BITCOINCLI=${BITCOINCLI:-$BINDIR/bitcoin-cli}
-BITCOINTX=${BITCOINTX:-$BINDIR/bitcoin-tx}
-WALLET_TOOL=${WALLET_TOOL:-$BINDIR/bitcoin-wallet}
-BITCOINUTIL=${BITCOINQT:-$BINDIR/bitcoin-util}
-BITCOINQT=${BITCOINQT:-$BINDIR/qt/bitcoin-qt}
+BITCOIND=${BITCOIND:-$BINDIR/reddcoind}
+BITCOINCLI=${BITCOINCLI:-$BINDIR/reddcoin-cli}
+BITCOINTX=${BITCOINTX:-$BINDIR/reddcoin-tx}
+WALLET_TOOL=${WALLET_TOOL:-$BINDIR/reddcoin-wallet}
+BITCOINUTIL=${BITCOINQT:-$BINDIR/reddcoin-util}
+BITCOINQT=${BITCOINQT:-$BINDIR/qt/reddcoin-qt}
 
 [ ! -x $BITCOIND ] && echo "$BITCOIND not found or not executable." && exit 1
 
@@ -39,8 +39,8 @@ fi
 read -r -a BTCVER <<< "$($BITCOINCLI --version | head -n1 | awk -F'[ -]' '{ print $6, $7 }')"
 
 # Create a footer file with copyright content.
-# This gets autodetected fine for bitcoind if --version-string is not set,
-# but has different outcomes for bitcoin-qt and bitcoin-cli.
+# This gets autodetected fine for reddcoind if --version-string is not set,
+# but has different outcomes for reddcoin-qt and reddcoin-cli.
 echo "[COPYRIGHT]" > footer.h2m
 $BITCOIND --version | sed -n '1!p' >> footer.h2m
 
