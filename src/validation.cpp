@@ -3665,14 +3665,14 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     // PoSV: get stake entropy bit
     uint256 hash = pblock->GetHash();
     if (!pindex->SetStakeEntropyBit(StakeEntropyBitFromHash(hash))) {
-        return error("%s - couldnt get/set stake entropy bit (height %d)\n", __func__, pindex->nHeight);
+        return error("%s - couldn't get/set stake entropy bit (height %d)\n", __func__, pindex->nHeight);
     }
 
     // PoSV: compute stake modifier
     uint64_t nStakeModifier = 0;
     bool fGeneratedStakeModifier = false;
     if (!ComputeNextStakeModifier(this, pindex, nStakeModifier, fGeneratedStakeModifier)) {
-        return error("%s - couldnt get next stake modifier (height %d)\n", __func__, pindex->nHeight);
+        return error("%s - couldn't get next stake modifier (height %d)\n", __func__, pindex->nHeight);
     }
     pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
 
