@@ -215,7 +215,7 @@ public:
     int64_t nMint{0};
     int64_t nMoneySupply{0};
     uint64_t nStakeModifier{0};             // hash modifier for proof-of-stake
-    unsigned int nStakeModifierChecksum{0}; // checksum of index; in-memeory only
+    unsigned int nStakeModifierChecksum{0}; // checksum of index; in-memory only
     COutPoint prevoutStake{};
     unsigned int nStakeTime{0};
     uint256 hashProofOfStake{};

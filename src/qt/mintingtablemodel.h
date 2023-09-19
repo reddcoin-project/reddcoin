@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef PEERCOIN_QT_MINTINGTABLEMODEL_H
-#define PEERCOIN_QT_MINTINGTABLEMODEL_H
+#ifndef BITCOIN_QT_MINTINGTABLEMODEL_H
+#define BITCOIN_QT_MINTINGTABLEMODEL_H
 
 #include <QAbstractTableModel>
 #include <QStringList>
@@ -73,4 +73,4 @@ public Q_SLOTS:
     friend class MintingTablePriv;
 };
 
-#endif // PEERCOIN_QT_MINTINGTABLEMODEL_H
+#endif // BITCOIN_QT_MINTINGTABLEMODEL_H

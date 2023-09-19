@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef REDDCOIN_KERNELRECORD_H
-#define REDDCOIN_KERNELRECORD_H
+#ifndef BITCOIN_POS_KERNELRECORD_H
+#define BITCOIN_POS_KERNELRECORD_H
 
 #include <uint256.h>
 #include <interfaces/wallet.h>
@@ -57,4 +57,4 @@ protected:
     double prevProbability;
 };
 
-#endif // REDDCOIN_KERNELRECORD_H
+#endif // BITCOIN_POS_KERNELRECORD_H

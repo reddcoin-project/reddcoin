@@ -232,7 +232,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     connect(labelCheckUpdate, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showUpdatesClicked);
 
     QTimer *timer = new QTimer(this);
-    connect(timer, SIGNAL(timeout()), this, SLOT(checkUpdates()));
+    connect(timer, &QTimer::timeout, this, &BitcoinGUI::checkUpdates);
     timer->start(CHECK_UPDATE_DELAY);
 
     // check update on initial start

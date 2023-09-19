@@ -22,8 +22,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef SRC_BIP39_H
-#define SRC_BIP39_H
+#ifndef BITCOIN_WALLET_BIP39_H
+#define BITCOIN_WALLET_BIP39_H
 
 #include <support/allocators/secure.h>
 
@@ -67,4 +67,4 @@ private:
     CMnemonic(){};
 };
 
-#endif
+#endif // BITCOIN_WALLET_BIP39_H

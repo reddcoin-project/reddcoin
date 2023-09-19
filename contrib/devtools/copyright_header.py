@@ -651,7 +651,7 @@ def exec_modify_header_year(base_directory):
 
 UPDATE_USAGE = """
 Modifies all the copyright headers of "The Bitcoin Core developers" since commit #80b9c562
-It inserts a new "The Reddcoin Core developers" to the copyright header following the preceeding.
+It inserts a new "The Reddcoin Core developers" to the copyright header following the preceding.
 
 It will also update a file changed in a year more recent than is listed. For example:
 

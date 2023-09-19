@@ -660,7 +660,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     LOCK(pwallet->cs_wallet);
                     if (!SignBlock(*pblock, *pwallet))
                     {
-                        LogPrintf("Staker thread [%d]: failed to sign PoS block", thread_id);
+                        LogPrintf("Staker thread [%d]: failed to sign PoS block\n", thread_id);
                         continue;
                     }
                 }

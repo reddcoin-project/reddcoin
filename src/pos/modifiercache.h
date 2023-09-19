@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef POS_MODIFIERCACHE_H
-#define POS_MODIFIERCACHE_H
+#ifndef BITCOIN_POS_MODIFIERCACHE_H
+#define BITCOIN_POS_MODIFIERCACHE_H
 
 #include <util/system.h>
 
@@ -18,4 +18,4 @@ void cacheInit();
 void cacheAdd(cachedModifier entry, uint64_t& nStakeModifier);
 bool cacheCheck(cachedModifier entry, uint64_t& nStakeModifier);
 
-#endif // POS_MODIFIERCACHE_H
+#endif // BITCOIN_POS_MODIFIERCACHE_H

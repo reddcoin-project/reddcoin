@@ -21,6 +21,9 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef BITCOIN_WALLET_BIP39_ITALIAN_H
+#define BITCOIN_WALLET_BIP39_ITALIAN_H
+
 const char * const wordlist_it[] = {
 "abaco",
 "abbaglio",
@@ -2072,3 +2075,5 @@ const char * const wordlist_it[] = {
 "zuppa",
 0,
 };
+
+#endif // BITCOIN_WALLET_BIP39_ITALIAN_H

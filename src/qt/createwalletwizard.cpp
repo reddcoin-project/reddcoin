@@ -641,7 +641,7 @@ wizPage_generateSeed::wizPage_generateSeed(QWidget* parent)
 
     registerField("generateWords.seed", textEdit_newMnemonic, "plainText");
     registerField("generateWords.password", lineEdit_password);
-    connect(textEdit_newMnemonic, SIGNAL(textChanged()), this, SIGNAL(completeChanged()));
+    connect(textEdit_newMnemonic, &QTextEdit::textChanged, this, &QWizardPage::completeChanged);
     connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index){
         onChangeWords(index);
     });
@@ -824,7 +824,7 @@ wizPage_confirmSeed::wizPage_confirmSeed(QWidget* parent)
     setLayout(verticalLayout);
 
     registerField("confirm.seed", textEdit_confirmMnemonic, "plainText");
-    connect(textEdit_confirmMnemonic, SIGNAL(textChanged()), this, SIGNAL(completeChanged()));
+    connect(textEdit_confirmMnemonic, &QTextEdit::textChanged, this, &QWizardPage::completeChanged);
 }
 
 bool wizPage_confirmSeed::isComplete() const
@@ -891,7 +891,7 @@ wizPage_enterSeed::wizPage_enterSeed(QWidget* parent)
     registerField("enter.seed", textEdit_importMnemonic, "plainText");
     registerField("enter.pass", lineEdit_password);
 
-    connect(textEdit_importMnemonic, SIGNAL(textChanged()), this, SIGNAL(completeChanged()));
+    connect(textEdit_importMnemonic, &QTextEdit::textChanged, this, &QWizardPage::completeChanged);
 }
 
 int wizPage_enterSeed::nextId() const

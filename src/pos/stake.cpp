@@ -48,7 +48,7 @@ bool GetStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, ui
 
         CMutableTransaction tx(*txRef);
 
-        // Deal with transaction timestmap
+        // Deal with transaction timestamp
         unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
 
         int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
@@ -117,7 +117,7 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
 
           CMutableTransaction tx(*txRef);
 
-          // Deal with transaction timestmap
+          // Deal with transaction timestamp
           unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
 
           int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);

@@ -3,8 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef REDDCOIN_KERNEL_H
-#define REDDCOIN_KERNEL_H
+#ifndef BITCOIN_POS_KERNEL_H
+#define BITCOIN_POS_KERNEL_H
 
 #include <primitives/transaction.h> // CTransaction(Ref)
 #include <validation.h>
@@ -56,4 +56,4 @@ double GetDifficulty(const CBlockIndex* blockindex);
  */
 double GetPoSVKernelPS(const CBlockIndex* blockindex);
 
-#endif // REDDCOIN_KERNEL_H
+#endif // BITCOIN_POS_KERNEL_H

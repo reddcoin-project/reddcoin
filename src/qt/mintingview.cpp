@@ -108,10 +108,10 @@ MintingView::MintingView(QWidget *parent) :
     contextMenu->addAction(copyAddressAction);
     contextMenu->addAction(copyTransactionIdAction);
 
-    connect(mintingCombo, SIGNAL(activated(int)), this, SLOT(chooseMintingInterval(int)));
-    connect(view, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(contextualMenu(QPoint)));
-    connect(copyAddressAction, SIGNAL(triggered()), this, SLOT(copyAddress()));
-    connect(copyTransactionIdAction, SIGNAL(triggered()), this, SLOT(copyTransactionId()));
+    connect(mintingCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MintingView::chooseMintingInterval);
+    connect(view, &QTableView::customContextMenuRequested, this, &MintingView::contextualMenu);
+    connect(copyAddressAction, &QAction::triggered, this, &MintingView::copyAddress);
+    connect(copyTransactionIdAction, &QAction::triggered, this, &MintingView::copyTransactionId);
 }
 
 
