@@ -53,6 +53,10 @@ EXPECTED_BOOST_INCLUDES=(
     boost/algorithm/string/classification.hpp
     boost/algorithm/string/replace.hpp
     boost/algorithm/string/split.hpp
+    boost/asio.hpp
+    boost/asio/ip/tcp.hpp
+    boost/asio/ssl.hpp
+    boost/assign/list_of.hpp
     boost/date_time/posix_time/posix_time.hpp
     boost/filesystem.hpp
     boost/filesystem/fstream.hpp

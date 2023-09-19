@@ -28,6 +28,11 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     # split up in a MOVEONLY commit. These are removed in #21206.
     "wallet/receive -> wallet/wallet -> wallet/receive"
     "wallet/spend -> wallet/wallet -> wallet/spend"
+    # Introduced with POSV. Need to be examined for refinement
+    "consensus/tx_verify -> validation -> consensus/tx_verify"
+    "pos/kernel -> validation -> pos/kernel"
+    "qt/mintingtablemodel -> qt/walletmodel -> qt/mintingtablemodel"
+    "pos/signer -> wallet/wallet -> txmempool -> validation -> pos/signer"
 )
 
 EXIT_CODE=0

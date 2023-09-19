@@ -1,4 +1,5 @@
 asend
+atack
 blockin
 cachable
 fo
@@ -11,6 +12,7 @@ keypair
 mor
 nin
 ser
+sur
 unparseable
 unser
 useable
