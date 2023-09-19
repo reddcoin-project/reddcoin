@@ -21,6 +21,9 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef BITCOIN_WALLET_BIP39_JAPANESE_H
+#define BITCOIN_WALLET_BIP39_JAPANESE_H
+
 const char * const wordlist_ja[] = {
 "あいこくしん",
 "あいさつ",
@@ -2072,3 +2075,5 @@ const char * const wordlist_ja[] = {
 "われる",
 0,
 };
+
+#endif // BITCOIN_WALLET_BIP39_JAPANESE_H

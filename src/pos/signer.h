@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BLOCKSIGNATURE_H
-#define BLOCKSIGNATURE_H
+#ifndef BITCOIN_POS_SIGNER_H
+#define BITCOIN_POS_SIGNER_H
 
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -12,4 +12,4 @@
 bool SignBlock(CBlock& block, const CWallet& keystore);
 bool CheckBlockSignature(const CBlock& block);
 
-#endif // BLOCKSIGNATURE_H
+#endif // BITCOIN_POS_SIGNER_H

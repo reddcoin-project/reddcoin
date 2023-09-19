@@ -21,6 +21,9 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef BITCOIN_WALLET_BIP39_CHINESE_SIMPLIFIED_H
+#define BITCOIN_WALLET_BIP39_CHINESE_SIMPLIFIED_H
+
 const char * const wordlist_zh_s[] = {
 "的",
 "一",
@@ -2072,3 +2075,5 @@ const char * const wordlist_zh_s[] = {
 "歇",
 0,
 };
+
+#endif // BITCOIN_WALLET_BIP39_CHINESE_SIMPLIFIED_H

@@ -21,6 +21,9 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef BITCOIN_WALLET_BIP39_FRENCH_H
+#define BITCOIN_WALLET_BIP39_FRENCH_H
+
 const char * const wordlist_fr[] = {
 "abaisser",
 "abandon",
@@ -2072,3 +2075,5 @@ const char * const wordlist_fr[] = {
 "zoologie",
 0,
 };
+
+#endif // BITCOIN_WALLET_BIP39_FRENCH_H

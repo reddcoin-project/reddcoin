@@ -26,8 +26,8 @@
  * This file was originally written by Colin Percival as part of the Tarsnap
  * online backup system.
  */
-#ifndef SCRYPT_H
-#define SCRYPT_H
+#ifndef BITCOIN_CRYPTO_SCRYPT_H
+#define BITCOIN_CRYPTO_SCRYPT_H
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -73,4 +73,4 @@ static inline void le32enc(void *pp, uint32_t x)
 
 void SHA256(unsigned char* input, int len, unsigned char* output);
 
-#endif
+#endif // BITCOIN_CRYPTO_SCRYPT_H
