@@ -122,30 +122,34 @@ static bool SelectBlockFromCandidates(CChainState* active_chainstate, std::vecto
     arith_uint256 hashBest = arith_uint256();
     *pindexSelected = nullptr;
     for (const auto& item : vSortedByTimestamp) {
-        if (!active_chainstate->m_blockman.LookupBlockIndex(item.second))
-            return error("SelectBlockFromCandidates: failed to find block index for candidate block %s", item.second.ToString());
-        const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(item.second);
-        if (fSelected && pindex->GetBlockTime() > nSelectionIntervalStop)
-            break;
-        if (mapSelectedBlocks.count(pindex->GetBlockHash()) > 0)
-            continue;
-        // compute the selection hash by hashing its proof-hash and the
-        // previous proof-of-stake modifier
-        CDataStream ss(SER_GETHASH, 0);
-        ss << uint256() << nStakeModifierPrev;
-        arith_uint256 hashSelection = UintToArith256(Hash(ss));
-        // the selection hash is divided by 2**32 so that proof-of-stake block
-        // is always favored over proof-of-work block. this is to preserve
-        // the energy efficiency property
-        if (pindex->IsProofOfStake())
-            hashSelection >>= 32;
-        if (fSelected && hashSelection < hashBest) {
-            hashBest = hashSelection;
-            *pindexSelected = (const CBlockIndex*)pindex;
-        } else if (!fSelected) {
-            fSelected = true;
-            hashBest = hashSelection;
-            *pindexSelected = (const CBlockIndex*)pindex;
+        {
+            LOCK(cs_main);
+
+            if (!active_chainstate->m_blockman.LookupBlockIndex(item.second))
+                return error("SelectBlockFromCandidates: failed to find block index for candidate block %s", item.second.ToString());
+            const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(item.second);
+            if (fSelected && pindex->GetBlockTime() > nSelectionIntervalStop)
+                break;
+            if (mapSelectedBlocks.count(pindex->GetBlockHash()) > 0)
+                continue;
+            // compute the selection hash by hashing its proof-hash and the
+            // previous proof-of-stake modifier
+            CDataStream ss(SER_GETHASH, 0);
+            ss << uint256() << nStakeModifierPrev;
+            arith_uint256 hashSelection = UintToArith256(Hash(ss));
+            // the selection hash is divided by 2**32 so that proof-of-stake block
+            // is always favored over proof-of-work block. this is to preserve
+            // the energy efficiency property
+            if (pindex->IsProofOfStake())
+                hashSelection >>= 32;
+            if (fSelected && hashSelection < hashBest) {
+                hashBest = hashSelection;
+                *pindexSelected = (const CBlockIndex*)pindex;
+            } else if (!fSelected) {
+                fSelected = true;
+                hashBest = hashSelection;
+                *pindexSelected = (const CBlockIndex*)pindex;
+            }
         }
     }
 
@@ -261,6 +265,7 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
 {
     const Consensus::Params& params = Params().GetConsensus();
     nStakeModifier = 0;
+    LOCK(cs_main);
     const CBlockIndex* pindexFrom = active_chainstate->m_blockman.LookupBlockIndex(hashBlockFrom);
     if (!pindexFrom)
         return error("GetKernelStakeModifier() : block not indexed");
@@ -373,6 +378,7 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     ss << nTimeBlockFrom << nTxPrevOffset << nTimeTxPrev << prevout.n << nTimeTx;
     hashProofOfStake = Hash(ss);
 
+    LOCK(cs_main);
     LogPrint(BCLog::POS, "%s: using modifier 0x%016x at height=%d timestamp=%s for block from height=%d timestamp=%s\n",
         __func__,
         nStakeModifier, nStakeModifierHeight,
@@ -471,6 +477,7 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
         CMutableTransaction txPrev(*txPrevious);
         // Read block header
         CBlock block;
+        LOCK(cs_main);
         if (!active_chainstate->m_blockman.LookupBlockIndex(hashBlock))
             return 0; // unable to read block of previous transaction
         if (!ReadBlockFromDisk(block, active_chainstate->m_blockman.LookupBlockIndex(hashBlock), params))
