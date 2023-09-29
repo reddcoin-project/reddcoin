@@ -4,6 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <arith_uint256.h>
 #include <policy/feerate.h>
 
 #include <tinyformat.h>
@@ -14,7 +15,10 @@ CFeeRate::CFeeRate(const CAmount& nFeePaid, uint32_t num_bytes)
 {
     const int64_t nSize{num_bytes};
 
-    if (nSize > 0) {
+    if (nFeePaid >= MAX_MONEY && nSize > 0) {
+        arith_uint256 nSatsPerK = arith_uint256(nFeePaid) * 1000 / arith_uint256(nSize);
+        nSatoshisPerK = nSatsPerK.GetLow64();
+    } else if (nSize > 0) {
         nSatoshisPerK = nFeePaid * 1000 / nSize;
     } else {
         nSatoshisPerK = 0;
