@@ -99,11 +99,11 @@ static int AppInitRawTx(int argc, char* argv[])
 
     if (argc < 2 || HelpRequested(gArgs) || gArgs.IsArgSet("-version")) {
         // First part of help message is specific to this utility
-        std::string strUsage = PACKAGE_NAME " bitcoin-tx utility version " + FormatFullVersion() + "\n";
+        std::string strUsage = PACKAGE_NAME " reddcoin-tx utility version " + FormatFullVersion() + "\n";
         if (!gArgs.IsArgSet("-version")) {
             strUsage += "\n"
-                "Usage:  bitcoin-tx [options] <hex-tx> [commands]  Update hex-encoded bitcoin transaction\n"
-                "or:     bitcoin-tx [options] -create [commands]   Create hex-encoded bitcoin transaction\n"
+                "Usage:  reddcoin-tx [options] <hex-tx> [commands]  Update hex-encoded reddcoin transaction\n"
+                "or:     reddcoin-tx [options] -create [commands]   Create hex-encoded reddcoin transaction\n"
                 "\n";
             strUsage += gArgs.GetHelpMessage();
         }
