@@ -1357,6 +1357,16 @@ static void MaybePushAddress(UniValue & entry, const CTxDestination &dest)
     }
 }
 
+static void PushCoinStakeCategory(UniValue & entry, const CWalletTx &wtx, const CWallet& wallet)
+{
+    if (wtx.GetDepthInMainChain() < 1)
+        entry.pushKV("category", "stake-orphan");
+    else if (wtx.GetDepthInMainChain() > 0)
+        entry.pushKV("category", "stake");
+    else
+        entry.pushKV("category", "stake-mint");
+}
+
 /**
  * List transactions based on the given criteria.
  *
@@ -1383,15 +1393,15 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
     {
         for (const COutputEntry& s : listSent)
         {
-        	if (wtx.IsCoinStake() && s.vout != listSent.size()) {
-        		continue;
-        	}
             UniValue entry(UniValue::VOBJ);
             if (involvesWatchonly || (wallet.IsMine(s.destination) & ISMINE_WATCH_ONLY)) {
                 entry.pushKV("involvesWatchonly", true);
             }
             MaybePushAddress(entry, s.destination);
-            entry.pushKV("category", "send");
+            if (wtx.IsCoinStake())
+                PushCoinStakeCategory(entry, wtx, wallet);
+            else
+                entry.pushKV("category", "send");
             entry.pushKV("amount", ValueFromAmount(-s.amount));
             const auto* address_book_entry = wallet.FindAddressBookEntry(s.destination);
             if (address_book_entry) {
@@ -1425,27 +1435,21 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("involvesWatchonly", true);
             }
             MaybePushAddress(entry, r.destination);
-            if (wtx.IsCoinBase() || wtx.IsCoinStake())
-            {
+            if (wtx.IsCoinBase()) {
                 if (wtx.GetDepthInMainChain() < 1)
                     entry.pushKV("category", "orphan");
                 else if (wtx.IsImmatureCoinBase())
                     entry.pushKV("category", "immature");
-                else if (wtx.IsCoinStake())
-					entry.pushKV("category", "stake");
                 else
                     entry.pushKV("category", "generate");
-            }
-            else
-            {
+            } else if (wtx.IsCoinStake()) {
+                PushCoinStakeCategory(entry, wtx, wallet);
+            } else {
                 entry.pushKV("category", "receive");
             }
-            if (!wtx.IsCoinStake())
-            {
+            if (!wtx.IsCoinStake()) {
                 entry.pushKV("amount", ValueFromAmount(r.amount));
-            }
-            else
-            {
+            } else {
                 entry.pushKV("amount", ValueFromAmount(-nFee));
                 stop = true; // only one coinstake output
             }
