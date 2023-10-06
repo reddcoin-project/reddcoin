@@ -6,6 +6,8 @@
 #include <amount.h>
 #include <policy/feerate.h>
 
+#include <test/util/setup_common.h>
+
 #include <limits>
 
 #include <boost/test/unit_test.hpp>
