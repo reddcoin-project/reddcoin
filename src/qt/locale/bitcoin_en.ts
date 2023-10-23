@@ -1525,7 +1525,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation>Use a custom data directory:</translation>
     </message>
     <message>
-        <location filename="../intro.cpp" line="+194"/>
+        <location filename="../intro.cpp" line="+200"/>
         <source>%1 GB of free space available</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1574,12 +1574,17 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-111"/>
+        <location line="-117"/>
         <source>Reddcoin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+9"/>
+        <source>Blockchain pruning is not compatible with Reddcoin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+138"/>
         <source>Error</source>
         <translation>Error</translation>
     </message>
@@ -2281,7 +2286,12 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation>&amp;Cancel</translation>
     </message>
     <message>
-        <location filename="../optionsdialog.cpp" line="+98"/>
+        <location filename="../optionsdialog.cpp" line="+50"/>
+        <source>Blockchain pruning is not compatible with Reddcoin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+53"/>
         <source>Compiled without external signing support (required for external signing)</source>
         <extracomment>&quot;External signing&quot; means using devices such as hardware wallets.</extracomment>
         <translation type="unfinished"></translation>
@@ -5985,12 +5995,12 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <location line="+1"/>
-        <source>Prune mode is incompatible with -coinstatsindex.</source>
+        <source>Prune mode is incompatible with Reddcoin and -coinstatsindex.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Prune mode is incompatible with -txindex.</source>
+        <source>Prune mode is incompatible with Reddcoin and -txindex.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
