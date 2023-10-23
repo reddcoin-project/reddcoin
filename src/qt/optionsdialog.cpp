@@ -44,6 +44,11 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet) :
     ui->threadsScriptVerif->setMaximum(MAX_SCRIPTCHECK_THREADS);
     ui->pruneWarning->setVisible(false);
     ui->pruneWarning->setStyleSheet("QLabel { color: red; }");
+    if (gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX) || gArgs.GetBoolArg("-coinstatsindex", DEFAULT_COINSTATSINDEX)) {
+        ui->prune->setChecked(false);
+        ui->prune->setEnabled(false);
+        ui->prune->setToolTip(tr("Blockchain pruning is not compatible with Reddcoin"));
+    }
 
     ui->pruneSize->setEnabled(false);
     connect(ui->prune, &QPushButton::toggled, ui->pruneSize, &QWidget::setEnabled);

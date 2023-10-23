@@ -859,9 +859,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // if using block pruning, then disallow txindex and coinstatsindex
     if (args.GetArg("-prune", 0)) {
         if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX))
-            return InitError(_("Prune mode is incompatible with -txindex."));
+            return InitError(_("Prune mode is incompatible with Reddcoin and -txindex."));
         if (args.GetBoolArg("-coinstatsindex", DEFAULT_COINSTATSINDEX))
-            return InitError(_("Prune mode is incompatible with -coinstatsindex."));
+            return InitError(_("Prune mode is incompatible with Reddcoin and -coinstatsindex."));
     }
 
     // -bind and -whitebind can't be set when not listening
