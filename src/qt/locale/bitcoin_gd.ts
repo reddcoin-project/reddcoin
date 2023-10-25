@@ -2,10 +2,6 @@
 <context>
     <name>AddressBookPage</name>
     <message>
-        <source>Right-click to edit address or label</source>
-        <translation type="unfinished">Dèan briogadh deas airson seòladh no bileag a dheasachadh</translation>
-    </message>
-    <message>
         <source>Create a new address</source>
         <translation>Cruthaich seòladh ùr</translation>
     </message>
@@ -16,21 +12,6 @@
     <message>
         <source>Delete the currently selected address from the list</source>
         <translation>Thoir às an seòladh a chaidh a thaghadh an-dràsta bhon liosta</translation>
-    </message>
-    <message>
-        <source>Choose the address to send coins to</source>
-        <translation type="unfinished">Tagh an seòladh airson buinn a chuir thuige</translation>
-    </message>
-    <message>
-        <source>Sending addresses</source>
-        <translation type="unfinished">A ’cur sheòlaidhean</translation>
-    </message>
-    </context>
-<context>
-    <name>AddressTableModel</name>
-    <message>
-        <source>Address</source>
-        <translation type="unfinished">Seòladh</translation>
     </message>
     </context>
 <context>
@@ -93,6 +74,16 @@
 <context>
     <name>BitcoinGUI</name>
     <message numerus="yes">
+        <source>%n active connection(s) to Reddcoin network.</source>
+        <extracomment>A substring of the tooltip.</extracomment>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
         <source>Processed %n block(s) of transaction history.</source>
         <translation>
             <numerusform />
@@ -112,23 +103,6 @@
     <message>
         <source>Information</source>
         <translation>Fiosrachadh</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network.</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">
-            <numerusform />
-            <numerusform />
-            <numerusform />
-            <numerusform />
-        </translation>
-    </message>
-    </context>
-<context>
-    <name>CreateWalletDialog</name>
-    <message>
-        <source>Wallet Name</source>
-        <translation type="unfinished">Ainm Wallet</translation>
     </message>
     </context>
 <context>
@@ -156,6 +130,27 @@
     </message>
     </context>
 <context>
+    <name>MintingTableModel</name>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    </context>
+<context>
     <name>ModalOverlay</name>
     <message>
         <source>Form</source>
@@ -177,11 +172,42 @@
     </message>
     </context>
 <context>
-    <name>PeerTableModel</name>
-    <message>
-        <source>Address</source>
-        <extracomment>Title of Peers Table column which contains the IP/Onion/I2P address of the connected peer.</extracomment>
-        <translation type="unfinished">Seòladh</translation>
+    <name>RPCConsole</name>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
     </context>
 <context>
@@ -227,13 +253,6 @@
             <numerusform />
             <numerusform />
         </translation>
-    </message>
-    </context>
-<context>
-    <name>TransactionView</name>
-    <message>
-        <source>Address</source>
-        <translation type="unfinished">Seòladh</translation>
     </message>
     </context>
 <context>
