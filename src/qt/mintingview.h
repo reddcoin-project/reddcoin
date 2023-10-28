@@ -10,6 +10,7 @@
 #include <QComboBox>
 #include <qt/mintingfilterproxy.h>
 
+class PlatformStyle;
 class WalletModel;
 
 
@@ -22,7 +23,7 @@ class MintingView : public QWidget
 {
     Q_OBJECT
 public:
-    explicit MintingView(QWidget *parent = 0);
+    explicit MintingView(const PlatformStyle *platformStyle, QWidget *parent = nullptr);
     void setModel(WalletModel *model);
 
     enum MintingEnum
@@ -35,12 +36,17 @@ public:
         Minting90days
     };
 
+protected:
+    void changeEvent(QEvent* e) override;
+
 private:
-    WalletModel *model;
-    QTableView *mintingView;
+    WalletModel *model{nullptr};
+    MintingFilterProxy *mintingProxyModel{nullptr};
+    QTableView *mintingView{nullptr};
     QComboBox *mintingCombo;
-    MintingFilterProxy *mintingProxyModel;
     QMenu *contextMenu;
+
+    const PlatformStyle* m_platform_style;
 
 private Q_SLOTS:
     void contextualMenu(const QPoint &);

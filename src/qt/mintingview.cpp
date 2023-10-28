@@ -2,14 +2,17 @@
 // Copyright (c) 2012-2021 The Peercoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include <qt/mintingview.h>
-#include <qt/mintingfilterproxy.h>
-#include <qt/transactionrecord.h>
-#include <qt/mintingtablemodel.h>
-#include <qt/walletmodel.h>
+
+#include <qt/csvmodelwriter.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
-#include <qt/csvmodelwriter.h>
+#include <qt/mintingfilterproxy.h>
+#include <qt/mintingtablemodel.h>
+#include <qt/platformstyle.h>
+#include <qt/transactionrecord.h>
+#include <qt/walletmodel.h>
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -23,8 +26,8 @@
 #include <QTableView>
 #include <QVBoxLayout>
 
-MintingView::MintingView(QWidget *parent) :
-    QWidget(parent), model(0), mintingView(0)
+MintingView::MintingView(const PlatformStyle* platformStyle, QWidget* parent)
+    : QWidget(parent), m_platform_style{platformStyle}
 {
     QHBoxLayout *hlayout = new QHBoxLayout();
     hlayout->setContentsMargins(0,0,0,0);
@@ -183,6 +186,15 @@ void MintingView::chooseMintingInterval(int idx)
     }
     model->getMintingTableModel()->setMintingInterval(interval);
     mintingProxyModel->invalidate();
+}
+
+void MintingView::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange) {
+
+    }
+
+    QWidget::changeEvent(e);
 }
 
 void MintingView::exportClicked()

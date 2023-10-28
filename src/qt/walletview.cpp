@@ -63,7 +63,7 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
 
     mintingPage = new QWidget(this);
     QVBoxLayout *vboxMinting = new QVBoxLayout();
-    mintingView = new MintingView(this);
+    mintingView = new MintingView(platformStyle, this);
     vboxMinting->addWidget(mintingView);
     mintingPage->setLayout(vboxMinting);
 
