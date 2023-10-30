@@ -93,6 +93,12 @@ public:
     //! Get set of input coins to calculate average and total weight.
     virtual bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) = 0;
 
+    //! Get wallet staking enabled.
+    virtual bool getEnableStaking() = 0;
+
+    //! Set wallet staking enabled.
+    virtual void setEnableStaking(bool enableStaking) = 0;
+
     //! Get Last CoinStake SearchInterval.
     virtual int64_t getLastCoinStakeSearchInterval() = 0;
 
