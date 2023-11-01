@@ -113,6 +113,10 @@ public:
     bool setWalletLocked(bool locked, const SecureString &passPhrase=SecureString());
     bool changePassphrase(const SecureString &oldPass, const SecureString &newPass);
 
+    bool setWalletStaking(bool stakingEnabled);
+
+    bool getWalletStaking();
+
     // RAI object for unlocking wallet, returned by requestUnlock()
     class UnlockContext
     {

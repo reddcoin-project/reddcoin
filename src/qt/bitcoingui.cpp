@@ -1225,7 +1225,6 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
 #ifdef ENABLE_WALLET
         if(walletFrame)
         {
-            updateStakingStatus();
             walletFrame->showOutOfSyncWarning(false);
             modalOverlay->showHide(true, true);
         }
@@ -1543,7 +1542,7 @@ void BitcoinGUI::updateStakingStatus()
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
     }
 
-    if (staking) {
+    if (staking && clientModel->getStakingEnabled()) {
         msg = tr("Wallet is staking");
         stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     } else {
@@ -1555,14 +1554,17 @@ void BitcoinGUI::updateStakingStatus()
             msg = tr("Not staking because wallet is syncing");
         } else if (!nAverageWeight) {
             msg = tr("Not staking because you don't have mature coins");
-        } else if (!clientModel->getStakingEnabled()) {
+        } else if (!walletModel->getWalletStaking()) {
             msg = tr("Wallet staking is disabled");
+        } else if (!clientModel->getStakingEnabled()) {
+            msg = tr("Staking is disabled");
         }
 
         stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
     stakingStatusControl->setToolTip(msg);
+    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
 }
 
 void BitcoinGUI::updateWalletStatus()
@@ -1585,7 +1587,8 @@ void BitcoinGUI::updateWalletStatus()
         hdType = HD_ENABLED_32;
     }
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
-    stakingStatusControl->setStakingActive(clientModel->getStakingEnabled());
+    updateStakingStatus();
+    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
 }
 #endif // ENABLE_WALLET
 
@@ -2007,17 +2010,15 @@ void StakingStatusBarControl::onMenuSelection(QAction* action)
 {
     if (action)
     {
-	int bOptionEnable = action->data().toInt();
+        int bOptionEnable = action->data().toInt();
         if (bOptionEnable == 0) {
-            setStakingActive(true);
-	    // walletFrame->unlockWallet();
-	} else if (bOptionEnable == 1) {
-	    setStakingActive(false);
-            // walletFrame->lockWallet();
-	} else if (bOptionEnable == 2) {
-	    rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
-	    showDebugWindow();
-	}
+            walletFrame->disableStaking();
+        } else if (bOptionEnable == 1) {
+            walletFrame->enableStaking();
+        } else if (bOptionEnable == 2) {
+            rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
+            showDebugWindow();
+        }
     }
 }
 

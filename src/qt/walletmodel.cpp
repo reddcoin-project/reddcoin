@@ -88,6 +88,7 @@ void WalletModel::updateStatus()
 
     if(cachedEncryptionStatus != newEncryptionStatus) {
         Q_EMIT encryptionStatusChanged();
+        Q_EMIT stakingStatusChanged();
     }
 }
 
@@ -357,6 +358,18 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase)
         // Unlock
         return m_wallet->unlock(passPhrase);
     }
+}
+
+bool WalletModel::setWalletStaking(bool stakingEnabled)
+{
+    m_wallet->setEnableStaking(stakingEnabled);
+    Q_EMIT stakingStatusChanged();
+    return m_wallet->getEnableStaking();
+}
+
+bool WalletModel::getWalletStaking()
+{
+    return m_wallet->getEnableStaking();
 }
 
 bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureString &newPass)

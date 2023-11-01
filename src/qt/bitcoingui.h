@@ -453,6 +453,7 @@ public:
     /** Lets the control know about the RPC Console Model (and its signals) */
     void setRPCConsole(RPCConsole* rpcConsole);
     void setThemedPixmap(const QString& image_filename, int width, int height);
+    /** Set staking state shown in the UI */
     void setStakingActive(bool stake_active);
 
 protected:
