@@ -15,6 +15,7 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <mapport.h>
+#include <miner.h>
 #include <net.h>
 #include <net_processing.h>
 #include <netaddress.h>
@@ -259,6 +260,15 @@ public:
     {
       return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);
     }
+    void setStakingActive(bool active) override
+    {
+        LogPrintf("%s: Staking updated to %i\n", __func__, active);
+        gArgs.ForceSetArg("-staking", active ? "1" : "0");
+        if (active) {
+            MintStake(m_context->chainman.get(), m_context->connman.get(), m_context->mempool.get());
+        }
+    }
+    bool getStakingActive() override { return fEnableStaking; }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }
     void setNetworkActive(bool active) override
@@ -313,6 +323,10 @@ public:
     std::unique_ptr<Handler> handleNotifyNetworkActiveChanged(NotifyNetworkActiveChangedFn fn) override
     {
         return MakeHandler(::uiInterface.NotifyNetworkActiveChanged_connect(fn));
+    }
+    std::unique_ptr<Handler> handleNotifyStakingActiveChanged(NotifyStakingActiveChangedFn fn) override
+    {
+        return MakeHandler(::uiInterface.NotifyStakingActiveChanged_connect(fn));
     }
     std::unique_ptr<Handler> handleNotifyAlertChanged(NotifyAlertChangedFn fn) override
     {

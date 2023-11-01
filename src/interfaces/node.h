@@ -155,6 +155,12 @@ public:
     //! Get the total and average weights from the wallet for staking.
     virtual bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t & nTotalWeight) = 0;
 
+    //! Set staking active.
+    virtual void setStakingActive(bool active) = 0;
+
+    //! Get staking active.
+    virtual bool getStakingActive() = 0;
+
     //! Get reindex.
     virtual bool getReindex() = 0;
 
@@ -215,6 +221,10 @@ public:
     //! Register handler for network active messages.
     using NotifyNetworkActiveChangedFn = std::function<void(bool network_active)>;
     virtual std::unique_ptr<Handler> handleNotifyNetworkActiveChanged(NotifyNetworkActiveChangedFn fn) = 0;
+
+    //! Register handler for staking active messages.
+    using NotifyStakingActiveChangedFn = std::function<void(bool staking_active)>;
+    virtual std::unique_ptr<Handler> handleNotifyStakingActiveChanged(NotifyStakingActiveChangedFn fn) = 0;
 
     //! Register handler for notify alert messages.
     using NotifyAlertChangedFn = std::function<void()>;
