@@ -422,19 +422,21 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
         }
         break;
       case Qt::BackgroundRole:
-        int minAge = params.nStakeMinAge / 60 / 60;  // minAge in hours
-        int maxAge = params.nStakeMaxAge / 60 / 60;  // maxAge in hours
-        if(rec->getAge() < minAge)
         {
-            return COLOR_MINT_YOUNG;
-        }
-        else if (rec->getAge() >= minAge && rec->getAge() < maxAge)
-        {
-            return COLOR_MINT_MATURE;
-        }
-        else
-        {
-            return COLOR_MINT_OLD;
+            int minAge = params.nStakeMinAge / 60 / 60;  // minAge in hours
+            int maxAge = params.nStakeMaxAge / 60 / 60;  // maxAge in hours
+            if(rec->getAge() < minAge)
+            {
+                return COLOR_MINT_YOUNG;
+            }
+            else if (rec->getAge() >= minAge && rec->getAge() < maxAge)
+            {
+                return COLOR_MINT_MATURE;
+            }
+            else
+            {
+                return COLOR_MINT_OLD;
+            }
         }
         break;
 
