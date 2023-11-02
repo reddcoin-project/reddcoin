@@ -439,7 +439,11 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
             }
         }
         break;
-
+      case Qt::ForegroundRole:
+        {
+            return COLOR_BLACK;
+        }
+        break;
     }
     return QVariant();
 }
