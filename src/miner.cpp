@@ -37,7 +37,7 @@
 
 std::vector<std::thread> threadStakeMinterGroup;
 
-static std::atomic<bool> fEnableStaking(false);
+std::atomic_bool fEnableStaking(false);
 
 bool EnableStaking()
 {
