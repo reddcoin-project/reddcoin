@@ -143,6 +143,7 @@ private:
     GUIUtil::ClickableLabel* labelCheckUpdate = nullptr;
     GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
     StakingStatusBarControl* stakingStatusControl = nullptr;
+    GUIUtil::ClickableLabel* globalstakingStatusControl = nullptr;
     QLabel* progressBarLabel = nullptr;
     GUIUtil::ClickableProgressBar* progressBar = nullptr;
     QProgressDialog* progressDialog = nullptr;
@@ -275,6 +276,8 @@ public Q_SLOTS:
     */
     void updateWalletStatus();
     void updateStakingStatus();
+    /** Set staking state shown in the UI */
+    void setStakingActive(bool staking_active);
 
 private:
     /** Set the encryption status as shown in the UI.

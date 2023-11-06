@@ -51,6 +51,8 @@
         <file alias="proxy">res/icons/proxy.png</file>
         <file alias="staking_off">res/icons/staking_off.png</file>
         <file alias="staking_on">res/icons/staking_on.png</file>
+        <file alias="global_staking_on">res/icons/global_staking_on.png</file>
+        <file alias="global_staking_off">res/icons/global_staking_off.png</file>
     </qresource>
     <qresource prefix="/animation">
         <file alias="spinner-000">res/animation/spinner-000.png</file>
