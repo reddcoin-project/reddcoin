@@ -8,6 +8,7 @@
 #define BITCOIN_MINER_H
 
 #include <primitives/block.h>
+#include <threadinterrupt.h>
 #include <txmempool.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
@@ -22,13 +23,13 @@
 
 class CBlockIndex;
 class CChainParams;
+class CScheduler;
 class CScript;
 class CWallet;
 
 namespace Consensus { struct Params; };
 
 static const bool DEFAULT_PRINTPRIORITY = false;
-extern std::atomic_bool fEnableStaking;
 
 struct CBlockTemplate
 {
@@ -212,16 +213,63 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id);
+
 void InitStakeWallet();
 void SetStakingActive(bool active);
-void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool);
-int GetStakingThreadCount();
+
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings);
 
+class CClientUIInterface;
 
-/** Returns true if a staking is enabled, false otherwise. */
-bool GetStakingActive();
-void InterruptStaking();
-void StopStaking();
+class CStakeman
+{
+public:
+    struct Options {
+        CClientUIInterface* uiInterface = nullptr;
+        ChainstateManager* chainman = nullptr;
+        CConnman* connman = nullptr;
+        CTxMemPool* mempool = nullptr;
+    };
+
+    CStakeman(bool stake_active = true);
+    ~CStakeman();
+
+    void Init(const Options& connOptions);
+    void InitWallets();
+    bool Start();
+    bool Start(CScheduler& scheduler, const Options& options);
+    void Interrupt();
+    void StopThreads();
+    void Stop()
+    {
+        StopThreads();
+    };
+    bool GetStakingActive() const { return fStakingActive; };
+    void SetStakingActive(bool active);
+    int GetStakingThreadCount() { return threadStakeMinterGroup.size(); };
+    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id);
+    void StakeWalletAdd(const std::string& walletname);
+    void StakeWalletRemove(const std::string& walletname);
+
+    /**
+     * This is signaled when staking activity should cease.
+     */
+    CThreadInterrupt interruptStake;
+
+private:
+    std::atomic<bool> fStakingActive{true};
+
+    std::vector<std::thread> threadStakeMinterGroup GUARDED_BY(cs_threadStakeMinterGroup);
+    mutable RecursiveMutex cs_threadStakeMinterGroup;
+
+    typedef std::unordered_map<std::string, std::thread::id> ThreadMap;
+    ThreadMap tm_;
+
+    CClientUIInterface* clientInterface;
+    ChainstateManager* chainManager;
+    CConnman* connManager;
+    CTxMemPool* memPool;
+};
 
 #endif // BITCOIN_MINER_H

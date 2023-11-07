@@ -23,6 +23,7 @@
 #include <pos/stake.h>
 #include <pow.h>
 #include <primitives/transaction.h>
+#include <scheduler.h>
 #include <shutdown.h>
 #include <timedata.h>
 #include <util/moneystr.h>
@@ -34,29 +35,6 @@
 #include <algorithm>
 #include <thread>
 #include <utility>
-
-std::vector<std::thread> threadStakeMinterGroup;
-
-std::atomic_bool fEnableStaking(false);
-
-bool GetStakingActive()
-{
-    return fEnableStaking;
-}
-
-void SetStakingActive(bool active)
-{
-    LogPrintf("%s: %s\n", __func__, active);
-
-    if (fEnableStaking == active) {
-        return;
-    }
-
-    fEnableStaking = active;
-    gArgs.ForceSetArg("-staking", active ? "1" : "0");
-
-    uiInterface.NotifyStakingActiveChanged(fEnableStaking);
-}
 
 //! forward declaration for createnewblock
 CAmount GetBlockValue(int nHeight, const CAmount& nFees);
@@ -544,7 +522,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
     util::ThreadRename(strprintf("staker-%d", thread_id));
@@ -585,7 +563,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
 
     try {
         bool fNeedToClear = false;
-        while (GetStakingActive()) {
+        while (pwallet->GetEnableStaking()) {
             if (ShutdownRequested())
                 return;
             while (pwallet->IsLocked()) {
@@ -633,6 +611,8 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 uiInterface.NotifyAlertChanged();
                 fNeedToClear = false;
             }
+
+            uiInterface.NotifyStakingActiveChanged(true);
 
             //
             // Create new block
@@ -734,8 +714,41 @@ static void UpdateStakeSetting(interfaces::Chain& chain,
     }
 }
 
-void InitStakeWallet()
+void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings)
 {
+    UpdateStakeSetting(chain, name, load_on_start, warnings);
+}
+
+// reddcoin: stake manager
+CStakeman::CStakeman(bool stake_active)
+{
+    // Options connOptions;
+    LogPrintf("CStakeman::%s: %s\n", __func__, stake_active);
+    Options stakeOptions;
+    Init(stakeOptions);
+    SetStakingActive(stake_active);
+}
+
+CStakeman::~CStakeman()
+{
+    LogPrintf("CStakeman::%s: \n", __func__);
+    Interrupt();
+    Stop();
+}
+
+void CStakeman::Init(const Options& stakeOptions)
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+    clientInterface = stakeOptions.uiInterface;
+    chainManager = stakeOptions.chainman;
+    connManager = stakeOptions.connman;
+    memPool = stakeOptions.mempool;
+}
+
+void CStakeman::InitWallets()
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+
     try {
         std::set<fs::path> wallet_paths;
         for (const std::string& wallet_name : gArgs.GetArgs("-stake")) {
@@ -748,13 +761,13 @@ void InitStakeWallet()
                 return;
             }
 
-            LogPrintf("[%s] Init for staking\n", wallet_name);
+            LogPrintf("CStakeman::[%s] Init for staking\n", wallet_name);
 
             if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-                LogPrintf("[%s] error: Disable private keys flag set.\n", wallet_name);
+                LogPrintf("CStakeman::[%s] error: Disable private keys flag set.\n", wallet_name);
                 continue;
             } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
-                LogPrintf("[%s] error: Blank wallet flag set.\n", wallet_name);
+                LogPrintf("CStakeman::[%s] error: Blank wallet flag set.\n", wallet_name);
                 continue;
             } else {
                 pwallet->SetEnableStaking(true);
@@ -763,94 +776,184 @@ void InitStakeWallet()
 
         return;
     } catch (const std::runtime_error& e) {
-        LogPrintf("%s\n", e.what());
+        LogPrintf("CStakeman::%s\n", e.what());
 
         return;
     }
 }
 
-void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings)
+bool CStakeman::Start()
 {
-    UpdateStakeSetting(chain, name, load_on_start, warnings);
+    if (!fStakingActive) {
+        return false;
+    }
+    InitWallets();
+    LogPrintf("CStakeman::%s\n", __func__);
+
+    if (clientInterface) {
+        clientInterface->InitMessage(_("Loading Staking wallets…").translated);
+    }
+
+    //
+    // Start threads
+    //
+    uiInterface.InitMessage(_("Starting staking threads…").translated);
+    interruptStake.reset();
+
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto& wallet : m_stake_wallets) {
+        if (wallet->GetEnableStaking()) {
+            LogPrintf("CStakeman::%s launching staking thread for wallet...%s\n", __func__, wallet->GetName());
+            if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                LogPrintf("CStakeman::Disable private keys flag set.. skipping [%s]\n", wallet->GetName());
+                continue;
+            } else if (wallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+                LogPrintf("CStakeman::Blank wallet flag set.. skipping [%s]\n", wallet->GetName());
+                continue;
+            } else {
+                StakeWalletAdd(wallet->GetName());
+                LogPrintf("CStakeman::%s Launching wallet..  [%s]\n", __func__, wallet->GetName());
+            }
+        }
+    }
+
+    uiInterface.InitMessage(_("Staking threads started…").translated);
+
+    return true;
 }
 
-// reddcoin: stake minter thread
-void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, int thread_id)
+bool CStakeman::Start(CScheduler& scheduler, const Options& stakeOptions)
 {
-    LogPrintf("Staking thread [%s] starting\n", thread_id);
-    try
-    {
-        PoSMiner(pwallet, chainman, connman, mempool, thread_id);
+    Init(stakeOptions);
+    InitWallets();
+    LogPrintf("CStakeman::%s\n", __func__);
+
+    if (clientInterface) {
+        clientInterface->InitMessage(_("Loading Staking wallets…").translated);
     }
-    catch (std::exception& e) {
+
+    //
+    // Start threads
+    //
+    uiInterface.InitMessage(_("Starting staking threads…").translated);
+    interruptStake.reset();
+
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto& wallet : m_stake_wallets) {
+        if (wallet->GetEnableStaking()) {
+            LogPrintf("CStakeman::%s launching staking thread for wallet...%s\n", __func__, wallet->GetName());
+            if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                LogPrintf("CStakeman::Disable private keys flag set.. skipping [%s]\n", wallet->GetName());
+                continue;
+            } else if (wallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+                LogPrintf("CStakeman::Blank wallet flag set.. skipping [%s]\n", wallet->GetName());
+                continue;
+            } else {
+                StakeWalletAdd(wallet->GetName());
+                LogPrintf("CStakeman::%s Launching wallet..  [%s]\n", __func__, wallet->GetName());
+            }
+        }
+    }
+
+    uiInterface.InitMessage(_("Staking threads started…").translated);
+
+    return true;
+}
+
+void CStakeman::Interrupt()
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+    interruptStake();
+}
+
+void CStakeman::StopThreads()
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+    {
+        LOCK(cs_threadStakeMinterGroup);
+        for (std::thread& t : threadStakeMinterGroup) {
+            LogPrintf("CStakeman::%s Stopping thread %i!\n", __func__, t.get_id());
+            if (t.joinable()) t.join();
+        }
+        threadStakeMinterGroup.clear();
+        tm_.clear();
+    }
+
+    uiInterface.NotifyStakingActiveChanged(false);
+    LogPrintf("CStakeman::%s done!\n", __func__);
+}
+
+void CStakeman::SetStakingActive(bool active)
+{
+    LogPrintf("CStakeman::%s: %s\n", __func__, active);
+
+    if (fStakingActive == active) {
+        return;
+    }
+
+    fStakingActive = active;
+    gArgs.ForceSetArg("-staking", active ? "1" : "0");
+
+    uiInterface.NotifyStakingActiveChanged(fStakingActive);
+}
+
+void CStakeman::StakeWalletAdd(const std::string& walletname)
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+    if (!fStakingActive) {
+        return;
+    }
+    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
+    for (const auto& wallet : m_stake_wallets) {
+        if (wallet->GetName() == walletname) {
+            if (wallet->GetEnableStaking()) {
+                {
+                    LOCK(cs_threadStakeMinterGroup);
+                    threadStakeMinterGroup.push_back(
+                        std::thread(&util::TraceThread, "staker", [this, pwallet = wallet.get(), chainManager = chainManager, connManager = connManager, mempool = memPool]() {
+                            tm_[pwallet->GetName()] = std::this_thread::get_id();
+                            ThreadStaker(pwallet, chainManager, connManager, mempool, std::this_thread::get_id());
+                        }));
+                }
+
+                LogPrintf("CStakeman::%s Launching wallet..  [%s]\n", __func__, wallet->GetName());
+                uiInterface.NotifyStakingActiveChanged(true);
+            }
+        }
+    }
+}
+
+void CStakeman::StakeWalletRemove(const std::string& walletname)
+{
+    ThreadMap::const_iterator it = tm_.find(walletname);
+    if (it != tm_.end()) {
+        {
+            LOCK(cs_threadStakeMinterGroup);
+            auto iter = std::find_if(threadStakeMinterGroup.begin(), threadStakeMinterGroup.end(), [=](std::thread& t) { return (t.get_id() == it->second); });
+            if (iter != threadStakeMinterGroup.end()) {
+                iter->join();
+                threadStakeMinterGroup.erase(iter);
+            }
+        }
+
+        tm_.erase(walletname);
+        LogPrintf("CStakeman::%s Thread %s removed\n", __func__, walletname);
+        uiInterface.NotifyStakingActiveChanged(false);
+    }
+}
+
+void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id)
+{
+    LogPrintf("CStakeman::%s\n", __func__);
+    LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
+    try {
+        PoSMiner(pwallet, chainman, connman, mempool, thread_id);
+    } catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
     } catch (...) {
         PrintExceptionContinue(NULL, "ThreadStakeMinter()");
     }
     pwallet->SetLastCoinStakeSearchInterval(0);
-    LogPrintf("Staking thread [%s] stopped\n", thread_id);
+    LogPrintf("CStakeman::%s Staking thread [%s] stopped\n", __func__, thread_id);
     uiInterface.NotifyStakingActiveChanged(false);
-}
-
-// reddcoin: stake minter
-void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool)
-{
-    if (!gArgs.GetBoolArg("-staking", true) || !GetWallets().size() > 0) {
-        fEnableStaking = false;
-        return;
-    }
-
-    int thread_id = 0;
-
-    if (GetStakingThreadCount() > 0) {
-        InterruptStaking();
-        StopStaking();
-    }
-
-    fEnableStaking = true;
-    uiInterface.NotifyStakingActiveChanged(true);
-    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
-    for (const auto &wallet : m_stake_wallets) {
-         LogPrintf("launching staking thread [%d] for wallet...%s\n", thread_id, wallet->GetName());
-         if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-             LogPrintf("Disable private keys flag set.. skipping [%s]\n", wallet->GetName());
-             continue;
-         } else if (wallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
-             LogPrintf("Blank wallet flag set.. skipping [%s]\n", wallet->GetName());
-             continue;
-         }
-
-         if (wallet->GetEnableStaking()) {
-             threadStakeMinterGroup.push_back(std::thread(&ThreadStakeMinter, std::move(wallet.get()), std::move(chainman), std::move(connman), std::move(mempool), std::move(thread_id)));
-             thread_id++;
-         }
-    }
-
-}
-
-int GetStakingThreadCount()
-{
-    return threadStakeMinterGroup.size();
-}
-
-void InterruptStaking()
-{
-    LogPrintf("Interrupting ThreadStakeMinter threads\n");
-    fEnableStaking = false;
-    for (std::thread& t : threadStakeMinterGroup) {
-        if (t.joinable()) t.join();
-    }
-    LogPrintf("ThreadStakeMinter Interrupt done!\n");
-}
-
-void StopStaking()
-{
-    LogPrintf("Stopping ThreadStakeMinter threads\n");
-    LogPrintf("Waiting for Staking threads to exit\n");
-    for (std::thread& t : threadStakeMinterGroup) {
-        if (t.joinable()) t.join();
-    }
-    threadStakeMinterGroup.clear();
-    uiInterface.NotifyStakingActiveChanged(false);
-    LogPrintf("ThreadStakeMinter Stop done!\n");
 }
