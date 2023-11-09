@@ -263,12 +263,12 @@ public:
     void setStakingActive(bool active) override
     {
         LogPrintf("%s: Staking updated to %i\n", __func__, active);
-        gArgs.ForceSetArg("-staking", active ? "1" : "0");
+        SetStakingActive(active);
         if (active) {
             MintStake(m_context->chainman.get(), m_context->connman.get(), m_context->mempool.get());
         }
     }
-    bool getStakingActive() override { return fEnableStaking; }
+    bool getStakingActive() override { return GetStakingActive(); }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }
     void setNetworkActive(bool active) override
