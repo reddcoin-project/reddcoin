@@ -301,7 +301,7 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
         priv(new MintingTablePriv(walletModel, this)),
         cachedNumBlocks(0)
 {
-    columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("CoinDay") << tr("StakeProbability");
+    columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("Coin Day") << tr("Stake Probability");
 
     priv->refreshWallet();
 
