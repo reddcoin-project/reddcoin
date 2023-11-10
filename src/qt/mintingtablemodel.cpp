@@ -544,7 +544,7 @@ QVariant MintingTableModel::headerData(int section, Qt::Orientation orientation,
             case Balance:
                 return tr("Balance of the output.");
             case CoinDay:
-                return tr("Coin age in the output.");
+                return tr("Coin age expressed as (Value x Age) of the output.");
             case MintProbability:
                 return tr("Chance to stake a block within given time interval.");
             }
