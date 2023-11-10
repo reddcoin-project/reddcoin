@@ -93,7 +93,6 @@ int64_t KernelRecord::getAge() const
 
 int64_t KernelRecord::getCoinAge() const
 {
-    const Consensus::Params& params = Params().GetConsensus();
     arith_uint256 bnCoinDay = arith_uint256(nValue) * getCoinAgeWeight() / COIN / (24 * 60 * 60);
     int64_t nCoinAge = ArithToUint256(bnCoinDay).GetUint64(0);
     return std::max(nCoinAge, (int64_t)0);
