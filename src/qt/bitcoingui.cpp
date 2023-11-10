@@ -164,6 +164,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
     lockWalletControl = new LockWalletStatusBarControl(platformStyle);
     stakingStatusControl = new StakingStatusBarControl(platformStyle);
+    globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
     connectionsControl = new GUIUtil::ClickableLabel(platformStyle);
@@ -188,6 +189,11 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->addStretch();
     frameBlocksLayout->addWidget(labelBlocksIcon);
     frameBlocksLayout->addStretch();
+    if (enableWallet)
+    {
+        frameBlocksLayout->addWidget(globalstakingStatusControl);
+        frameBlocksLayout->addStretch();
+    }
 
     // Progress bar and label for blocks download
     progressBarLabel = new QLabel();
@@ -714,6 +720,11 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         });
         connect(_clientModel, &ClientModel::numConnectionsChanged, this, &BitcoinGUI::setNumConnections);
         connect(_clientModel, &ClientModel::networkActiveChanged, this, &BitcoinGUI::setNetworkActive);
+        setStakingActive(m_node.getStakingActive());
+        connect(globalstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_staking_context_menu, QCursor::pos());
+                });
+        connect(_clientModel, &ClientModel::stakingActiveChanged, this, &BitcoinGUI::setStakingActive);
 
         modalOverlay->setKnownBestHeight(tip_info->header_height, QDateTime::fromTime_t(tip_info->header_time));
         setNumBlocks(tip_info->block_height, QDateTime::fromTime_t(tip_info->block_time), tip_info->verification_progress, false, SynchronizationState::INIT_DOWNLOAD);
@@ -1225,7 +1236,6 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
 #ifdef ENABLE_WALLET
         if(walletFrame)
         {
-            updateStakingStatus();
             walletFrame->showOutOfSyncWarning(false);
             modalOverlay->showHide(true, true);
         }
@@ -1519,6 +1529,20 @@ void BitcoinGUI::setEncryptionStatus(int status)
     }
 }
 
+void BitcoinGUI::setStakingActive(bool staking_active)
+{
+    updateStakingStatus();
+
+    m_staking_context_menu->clear();
+    m_staking_context_menu->addAction(
+	staking_active ?
+	    //: A context menu item.
+	    tr("Disable Staking") :
+	    //: A context menu item. The stake state activity was disabled previously.
+	    tr("Enable Staking"),
+	    [this, new_state = !staking_active] { m_node.setStakingActive(new_state); });
+}
+
 void BitcoinGUI::updateStakingStatus()
 {
     if (!walletFrame) {
@@ -1537,13 +1561,24 @@ void BitcoinGUI::updateStakingStatus()
     bool staking = false;
 
     QString msg;
+    QString gmsg;
     if (walletModel) {
         walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
         nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
     }
 
-    if (staking) {
+    if (m_node.getStakingActive()) {
+        gmsg = tr("Staking is enabled");
+        globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+    } else {
+        gmsg = tr("Staking is disabled");
+        globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+    }
+
+    globalstakingStatusControl->setToolTip(gmsg);
+
+    if (staking && m_node.getStakingActive()) {
         msg = tr("Wallet is staking");
         stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     } else {
@@ -1555,14 +1590,19 @@ void BitcoinGUI::updateStakingStatus()
             msg = tr("Not staking because wallet is syncing");
         } else if (!nAverageWeight) {
             msg = tr("Not staking because you don't have mature coins");
-        } else if (!clientModel->getStakingEnabled()) {
+        } else if (!walletModel->getWalletStaking()) {
             msg = tr("Wallet staking is disabled");
+        } else if (!m_node.getStakingActive()) {
+            msg = tr("Staking is not enabled");
+        } else if (!staking) {
+            msg = tr("Waiting for staking to start");
         }
 
         stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
     stakingStatusControl->setToolTip(msg);
+    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
 }
 
 void BitcoinGUI::updateWalletStatus()
@@ -1585,7 +1625,8 @@ void BitcoinGUI::updateWalletStatus()
         hdType = HD_ENABLED_32;
     }
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
-    stakingStatusControl->setStakingActive(clientModel->getStakingEnabled());
+    updateStakingStatus();
+    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
 }
 #endif // ENABLE_WALLET
 
@@ -2007,17 +2048,15 @@ void StakingStatusBarControl::onMenuSelection(QAction* action)
 {
     if (action)
     {
-	int bOptionEnable = action->data().toInt();
+        int bOptionEnable = action->data().toInt();
         if (bOptionEnable == 0) {
-            setStakingActive(true);
-	    // walletFrame->unlockWallet();
-	} else if (bOptionEnable == 1) {
-	    setStakingActive(false);
-            // walletFrame->lockWallet();
-	} else if (bOptionEnable == 2) {
-	    rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
-	    showDebugWindow();
-	}
+            walletFrame->disableStaking();
+        } else if (bOptionEnable == 1) {
+            walletFrame->enableStaking();
+        } else if (bOptionEnable == 2) {
+            rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
+            showDebugWindow();
+        }
     }
 }
 

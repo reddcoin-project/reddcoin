@@ -37,11 +37,25 @@
 
 std::vector<std::thread> threadStakeMinterGroup;
 
-static std::atomic<bool> fEnableStaking(false);
+std::atomic_bool fEnableStaking(false);
 
-bool EnableStaking()
+bool GetStakingActive()
 {
     return fEnableStaking;
+}
+
+void SetStakingActive(bool active)
+{
+    LogPrintf("%s: %s\n", __func__, active);
+
+    if (fEnableStaking == active) {
+        return;
+    }
+
+    fEnableStaking = active;
+    gArgs.ForceSetArg("-staking", active ? "1" : "0");
+
+    uiInterface.NotifyStakingActiveChanged(fEnableStaking);
 }
 
 //! forward declaration for createnewblock
@@ -571,7 +585,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
 
     try {
         bool fNeedToClear = false;
-        while (EnableStaking()) {
+        while (GetStakingActive()) {
             if (ShutdownRequested())
                 return;
             while (pwallet->IsLocked()) {
@@ -774,6 +788,7 @@ void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CCo
         PrintExceptionContinue(NULL, "ThreadStakeMinter()");
     }
     LogPrintf("Staking thread [%s] stopped\n", thread_id);
+    uiInterface.NotifyStakingActiveChanged(false);
 }
 
 // reddcoin: stake minter
@@ -792,6 +807,7 @@ void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempo
     }
 
     fEnableStaking = true;
+    uiInterface.NotifyStakingActiveChanged(true);
     std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
     for (const auto &wallet : m_stake_wallets) {
          LogPrintf("launching staking thread [%d] for wallet...%s\n", thread_id, wallet->GetName());
@@ -834,5 +850,6 @@ void StopStaking()
         if (t.joinable()) t.join();
     }
     threadStakeMinterGroup.clear();
+    uiInterface.NotifyStakingActiveChanged(false);
     LogPrintf("ThreadStakeMinter Stop done!\n");
 }

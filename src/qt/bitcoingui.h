@@ -143,6 +143,7 @@ private:
     GUIUtil::ClickableLabel* labelCheckUpdate = nullptr;
     GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
     StakingStatusBarControl* stakingStatusControl = nullptr;
+    GUIUtil::ClickableLabel* globalstakingStatusControl = nullptr;
     QLabel* progressBarLabel = nullptr;
     GUIUtil::ClickableProgressBar* progressBar = nullptr;
     QProgressDialog* progressDialog = nullptr;
@@ -275,6 +276,8 @@ public Q_SLOTS:
     */
     void updateWalletStatus();
     void updateStakingStatus();
+    /** Set staking state shown in the UI */
+    void setStakingActive(bool staking_active);
 
 private:
     /** Set the encryption status as shown in the UI.
@@ -453,6 +456,7 @@ public:
     /** Lets the control know about the RPC Console Model (and its signals) */
     void setRPCConsole(RPCConsole* rpcConsole);
     void setThemedPixmap(const QString& image_filename, int width, int height);
+    /** Set staking state shown in the UI */
     void setStakingActive(bool stake_active);
 
 protected:

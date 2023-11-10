@@ -28,6 +28,7 @@ class CWallet;
 namespace Consensus { struct Params; };
 
 static const bool DEFAULT_PRINTPRIORITY = false;
+extern std::atomic_bool fEnableStaking;
 
 struct CBlockTemplate
 {
@@ -212,13 +213,14 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
 void InitStakeWallet();
+void SetStakingActive(bool active);
 void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool);
 int GetStakingThreadCount();
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings);
 
 
 /** Returns true if a staking is enabled, false otherwise. */
-bool EnableStaking();
+bool GetStakingActive();
 void InterruptStaking();
 void StopStaking();
 

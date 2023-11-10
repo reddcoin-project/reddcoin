@@ -158,6 +158,11 @@ void ClientModel::updateNetworkActive(bool networkActive)
     Q_EMIT networkActiveChanged(networkActive);
 }
 
+void ClientModel::updateStakingActive(bool stakingActive)
+{
+    Q_EMIT stakingActiveChanged(stakingActive);
+}
+
 void ClientModel::updateAlert()
 {
     Q_EMIT alertsChanged(getStatusBarWarnings());
@@ -270,6 +275,14 @@ static void NotifyNetworkActiveChanged(ClientModel *clientmodel, bool networkAct
     assert(invoked);
 }
 
+static void NotifyStakingActiveChanged(ClientModel *clientmodel, bool stakingActive)
+{
+    qDebug() << QString("%1: Staking updated to %2").arg(__func__).arg(stakingActive);
+    bool invoked = QMetaObject::invokeMethod(clientmodel, "updateStakingActive", Qt::QueuedConnection,
+                              Q_ARG(bool, stakingActive));
+    assert(invoked);
+}
+
 static void NotifyAlertChanged(ClientModel *clientmodel)
 {
     qDebug() << "NotifyAlertChanged";
@@ -319,6 +332,7 @@ void ClientModel::subscribeToCoreSignals()
     m_handler_show_progress = m_node.handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2));
     m_handler_notify_num_connections_changed = m_node.handleNotifyNumConnectionsChanged(std::bind(NotifyNumConnectionsChanged, this, std::placeholders::_1));
     m_handler_notify_network_active_changed = m_node.handleNotifyNetworkActiveChanged(std::bind(NotifyNetworkActiveChanged, this, std::placeholders::_1));
+    m_handler_notify_staking_active_changed = m_node.handleNotifyStakingActiveChanged(std::bind(NotifyStakingActiveChanged, this, std::placeholders::_1));
     m_handler_notify_alert_changed = m_node.handleNotifyAlertChanged(std::bind(NotifyAlertChanged, this));
     m_handler_banned_list_changed = m_node.handleBannedListChanged(std::bind(BannedListChanged, this));
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(std::bind(BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, false));
@@ -331,6 +345,7 @@ void ClientModel::unsubscribeFromCoreSignals()
     m_handler_show_progress->disconnect();
     m_handler_notify_num_connections_changed->disconnect();
     m_handler_notify_network_active_changed->disconnect();
+    m_handler_notify_staking_active_changed->disconnect();
     m_handler_notify_alert_changed->disconnect();
     m_handler_banned_list_changed->disconnect();
     m_handler_notify_block_tip->disconnect();
