@@ -3467,8 +3467,6 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
 // Verify hash target and signature of coinstake tx
 bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof)
 {
-    AssertLockHeld(cs_main);
-
     bool fValid;
     const uint256 hash = block.GetHash();
     if (hash != Params().GetConsensus().hashGenesisBlock) {
