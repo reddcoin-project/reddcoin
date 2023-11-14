@@ -192,10 +192,10 @@ def main():
     # Require service bit 1.
     ips = [ip for ip in ips if (ip['service'] & 1) == 1]
     print('%s Require service bit 1' % (ip_stats(ips)), file=sys.stderr)
-    # Require at least 50% 30-day uptime for clearnet, 10% for onion.
+    # Require at least 40% 30-day uptime for clearnet, 10% for onion.
     req_uptime = {
-        'ipv4': 50,
-        'ipv6': 50,
+        'ipv4': 40,
+        'ipv6': 40,
         'onion': 10,
     }
     ips = [ip for ip in ips if ip['uptime'] > req_uptime[ip['net']]]
