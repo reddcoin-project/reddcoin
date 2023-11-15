@@ -787,6 +787,7 @@ void static ThreadStakeMinter(CWallet* pwallet, ChainstateManager* chainman, CCo
     } catch (...) {
         PrintExceptionContinue(NULL, "ThreadStakeMinter()");
     }
+    pwallet->SetLastCoinStakeSearchInterval(0);
     LogPrintf("Staking thread [%s] stopped\n", thread_id);
     uiInterface.NotifyStakingActiveChanged(false);
 }
