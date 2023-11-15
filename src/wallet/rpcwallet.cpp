@@ -122,7 +122,7 @@ void EnsureWalletIsUnlocked(const CWallet& wallet)
     if (wallet.IsLocked()) {
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
     }
-    if (wallet.IsStakingOnly()) {
+    if (wallet.GetIsWalletStakingOnly()) {
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Wallet is unlocked for staking only.");
     }
 }
@@ -2052,9 +2052,9 @@ static RPCHelpMan walletpassphrase()
         relock_time = pwallet->nRelockTime;
 
         if (request.params[2].isBool()) {
-            pwallet->SetIsStakingOnly(request.params[2].getBool());
+            pwallet->SetIsWalletStakingOnly(request.params[2].getBool());
         } else {
-            pwallet->SetIsStakingOnly(false);
+            pwallet->SetIsWalletStakingOnly(false);
         }
     }
 

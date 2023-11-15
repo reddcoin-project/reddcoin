@@ -792,9 +792,9 @@ public:
     void SetBroadcastTransactions(bool broadcast) { fBroadcastTransactions = broadcast; }
 
     /** Inquire whether this wallet unlocked for staking only. */
-    bool GetIsStakingOnly() const { return fWalletUnlockStakingOnly; }
+    bool GetIsWalletStakingOnly() const { return fWalletUnlockStakingOnly; }
     /** Set whether this wallet unlocked for staking only. */
-    void SetIsStakingOnly(bool stakingOnly) { fWalletUnlockStakingOnly = stakingOnly; }
+    void SetIsWalletStakingOnly(bool stakingOnly) { fWalletUnlockStakingOnly = stakingOnly; }
 
     /** Inquire whether this wallet unlocked for staking only. */
     bool GetEnableStaking() const { return fEnableStaking; }
