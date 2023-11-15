@@ -117,6 +117,10 @@ public:
 
     bool getWalletStaking();
 
+    // wallet lock/unlock for staking
+    bool setWalletUnlockStaking(bool unlockStaking);
+    bool getWalletUnlockStaking();
+
     // RAI object for unlocking wallet, returned by requestUnlock()
     class UnlockContext
     {

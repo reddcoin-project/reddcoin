@@ -161,6 +161,14 @@ public:
     {
         return m_wallet->GetEnableStaking();
     }
+    void setUnlockWalletStaking(bool stakingOnly) override
+    {
+        m_wallet->SetIsWalletStakingOnly(stakingOnly);
+    }
+    bool getUnlockWalletStaking() override
+    {
+        return m_wallet->GetIsWalletStakingOnly();
+    }
     int64_t getLastCoinStakeSearchInterval() override
     {
         return m_wallet->GetLastCoinStakeSearchInterval();
