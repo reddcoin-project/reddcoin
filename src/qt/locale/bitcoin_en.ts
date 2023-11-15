@@ -231,12 +231,12 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+44"/>
+        <location line="+57"/>
         <source>Wallet encrypted</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-148"/>
         <source>Enter the new passphrase for the wallet.&lt;br/&gt;Please use a passphrase of &lt;b&gt;ten or more random characters&lt;/b&gt;, or &lt;b&gt;eight or more words&lt;/b&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -273,30 +273,33 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
     <message>
         <location line="+6"/>
         <location line="+8"/>
-        <location line="+32"/>
+        <location line="+45"/>
         <location line="+6"/>
         <source>Wallet encryption failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-45"/>
+        <location line="-58"/>
         <source>Wallet encryption failed due to an internal error. Your wallet was not encrypted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+38"/>
+        <location line="+51"/>
         <source>The supplied passphrases do not match.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
+        <location line="-40"/>
+        <location line="+7"/>
+        <location line="+6"/>
         <location line="+6"/>
         <source>Wallet unlock failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5"/>
+        <location line="-18"/>
+        <location line="+13"/>
         <location line="+20"/>
         <source>The passphrase entered for the wallet decryption was incorrect.</source>
         <translation type="unfinished"></translation>
@@ -307,7 +310,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+49"/>
         <location line="+33"/>
         <source>Warning: The Caps Lock key is on!</source>
         <translation type="unfinished"></translation>
@@ -352,7 +355,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
 <context>
     <name>BitcoinGUI</name>
     <message>
-        <location filename="../bitcoingui.cpp" line="+310"/>
+        <location filename="../bitcoingui.cpp" line="+316"/>
         <source>&amp;Overview</source>
         <translation>&amp;Overview</translation>
     </message>
@@ -472,7 +475,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="+409"/>
+        <location line="+414"/>
         <source>%n active connection(s) to Reddcoin network.</source>
         <extracomment>A substring of the tooltip.</extracomment>
         <translation type="unfinished">
@@ -487,12 +490,12 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+500"/>
+        <location line="+532"/>
         <source>Proxy is &lt;b&gt;enabled&lt;/b&gt;: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1244"/>
         <source>Backup wallet to another location</source>
         <translation>Backup wallet to another location</translation>
     </message>
@@ -602,7 +605,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation>Tabs toolbar</translation>
     </message>
     <message>
-        <location line="+478"/>
+        <location line="+483"/>
         <source>Syncing Headers (%1%)…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -632,7 +635,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-792"/>
+        <location line="-797"/>
         <source>Show the list of used sending addresses and labels</source>
         <translation type="unfinished"></translation>
     </message>
@@ -647,7 +650,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="+779"/>
+        <location line="+784"/>
         <source>Processed %n block(s) of transaction history.</source>
         <translation>
             <numerusform>Processed %n block of transaction history.</numerusform>
@@ -655,7 +658,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         </translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+23"/>
         <source>%1 behind</source>
         <translation>%1 behind</translation>
     </message>
@@ -690,12 +693,12 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation>Information</translation>
     </message>
     <message>
-        <location line="-79"/>
+        <location line="-78"/>
         <source>Up to date</source>
         <translation>Up to date</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>Update to %1 is available.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -866,7 +869,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+280"/>
+        <location line="+285"/>
         <source>%1 client</source>
         <translation type="unfinished"></translation>
     </message>
@@ -895,7 +898,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+159"/>
+        <location line="+158"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -976,7 +979,29 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;locked&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+36"/>
+        <location line="+21"/>
+        <source>Disable Staking</source>
+        <extracomment>A context menu item.</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Enable Staking</source>
+        <extracomment>A context menu item. The stake state activity was disabled previously.</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Staking is enabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Staking is disabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>Wallet is staking</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1006,7 +1031,17 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+2"/>
+        <source>Staking is not enabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Waiting for staking to start</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+132"/>
         <source>Original message:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1636,12 +1671,12 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
     </message>
     <message>
         <location line="+0"/>
-        <source>CoinDay</source>
+        <source>Coin Day</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+0"/>
-        <source>StakeProbability</source>
+        <source>Stake Probability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1665,7 +1700,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="+100"/>
+        <location line="+106"/>
         <source>%n hour(s)</source>
         <translation type="unfinished">
             <numerusform>%n hour</numerusform>
@@ -1702,7 +1737,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
     </message>
     <message>
         <location line="+2"/>
-        <source>Coin age in the output.</source>
+        <source>Coin age expressed as (Value x Age) of the output.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1714,7 +1749,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
 <context>
     <name>MintingView</name>
     <message>
-        <location filename="../mintingview.cpp" line="+38"/>
+        <location filename="../mintingview.cpp" line="+41"/>
         <source>transaction is too young</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1774,7 +1809,7 @@ Signing is only possible with addresses of the type &apos;legacy&apos;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+97"/>
         <source>Export Staking Data</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5277,12 +5312,12 @@ Go to File &gt; Open Wallet to load a wallet.
 <context>
     <name>WalletModel</name>
     <message>
-        <location filename="../walletmodel.cpp" line="+236"/>
+        <location filename="../walletmodel.cpp" line="+237"/>
         <source>Send Coins</source>
         <translation type="unfinished">Send Coins</translation>
     </message>
     <message>
-        <location line="+265"/>
+        <location line="+289"/>
         <location line="+52"/>
         <location line="+13"/>
         <location line="+5"/>
@@ -5436,7 +5471,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+69"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
