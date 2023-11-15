@@ -372,6 +372,18 @@ bool WalletModel::getWalletStaking()
     return m_wallet->getEnableStaking();
 }
 
+bool WalletModel::setWalletUnlockStaking(bool unlockStaking)
+{
+    m_wallet->setUnlockWalletStaking(unlockStaking);
+    Q_EMIT stakingStatusChanged();
+    return m_wallet->getUnlockWalletStaking();
+}
+
+bool WalletModel::getWalletUnlockStaking()
+{
+    return m_wallet->getUnlockWalletStaking();
+}
+
 bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureString &newPass)
 {
     m_wallet->lock(); // Make sure wallet is locked before attempting pass change

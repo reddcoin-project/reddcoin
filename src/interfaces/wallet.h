@@ -99,6 +99,12 @@ public:
     //! Set wallet staking enabled.
     virtual void setEnableStaking(bool enableStaking) = 0;
 
+    //! Get wallet unlocked for staking.
+    virtual bool getUnlockWalletStaking() = 0;
+
+    //! Set wallet unlock for staking.
+    virtual void setUnlockWalletStaking(bool stakingOnly) = 0;
+
     //! Get Last CoinStake SearchInterval.
     virtual int64_t getLastCoinStakeSearchInterval() = 0;
 

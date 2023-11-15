@@ -164,6 +164,19 @@ void AskPassphraseDialog::accept()
             QDialog::reject(); // Cancelled
         }
         } break;
+    case UnlockStaking:
+        try {
+            if (!model->setWalletLocked(false, oldpass)) {
+                QMessageBox::critical(this, tr("Wallet unlock failed"),
+                                      tr("The passphrase entered for the wallet decryption was incorrect."));
+            } else {
+                model->setWalletUnlockStaking(ui->stakingCheckBox->isChecked());
+                QDialog::accept(); // Success
+            }
+        } catch (const std::runtime_error& e) {
+            QMessageBox::critical(this, tr("Wallet unlock failed"), e.what());
+        }
+        break;
     case Unlock:
         try {
             if (!model->setWalletLocked(false, oldpass)) {
@@ -208,6 +221,9 @@ void AskPassphraseDialog::textChanged()
     {
     case Encrypt: // New passphrase x2
         acceptable = !ui->passEdit2->text().isEmpty() && !ui->passEdit3->text().isEmpty();
+        break;
+    case UnlockStaking: // Old passphrase x1
+        acceptable = !ui->passEdit1->text().isEmpty();
         break;
     case Unlock: // Old passphrase x1
         acceptable = !ui->passEdit1->text().isEmpty();
