@@ -1527,6 +1527,8 @@ void BitcoinGUI::setEncryptionStatus(int status)
         lockWalletControl->setLockState(false);
         break;
     }
+
+    updateStakingStatus();
 }
 
 void BitcoinGUI::setStakingActive(bool staking_active)
