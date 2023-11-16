@@ -6,16 +6,8 @@
         <translation>Жаңа адрес енгізу</translation>
     </message>
     <message>
-        <source>&amp;New</source>
-        <translation type="unfinished">Жаңа</translation>
-    </message>
-    <message>
         <source>Copy the currently selected address to the system clipboard</source>
         <translation>Таңдаған адресті тізімнен жою</translation>
-    </message>
-    <message>
-        <source>C&amp;lose</source>
-        <translation type="unfinished">Жабу</translation>
     </message>
     <message>
         <source>&amp;Export</source>
@@ -43,10 +35,6 @@
     </context>
 <context>
     <name>QObject</name>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Саны</translation>
-    </message>
     <message numerus="yes">
         <source>%n second(s)</source>
         <translation>
@@ -82,10 +70,6 @@
             <numerusform />
         </translation>
     </message>
-    <message>
-        <source>%1 and %2</source>
-        <translation type="unfinished">%1 немесе %2</translation>
-    </message>
     <message numerus="yes">
         <source>%n year(s)</source>
         <translation type="unfinished">
@@ -103,6 +87,14 @@
     <message>
         <source>E&amp;xit</source>
         <translation>Шығу</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n active connection(s) to Reddcoin network.</source>
+        <extracomment>A substring of the tooltip.</extracomment>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
     <message>
         <source>&amp;Send</source>
@@ -147,56 +139,6 @@
         <source>Up to date</source>
         <translation>Жаңартылған</translation>
     </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network.</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">
-            <numerusform />
-            <numerusform />
-        </translation>
-    </message>
-    </context>
-<context>
-    <name>CoinControlDialog</name>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Саны</translation>
-    </message>
-    <message>
-        <source>Fee:</source>
-        <translation type="unfinished">Комиссия</translation>
-    </message>
-    <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Шаң</translation>
-    </message>
-    <message>
-        <source>After Fee:</source>
-        <translation type="unfinished">Комиссия алу кейін</translation>
-    </message>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Саны</translation>
-    </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Күні</translation>
-    </message>
-    <message>
-        <source>Confirmations</source>
-        <translation type="unfinished">Растау саны</translation>
-    </message>
-    <message>
-        <source>Confirmed</source>
-        <translation type="unfinished">Растық</translation>
-    </message>
-    </context>
-<context>
-    <name>CreateWalletDialog</name>
-    <message>
-        <source>Wallet</source>
-        <translation type="unfinished">Әмиян</translation>
-    </message>
     </context>
 <context>
     <name>EditAddressDialog</name>
@@ -211,10 +153,6 @@
     </context>
 <context>
     <name>Intro</name>
-    <message>
-        <source>Bitcoin</source>
-        <translation type="unfinished">Биткоин</translation>
-    </message>
     <message numerus="yes">
         <source>(sufficient to restore backups %n day(s) old)</source>
         <extracomment>Explanatory text on the capability of the current prune target.</extracomment>
@@ -229,11 +167,24 @@
     </message>
     </context>
 <context>
-    <name>OptionsDialog</name>
-    <message>
-        <source>W&amp;allet</source>
-        <translation type="unfinished">Әмиян</translation>
+    <name>MintingTableModel</name>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    </context>
+<context>
+    <name>OptionsDialog</name>
     <message>
         <source>Error</source>
         <translation type="unfinished">қате</translation>
@@ -245,46 +196,37 @@
         <source>&amp;Information</source>
         <translation>Информация</translation>
     </message>
-    </context>
-<context>
-    <name>ReceiveCoinsDialog</name>
-    <message>
-        <source>&amp;Amount:</source>
-        <translation type="unfinished">Саны</translation>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
-    </context>
-<context>
-    <name>ReceiveRequestDialog</name>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Саны</translation>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
-    </context>
-<context>
-    <name>RecentRequestsTableModel</name>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Күні</translation>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
     </context>
 <context>
     <name>SendCoinsDialog</name>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Саны</translation>
-    </message>
-    <message>
-        <source>Fee:</source>
-        <translation type="unfinished">Комиссия</translation>
-    </message>
-    <message>
-        <source>After Fee:</source>
-        <translation type="unfinished">Комиссия алу кейін</translation>
-    </message>
-    <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Шаң</translation>
-    </message>
     <message numerus="yes">
         <source>Estimated to begin confirmation within %n block(s).</source>
         <translation>
@@ -309,10 +251,6 @@
             <numerusform />
         </translation>
     </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Күні</translation>
-    </message>
     <message numerus="yes">
         <source>matures in %n more block(s)</source>
         <translation>
@@ -320,34 +258,15 @@
             <numerusform />
         </translation>
     </message>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Саны</translation>
-    </message>
     </context>
 <context>
     <name>TransactionTableModel</name>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Күні</translation>
-    </message>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
         <translation>
             <numerusform />
             <numerusform />
         </translation>
-    </message>
-    </context>
-<context>
-    <name>TransactionView</name>
-    <message>
-        <source>Confirmed</source>
-        <translation type="unfinished">Растық</translation>
-    </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Күні</translation>
     </message>
     </context>
 <context>
@@ -359,17 +278,6 @@
     <message>
         <source>Error</source>
         <translation type="unfinished">қате</translation>
-    </message>
-    </context>
-<context>
-    <name>bitcoin-core</name>
-    <message>
-        <source>Transaction amount too small</source>
-        <translation type="unfinished">Транзакция өте кішкентай</translation>
-    </message>
-    <message>
-        <source>Transaction too large</source>
-        <translation type="unfinished">Транзакция өте үлкен</translation>
     </message>
     </context>
 </TS>

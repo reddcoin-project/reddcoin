@@ -2,36 +2,16 @@
 <context>
     <name>AddressBookPage</name>
     <message>
-        <source>Right-click to edit address or label</source>
-        <translation type="unfinished">Clic-dde i olygu cyfeiriad neu label</translation>
-    </message>
-    <message>
         <source>Create a new address</source>
         <translation>Creu cyfeiriad newydd</translation>
-    </message>
-    <message>
-        <source>&amp;New</source>
-        <translation type="unfinished">&amp;Newydd</translation>
     </message>
     <message>
         <source>Copy the currently selected address to the system clipboard</source>
         <translation>Copio'r cyfeiriad sydd wedi'i ddewis i'r clipfwrdd system</translation>
     </message>
     <message>
-        <source>&amp;Copy</source>
-        <translation type="unfinished">&amp;Copïo</translation>
-    </message>
-    <message>
-        <source>C&amp;lose</source>
-        <translation type="unfinished">C&amp;au</translation>
-    </message>
-    <message>
         <source>Delete the currently selected address from the list</source>
         <translation>Dileu'r cyfeiriad presennol wedi ei ddewis o'r rhestr</translation>
-    </message>
-    <message>
-        <source>Enter address or label to search</source>
-        <translation type="unfinished">Cyfeiriad neu label i chwilio</translation>
     </message>
     <message>
         <source>Export the data in the current tab to a file</source>
@@ -45,56 +25,7 @@
         <source>&amp;Delete</source>
         <translation>&amp;Dileu</translation>
     </message>
-    <message>
-        <source>Choose the address to send coins to</source>
-        <translation type="unfinished">Dewis y cyfeiriad i yrru'r arian</translation>
-    </message>
-    <message>
-        <source>Choose the address to receive coins with</source>
-        <translation type="unfinished">Dewis y cyfeiriad i dderbyn arian</translation>
-    </message>
-    <message>
-        <source>C&amp;hoose</source>
-        <translation type="unfinished">D&amp;ewis</translation>
-    </message>
-    <message>
-        <source>Sending addresses</source>
-        <translation type="unfinished">Anfon cyfeiriadau</translation>
-    </message>
-    <message>
-        <source>Receiving addresses</source>
-        <translation type="unfinished">Derbyn cyfeiriadau</translation>
-    </message>
-    <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation type="unfinished">Rhain ydi eich cyfeiriadau Bitcoin ar gyfer gyrru taliadau. Gwnewch yn sicr o'r swm a'r cyfeiriad derbyn cyn gyrru arian.</translation>
-    </message>
-    <message>
-        <source>&amp;Copy Address</source>
-        <translation type="unfinished">&amp;Copïo Cyfeiriad</translation>
-    </message>
-    <message>
-        <source>Copy &amp;Label</source>
-        <translation type="unfinished">Copïo &amp;Label</translation>
-    </message>
-    <message>
-        <source>&amp;Edit</source>
-        <translation type="unfinished">&amp;Golygu</translation>
-    </message>
-    <message>
-        <source>Export Address List</source>
-        <translation type="unfinished">Allforio Rhestr Cyfeiriadau</translation>
-    </message>
-    <message>
-        <source>There was an error trying to save the address list to %1. Please try again.</source>
-        <extracomment>An error message. %1 is a stand-in argument for the name of the file we attempted to save to.</extracomment>
-        <translation type="unfinished">Roedd camgymeriad yn trïo safio'r rhestr gyfeiriadau i'r %1. Triwch eto os gwelwch yn dda.</translation>
-    </message>
-    <message>
-        <source>Exporting Failed</source>
-        <translation type="unfinished">Methu Allforio</translation>
-    </message>
-</context>
+    </context>
 <context>
     <name>AddressTableModel</name>
     <message>
@@ -103,7 +34,7 @@
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(dim label)</translation>
+        <translation type="unfinished">(heb label)</translation>
     </message>
 </context>
 <context>
@@ -126,11 +57,11 @@
     </message>
     <message>
         <source>Encrypt wallet</source>
-        <translation type="unfinished">Amgryptio'r Waled</translation>
+        <translation type="unfinished">Amgryptio'r waled</translation>
     </message>
     <message>
         <source>This operation needs your wallet passphrase to unlock the wallet.</source>
-        <translation type="unfinished">Mae'r weithred hon angen eich cyfrinair waled i ddatgloi'r waled.</translation>
+        <translation type="unfinished">Mae angen i'r gweithred hon ddefnyddio'ch cyfrinymadrodd er mwyn datgloi'r waled.</translation>
     </message>
     <message>
         <source>Unlock wallet</source>
@@ -138,82 +69,35 @@
     </message>
     <message>
         <source>Change passphrase</source>
-        <translation type="unfinished">Newid cyfrinair</translation>
+        <translation type="unfinished">Newid cyfrinymadrodd</translation>
     </message>
     <message>
         <source>Confirm wallet encryption</source>
-        <translation type="unfinished">Cadarnhau amgryptio'r waled</translation>
-    </message>
-    <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITCOINS&lt;/b&gt;!</source>
-        <translation type="unfinished">Rhybudd: Os ydych yn amgryptio'r waled ag yn colli'r cyfrinair, byddwch yn &lt;b&gt; COLLI EICH BITCOINS I GYD &lt;b&gt; !</translation>
-    </message>
-    <message>
-        <source>Are you sure you wish to encrypt your wallet?</source>
-        <translation type="unfinished">Ydych yn siwr eich bod eisiau amgryptio eich waled?</translation>
+        <translation type="unfinished">Cadarnau amgryptiad y waled</translation>
     </message>
     <message>
         <source>Wallet encrypted</source>
-        <translation type="unfinished">Waled wedi amgryptio</translation>
-    </message>
-    <message>
-        <source>Wallet to be encrypted</source>
-        <translation type="unfinished">Waled i'w amgryptio</translation>
-    </message>
-    <message>
-        <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. For security reasons, previous backups of the unencrypted wallet file will become useless as soon as you start using the new, encrypted wallet.</source>
-        <translation type="unfinished">PWYSIG: Mi ddylai unrhyw back ups blaenorol rydych wedi ei wneud o ffeil eich waled gael ei ddiweddaru efo'r ffeil amgryptiedig newydd ei chreu. Am resymau diogelwch, bydd back ups blaenorol o ffeil y walet heb amgryptio yn ddiwerth mor fuan ac yr ydych yn dechrau defnyddio'r waled amgryptiedig newydd.</translation>
+        <translation type="unfinished">Waled wedi'i amgryptio</translation>
     </message>
     <message>
         <source>Wallet encryption failed</source>
-        <translation type="unfinished">Amgryptio waled wedi methu</translation>
+        <translation type="unfinished">Amgryptiad waled wedi methu</translation>
     </message>
     <message>
         <source>Wallet encryption failed due to an internal error. Your wallet was not encrypted.</source>
-        <translation type="unfinished">Amgryptio waled wedi methu oherwydd gwall mewnol. Dydi eich waled heb amgryptio.</translation>
+        <translation type="unfinished">Methodd amgryptiad y waled oherwydd gwall mewnol. Ni amgryptwyd eich waled.</translation>
     </message>
     <message>
         <source>The supplied passphrases do not match.</source>
-        <translation type="unfinished">Nid ydi'r cyfrineiriau a gyflenwyd yn cyfateb.</translation>
+        <translation type="unfinished">Dydy'r cyfrinymadroddion a ddarparwyd ddim yn cyd-fynd â'u gilydd.</translation>
     </message>
     <message>
         <source>Wallet unlock failed</source>
-        <translation type="unfinished">Dadgloi waled wedi methu</translation>
+        <translation type="unfinished">Methodd ddatgloi'r waled</translation>
     </message>
-    <message>
-        <source>The passphrase entered for the wallet decryption was incorrect.</source>
-        <translation type="unfinished">Mae'r cyfrinair ysgrifennwyd ar gyfer datgryptio'r waled yn anghywir.</translation>
-    </message>
-    <message>
-        <source>Wallet passphrase was successfully changed.</source>
-        <translation type="unfinished">Newid cyfrinair waled yn llwyddiannus.</translation>
-    </message>
-    <message>
-        <source>Warning: The Caps Lock key is on!</source>
-        <translation type="unfinished">Rhybudd: Mae allwedd Caps Lock ymlaen!</translation>
-    </message>
-</context>
-<context>
-    <name>BanTableModel</name>
-    <message>
-        <source>IP/Netmask</source>
-        <translation type="unfinished">IP/Rhwydfwgwd</translation>
-    </message>
-    <message>
-        <source>Banned Until</source>
-        <translation type="unfinished">Gwaharddwyd Nes</translation>
-    </message>
-</context>
+    </context>
 <context>
     <name>QObject</name>
-    <message>
-        <source>Error: %1</source>
-        <translation type="unfinished"> Gwall: %1</translation>
-    </message>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Cyfanswm</translation>
-    </message>
     <message numerus="yes">
         <source>%n second(s)</source>
         <translation>
@@ -264,10 +148,6 @@
             <numerusform />
         </translation>
     </message>
-    <message>
-        <source>%1 and %2</source>
-        <translation type="unfinished">%1 a %2</translation>
-    </message>
     <message numerus="yes">
         <source>%n year(s)</source>
         <translation type="unfinished">
@@ -290,6 +170,10 @@
         <translation>Dangos trosolwg cyffredinol y waled</translation>
     </message>
     <message>
+        <source>Send coins to a Reddcoin address</source>
+        <translation type="unfinished">Anfon arian i gyfeiriad Reddcoin</translation>
+    </message>
+    <message>
         <source>&amp;Transactions</source>
         <translation>&amp;Trafodion</translation>
     </message>
@@ -306,14 +190,6 @@
         <translation>Gadael rhaglen</translation>
     </message>
     <message>
-        <source>&amp;About %1</source>
-        <translation type="unfinished">&amp;Ynghylch %1</translation>
-    </message>
-    <message>
-        <source>Show information about %1</source>
-        <translation type="unfinished">Dangos gwybodaeth am %1</translation>
-    </message>
-    <message>
         <source>About &amp;Qt</source>
         <translation>Ynghylch &amp;Qt</translation>
     </message>
@@ -322,21 +198,23 @@
         <translation>Dangos gwybodaeth am Qt</translation>
     </message>
     <message>
-        <source>Modify configuration options for %1</source>
-        <translation type="unfinished">Addasu ffurfweddiad dewisiadau ar gyfer %1</translation>
+        <source>Sign messages with your Reddcoin addresses to prove you own them</source>
+        <translation type="unfinished">Arwyddo negeseuon gyda eich cyfeiriadau Reddcoin i brofi mae chi sy'n berchen arnynt</translation>
     </message>
     <message>
-        <source>Wallet:</source>
-        <translation type="unfinished">Waled:</translation>
+        <source>Verify messages to ensure they were signed with specified Reddcoin addresses</source>
+        <translation type="unfinished">Gwirio negeseuon i sicrhau eu bod wedi eu harwyddo gyda cyfeiriadau Reddcoin penodol</translation>
     </message>
-    <message>
-        <source>Network activity disabled.</source>
+    <message numerus="yes">
+        <source>%n active connection(s) to Reddcoin network.</source>
         <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">Gweithgaredd rhwydwaith wedi anablu.</translation>
-    </message>
-    <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Anfon arian i gyfeiriad Bitcoin</translation>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -367,14 +245,6 @@
         <translation>Amgryptio'r allweddi preifat sy'n perthyn i'ch waled</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation>Arwyddo negeseuon gyda eich cyfeiriadau Bitcoin i brofi mae chi sy'n berchen arnynt</translation>
-    </message>
-    <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation>Gwirio negeseuon i sicrhau eu bod wedi eu harwyddo gyda cyfeiriadau Bitcoin penodol</translation>
-    </message>
-    <message>
         <source>&amp;File</source>
         <translation>&amp;Ffeil</translation>
     </message>
@@ -389,22 +259,6 @@
     <message>
         <source>Tabs toolbar</source>
         <translation>Bar offer tabiau</translation>
-    </message>
-    <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation type="unfinished">Gofyn taliadau (creu côd QR a bitcoin: URIs)</translation>
-    </message>
-    <message>
-        <source>Show the list of used sending addresses and labels</source>
-        <translation type="unfinished">Dangos rhestr o gyfeiriadau danfon a labelau wedi eu defnyddio</translation>
-    </message>
-    <message>
-        <source>Show the list of used receiving addresses and labels</source>
-        <translation type="unfinished">Dangos rhestr o gyfeiriadau derbyn a labelau wedi eu defnyddio</translation>
-    </message>
-    <message>
-        <source>&amp;Command-line options</source>
-        <translation type="unfinished">&amp;Dewisiadau Gorchymyn-llinell</translation>
     </message>
     <message numerus="yes">
         <source>Processed %n block(s) of transaction history.</source>
@@ -445,69 +299,12 @@
         <translation>Cyfamserol</translation>
     </message>
     <message>
-        <source>Open Wallet</source>
-        <translation type="unfinished">Agor Waled</translation>
-    </message>
-    <message>
-        <source>Open a wallet</source>
-        <translation type="unfinished">Agor waled</translation>
-    </message>
-    <message>
-        <source>Close wallet</source>
-        <translation type="unfinished">Cau waled</translation>
+        <source>Unlock wallet</source>
+        <translation type="unfinished">Datgloi'r waled</translation>
     </message>
     <message>
         <source>&amp;Window</source>
         <translation type="unfinished">&amp;Ffenestr</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network.</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">
-            <numerusform />
-            <numerusform />
-            <numerusform />
-            <numerusform />
-            <numerusform />
-        </translation>
-    </message>
-    <message>
-        <source>Error: %1</source>
-        <translation type="unfinished"> Gwall: %1</translation>
-    </message>
-    <message>
-        <source>Warning: %1</source>
-        <translation type="unfinished">Rhybudd: %1</translation>
-    </message>
-    <message>
-        <source>Date: %1
-</source>
-        <translation type="unfinished">Dyddiad: %1
-</translation>
-    </message>
-    <message>
-        <source>Amount: %1
-</source>
-        <translation type="unfinished">Cyfanswm: %1
-</translation>
-    </message>
-    <message>
-        <source>Wallet: %1
-</source>
-        <translation type="unfinished">Waled: %1
-</translation>
-    </message>
-    <message>
-        <source>Type: %1
-</source>
-        <translation type="unfinished">Math: %1
-</translation>
-    </message>
-    <message>
-        <source>Address: %1
-</source>
-        <translation type="unfinished">Cyfeiriad: %1
-</translation>
     </message>
     <message>
         <source>Sent transaction</source>
@@ -516,14 +313,6 @@
     <message>
         <source>Incoming transaction</source>
         <translation>Trafodiad sy'n cyrraedd</translation>
-    </message>
-    <message>
-        <source>HD key generation is &lt;b&gt;enabled&lt;/b&gt;</source>
-        <translation type="unfinished">Cynhyrchu allweddi HD wedi ei &lt;b&gt; alluogi &lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>HD key generation is &lt;b&gt;disabled&lt;/b&gt;</source>
-        <translation type="unfinished">Cynhyrchu allweddi HD wedi'w &lt;b&gt; anablu &lt;/b&gt;</translation>
     </message>
     <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
@@ -535,88 +324,17 @@
     </message>
     </context>
 <context>
-    <name>CoinControlDialog</name>
+    <name>LockWalletStatusBarControl</name>
     <message>
-        <source>Coin Selection</source>
-        <translation type="unfinished">Dewis Ceiniog</translation>
-    </message>
-    <message>
-        <source>Quantity:</source>
-        <translation type="unfinished">Maint:</translation>
-    </message>
-    <message>
-        <source>Bytes:</source>
-        <translation type="unfinished">Maint</translation>
-    </message>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Cyfanswm:</translation>
-    </message>
-    <message>
-        <source>Fee:</source>
-        <translation type="unfinished">Ffî:</translation>
-    </message>
-    <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Llwch</translation>
-    </message>
-    <message>
-        <source>After Fee:</source>
-        <translation type="unfinished">Ar Ôl Ffî</translation>
-    </message>
-    <message>
-        <source>Change:</source>
-        <translation type="unfinished">Newid:</translation>
-    </message>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Cyfanswm</translation>
-    </message>
-    <message>
-        <source>Received with label</source>
-        <translation type="unfinished">Derbynwyd gyda label</translation>
-    </message>
-    <message>
-        <source>Received with address</source>
-        <translation type="unfinished">Derbynwyd gyda chyfeiriad</translation>
-    </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Dyddiad</translation>
-    </message>
-    <message>
-        <source>Confirmations</source>
-        <translation type="unfinished">Cadarnhadiadau</translation>
-    </message>
-    <message>
-        <source>Confirmed</source>
-        <translation type="unfinished">Cadarnhawyd</translation>
-    </message>
-    <message>
-        <source>Copy amount</source>
-        <translation type="unfinished">Copïo Cyfanswm</translation>
-    </message>
-    <message>
-        <source>(no label)</source>
-        <translation type="unfinished">(dim label)</translation>
-    </message>
-    <message>
-        <source>(change)</source>
-        <translation type="unfinished">(newid)</translation>
+        <source>Unlock wallet</source>
+        <translation type="unfinished">Datgloi'r waled</translation>
     </message>
 </context>
 <context>
-    <name>WalletController</name>
+    <name>CoinControlDialog</name>
     <message>
-        <source>Close wallet</source>
-        <translation type="unfinished">Cau waled</translation>
-    </message>
-    </context>
-<context>
-    <name>CreateWalletDialog</name>
-    <message>
-        <source>Wallet</source>
-        <translation type="unfinished">Waled</translation>
+        <source>(no label)</source>
+        <translation type="unfinished">(heb label)</translation>
     </message>
     </context>
 <context>
@@ -680,6 +398,40 @@
     </message>
     </context>
 <context>
+    <name>MintingTableModel</name>
+    <message>
+        <source>Address</source>
+        <translation type="unfinished">Cyfeiriad</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    </context>
+<context>
+    <name>MintingView</name>
+    <message>
+        <source>Address</source>
+        <translation type="unfinished">Cyfeiriad</translation>
+    </message>
+    </context>
+<context>
     <name>ModalOverlay</name>
     <message>
         <source>Form</source>
@@ -695,10 +447,6 @@
     <message>
         <source>&amp;Network</source>
         <translation>&amp;Rhwydwaith</translation>
-    </message>
-    <message>
-        <source>W&amp;allet</source>
-        <translation type="unfinished">W&amp;aled</translation>
     </message>
     <message>
         <source>&amp;Window</source>
@@ -728,11 +476,6 @@
         <translation type="unfinished">Cyfeiriad</translation>
     </message>
     <message>
-        <source>Type</source>
-        <extracomment>Title of Peers Table column which describes the type of peer connection. The "type" describes why the connection exists.</extracomment>
-        <translation type="unfinished">Math</translation>
-    </message>
-    <message>
         <source>Network</source>
         <extracomment>Title of Peers Table column which states the network the peer connected through.</extracomment>
         <translation type="unfinished">Rhwydwaith</translation>
@@ -752,6 +495,46 @@
         <source>&amp;Open</source>
         <translation>&amp;Agor</translation>
     </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
     </context>
 <context>
     <name>ReceiveCoinsDialog</name>
@@ -761,37 +544,10 @@
     </message>
     </context>
 <context>
-    <name>ReceiveRequestDialog</name>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Cyfanswm:</translation>
-    </message>
-    <message>
-        <source>Message:</source>
-        <translation type="unfinished">Neges:</translation>
-    </message>
-    <message>
-        <source>Wallet:</source>
-        <translation type="unfinished">Waled:</translation>
-    </message>
-    <message>
-        <source>Copy &amp;Address</source>
-        <translation type="unfinished">&amp;Cyfeiriad Copi</translation>
-    </message>
-    </context>
-<context>
     <name>RecentRequestsTableModel</name>
     <message>
-        <source>Date</source>
-        <translation type="unfinished">Dyddiad</translation>
-    </message>
-    <message>
-        <source>Message</source>
-        <translation type="unfinished">Neges</translation>
-    </message>
-    <message>
         <source>(no label)</source>
-        <translation type="unfinished">(dim label)</translation>
+        <translation type="unfinished">(heb label)</translation>
     </message>
     </context>
 <context>
@@ -801,36 +557,8 @@
         <translation>Anfon arian</translation>
     </message>
     <message>
-        <source>Quantity:</source>
-        <translation type="unfinished">Maint:</translation>
-    </message>
-    <message>
-        <source>Bytes:</source>
-        <translation type="unfinished">Maint</translation>
-    </message>
-    <message>
-        <source>Amount:</source>
-        <translation type="unfinished">Cyfanswm:</translation>
-    </message>
-    <message>
-        <source>Fee:</source>
-        <translation type="unfinished">Ffî:</translation>
-    </message>
-    <message>
-        <source>After Fee:</source>
-        <translation type="unfinished">Ar Ôl Ffî</translation>
-    </message>
-    <message>
-        <source>Change:</source>
-        <translation type="unfinished">Newid:</translation>
-    </message>
-    <message>
         <source>Send to multiple recipients at once</source>
         <translation>Anfon at pobl lluosog ar yr un pryd</translation>
-    </message>
-    <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Llwch</translation>
     </message>
     <message>
         <source>Balance:</source>
@@ -839,14 +567,6 @@
     <message>
         <source>Confirm the send action</source>
         <translation>Cadarnhau'r gweithrediad anfon</translation>
-    </message>
-    <message>
-        <source>Copy amount</source>
-        <translation type="unfinished">Copïo Cyfanswm</translation>
-    </message>
-    <message>
-        <source>%1 to %2</source>
-        <translation type="unfinished">%1 i %2</translation>
     </message>
     <message numerus="yes">
         <source>Estimated to begin confirmation within %n block(s).</source>
@@ -860,7 +580,7 @@
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(dim label)</translation>
+        <translation type="unfinished">(heb label)</translation>
     </message>
 </context>
 <context>
@@ -872,10 +592,6 @@
     <message>
         <source>Paste address from clipboard</source>
         <translation>Gludo cyfeiriad o'r glipfwrdd</translation>
-    </message>
-    <message>
-        <source>Message:</source>
-        <translation type="unfinished">Neges:</translation>
     </message>
     </context>
 <context>
@@ -901,10 +617,6 @@
         <source>Open until %1</source>
         <translation type="unfinished">Agor tan %1</translation>
     </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Dyddiad</translation>
-    </message>
     <message numerus="yes">
         <source>matures in %n more block(s)</source>
         <translation>
@@ -915,25 +627,9 @@
             <numerusform />
         </translation>
     </message>
-    <message>
-        <source>Message</source>
-        <translation type="unfinished">Neges</translation>
-    </message>
-    <message>
-        <source>Amount</source>
-        <translation type="unfinished">Cyfanswm</translation>
-    </message>
     </context>
 <context>
     <name>TransactionTableModel</name>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Dyddiad</translation>
-    </message>
-    <message>
-        <source>Type</source>
-        <translation type="unfinished">Math</translation>
-    </message>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
         <translation>
@@ -950,50 +646,14 @@
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(dim label)</translation>
+        <translation type="unfinished">(heb label)</translation>
     </message>
     </context>
 <context>
     <name>TransactionView</name>
     <message>
-        <source>Today</source>
-        <translation type="unfinished">Heddiw</translation>
-    </message>
-    <message>
-        <source>This week</source>
-        <translation type="unfinished">Yr wythnos hon</translation>
-    </message>
-    <message>
-        <source>This month</source>
-        <translation type="unfinished">Y mis hwn</translation>
-    </message>
-    <message>
-        <source>Last month</source>
-        <translation type="unfinished">Mis diwethaf</translation>
-    </message>
-    <message>
-        <source>This year</source>
-        <translation type="unfinished">Eleni</translation>
-    </message>
-    <message>
-        <source>Confirmed</source>
-        <translation type="unfinished">Cadarnhawyd</translation>
-    </message>
-    <message>
-        <source>Date</source>
-        <translation type="unfinished">Dyddiad</translation>
-    </message>
-    <message>
-        <source>Type</source>
-        <translation type="unfinished">Math</translation>
-    </message>
-    <message>
         <source>Address</source>
         <translation type="unfinished">Cyfeiriad</translation>
-    </message>
-    <message>
-        <source>Exporting Failed</source>
-        <translation type="unfinished">Methu Allforio</translation>
     </message>
     </context>
 <context>
@@ -1001,18 +661,6 @@
     <message>
         <source>Send Coins</source>
         <translation type="unfinished">Anfon arian</translation>
-    </message>
-    <message>
-        <source>Current fee:</source>
-        <translation type="unfinished">Ffi gyfredol</translation>
-    </message>
-    <message>
-        <source>Increase:</source>
-        <translation type="unfinished">Cynydd:</translation>
-    </message>
-    <message>
-        <source>New fee:</source>
-        <translation type="unfinished">Ffi newydd:</translation>
     </message>
     </context>
 <context>

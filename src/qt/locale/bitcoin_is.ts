@@ -2,10 +2,6 @@
 <context>
     <name>AddressBookPage</name>
     <message>
-        <source>Right-click to edit address or label</source>
-        <translation type="unfinished">Smelltu á hægri músatakka til að breyta færslugildi eða merkingu</translation>
-    </message>
-    <message>
         <source>Create a new address</source>
         <translation>Búa til nýtt færslugildi</translation>
     </message>
@@ -19,15 +15,19 @@
     </message>
     <message>
         <source>&amp;Copy</source>
-        <translation type="unfinished">&amp;Afrita</translation>
+        <translation type="unfinished">&amp;Afrit</translation>
     </message>
     <message>
         <source>C&amp;lose</source>
-        <translation type="unfinished">&amp;Loka</translation>
+        <translation type="unfinished">C&amp;losa</translation>
     </message>
     <message>
         <source>Delete the currently selected address from the list</source>
         <translation>Eyða völdu færslugildi úr listanum</translation>
+    </message>
+    <message>
+        <source>Enter address or label to search</source>
+        <translation type="unfinished">Sláið inn reikningsnúmer eða merki til að leita </translation>
     </message>
     <message>
         <source>Export the data in the current tab to a file</source>
@@ -43,67 +43,62 @@
     </message>
     <message>
         <source>Choose the address to send coins to</source>
-        <translation type="unfinished">Veldu færslugildi sem greiða skal til</translation>
+        <translation type="unfinished">Veldu reikninginn sem senda á myntina til </translation>
     </message>
     <message>
         <source>Choose the address to receive coins with</source>
-        <translation type="unfinished">Veldu færslugildi sem á að taka við mynt</translation>
+        <translation type="unfinished">Veldu reikningsnúmerið til að mótaka mynt</translation>
     </message>
     <message>
         <source>C&amp;hoose</source>
-        <translation type="unfinished">&amp;Veldu</translation>
+        <translation type="unfinished">V&amp;elldu </translation>
     </message>
     <message>
         <source>Sending addresses</source>
-        <translation type="unfinished">Færslugildi sem senda frá sér</translation>
+        <translation type="unfinished">Sendi reiknisnúmer </translation>
     </message>
     <message>
         <source>Receiving addresses</source>
-        <translation type="unfinished">Færslugildi sem þiggja til sín</translation>
+        <translation type="unfinished">Mótaka reiknisnúmer </translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation type="unfinished">Þetta eru Bitcoin færslugildin sem senda greiðslur. Skoðið ævinlega vel upphæðina og færslugildin sem þiggja greiðslur áður en mynt er send.</translation>
+        <source>These are your Reddcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation type="unfinished">Þetta eru þín Reddcoin reikningsnúmerin til að senda greiðslur með.Athugaðu alltaf upphæðina sem á að senda og reikningsnúmer viðtakanda áður en myntin er send. </translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
-        <translation type="unfinished">&amp;Afrita færslugildi</translation>
+        <translation type="unfinished">&amp;Afrita reikning</translation>
     </message>
     <message>
         <source>Copy &amp;Label</source>
-        <translation type="unfinished">Afrita og &amp;Merkja</translation>
+        <translation type="unfinished">Afrita &amp;Merki </translation>
     </message>
     <message>
         <source>&amp;Edit</source>
-        <translation type="unfinished">&amp;Breyta</translation>
+        <translation type="unfinished">&amp;Bæta við </translation>
     </message>
     <message>
         <source>Export Address List</source>
-        <translation type="unfinished">Flytja út færslulista</translation>
-    </message>
-    <message>
-        <source>There was an error trying to save the address list to %1. Please try again.</source>
-        <extracomment>An error message. %1 is a stand-in argument for the name of the file we attempted to save to.</extracomment>
-        <translation type="unfinished">Ekki tókst að vista færslugildalistann á %1. Reyndu aftur.</translation>
+        <translation type="unfinished">Senda út reikningsnúmer </translation>
     </message>
     <message>
         <source>Exporting Failed</source>
-        <translation type="unfinished">Útflutningur tókst ekki</translation>
+        <translation type="unfinished">Útflutningur misfórst</translation>
     </message>
 </context>
 <context>
     <name>AddressTableModel</name>
     <message>
         <source>Label</source>
-        <translation type="unfinished">Merki</translation>
+        <translation type="unfinished">Merkimiði </translation>
     </message>
     <message>
         <source>Address</source>
-        <translation type="unfinished">Færslugildi</translation>
+        <translation type="unfinished">Reikningsnúmer </translation>
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(engin merking)</translation>
+        <translation type="unfinished">(ekkert merki)</translation>
     </message>
 </context>
 <context>
@@ -125,44 +120,48 @@
         <translation>Endurtaktu nýja lykilsetningu</translation>
     </message>
     <message>
+        <source>For staking only</source>
+        <translation type="unfinished">Aðeins fyrir stöflun</translation>
+    </message>
+    <message>
+        <source>Serves to disable the trivial sendmoney when OS account compromised. Provides no real security.</source>
+        <translation type="unfinished">Þjónusta til að slökkva á léttvægum aðgerðum til að senda peninga þegar OS reikningur er í hættu. Gefur ekkert sérstaka öryggi.</translation>
+    </message>
+    <message>
         <source>Encrypt wallet</source>
         <translation type="unfinished">Dulkóða veski</translation>
     </message>
     <message>
         <source>This operation needs your wallet passphrase to unlock the wallet.</source>
-        <translation type="unfinished">Þessi aðgerð þarf að fá lykilsetninguna þína til að opna veskið.</translation>
+        <translation type="unfinished">Þessi aðgerð þarf veskis lykilorð til að opna veskið.</translation>
     </message>
     <message>
         <source>Unlock wallet</source>
-        <translation type="unfinished">Opna veskið</translation>
+        <translation type="unfinished">Aflæsa veski </translation>
     </message>
     <message>
         <source>Change passphrase</source>
-        <translation type="unfinished">Breyta lykilsetningu</translation>
+        <translation type="unfinished">Breyta um lykilorð </translation>
     </message>
     <message>
         <source>Confirm wallet encryption</source>
-        <translation type="unfinished">Staðfesta dulkóðun veskis</translation>
-    </message>
-    <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITCOINS&lt;/b&gt;!</source>
-        <translation type="unfinished">Viðvörun: Ef þú dulkóðar veskið og týnir lykilsetningunn þá munt þú &lt;b&gt;TAPA ALLRI ÞINNI BITCOIN MYNT&lt;/b&gt;!</translation>
+        <translation type="unfinished">Staðfestu veskis dulkóðun  </translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
-        <translation type="unfinished">Ertu viss um að þú viljir dulkóða veskið þitt?</translation>
+        <translation type="unfinished">Ertu viss um að þú viljir dulkóða veskið þitt ? </translation>
+    </message>
+    <message>
+        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR REDDCOINS&lt;/b&gt;!</source>
+        <translation type="unfinished">Viðvörun: Ef þú dulkóða veskið þitt og tapar lykilorð þínu, munt þú &lt;b&gt; TAPAR ÞÚ ÖLLUM REDDCOINS SEM ÞÚ ÁTT &lt;/ b&gt;!</translation>
     </message>
     <message>
         <source>Wallet encrypted</source>
-        <translation type="unfinished">Veski dulkóðað</translation>
-    </message>
-    <message>
-        <source>Wallet to be encrypted</source>
-        <translation type="unfinished">Veski sem á að dulkóða</translation>
+        <translation type="unfinished">Veskið er dulkóðað</translation>
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. For security reasons, previous backups of the unencrypted wallet file will become useless as soon as you start using the new, encrypted wallet.</source>
-        <translation type="unfinished">MIKILVÆGT: Nýja dulkóðaða veskisskráin þarf að koma í staðinn fyrir öll fyrri afrit sem þú hefur gert af upprunalegu veskisskránni. Af öryggisástæðum munu öll fyrri afrit af ódulkóðaða veskinu verða óvirk um leið og þú byrjar að nota nýja, dulkóðaða veskið.</translation>
+        <translation type="unfinished">MIKILVÆGT: Öll fyrri afrit sem þú hefur gert af veskinu þínu áður ætti að vera skipt út með nýlega mynduðu, dulkóðuðum af veskis skrám. Af öryggisástæðum, fyrri afrit af ódulrituð veskisins skrám verða gagnslaus um leið og þú byrjar að nota nýja dulritaða veski.</translation>
     </message>
     <message>
         <source>Wallet encryption failed</source>
@@ -170,45 +169,46 @@
     </message>
     <message>
         <source>Wallet encryption failed due to an internal error. Your wallet was not encrypted.</source>
-        <translation type="unfinished">Dulkóðun veskis mistóks vegna innri villu. Veskið þitt var ekki dulkóðað.</translation>
+        <translation type="unfinished">Veski dulkóðun mistókst vegna innri villu. Veskið þitt var ekki dulkóðað.</translation>
     </message>
     <message>
         <source>The supplied passphrases do not match.</source>
-        <translation type="unfinished">Lykilsetningarnar eru ekki þær sömu.</translation>
+        <translation type="unfinished">Meðfylgjandi lykilorð passar ekki.</translation>
     </message>
     <message>
         <source>Wallet unlock failed</source>
-        <translation type="unfinished">Ekki tókst að opna veskið</translation>
+        <translation type="unfinished">Það mistókst að aflæsa veskinu </translation>
     </message>
     <message>
         <source>The passphrase entered for the wallet decryption was incorrect.</source>
-        <translation type="unfinished">Lykilsetningin sem notuð var til að dulráða veskið var ekki rétt.</translation>
+        <translation type="unfinished">Lykilorðið sem var slegið inn til að afkóða veskið var rangt.</translation>
     </message>
     <message>
         <source>Wallet passphrase was successfully changed.</source>
-        <translation type="unfinished">Það tókst að breyta lykilsetningu veskis.</translation>
+        <translation type="unfinished">Lykilorði veskis var breytt.</translation>
     </message>
     <message>
         <source>Warning: The Caps Lock key is on!</source>
-        <translation type="unfinished">Viðvörun: Kveikt er á HÁSTÖFUM!</translation>
-    </message>
-</context>
-<context>
-    <name>BanTableModel</name>
-    <message>
-        <source>IP/Netmask</source>
-        <translation type="unfinished">IP/Netgríma</translation>
-    </message>
-    <message>
-        <source>Banned Until</source>
-        <translation type="unfinished">Bannað til</translation>
+        <translation type="unfinished">Viðvörun: Þú ert með stillt á  Caps Lock!</translation>
     </message>
 </context>
 <context>
     <name>QObject</name>
     <message>
+        <source>Error: Specified data directory "%1" does not exist.</source>
+        <translation type="unfinished">Villa: Valin gagna mappa ''%1'' er ekki til.</translation>
+    </message>
+    <message>
+        <source>unknown</source>
+        <translation type="unfinished">óþekkt </translation>
+    </message>
+    <message>
         <source>Amount</source>
-        <translation type="unfinished">Upphæð</translation>
+        <translation type="unfinished">upphæð </translation>
+    </message>
+    <message>
+        <source>N/A</source>
+        <translation type="unfinished">Á.E.V </translation>
     </message>
     <message numerus="yes">
         <source>%n second(s)</source>
@@ -227,22 +227,22 @@
     <message numerus="yes">
         <source>%n hour(s)</source>
         <translation type="unfinished">
-            <numerusform />
-            <numerusform />
+            <numerusform>%n klukkustundir </numerusform>
+            <numerusform>%n klukkustundir </numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source>%n day(s)</source>
         <translation type="unfinished">
-            <numerusform />
-            <numerusform />
+            <numerusform>%n dagar </numerusform>
+            <numerusform>%n dagar </numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source>%n week(s)</source>
         <translation type="unfinished">
-            <numerusform />
-            <numerusform />
+            <numerusform>%n vikur </numerusform>
+            <numerusform>%n vikur </numerusform>
         </translation>
     </message>
     <message numerus="yes">
@@ -264,6 +264,14 @@
         <translation>Sýna almennt yfirlit af veski</translation>
     </message>
     <message>
+        <source>Send coins to a Reddcoin address</source>
+        <translation type="unfinished">Senda mynt í Reddcoin færslugildi</translation>
+    </message>
+    <message>
+        <source>Request payments (generates QR codes and reddcoin: URIs)</source>
+        <translation type="unfinished">Fara fram á greiðslu (Býr til QR kóða og reddcoin: URIs)</translation>
+    </message>
+    <message>
         <source>&amp;Transactions</source>
         <translation>&amp;Færslur</translation>
     </message>
@@ -280,14 +288,6 @@
         <translation>Hætta í forriti</translation>
     </message>
     <message>
-        <source>&amp;About %1</source>
-        <translation type="unfinished">&amp;Um %1</translation>
-    </message>
-    <message>
-        <source>Show information about %1</source>
-        <translation type="unfinished">Sýna upplýsingar um %1</translation>
-    </message>
-    <message>
         <source>About &amp;Qt</source>
         <translation>Um &amp;Qt</translation>
     </message>
@@ -296,17 +296,20 @@
         <translation>Sýna upplýsingar um Qt</translation>
     </message>
     <message>
-        <source>Modify configuration options for %1</source>
-        <translation type="unfinished">Breyta samstillingum fyrir %1</translation>
+        <source>Sign messages with your Reddcoin addresses to prove you own them</source>
+        <translation type="unfinished">Kvitta undir skilaboð með Reddcoin færslugildunum þínum til að sanna að þú eigir þau</translation>
     </message>
     <message>
-        <source>Network activity disabled.</source>
+        <source>Verify messages to ensure they were signed with specified Reddcoin addresses</source>
+        <translation type="unfinished">Yfirfara skilaboð til að tryggja að kvittað hafi verið fyrir þau með tilteknum Reddcoin færslugildum</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n active connection(s) to Reddcoin network.</source>
         <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">Slökkt á netumferð.</translation>
-    </message>
-    <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Senda mynt í Bitcoin færslugildi</translation>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -337,14 +340,6 @@
         <translation>Dulkóða einkalyklana sem tilheyra veskinu þínu</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation>Kvitta undir skilaboð með Bitcoin færslugildunum þínum til að sanna að þú eigir þau</translation>
-    </message>
-    <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation>Yfirfara skilaboð til að tryggja að kvittað hafi verið fyrir þau með tilteknum Bitcoin færslugildum</translation>
-    </message>
-    <message>
         <source>&amp;File</source>
         <translation>&amp;Skrá</translation>
     </message>
@@ -361,20 +356,16 @@
         <translation>Tólaborð flipa</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation type="unfinished">Óska eftir greiðslum (býr til QR kóða og bitcoin: URI)</translation>
-    </message>
-    <message>
         <source>Show the list of used sending addresses and labels</source>
-        <translation type="unfinished">Sýna lista yfir færslugildi sem notuð hafa verið til sendingar og merkingar þeirra</translation>
+        <translation type="unfinished">Sýna lista með áður notuðum reikningsnúmerum og merkimiðum</translation>
     </message>
     <message>
         <source>Show the list of used receiving addresses and labels</source>
-        <translation type="unfinished">Sýna færslugildi sem notuð hafa verið til að taka við mynt og merkingar þeirra</translation>
+        <translation type="unfinished">Sýna lista með notuðum mótteknum reikningsnúmerum og merkimiðum  </translation>
     </message>
     <message>
         <source>&amp;Command-line options</source>
-        <translation type="unfinished">&amp;Valkostir skipanalínu</translation>
+        <translation type="unfinished">&amp;Skipunar-línu valmöguleikar </translation>
     </message>
     <message numerus="yes">
         <source>Processed %n block(s) of transaction history.</source>
@@ -412,50 +403,20 @@
         <translation>Uppfært</translation>
     </message>
     <message>
-        <source>Show the %1 help message to get a list with possible Bitcoin command-line options</source>
-        <translation type="unfinished">Sýna %1 hjálparskilaboðin til að fá lista yfir valkosti Bitcoin aðgerðir í skipanalínu</translation>
+        <source>Unlock wallet</source>
+        <translation type="unfinished">Aflæsa veski </translation>
     </message>
     <message>
-        <source>%1 client</source>
-        <translation type="unfinished">%1 biðlarar</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network.</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation type="unfinished">
-            <numerusform />
-            <numerusform />
-        </translation>
+        <source>&amp;Lock Wallet</source>
+        <translation type="unfinished">&amp;Læsa veski </translation>
     </message>
     <message>
-        <source>Date: %1
-</source>
-        <translation type="unfinished">Dagsetning: %1
-</translation>
+        <source>Lock wallet</source>
+        <translation type="unfinished">Læsa veski </translation>
     </message>
     <message>
-        <source>Amount: %1
-</source>
-        <translation type="unfinished">Upphæð: %1
-</translation>
-    </message>
-    <message>
-        <source>Type: %1
-</source>
-        <translation type="unfinished">Tegund: %1
-</translation>
-    </message>
-    <message>
-        <source>Label: %1
-</source>
-        <translation type="unfinished">Merki: %1
-</translation>
-    </message>
-    <message>
-        <source>Address: %1
-</source>
-        <translation type="unfinished">Færslugildi: %1
-</translation>
+        <source>&amp;Window</source>
+        <translation type="unfinished">&amp;Gluggi </translation>
     </message>
     <message>
         <source>Sent transaction</source>
@@ -466,14 +427,6 @@
         <translation>Móttökufærsla</translation>
     </message>
     <message>
-        <source>HD key generation is &lt;b&gt;enabled&lt;/b&gt;</source>
-        <translation type="unfinished">HD lyklagerð er &lt;b&gt;virkjuð&lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>HD key generation is &lt;b&gt;disabled&lt;/b&gt;</source>
-        <translation type="unfinished">HD lyklagerð er &lt;b&gt;óvirk&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
         <translation>Veskið er &lt;b&gt;dulkóðað&lt;/b&gt; og núna &lt;b&gt;ólæst&lt;/b&gt;</translation>
     </message>
@@ -481,20 +434,43 @@
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;locked&lt;/b&gt;</source>
         <translation>Veskið er &lt;b&gt;dulkóðað&lt;/b&gt; and currently &lt;b&gt;locked&lt;/b&gt;</translation>
     </message>
+    <message>
+        <source>Not staking because wallet is locked</source>
+        <translation type="unfinished">Ekki að stafla því veskið er læst </translation>
+    </message>
+    <message>
+        <source>Not staking because wallet is offline</source>
+        <translation type="unfinished">Veskið er ekki að stafla vegna þess að það er ótengt </translation>
+    </message>
+    <message>
+        <source>Not staking because wallet is syncing</source>
+        <translation type="unfinished">Ekki að stafla vegna þess að veskið er að samstilla sig</translation>
+    </message>
+    <message>
+        <source>Not staking because you don't have mature coins</source>
+        <translation type="unfinished">Ekki að stafla vegna þess að þú ert ekki með nógu gamla mynt </translation>
+    </message>
     </context>
 <context>
-    <name>CoinControlDialog</name>
+    <name>LockWalletStatusBarControl</name>
     <message>
-        <source>Coin Selection</source>
-        <translation type="unfinished">Myntval</translation>
+        <source>Lock wallet</source>
+        <translation type="unfinished">Læsa veski </translation>
     </message>
+    <message>
+        <source>Unlock wallet</source>
+        <translation type="unfinished">Aflæsa veski </translation>
+    </message>
+</context>
+<context>
+    <name>CoinControlDialog</name>
     <message>
         <source>Quantity:</source>
         <translation type="unfinished">Magn:</translation>
     </message>
     <message>
         <source>Bytes:</source>
-        <translation type="unfinished">Bæti:</translation>
+        <translation type="unfinished">Bútar: </translation>
     </message>
     <message>
         <source>Amount:</source>
@@ -502,19 +478,15 @@
     </message>
     <message>
         <source>Fee:</source>
-        <translation type="unfinished">Gjald:</translation>
-    </message>
-    <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Ryk:</translation>
+        <translation type="unfinished">Gjald: </translation>
     </message>
     <message>
         <source>After Fee:</source>
-        <translation type="unfinished">Eftirgjald:</translation>
+        <translation type="unfinished">Eftir á gjald:</translation>
     </message>
     <message>
         <source>Change:</source>
-        <translation type="unfinished">Skiptimynt:</translation>
+        <translation type="unfinished">Breyting: </translation>
     </message>
     <message>
         <source>(un)select all</source>
@@ -522,38 +494,82 @@
     </message>
     <message>
         <source>Tree mode</source>
-        <translation type="unfinished">Hrísluhamur</translation>
+        <translation type="unfinished">Tré stilling </translation>
     </message>
     <message>
         <source>List mode</source>
-        <translation type="unfinished">Listahamur</translation>
+        <translation type="unfinished">Lista hamur</translation>
     </message>
     <message>
         <source>Amount</source>
-        <translation type="unfinished">Upphæð</translation>
+        <translation type="unfinished">upphæð </translation>
     </message>
     <message>
-        <source>Received with label</source>
-        <translation type="unfinished">Móttekið með merkingu</translation>
+        <source>Date</source>
+        <translation type="unfinished">Dagsetning </translation>
     </message>
     <message>
-        <source>Received with address</source>
-        <translation type="unfinished">Móttekið með færslugildi</translation>
+        <source>Confirmations</source>
+        <translation type="unfinished">Staðfestingar </translation>
     </message>
     <message>
-        <source>This label turns red if any recipient receives an amount smaller than the current dust threshold.</source>
-        <translation type="unfinished">Þetta merki verður rautt ef einhver viðtakandi tekur við upphæð sem er lægri en núgildandi þröskuldur.</translation>
+        <source>Confirmed</source>
+        <translation type="unfinished">Staðfest </translation>
+    </message>
+    <message>
+        <source>Copy amount</source>
+        <translation type="unfinished">Afrita upphæð </translation>
+    </message>
+    <message>
+        <source>Copy quantity</source>
+        <translation type="unfinished">Afrita magn </translation>
+    </message>
+    <message>
+        <source>Copy fee</source>
+        <translation type="unfinished">Afrita gjald</translation>
+    </message>
+    <message>
+        <source>Copy after fee</source>
+        <translation type="unfinished">Afrita eftir gjald</translation>
+    </message>
+    <message>
+        <source>Copy bytes</source>
+        <translation type="unfinished">Afrita bit </translation>
+    </message>
+    <message>
+        <source>Copy change</source>
+        <translation type="unfinished">Afrita breytingar </translation>
+    </message>
+    <message>
+        <source>(%1 locked)</source>
+        <translation type="unfinished">(%1 læst)</translation>
+    </message>
+    <message>
+        <source>yes</source>
+        <translation type="unfinished">já </translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation type="unfinished">nei </translation>
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(engin merking)</translation>
+        <translation type="unfinished">(ekkert merki)</translation>
     </message>
-    </context>
+    <message>
+        <source>change from %1 (%2)</source>
+        <translation type="unfinished">breyta frá %1(%2)</translation>
+    </message>
+    <message>
+        <source>(change)</source>
+        <translation type="unfinished">(breyta)</translation>
+    </message>
+</context>
 <context>
     <name>CreateWalletDialog</name>
     <message>
         <source>Wallet</source>
-        <translation type="unfinished">Veski</translation>
+        <translation type="unfinished">Veski </translation>
     </message>
     </context>
 <context>
@@ -568,11 +584,11 @@
     </message>
     <message>
         <source>The label associated with this address list entry</source>
-        <translation type="unfinished">Merking tengd þessu færslugildi</translation>
+        <translation type="unfinished">Merkimiðinn er í tengslum við þetta netfang er á lista yfir færslum</translation>
     </message>
     <message>
         <source>The address associated with this address list entry. This can only be modified for sending addresses.</source>
-        <translation type="unfinished">Færslugildið sem tengt er þessari færslu. Þessu má einungis breyta þegar sent er.</translation>
+        <translation type="unfinished">Reikningurinn er í tengslum við þessa reikningstengingar skírslu. Getur aðeins verið notaður við reikningsnúmers sendingar.</translation>
     </message>
     <message>
         <source>&amp;Address</source>
@@ -580,21 +596,52 @@
     </message>
     <message>
         <source>New sending address</source>
-        <translation type="unfinished">Nýtt sendingarfærslugildi</translation>
+        <translation type="unfinished">Nýr út reikningur </translation>
     </message>
     <message>
         <source>Edit receiving address</source>
-        <translation type="unfinished">Breyta móttökufærslugildi</translation>
+        <translation type="unfinished">Bæta við innlögn reikning </translation>
     </message>
     <message>
         <source>Edit sending address</source>
-        <translation type="unfinished">Breyta sendingarfærslugildi</translation>
+        <translation type="unfinished">Bæta við út reikning </translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Bitcoin address.</source>
-        <translation type="unfinished">Færslugildið sem slegið var inn "%1" er ekki leyfilegt Bitcoin færslugildi.</translation>
+        <source>Could not unlock wallet.</source>
+        <translation type="unfinished">Gat ekki opnað veski .</translation>
     </message>
-    </context>
+    <message>
+        <source>The entered address "%1" is not a valid Reddcoin address.</source>
+        <translation type="unfinished">Inn slegið reikningsnúmer ''%1'' er ekki gilt Reddcoin reiknisnúmer.</translation>
+    </message>
+    <message>
+        <source>New key generation failed.</source>
+        <translation type="unfinished">Mistókst að búa til nýjan lykil. </translation>
+    </message>
+</context>
+<context>
+    <name>FreespaceChecker</name>
+    <message>
+        <source>A new data directory will be created.</source>
+        <translation>Ný gagna mappa verður búinn til. </translation>
+    </message>
+    <message>
+        <source>name</source>
+        <translation>nafn </translation>
+    </message>
+    <message>
+        <source>Directory already exists. Add %1 if you intend to create a new directory here.</source>
+        <translation>Skrá er þegar til. Bæta við %1 ef þú ætlar að búa til nýja möppu hér.</translation>
+    </message>
+    <message>
+        <source>Path already exists, and is not a directory.</source>
+        <translation>Slóðin er þegar til, og er ekki í stjórnmöppunni.</translation>
+    </message>
+    <message>
+        <source>Cannot create data directory here.</source>
+        <translation>Ekki er hægt að búa til nýja gagna möppu hérna. </translation>
+    </message>
+</context>
 <context>
     <name>Intro</name>
     <message numerus="yes">
@@ -609,12 +656,82 @@
         <source>Error</source>
         <translation>Villa</translation>
     </message>
+    <message>
+        <source>Welcome</source>
+        <translation>Velkomin </translation>
+    </message>
+    <message>
+        <source>Use the default data directory</source>
+        <translation>Nota sjálfgefna gagnamöppu</translation>
+    </message>
+    <message>
+        <source>Use a custom data directory:</source>
+        <translation>Nota sérsniða gagnamöppu:</translation>
+    </message>
+</context>
+<context>
+    <name>HelpMessageDialog</name>
+    <message>
+        <source>version</source>
+        <translation type="unfinished">Útgáfa </translation>
+    </message>
+    </context>
+<context>
+    <name>ShutdownWindow</name>
+    <message>
+        <source>Do not shut down the computer until this window disappears.</source>
+        <translation type="unfinished">Ekki slökkva á tölvunni fyrr en þess gluggi hverfur.</translation>
+    </message>
+</context>
+<context>
+    <name>MintingTableModel</name>
+    <message>
+        <source>Transaction</source>
+        <translation type="unfinished">Millifærsla </translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation type="unfinished">Reikningsnúmer </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform>%n klukkustundir </numerusform>
+            <numerusform>%n klukkustundir </numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform>%n dagar </numerusform>
+            <numerusform>%n dagar </numerusform>
+        </translation>
+    </message>
+    </context>
+<context>
+    <name>MintingView</name>
+    <message>
+        <source>Copy address</source>
+        <translation type="unfinished">Afrita reikningsnúmer </translation>
+    </message>
+    <message>
+        <source>Comma separated file (*.csv)</source>
+        <translation type="unfinished">Komma aðskilur möppu (*.csv)</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation type="unfinished">Reikningsnúmer </translation>
+    </message>
+    <message>
+        <source>Transaction</source>
+        <translation type="unfinished">Millifærsla </translation>
+    </message>
     </context>
 <context>
     <name>ModalOverlay</name>
     <message>
-        <source>Number of blocks left</source>
-        <translation type="unfinished">Fjöldi blokka sem eftir eru</translation>
+        <source>Form</source>
+        <translation type="unfinished">Form </translation>
     </message>
     <message>
         <source>Last block time</source>
@@ -624,16 +741,124 @@
 <context>
     <name>OptionsDialog</name>
     <message>
-        <source>IP address of the proxy (e.g. IPv4: 127.0.0.1 / IPv6: ::1)</source>
-        <translation type="unfinished">IP tala staðgengils (t.d. IPv4: 127.0.0.1 / IPv6: ::1)</translation>
+        <source>Options</source>
+        <translation>Valmöguleikar </translation>
     </message>
     <message>
-        <source>Third party URLs (e.g. a block explorer) that appear in the transactions tab as context menu items. %s in the URL is replaced by transaction hash. Multiple URLs are separated by vertical bar |.</source>
-        <translation type="unfinished">URL frá þriðja aðila (t.d. blokkarskoðari) sem birtast í færsluflipanum sem samhengisatriði. %s í URL-inu skipt út fyrir færslutvíkross. Mörg URL eru aðskilin með lóðréttu striki |.</translation>
+        <source>&amp;Main</source>
+        <translation>&amp;Aðal</translation>
+    </message>
+    <message>
+        <source>Size of &amp;database cache</source>
+        <translation type="unfinished">Stærð &amp;gagnamagns í skyndiminni </translation>
+    </message>
+    <message>
+        <source>Number of script &amp;verification threads</source>
+        <translation type="unfinished">Fjöldi handrita  &amp;skráðum þráðum </translation>
+    </message>
+    <message>
+        <source>Automatically open the Reddcoin client port on the router. This only works when your router supports UPnP and it is enabled.</source>
+        <translation type="unfinished">Opna sjálfkrafa Reddcoin þjónustugátt við router.Opna sjálfkrafa Reddcoin þjónustustjóra gátt í router. Þetta virkar bara þegar leið þín styður UPnP og er þegar virkt.</translation>
+    </message>
+    <message>
+        <source>IP address of the proxy (e.g. IPv4: 127.0.0.1 / IPv6: ::1)</source>
+        <translation type="unfinished">IP heimilisfang hjá proxy (e.g. IPv4: 127.0.0.1 / IPv6: ::1)</translation>
+    </message>
+    <message>
+        <source>Reset all client options to default.</source>
+        <translation>Endurstilla allar notenda möguleika á sjálfgefið.</translation>
+    </message>
+    <message>
+        <source>&amp;Reset Options</source>
+        <translation>&amp;Endurstilla valmöguleika </translation>
+    </message>
+    <message>
+        <source>&amp;Network</source>
+        <translation>&amp;Netkerfi </translation>
+    </message>
+    <message>
+        <source>W&amp;allet</source>
+        <translation type="unfinished">V&amp;eski </translation>
+    </message>
+    <message>
+        <source>If you disable the spending of unconfirmed change, the change from a transaction cannot be used until that transaction has at least one confirmation. This also affects how your balance is computed.</source>
+        <translation type="unfinished">Ef þú óvirkir útgjaldalið af ó staðfestri breytingu, þá er ekki hægt að nota breytingu frá millifærslu fyrr en millifærslan hefur fengið að minsta kosti eina staðfestingu.Þetta hefur einnig áhrif á stöðu reikning þíns.</translation>
+    </message>
+    <message>
+        <source>Map port using &amp;UPnP</source>
+        <translation>Korta tengi sem notar &amp;UPnP</translation>
+    </message>
+    <message>
+        <source>&amp;Port:</source>
+        <translation>&amp;Tengi:</translation>
+    </message>
+    <message>
+        <source>Port of the proxy (e.g. 9050)</source>
+        <translation>Tengi af proxy (e.g. 9050)</translation>
+    </message>
+    <message>
+        <source>&amp;Window</source>
+        <translation>&amp;Gluggi </translation>
+    </message>
+    <message>
+        <source>Show only a tray icon after minimizing the window.</source>
+        <translation>Aðeins sýna icon eftir að gluggi hefur verið lagður niður .</translation>
+    </message>
+    <message>
+        <source>&amp;Minimize to the tray instead of the taskbar</source>
+        <translation>&amp;Leggja glugga niður í traybar í staðinn fyrir taskbar </translation>
+    </message>
+    <message>
+        <source>M&amp;inimize on close</source>
+        <translation>L&amp;ágmarka við lokun </translation>
+    </message>
+    <message>
+        <source>&amp;Display</source>
+        <translation>&amp;Birta </translation>
+    </message>
+    <message>
+        <source>User Interface &amp;language:</source>
+        <translation>Notanda viðmót  &amp;tungumál:</translation>
+    </message>
+    <message>
+        <source>&amp;Unit to show amounts in:</source>
+        <translation>&amp;Eining til að sýna fjárhæðir í:</translation>
+    </message>
+    <message>
+        <source>Choose the default subdivision unit to show in the interface and when sending coins.</source>
+        <translation>Veldu sjálfgefna sjálfstjórnareiningu til að sýna í tengiborði þegar þú sendir mynt.</translation>
+    </message>
+    <message>
+        <source>Whether to show coin control features or not.</source>
+        <translation type="unfinished">Hvort eigi að sýna mynt stjórnunar aðgerðir eða ekki.</translation>
+    </message>
+    <message>
+        <source>&amp;Cancel</source>
+        <translation>&amp;Hætta við </translation>
+    </message>
+    <message>
+        <source>default</source>
+        <translation>sjálfgefið</translation>
+    </message>
+    <message>
+        <source>none</source>
+        <translation type="unfinished">ekkert</translation>
+    </message>
+    <message>
+        <source>Confirm options reset</source>
+        <translation>Staðfesta endurstillingar valmöguleika </translation>
+    </message>
+    <message>
+        <source>Client restart required to activate changes.</source>
+        <translation type="unfinished">Notandi verður að endurræsa forritið til að virkja breytingar. </translation>
     </message>
     <message>
         <source>Error</source>
         <translation type="unfinished">Villa</translation>
+    </message>
+    <message>
+        <source>This change would require a client restart.</source>
+        <translation type="unfinished">Þessar breytingar krefjast endurræsingu forritsins. </translation>
     </message>
     <message>
         <source>The supplied proxy address is invalid.</source>
@@ -643,69 +868,277 @@
 <context>
     <name>OverviewPage</name>
     <message>
+        <source>Form</source>
+        <translation>Form </translation>
+    </message>
+    <message>
+        <source>Your current spendable balance</source>
+        <translation>Núverandi staða reiknings </translation>
+    </message>
+    <message>
+        <source>Total of transactions that have yet to be confirmed, and do not yet count toward the spendable balance</source>
+        <translation>Heildarfjöldi millifærsla sem enn hafa ekki verið staðfestar, og eru ekki enn komnar með traust til að sýna útgjalda jafnvægi</translation>
+    </message>
+    <message>
+        <source>Immature:</source>
+        <translation>Ó tímabær :</translation>
+    </message>
+    <message>
         <source>Mined balance that has not yet matured</source>
         <translation>Námuunnin innistæða sem hefur enn ekki komið fram</translation>
     </message>
     <message>
-        <source>Your current balance in watch-only addresses</source>
-        <translation type="unfinished">Innistæða færslugilda sem eru einungis til skoðunar</translation>
+        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Reddcoin network after a connection is established, but this process has not completed yet.</source>
+        <translation type="unfinished">Uppgefnar upplýsingar gætu verið úreldar. Veskið þitt mun sjálfkrafa samstillast Reddcoin netkerfinu eftir að net tengingu hefur verið komið á, en þetta ferli hefur ekki klárast nú þegar.</translation>
     </message>
     <message>
-        <source>Unconfirmed transactions to watch-only addresses</source>
-        <translation type="unfinished">Óstaðfestar færslur til færslugilda sem eru einungis til skoðunar</translation>
+        <source>Total:</source>
+        <translation>Heildar:</translation>
     </message>
     <message>
-        <source>Mined balance in watch-only addresses that has not yet matured</source>
-        <translation type="unfinished">Námuunnin innistæða á færslugildum sem eru einungis til skoðunar og hafa ekki komið fram</translation>
-    </message>
-    <message>
-        <source>Current total balance in watch-only addresses</source>
-        <translation type="unfinished">Innistæða á færslugildum sem eru einungis til skoðunar</translation>
+        <source>Your current total balance</source>
+        <translation> Heildar staða þín á reikningi  </translation>
     </message>
     </context>
+<context>
+    <name>PSBTOperationsDialog</name>
+    <message>
+        <source>or</source>
+        <translation type="unfinished">eða </translation>
+    </message>
+    </context>
+<context>
+    <name>PaymentServer</name>
+    <message>
+        <source>Payment request error</source>
+        <translation type="unfinished">Greiðslubeiðni innihélt villu </translation>
+    </message>
+    <message>
+        <source>Cannot start reddcoin: click-to-pay handler</source>
+        <translation type="unfinished">Get ekki ræst reddcoin: click-to-pay handler</translation>
+    </message>
+    <message>
+        <source>URI handling</source>
+        <translation type="unfinished">URI stjórnun  </translation>
+    </message>
+    <message>
+        <source>Payment request file handling</source>
+        <translation type="unfinished">Greiðslubeiðnis skrá meðhöndluð </translation>
+    </message>
+</context>
 <context>
     <name>PeerTableModel</name>
     <message>
         <source>Address</source>
         <extracomment>Title of Peers Table column which contains the IP/Onion/I2P address of the connected peer.</extracomment>
-        <translation type="unfinished">Færslugildi</translation>
+        <translation type="unfinished">Reikningsnúmer </translation>
     </message>
-    </context>
+    <message>
+        <source>Type</source>
+        <extracomment>Title of Peers Table column which describes the type of peer connection. The "type" describes why the connection exists.</extracomment>
+        <translation type="unfinished">Týpa </translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <extracomment>Title of Peers Table column which states the network the peer connected through.</extracomment>
+        <translation type="unfinished">Netkerfi </translation>
+    </message>
+</context>
 <context>
     <name>QRImageWidget</name>
     <message>
+        <source>&amp;Copy Image</source>
+        <translation type="unfinished">&amp;Afrita mynd </translation>
+    </message>
+    <message>
         <source>Resulting URI too long, try to reduce the text for label / message.</source>
-        <translation type="unfinished">URI varð of langt, reyndu að minnka texta í merki / skilaboðum.</translation>
+        <translation type="unfinished">Innslegið URI er of langt, reyndu að minnka textann fyrir merkimiðann / skilaboðið.</translation>
+    </message>
+    <message>
+        <source>Error encoding URI into QR Code.</source>
+        <translation type="unfinished">Villa við kóðun URI inn  í QR kóðann.</translation>
+    </message>
+    <message>
+        <source>Save QR Code</source>
+        <translation type="unfinished">Vista QR kóða </translation>
     </message>
     </context>
 <context>
     <name>RPCConsole</name>
     <message>
+        <source>N/A</source>
+        <translation>Á.E.V </translation>
+    </message>
+    <message>
+        <source>Client version</source>
+        <translation>Notanda útgáfa </translation>
+    </message>
+    <message>
+        <source>&amp;Information</source>
+        <translation>&amp;Upplýsingar </translation>
+    </message>
+    <message>
+        <source>Startup time</source>
+        <translation> Ræsingar tími </translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>Netkerfi </translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation type="unfinished">Nafn </translation>
+    </message>
+    <message>
+        <source>Number of connections</source>
+        <translation>Fjöldi tenginga </translation>
+    </message>
+    <message>
         <source>Block chain</source>
         <translation>Blokkarkeðja</translation>
     </message>
     <message>
-        <source>Starting Block</source>
-        <translation type="unfinished">Upphafsblokk</translation>
-    </message>
-    <message>
-        <source>Synced Blocks</source>
-        <translation type="unfinished">Samhæfðar blokkir</translation>
+        <source>Wallet</source>
+        <translation type="unfinished">Veski </translation>
     </message>
     <message>
         <source>Last block time</source>
         <translation>Tími síðustu blokkar</translation>
     </message>
+    <message>
+        <source>&amp;Open</source>
+        <translation>&amp;Opna </translation>
+    </message>
+    <message>
+        <source>&amp;Console</source>
+        <translation>&amp;Stjórnborð </translation>
+    </message>
+    <message>
+        <source>&amp;Network Traffic</source>
+        <translation type="unfinished">&amp;Netkerfis umferð </translation>
+    </message>
+    <message>
+        <source>Totals</source>
+        <translation type="unfinished">Heildar </translation>
+    </message>
+    <message>
+        <source>Debug log file</source>
+        <translation>Af villu skráningar mappa</translation>
+    </message>
+    <message>
+        <source>Clear console</source>
+        <translation>Hreinsa stjórnborð</translation>
+    </message>
+    <message>
+        <source>In:</source>
+        <translation type="unfinished">Inn:</translation>
+    </message>
+    <message>
+        <source>Out:</source>
+        <translation type="unfinished">Út:</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation type="unfinished">
+            <numerusform />
+            <numerusform />
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform>%n klukkustundir </numerusform>
+            <numerusform>%n klukkustundir </numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform>%n dagar </numerusform>
+            <numerusform>%n dagar </numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>To</source>
+        <translation type="unfinished">Til </translation>
+    </message>
+    <message>
+        <source>From</source>
+        <translation type="unfinished">Frá </translation>
+    </message>
     </context>
 <context>
     <name>ReceiveCoinsDialog</name>
+    <message>
+        <source>&amp;Amount:</source>
+        <translation type="unfinished">&amp;upphæð:</translation>
+    </message>
     <message>
         <source>&amp;Label:</source>
         <translation type="unfinished">&amp;Merki:</translation>
     </message>
     <message>
+        <source>&amp;Message:</source>
+        <translation type="unfinished">&amp;Skilaboð:</translation>
+    </message>
+    <message>
         <source>An optional label to associate with the new receiving address.</source>
-        <translation type="unfinished">Valfrjálst merki sem tengist nýju móttökufærslutölunni.</translation>
+        <translation type="unfinished">Valfrjáls minnismiði til að tengja við nýtt fengið reikningsnúmer.</translation>
+    </message>
+    <message>
+        <source>Use this form to request payments. All fields are &lt;b&gt;optional&lt;/b&gt;.</source>
+        <translation type="unfinished">Nota þetta form til að biðja um greiðslur. Öll svæði eru &lt;b&gt;valfrjáls&lt;/b&gt;.</translation>
+    </message>
+    <message>
+        <source>An optional amount to request. Leave this empty or zero to not request a specific amount.</source>
+        <translation type="unfinished">Valfrjáls upphæð til að biðja um. Hafðu þennan glugga tóman eða á núll til að óska ekki ​​eftir ákveðna upphæð.</translation>
+    </message>
+    <message>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Reddcoin network.</source>
+        <translation type="unfinished">Valfrjáls skilaboð til að festa við greiðslubeiðnina, sem verður sýnilegt þegar beiðnin er opnuð . Ath: Þessi skilaboð munu ekki vera send með greiðslu yfir Reddcoin netkerfið.</translation>
+    </message>
+    <message>
+        <source>Clear all fields of the form.</source>
+        <translation type="unfinished">Hreinsa öll svið af þessu formi.</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation type="unfinished">Hreinsa </translation>
+    </message>
+    <message>
+        <source>Requested payments history</source>
+        <translation type="unfinished">Fara fram á greiðslu sögu </translation>
+    </message>
+    <message>
+        <source>Show the selected request (does the same as double clicking an entry)</source>
+        <translation type="unfinished">Sýna valda beiðni ( gerir það sama og ef tví klikkað er á færsluna)</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation type="unfinished">Sýna </translation>
+    </message>
+    <message>
+        <source>Remove the selected entries from the list</source>
+        <translation type="unfinished">Eyða út valdar færslur af listanum </translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation type="unfinished">Eyða út </translation>
+    </message>
+    <message>
+        <source>Copy &amp;URI</source>
+        <translation type="unfinished">Afrita &amp;URI</translation>
+    </message>
+    <message>
+        <source>Could not unlock wallet.</source>
+        <translation type="unfinished">Gat ekki opnað veski .</translation>
     </message>
     </context>
 <context>
@@ -714,27 +1147,75 @@
         <source>Amount:</source>
         <translation type="unfinished">Upphæð:</translation>
     </message>
-    </context>
+    <message>
+        <source>Message:</source>
+        <translation type="unfinished">Skilaboð:</translation>
+    </message>
+    <message>
+        <source>Copy &amp;URI</source>
+        <translation type="unfinished">Afrita &amp;URI</translation>
+    </message>
+    <message>
+        <source>Copy &amp;Address</source>
+        <translation type="unfinished">Afrita &amp;reiknings númer </translation>
+    </message>
+    <message>
+        <source>Payment information</source>
+        <translation type="unfinished">Greiðslu upplýsingar </translation>
+    </message>
+    <message>
+        <source>Request payment to %1</source>
+        <translation type="unfinished">Fara fram á greiðslu upp að %1</translation>
+    </message>
+</context>
 <context>
     <name>RecentRequestsTableModel</name>
     <message>
+        <source>Date</source>
+        <translation type="unfinished">Dagsetning </translation>
+    </message>
+    <message>
         <source>Label</source>
-        <translation type="unfinished">Merki</translation>
+        <translation type="unfinished">Merkimiði </translation>
+    </message>
+    <message>
+        <source>Message</source>
+        <translation type="unfinished">Skilaboð </translation>
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(engin merking)</translation>
+        <translation type="unfinished">(ekkert merki)</translation>
+    </message>
+    <message>
+        <source>(no message)</source>
+        <translation type="unfinished">(enginn skilaboð)</translation>
     </message>
     </context>
 <context>
     <name>SendCoinsDialog</name>
+    <message>
+        <source>Send Coins</source>
+        <translation>Senda mynt </translation>
+    </message>
+    <message>
+        <source>Coin Control Features</source>
+        <translation type="unfinished">Mynt stjórnunar aðgerðir </translation>
+    </message>
+    <message>
+        <source>automatically selected</source>
+        <translation type="unfinished">Sjálfvalið </translation>
+    </message>
+    <message>
+        <source>Insufficient funds!</source>
+        <translation type="unfinished">Ónógt fármagn!</translation>
+    </message>
     <message>
         <source>Quantity:</source>
         <translation type="unfinished">Magn:</translation>
     </message>
     <message>
         <source>Bytes:</source>
-        <translation type="unfinished">Bæti:</translation>
+        <translation type="unfinished">Bútar: </translation>
     </message>
     <message>
         <source>Amount:</source>
@@ -742,19 +1223,111 @@
     </message>
     <message>
         <source>Fee:</source>
-        <translation type="unfinished">Gjald:</translation>
+        <translation type="unfinished">Gjald: </translation>
     </message>
     <message>
         <source>After Fee:</source>
-        <translation type="unfinished">Eftirgjald:</translation>
+        <translation type="unfinished">Eftir á gjald:</translation>
     </message>
     <message>
         <source>Change:</source>
-        <translation type="unfinished">Skiptimynt:</translation>
+        <translation type="unfinished">Breyting: </translation>
     </message>
     <message>
-        <source>Dust:</source>
-        <translation type="unfinished">Ryk:</translation>
+        <source>If this is activated, but the change address is empty or invalid, change will be sent to a newly generated address.</source>
+        <translation type="unfinished">Ef þetta er valið, og breyt netfang er tóm eða ógilt, þá verður breyting send á nýlega myndað netfang.</translation>
+    </message>
+    <message>
+        <source>Custom change address</source>
+        <translation type="unfinished">Sérsníða breytingar á netfangi</translation>
+    </message>
+    <message>
+        <source>Send to multiple recipients at once</source>
+        <translation>Senda til margra viðtakenda í einu</translation>
+    </message>
+    <message>
+        <source>Add &amp;Recipient</source>
+        <translation>Bæta við &amp;Viðtakandi</translation>
+    </message>
+    <message>
+        <source>Clear all fields of the form.</source>
+        <translation type="unfinished">Hreinsa öll svið af þessu formi.</translation>
+    </message>
+    <message>
+        <source>Clear &amp;All</source>
+        <translation>Eyða &amp;Öllu</translation>
+    </message>
+    <message>
+        <source>Balance:</source>
+        <translation>Staða: </translation>
+    </message>
+    <message>
+        <source>Confirm the send action</source>
+        <translation>Staðfesta sendingar beiðni </translation>
+    </message>
+    <message>
+        <source>S&amp;end</source>
+        <translation>S&amp;enda </translation>
+    </message>
+    <message>
+        <source>Copy quantity</source>
+        <translation type="unfinished">Afrita magn </translation>
+    </message>
+    <message>
+        <source>Copy amount</source>
+        <translation type="unfinished">Afrita upphæð </translation>
+    </message>
+    <message>
+        <source>Copy fee</source>
+        <translation type="unfinished">Afrita gjald</translation>
+    </message>
+    <message>
+        <source>Copy after fee</source>
+        <translation type="unfinished">Afrita eftir gjald</translation>
+    </message>
+    <message>
+        <source>Copy bytes</source>
+        <translation type="unfinished">Afrita bit </translation>
+    </message>
+    <message>
+        <source>Copy change</source>
+        <translation type="unfinished">Afrita breytingar </translation>
+    </message>
+    <message>
+        <source>%1 to %2</source>
+        <translation type="unfinished">%1 til %2</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to send?</source>
+        <translation type="unfinished">Ertu þú vissum að þú viljir senda?</translation>
+    </message>
+    <message>
+        <source>or</source>
+        <translation type="unfinished">eða </translation>
+    </message>
+    <message>
+        <source>Transaction fee</source>
+        <translation type="unfinished">Millifærslu gjald </translation>
+    </message>
+    <message>
+        <source>Confirm send coins</source>
+        <translation type="unfinished">Staðfesta senda mynt</translation>
+    </message>
+    <message>
+        <source>The amount to pay must be larger than 0.</source>
+        <translation type="unfinished">Upphæðin sem skal borga verður að vera hærri en 0.</translation>
+    </message>
+    <message>
+        <source>The amount exceeds your balance.</source>
+        <translation type="unfinished">Upphæðinn er hærri en inneign þín. </translation>
+    </message>
+    <message>
+        <source>The total exceeds your balance when the %1 transaction fee is included.</source>
+        <translation type="unfinished">Heildarkostnaður er yfir inneign þinni, þegar %1 millifærslu gjald er innifalið.</translation>
+    </message>
+    <message>
+        <source>Transaction creation failed!</source>
+        <translation type="unfinished">Millifærslu gerð mistókst! </translation>
     </message>
     <message numerus="yes">
         <source>Estimated to begin confirmation within %n block(s).</source>
@@ -764,81 +1337,498 @@
         </translation>
     </message>
     <message>
+        <source>Warning: Unknown change address</source>
+        <translation type="unfinished">Viðvörun: Óþekkt breyting á reikningi </translation>
+    </message>
+    <message>
         <source>(no label)</source>
-        <translation type="unfinished">(engin merking)</translation>
+        <translation type="unfinished">(ekkert merki)</translation>
     </message>
 </context>
 <context>
     <name>SendCoinsEntry</name>
     <message>
+        <source>A&amp;mount:</source>
+        <translation>U&amp;pphæð:</translation>
+    </message>
+    <message>
+        <source>Pay &amp;To:</source>
+        <translation>Borga &amp;Til: </translation>
+    </message>
+    <message>
         <source>&amp;Label:</source>
         <translation>&amp;Merki:</translation>
     </message>
-    </context>
+    <message>
+        <source>Choose previously used address</source>
+        <translation type="unfinished">Veldu áður notaðan reikning </translation>
+    </message>
+    <message>
+        <source>Paste address from clipboard</source>
+        <translation>Líma reikning frá klippiborði </translation>
+    </message>
+    <message>
+        <source>Remove this entry</source>
+        <translation type="unfinished">Fjarlægja þessa færslu</translation>
+    </message>
+    <message>
+        <source>Message:</source>
+        <translation type="unfinished">Skilaboð:</translation>
+    </message>
+    <message>
+        <source>A message that was attached to the reddcoin: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Reddcoin network.</source>
+        <translation type="unfinished">Skilaboð sem var fest við reddcoin: URI verður geymt með millifærslunni til viðmiðunar. Ath: Þessi skilaboð munu ekki vera send yfir Reddcoin netið.</translation>
+    </message>
+    <message>
+        <source>Enter a label for this address to add it to the list of used addresses</source>
+        <translation type="unfinished">Sláið inn merkimiða fyrir þennan reikning til að bæta honum á lista yfir notaða reikninga </translation>
+    </message>
+    <message>
+        <source>Pay To:</source>
+        <translation type="unfinished">Borga til:</translation>
+    </message>
+    <message>
+        <source>Memo:</source>
+        <translation type="unfinished">Minnis miði:</translation>
+    </message>
+</context>
+<context>
+    <name>SignVerifyMessageDialog</name>
+    <message>
+        <source>Signatures - Sign / Verify a Message</source>
+        <translation>Undirskriftir - Skrá / Staðfesta skilaboð</translation>
+    </message>
+    <message>
+        <source>&amp;Sign Message</source>
+        <translation>&amp;Skrá skilaboð </translation>
+    </message>
+    <message>
+        <source>Choose previously used address</source>
+        <translation type="unfinished">Veldu áður notaðan reikning </translation>
+    </message>
+    <message>
+        <source>Paste address from clipboard</source>
+        <translation>Líma reikning frá klippiborði </translation>
+    </message>
+    <message>
+        <source>Enter the message you want to sign here</source>
+        <translation>Skrifaðu skilaboðinn sem þú vilt skrá inn hérna</translation>
+    </message>
+    <message>
+        <source>Signature</source>
+        <translation>Undirskrift</translation>
+    </message>
+    <message>
+        <source>Copy the current signature to the system clipboard</source>
+        <translation>Af ritaðu núverandi undirskrift til kerfis klippiborðs </translation>
+    </message>
+    <message>
+        <source>Sign the message to prove you own this Reddcoin address</source>
+        <translation type="unfinished">Ritaðu skilaboðinn til að sanna að þú eigir þennan Reddcoin reikning</translation>
+    </message>
+    <message>
+        <source>Verify the message to ensure it was signed with the specified Reddcoin address</source>
+        <translation type="unfinished">Staðfestu skilaboðinn til að tryggja að þau voru frá réttum Reddcoin reikningi</translation>
+    </message>
+    <message>
+        <source>Sign &amp;Message</source>
+        <translation>Skráðu &amp;Skilaboð </translation>
+    </message>
+    <message>
+        <source>Reset all sign message fields</source>
+        <translation>Endurstilla öll skráð skilaboðasvæði </translation>
+    </message>
+    <message>
+        <source>Clear &amp;All</source>
+        <translation>Eyða &amp;Öllu</translation>
+    </message>
+    <message>
+        <source>&amp;Verify Message</source>
+        <translation>&amp;Staðfesta skilaboð</translation>
+    </message>
+    <message>
+        <source>Verify &amp;Message</source>
+        <translation>Staðfesta &amp;Skilaboð</translation>
+    </message>
+    <message>
+        <source>Reset all verify message fields</source>
+        <translation>Endurstilla öll staðfest skilaboð</translation>
+    </message>
+    <message>
+        <source>Click "Sign Message" to generate signature</source>
+        <translation type="unfinished">Klikkaðu á ''Slá inn skilaboð'' til að búa til undirskrift </translation>
+    </message>
+    <message>
+        <source>The entered address is invalid.</source>
+        <translation type="unfinished">Innslegið reikningsnúmer er rangt. </translation>
+    </message>
+    <message>
+        <source>Please check the address and try again.</source>
+        <translation type="unfinished">Vinsamlegast athugaðu reiknings númerið og reyndu aftur.</translation>
+    </message>
+    <message>
+        <source>The entered address does not refer to a key.</source>
+        <translation type="unfinished">Innslegið reiknisnúmer passar ekki við þekkta lykla.</translation>
+    </message>
+    <message>
+        <source>Wallet unlock was cancelled.</source>
+        <translation type="unfinished">Aflæsing veskis var aflýst.</translation>
+    </message>
+    <message>
+        <source>Private key for the entered address is not available.</source>
+        <translation type="unfinished">Leynilykill fyrir innskráðan reikning er ekki aðgengilegur.</translation>
+    </message>
+    <message>
+        <source>Message signing failed.</source>
+        <translation type="unfinished">Skilaboða skráning mistókst.</translation>
+    </message>
+    <message>
+        <source>Message signed.</source>
+        <translation type="unfinished">Skilaboð skráð. </translation>
+    </message>
+    <message>
+        <source>The signature could not be decoded.</source>
+        <translation type="unfinished">Undirskriftir gat ekki verið afkóðuð.</translation>
+    </message>
+    <message>
+        <source>Please check the signature and try again.</source>
+        <translation type="unfinished">Vinsamlegast athugaðu undirskriftina og reyndu aftur.</translation>
+    </message>
+    <message>
+        <source>The signature did not match the message digest.</source>
+        <translation type="unfinished">Undirskriftin passar ekki við fyrri undirskriftir.</translation>
+    </message>
+    <message>
+        <source>Message verification failed.</source>
+        <translation type="unfinished">Skilaboða staðfesting mistókst. </translation>
+    </message>
+    <message>
+        <source>Message verified.</source>
+        <translation type="unfinished">Skilaboð staðfest. </translation>
+    </message>
+</context>
 <context>
     <name>TransactionDesc</name>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
         <translation>
-            <numerusform />
-            <numerusform />
+            <numerusform>Opinn fyrir %n fleiri blokkir </numerusform>
+            <numerusform>Opinn fyrir %n fleiri blokkir </numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Open until %1</source>
+        <translation type="unfinished">Opið þar til %1</translation>
+    </message>
+    <message>
+        <source>%1/unconfirmed</source>
+        <translation type="unfinished">%1/óstaðfest </translation>
+    </message>
+    <message>
+        <source>%1 confirmations</source>
+        <translation type="unfinished">%1 staðfestingar </translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation type="unfinished">Staða </translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation type="unfinished">Dagsetning </translation>
+    </message>
+    <message>
+        <source>Source</source>
+        <translation type="unfinished">Uppruni </translation>
+    </message>
+    <message>
+        <source>Generated</source>
+        <translation type="unfinished">Mynduð </translation>
+    </message>
+    <message>
+        <source>From</source>
+        <translation type="unfinished">Frá </translation>
+    </message>
+    <message>
+        <source>unknown</source>
+        <translation type="unfinished">óþekkt </translation>
+    </message>
+    <message>
+        <source>To</source>
+        <translation type="unfinished">Til </translation>
+    </message>
+    <message>
+        <source>own address</source>
+        <translation type="unfinished">Eiginn reikningur </translation>
+    </message>
+    <message>
+        <source>label</source>
+        <translation type="unfinished">merkimiði </translation>
+    </message>
+    <message>
+        <source>Credit</source>
+        <translation type="unfinished">Kredit</translation>
     </message>
     <message numerus="yes">
         <source>matures in %n more block(s)</source>
         <translation>
-            <numerusform />
-            <numerusform />
+            <numerusform>Þróast í %n fleiri blokkir </numerusform>
+            <numerusform>Þróast í %n fleiri blokkir </numerusform>
         </translation>
     </message>
     <message>
+        <source>not accepted</source>
+        <translation type="unfinished">Ekki samþykkt</translation>
+    </message>
+    <message>
+        <source>Debit</source>
+        <translation type="unfinished">Debet</translation>
+    </message>
+    <message>
+        <source>Transaction fee</source>
+        <translation type="unfinished">Millifærslu gjald </translation>
+    </message>
+    <message>
+        <source>Net amount</source>
+        <translation type="unfinished">Nettó fjárhæð</translation>
+    </message>
+    <message>
+        <source>Message</source>
+        <translation type="unfinished">Skilaboð </translation>
+    </message>
+    <message>
+        <source>Comment</source>
+        <translation type="unfinished">Athugasemd</translation>
+    </message>
+    <message>
+        <source>Transaction ID</source>
+        <translation type="unfinished">Færslu auðkenni</translation>
+    </message>
+    <message>
+        <source>Merchant</source>
+        <translation type="unfinished">Varningur </translation>
+    </message>
+    <message>
         <source>Generated coins must mature %1 blocks before they can be spent. When you generated this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to "not accepted" and it won't be spendable. This may occasionally happen if another node generates a block within a few seconds of yours.</source>
-        <translation type="unfinished">Fullgerð mynt verður að nýta %1 blokkir. Þegar þú bjóst til þessa blokk, þá var jafnóðum tilkynnt á netinu að hún eigi að bætast við blokkakeðjuna. Ef hún kemst ekki í keðjuna þá mun staða hennar breytast í "ósamþykkt" og ekki verður hægt að nota hana. Þetta gerist annað slagið ef annar hnútpunktur klárar blokk nokkrum sekúndum á undan þinni.</translation>
+        <translation type="unfinished">Búnir til myntir verða að þroskast í %1 blokkir áður en þeim getur verið notaðar. Þegar þú bjóst til þessa blokk, þá voru send út skilaboð á netið um að bæta við blokk í keðjuna. Ef það tekst ekki að koma blokk inn í keðju og ástand hennar breytist í "ekki samþykkt" þá mun blokkin ekki verða nýtanleg.  Þetta getur stundum gerst ef annar tengipunktur býr til blokk innan nokkurra sekúndna frá þinn.</translation>
+    </message>
+    <message>
+        <source>Debug information</source>
+        <translation type="unfinished">Af villa upplýsinganar </translation>
+    </message>
+    <message>
+        <source>Transaction</source>
+        <translation type="unfinished">Millifærsla </translation>
+    </message>
+    <message>
+        <source>Inputs</source>
+        <translation type="unfinished">Inntak</translation>
     </message>
     <message>
         <source>Amount</source>
-        <translation type="unfinished">Upphæð</translation>
+        <translation type="unfinished">upphæð </translation>
+    </message>
+    <message>
+        <source>true</source>
+        <translation type="unfinished">satt</translation>
+    </message>
+    <message>
+        <source>false</source>
+        <translation type="unfinished">rangt </translation>
+    </message>
+</context>
+<context>
+    <name>TransactionDescDialog</name>
+    <message>
+        <source>This pane shows a detailed description of the transaction</source>
+        <translation>Þessi dálkur sýnir nákvæma lýsingu á viðskiptunum</translation>
     </message>
     </context>
 <context>
     <name>TransactionTableModel</name>
     <message>
+        <source>Date</source>
+        <translation type="unfinished">Dagsetning </translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation type="unfinished">Týpa </translation>
+    </message>
+    <message>
         <source>Label</source>
-        <translation type="unfinished">Merki</translation>
+        <translation type="unfinished">Merkimiði </translation>
     </message>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
         <translation>
-            <numerusform />
-            <numerusform />
+            <numerusform>Opinn fyrir %n fleiri blokkir </numerusform>
+            <numerusform>Opinn fyrir %n fleiri blokkir </numerusform>
         </translation>
     </message>
     <message>
-        <source>Mined</source>
-        <translation type="unfinished">Námuunnið</translation>
+        <source>Open until %1</source>
+        <translation type="unfinished">Opið þar til %1</translation>
+    </message>
+    <message>
+        <source>Confirmed (%1 confirmations)</source>
+        <translation type="unfinished">Staðfest (%1 staðfestingum)</translation>
+    </message>
+    <message>
+        <source>Conflicted</source>
+        <translation type="unfinished">Stangast á við </translation>
+    </message>
+    <message>
+        <source>Immature (%1 confirmations, will be available after %2)</source>
+        <translation type="unfinished">Ótímabær (%1 staðfestingar, verða sýnilegar eftir %2)</translation>
+    </message>
+    <message>
+        <source>Generated but not accepted</source>
+        <translation type="unfinished">Búin til enn ekki samþykkt </translation>
+    </message>
+    <message>
+        <source>Received with</source>
+        <translation type="unfinished">Mótekið með </translation>
+    </message>
+    <message>
+        <source>Received from</source>
+        <translation type="unfinished">Mótekið frá </translation>
+    </message>
+    <message>
+        <source>Sent to</source>
+        <translation type="unfinished">Senda til</translation>
+    </message>
+    <message>
+        <source>Payment to yourself</source>
+        <translation type="unfinished">Borgun til þíns sjálfs </translation>
+    </message>
+    <message>
+        <source>(n/a)</source>
+        <translation type="unfinished">(Á.E.V)</translation>
     </message>
     <message>
         <source>(no label)</source>
-        <translation type="unfinished">(engin merking)</translation>
+        <translation type="unfinished">(ekkert merki)</translation>
     </message>
-    </context>
+    <message>
+        <source>Transaction status. Hover over this field to show number of confirmations.</source>
+        <translation type="unfinished">Millifærslu staða. Haltu músar bendi yfir til að sjá fjölda staðfestinga. </translation>
+    </message>
+    <message>
+        <source>Date and time that the transaction was received.</source>
+        <translation type="unfinished">Dagsetning og tími þess er millifærslan var mótekin.</translation>
+    </message>
+    <message>
+        <source>Type of transaction.</source>
+        <translation type="unfinished">Tegund af millifærslu.</translation>
+    </message>
+    <message>
+        <source>Amount removed from or added to balance.</source>
+        <translation type="unfinished">Upphæð færð frá eða bætt á stöðu reiknings .</translation>
+    </message>
+</context>
 <context>
     <name>TransactionView</name>
     <message>
-        <source>Mined</source>
-        <translation type="unfinished">Námuunnið</translation>
+        <source>All</source>
+        <translation type="unfinished">Allt </translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation type="unfinished">Í dag</translation>
+    </message>
+    <message>
+        <source>This week</source>
+        <translation type="unfinished">Þessari viku </translation>
+    </message>
+    <message>
+        <source>This month</source>
+        <translation type="unfinished">Þessum mánuði</translation>
+    </message>
+    <message>
+        <source>Last month</source>
+        <translation type="unfinished">Seinasta mánuði </translation>
+    </message>
+    <message>
+        <source>This year</source>
+        <translation type="unfinished">Þessu ári </translation>
+    </message>
+    <message>
+        <source>Received with</source>
+        <translation type="unfinished">Mótekið með </translation>
+    </message>
+    <message>
+        <source>Sent to</source>
+        <translation type="unfinished">Senda til</translation>
+    </message>
+    <message>
+        <source>To yourself</source>
+        <translation type="unfinished">Til þíns sjálfs </translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation type="unfinished">Aðrir</translation>
+    </message>
+    <message>
+        <source>Min amount</source>
+        <translation type="unfinished">Mín upphæð </translation>
+    </message>
+    <message>
+        <source>Export Transaction History</source>
+        <translation type="unfinished">Útflutnings millifærslu saga </translation>
+    </message>
+    <message>
+        <source>Confirmed</source>
+        <translation type="unfinished">Staðfest </translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation type="unfinished">Dagsetning </translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation type="unfinished">Týpa </translation>
     </message>
     <message>
         <source>Label</source>
-        <translation type="unfinished">Merki</translation>
+        <translation type="unfinished">Merkimiði </translation>
     </message>
     <message>
         <source>Address</source>
-        <translation type="unfinished">Færslugildi</translation>
+        <translation type="unfinished">Reikningsnúmer </translation>
+    </message>
+    <message>
+        <source>ID</source>
+        <translation type="unfinished">Auðkenni </translation>
     </message>
     <message>
         <source>Exporting Failed</source>
-        <translation type="unfinished">Útflutningur tókst ekki</translation>
+        <translation type="unfinished">Útflutningur misfórst</translation>
+    </message>
+    <message>
+        <source>There was an error trying to save the transaction history to %1.</source>
+        <translation type="unfinished">Það varð villa við það að vista millifærslusögu til %1.</translation>
+    </message>
+    <message>
+        <source>Exporting Successful</source>
+        <translation type="unfinished">Útflutningur heppnaðist</translation>
+    </message>
+    <message>
+        <source>The transaction history was successfully saved to %1.</source>
+        <translation type="unfinished">Útflutningssaga var vistuð til %1.</translation>
+    </message>
+    <message>
+        <source>Range:</source>
+        <translation type="unfinished">Tímabil: </translation>
+    </message>
+    <message>
+        <source>to</source>
+        <translation type="unfinished">Til </translation>
+    </message>
+</context>
+<context>
+    <name>WalletModel</name>
+    <message>
+        <source>Send Coins</source>
+        <translation type="unfinished">Senda mynt </translation>
     </message>
     </context>
 <context>
@@ -855,12 +1845,99 @@
         <source>Error</source>
         <translation type="unfinished">Villa</translation>
     </message>
+    <message>
+        <source>Backup Wallet</source>
+        <translation type="unfinished">Öryggisafrit af veski </translation>
+    </message>
+    <message>
+        <source>Backup Failed</source>
+        <translation type="unfinished">Öryggisafrit mistókst </translation>
+    </message>
+    <message>
+        <source>There was an error trying to save the wallet data to %1.</source>
+        <translation type="unfinished">Það varð villa við að vista veskis gögn til %1.</translation>
+    </message>
+    <message>
+        <source>Backup Successful</source>
+        <translation type="unfinished">öryggisafritun tókst </translation>
+    </message>
+    <message>
+        <source>The wallet data was successfully saved to %1.</source>
+        <translation type="unfinished">Veskis gögninn voru vistuð til %1.</translation>
+    </message>
     </context>
 <context>
     <name>bitcoin-core</name>
     <message>
-        <source>Error reading %s! All keys read correctly, but transaction data or address book entries might be missing or incorrect.</source>
-        <translation type="unfinished">Villa við lestur %s! Allir lyklar fóru inn á réttan hátt, en færslugögn eða færslugildi gætu verið röng eða horfin.</translation>
+        <source>Warning: We do not appear to fully agree with our peers! You may need to upgrade, or other nodes may need to upgrade.</source>
+        <translation type="unfinished">Viðvörun: Við virðumst ekki vera fyllilega sammála jafningjum okkar! Þú gætir þurft að uppfæra, eða aðrir tengipunkta gæti þurft að uppfærast.</translation>
+    </message>
+    <message>
+        <source>Corrupted block database detected</source>
+        <translation type="unfinished">Skemmd blokkar gagnasafn hefur verið uppgötva</translation>
+    </message>
+    <message>
+        <source>Do you want to rebuild the block database now?</source>
+        <translation type="unfinished">Villtu endurbyggja blokkar gagnasagnið núna ?</translation>
+    </message>
+    <message>
+        <source>Done loading</source>
+        <translation type="unfinished">Búinn að hlaðaniður</translation>
+    </message>
+    <message>
+        <source>Error initializing block database</source>
+        <translation type="unfinished">Villa við opnun blokkar gagnasafns </translation>
+    </message>
+    <message>
+        <source>Error initializing wallet database environment %s!</source>
+        <translation type="unfinished">Villa við opnun veskis gangasafns í umhverfi %s! </translation>
+    </message>
+    <message>
+        <source>Error loading block database</source>
+        <translation type="unfinished">Villa við að hlaða upp gagnasafni blokkar</translation>
+    </message>
+    <message>
+        <source>Error opening block database</source>
+        <translation type="unfinished">Villa við að opna gagnasafn blokkar </translation>
+    </message>
+    <message>
+        <source>Failed to listen on any port. Use -listen=0 if you want this.</source>
+        <translation type="unfinished">Mistókst að hlusta á öll port. Nota -listen=0 ef þú vilt þetta.</translation>
+    </message>
+    <message>
+        <source>Incorrect or no genesis block found. Wrong datadir for network?</source>
+        <translation type="unfinished">Röng eða upphafs blokk fanst ekki. Röng gagna mappa ætluð fyrir netið?</translation>
+    </message>
+    <message>
+        <source>Insufficient funds</source>
+        <translation type="unfinished">Ónægt fjármagn </translation>
+    </message>
+    <message>
+        <source>Not enough file descriptors available.</source>
+        <translation type="unfinished">Ekki nægilega nægar möppu upplýsingar í boði. </translation>
+    </message>
+    <message>
+        <source>Signing transaction failed</source>
+        <translation type="unfinished">Undirskrift millifærslu mistókst </translation>
+    </message>
+    <message>
+        <source>Transaction amount too small</source>
+        <translation type="unfinished">Millifærslu upphæð er of lítil</translation>
+    </message>
+    <message>
+        <source>Transaction too large</source>
+        <translation type="unfinished">Millifærslan er of stór </translation>
+    </message>
+    <message>
+        <source>Unknown network specified in -onlynet: '%s'</source>
+        <translation type="unfinished">Óþekkt netkerfi tilgreint sem -onlynet: '%s'</translation>
+    </message>
+    </context>
+<context>
+    <name>wizPage_generateSeed</name>
+    <message>
+        <source>Warning: The Caps Lock key is on!</source>
+        <translation type="unfinished">Viðvörun: Þú ert með stillt á  Caps Lock!</translation>
     </message>
     </context>
 </TS>
