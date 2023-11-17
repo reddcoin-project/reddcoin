@@ -1,9 +1,9 @@
-4.22.5rc2 Release Notes
+4.22.5rc3 Release Notes
 ==================
 
-Reddcoin Core version 4.22.5rc2 is now available from:
+Reddcoin Core version 4.22.5rc3 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc2/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc3/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc3/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -241,7 +241,7 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 GUI changes
 -----------
-
+- New statusbar icons to control overall staking
 - A new wallet creation wizard within the GUI to create wallets.
 
   The wizard will walk a user through the necessary steps to create a new wallet.
@@ -264,9 +264,11 @@ GUI changes
 
 - A new `Staking` menu item. Window -> Staking. Providing further information on staking.
 
-- A new `Staking` status icon in the statusbar area providing visual feedback on current staking.
+- A new `Staking` status icon in the statusbar area providing visual feedback on current staking and to enable/disable staking per selected wallet.
 
 - An updated `Wallet` type status icon in the statusbar area providing visual feedback on current wallet type (non-hd, bip32, bip39, bip44).
+
+- Improved dark theme on the staking tab
 
 - External signers such as hardware wallets can now be used. These require an external tool such as [HWI](https://github.com/bitcoin-core/HWI) to be installed and configured under Options -> Wallet. When creating a new wallet a new option "External signer" will appear in the dialog. If the device is detected, its name is suggested as the wallet name. The watch-only keys are then automatically imported. Receive addresses can be verified on the device. The send dialog will automatically use the connected device. This feature is experimental and the UI may freeze for a few seconds when performing these actions.
 
@@ -301,7 +303,45 @@ Tests
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
-### Reddcoin commit history
+### Reddcoin commit history 4.22.5rc3
+ - #917f7967c Update assumed chain params (John Nash)
+ - #b84208b11 qt: 4.22.5 translations update (John Nash)
+ - #0e8878ce3 docs: update reddcoin configuration (John Nash)
+ - #3a674b578 docs: update manpages (John Nash)
+ - #fbdb5ddd0 translation update (John Nash)
+ - #7d6b2aa37 staking: reset the lastcoinstakesearchinterval when staking is stopped (John Nash)
+ - #3be4fbd19 qt: update staking status on change of wallet lock (John Nash)
+ - #80294e26a staking: implement interface for ui staking (John Nash)
+ - #bdfaf41fa staking: rename functions to suit wallet staking (John Nash)
+ - #b15b938c0 net: Hardcoded seeds update for 4.22 (John Nash)
+ - #d1b969841 contrib: update main and testnet nodes (John Nash)
+ - #90b7a63bf contrib: reduce uptime percentage to 40% (John Nash)
+ - #697e14fcf contrib: branding and configuration for reddcoin (John Nash)
+ - #6ba67b346 build: add missing resource files to Makefile (John Nash)
+ - #173182d3a build: fix compiler warning for unused variable (John Nash)
+ - #0676855de qt: expand the definition of coinday (John Nash)
+ - #0a5e0c856 qt: add space between words (John Nash)
+ - #cc1ca4bc2 qt: override dark theme text color by specifying required text color (John Nash)
+ - #d53df164e qt: use explicit code block (John Nash)
+ - #19c380147 qt: use the current definition Qt::BackgroundRole to remove warning (John Nash)
+ - #4b04352b6 get/set staking active (John Nash)
+ - #02e2c1840 move variable to header (John Nash)
+ - #d4d7494b4 qt: start/stop staking from the UI (John Nash)
+ - #da861f949 qt: add signals for staking (John Nash)
+ - #3ba3865ae qt: rework interface (John Nash)
+ - #815a08c27 qt: enable staking in interface (John Nash)
+ - #c52b2c98c qt: enable platformstyle in mintingview (John Nash)
+ - #a30dc1277 tx config update (John Nash)
+ - #658f9a45b translation updates (John Nash)
+ - #a30e3d6bc build: update build dependency instructions for ssl (John Nash)
+ - #728b17c52 branding: update package name (John Nash)
+ - #74f1b704a 23.x Add missing includes to fix gcc-13 compile error (fanquake)
+ - #d333114ef Add missing includes to fix gcc-13 compile error (MarcoFalke)
+ - #7b9061559 qt: disable blockchain prune if txindex or is enabled (John Nash)
+ - #449585519 branding: update error message (John Nash)
+ - #98bcdb6e7 qt: update the blockchain start year (John Nash)
+ 
+### Reddcoin commit history 4.22.5rc2
  - #1898fa09c doc: Update release notes (John Nash)
  - #905d03009 doc: update source url in github links (John Nash)
  - #c53b713ea doc: generate example reddcoin.conf for v4.22.5rc2 (John Nash)
