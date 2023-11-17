@@ -13,7 +13,7 @@
 #define CLIENT_VERSION_BUILD 5
 
 /* Version is release */
-#define CLIENT_VERSION_IS_RELEASE false
+#define CLIENT_VERSION_IS_RELEASE true
 
 /* Major version */
 #define CLIENT_VERSION_MAJOR 4
@@ -28,10 +28,10 @@
 #define COPYRIGHT_HOLDERS_FINAL "The Bitcoin Core developers"
 
 /* Replacement for %s in copyright holders string */
-#define COPYRIGHT_HOLDERS_SUBSTITUTION "Bitcoin Core"
+#define COPYRIGHT_HOLDERS_SUBSTITUTION "Reddcoin Core"
 
 /* Copyright year */
-#define COPYRIGHT_YEAR 2021
+#define COPYRIGHT_YEAR 2023
 
 /* Define to 1 to enable wallet functions */
 #define ENABLE_WALLET 1
