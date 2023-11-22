@@ -262,13 +262,11 @@ public:
     }
     void setStakingActive(bool active) override
     {
-        LogPrintf("%s: Staking updated to %i\n", __func__, active);
-        SetStakingActive(active);
-        if (active) {
-            MintStake(m_context->chainman.get(), m_context->connman.get(), m_context->mempool.get());
+        if (m_context->stakeman) {
+            m_context->stakeman->SetStakingActive(active);
         }
     }
-    bool getStakingActive() override { return GetStakingActive(); }
+    bool getStakingActive() override { return m_context->stakeman && m_context->stakeman->GetStakingActive(); }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }
     void setNetworkActive(bool active) override
