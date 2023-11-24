@@ -264,6 +264,21 @@ public:
     {
         if (m_context->stakeman) {
             m_context->stakeman->SetStakingActive(active);
+            if (active) {
+                m_context->stakeman->Start();
+                return;
+            }
+            m_context->stakeman->Stop();
+        }
+    }
+    void setStakeWallet(const std::string& walletname, bool active) override
+    {
+        if (m_context->stakeman) {
+            if (active) {
+                m_context->stakeman->StakeWalletAdd(walletname);
+                return;
+            }
+            m_context->stakeman->StakeWalletRemove(walletname);
         }
     }
     bool getStakingActive() override { return m_context->stakeman && m_context->stakeman->GetStakingActive(); }

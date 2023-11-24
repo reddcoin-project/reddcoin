@@ -161,6 +161,9 @@ public:
     //! Get staking active.
     virtual bool getStakingActive() = 0;
 
+    //! Start wallet staking.
+    virtual void setStakeWallet(const std::string& walletname, bool active) = 0;
+
     //! Get reindex.
     virtual bool getReindex() = 0;
 
