@@ -213,7 +213,7 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id);
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
 
 void InitStakeWallet();
 void SetStakingActive(bool active);
@@ -248,7 +248,7 @@ public:
     bool GetStakingActive() const { return fStakingActive; };
     void SetStakingActive(bool active);
     int GetStakingThreadCount() { return threadStakeMinterGroup.size(); };
-    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id);
+    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
     void StakeWalletAdd(const std::string& walletname);
     void StakeWalletRemove(const std::string& walletname);
 

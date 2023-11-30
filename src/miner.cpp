@@ -522,7 +522,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id)
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
     util::ThreadRename(strprintf("staker-%d", thread_id));
@@ -563,7 +563,9 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
 
     try {
         bool fNeedToClear = false;
-        while (pwallet->GetEnableStaking()) {
+        while (running) {
+            if (!pwallet->GetEnableStaking())
+                return;
             if (ShutdownRequested())
                 return;
             while (pwallet->IsLocked()) {
@@ -912,7 +914,7 @@ void CStakeman::StakeWalletAdd(const std::string& walletname)
                     threadStakeMinterGroup.push_back(
                         std::thread(&util::TraceThread, "staker", [this, pwallet = wallet.get(), chainManager = chainManager, connManager = connManager, mempool = memPool]() {
                             tm_[pwallet->GetName()] = std::this_thread::get_id();
-                            ThreadStaker(pwallet, chainManager, connManager, mempool, std::this_thread::get_id());
+                            ThreadStaker(pwallet, chainManager, connManager, mempool, std::this_thread::get_id(), fStakingActive);
                         }));
                 }
 
@@ -942,12 +944,12 @@ void CStakeman::StakeWalletRemove(const std::string& walletname)
     }
 }
 
-void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id)
+void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
 {
     LogPrintf("CStakeman::%s\n", __func__);
     LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
     try {
-        PoSMiner(pwallet, chainman, connman, mempool, thread_id);
+        PoSMiner(pwallet, chainman, connman, mempool, thread_id, running);
     } catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
     } catch (...) {
