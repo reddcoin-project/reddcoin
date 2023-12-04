@@ -89,10 +89,7 @@ static const CAmount WALLET_INCREMENTAL_RELAY_FEE = 50000;
 static const bool DEFAULT_SPEND_ZEROCONF_CHANGE = true;
 //! Default for -checkgithub
 static const bool DEFAULT_CHECK_GITHUB = true;
-// logging defaults
-static const bool DEFAULT_PRINTFEE = false;
-static const bool DEFAULT_PRINTCOINSTAKE = false;
-static const bool DEFAULT_PRINTCREATION = false;
+
 static const CAmount DEFAULT_RESERVEBALANCE = 0;
 //! Default for -staking
 static const bool DEFAULT_ENABLE_STAKING = true;

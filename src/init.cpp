@@ -43,6 +43,7 @@
 #include <policy/settings.h>
 #include <pos/modifiercache.h>
 #include <pos/kernel.h>
+#include <pos/stake.h>
 #include <protocol.h>
 #include <rpc/blockchain.h>
 #include <rpc/register.h>
@@ -52,6 +53,7 @@
 #include <script/sigcache.h>
 #include <script/standard.h>
 #include <shutdown.h>
+#include <staker.h>
 #include <sync.h>
 #include <timedata.h>
 #include <torcontrol.h>

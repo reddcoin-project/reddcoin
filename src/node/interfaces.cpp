@@ -15,7 +15,6 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <mapport.h>
-#include <miner.h>
 #include <net.h>
 #include <net_processing.h>
 #include <netaddress.h>
@@ -37,6 +36,7 @@
 #include <rpc/protocol.h>
 #include <rpc/server.h>
 #include <shutdown.h>
+#include <staker.h>
 #include <support/allocators/secure.h>
 #include <sync.h>
 #include <timedata.h>
