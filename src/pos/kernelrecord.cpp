@@ -116,7 +116,6 @@ int64_t KernelRecord::getCoinAgeWeight(int nTimeOffset) const
 
 double KernelRecord::getProbToMintStake(double difficulty, int timeOffset) const
 {
-    const Consensus::Params& params = Params().GetConsensus();
     double maxTarget = pow(static_cast<double>(2), 224);
     double target = maxTarget / difficulty;
 
