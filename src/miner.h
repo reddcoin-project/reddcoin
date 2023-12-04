@@ -7,28 +7,41 @@
 #ifndef BITCOIN_MINER_H
 #define BITCOIN_MINER_H
 
+#include <amount.h>
+#include <policy/feerate.h>
 #include <primitives/block.h>
+#include <threadsafety.h>
 #include <txmempool.h>
-#include <validation.h>
-#include <wallet/coincontrol.h>
-#include <wallet/wallet.h>
+#include <util/translation.h>
 
+#include <atomic>
+#include <bits/stdint-uintn.h>
 #include <memory>
 #include <optional>
-#include <stdint.h>
+#include <stddef.h>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index_container.hpp>
+
+class CConnman;
+class ChainstateManager;
+namespace interfaces {
+class Chain;
+} /* namespace interfaces */
 
 class CBlockIndex;
 class CChainParams;
+class CScheduler;
 class CScript;
 class CWallet;
 
 namespace Consensus { struct Params; };
 
+// logging defaults
 static const bool DEFAULT_PRINTPRIORITY = false;
-extern std::atomic_bool fEnableStaking;
 
 struct CBlockTemplate
 {
@@ -212,16 +225,11 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+
 void InitStakeWallet();
 void SetStakingActive(bool active);
-void MintStake(ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool);
-int GetStakingThreadCount();
+
 void StakeWallet(interfaces::Chain& chain, const std::string& name, std::optional<bool> load_on_start, std::vector<bilingual_str>& warnings);
-
-
-/** Returns true if a staking is enabled, false otherwise. */
-bool GetStakingActive();
-void InterruptStaking();
-void StopStaking();
 
 #endif // BITCOIN_MINER_H

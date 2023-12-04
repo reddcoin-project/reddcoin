@@ -15,7 +15,6 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <mapport.h>
-#include <miner.h>
 #include <net.h>
 #include <net_processing.h>
 #include <netaddress.h>
@@ -37,6 +36,7 @@
 #include <rpc/protocol.h>
 #include <rpc/server.h>
 #include <shutdown.h>
+#include <staker.h>
 #include <support/allocators/secure.h>
 #include <sync.h>
 #include <timedata.h>
@@ -262,13 +262,26 @@ public:
     }
     void setStakingActive(bool active) override
     {
-        LogPrintf("%s: Staking updated to %i\n", __func__, active);
-        SetStakingActive(active);
-        if (active) {
-            MintStake(m_context->chainman.get(), m_context->connman.get(), m_context->mempool.get());
+        if (m_context->stakeman) {
+            m_context->stakeman->SetStakingActive(active);
+            if (active) {
+                m_context->stakeman->Start();
+                return;
+            }
+            m_context->stakeman->Stop();
         }
     }
-    bool getStakingActive() override { return GetStakingActive(); }
+    void setStakeWallet(const std::string& walletname, bool active) override
+    {
+        if (m_context->stakeman) {
+            if (active) {
+                m_context->stakeman->StakeWalletAdd(walletname);
+                return;
+            }
+            m_context->stakeman->StakeWalletRemove(walletname);
+        }
+    }
+    bool getStakingActive() override { return m_context->stakeman && m_context->stakeman->GetStakingActive(); }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }
     void setNetworkActive(bool active) override

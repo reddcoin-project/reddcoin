@@ -30,6 +30,7 @@
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <shutdown.h>
+#include <staker.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/fees.h>
@@ -360,23 +361,24 @@ static RPCHelpMan staking()
         staking.push_back(entry);
     }
 
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     bool fGenerate = request.params[0].isNull() ? gArgs.GetBoolArg("-staking", true) : request.params[0].get_bool();
     if (!request.params[0].isNull()) {
-        NodeContext& node = EnsureAnyNodeContext(request.context);
         gArgs.ForceSetArg("-staking", fGenerate ? "1" : "0");
 
         if (HasWallets() && GetWallets().size() > 0) {
-            MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
-
-            if (!fGenerate) {
-                InterruptStaking();
-                StopStaking();
+            node.stakeman->SetStakingActive(fGenerate);
+            if (fGenerate) {
+                node.stakeman->Start();
+            } else {
+                node.stakeman->Stop();
             }
         }
     }
 
     result.pushKV("enabled", gArgs.GetBoolArg("-staking",true));
-    result.pushKV("running", GetStakingThreadCount() > 0 ? true : false);
+    result.pushKV("running", (node.stakeman->GetStakingThreadCount() > 0 ? true : false));
+    result.pushKV("thread_count", node.stakeman->GetStakingThreadCount());
     result.pushKV("enabled_wallet", staking);
     return result;
 },

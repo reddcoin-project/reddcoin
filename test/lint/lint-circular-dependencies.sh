@@ -33,6 +33,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "pos/kernel -> validation -> pos/kernel"
     "qt/mintingtablemodel -> qt/walletmodel -> qt/mintingtablemodel"
     "pos/signer -> wallet/wallet -> txmempool -> validation -> pos/signer"
+    "node/context -> staker -> wallet/wallet -> psbt -> node/transaction -> node/context"
 )
 
 EXIT_CODE=0

@@ -43,6 +43,7 @@
 #include <policy/settings.h>
 #include <pos/modifiercache.h>
 #include <pos/kernel.h>
+#include <pos/stake.h>
 #include <protocol.h>
 #include <rpc/blockchain.h>
 #include <rpc/register.h>
@@ -52,6 +53,7 @@
 #include <script/sigcache.h>
 #include <script/standard.h>
 #include <shutdown.h>
+#include <staker.h>
 #include <sync.h>
 #include <timedata.h>
 #include <torcontrol.h>
@@ -165,12 +167,14 @@ void Interrupt(NodeContext& node)
     InterruptREST();
     InterruptTorControl();
     InterruptMapPort();
-    InterruptStaking();
+
     if (node.connman)
         node.connman->Interrupt();
     if (g_txindex) {
         g_txindex->Interrupt();
     }
+    if (node.stakeman)
+        node.stakeman->Interrupt();
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Interrupt(); });
     if (g_coin_stats_index) {
         g_coin_stats_index->Interrupt();
@@ -200,12 +204,12 @@ void Shutdown(NodeContext& node)
         client->flush();
     }
     StopMapPort();
-    StopStaking();
 
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
     if (node.peerman) UnregisterValidationInterface(node.peerman.get());
     if (node.connman) node.connman->Stop();
+    if (node.stakeman) node.stakeman->Stop();
 
     StopTorControl();
 
@@ -221,6 +225,8 @@ void Shutdown(NodeContext& node)
     node.connman.reset();
     node.banman.reset();
     node.addrman.reset();
+
+    node.stakeman.reset();
 
     if (node.mempool && node.mempool->IsLoaded() && node.args->GetBoolArg("-persistmempool", DEFAULT_PERSIST_MEMPOOL)) {
         DumpMempool(*node.mempool);
@@ -1811,12 +1817,24 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     cacheInit();
 
+    // ********************************************************* Step 14: staking
+
+    CStakeman::Options stakeOptions;
+    stakeOptions.uiInterface = &uiInterface;
+    stakeOptions.chainman = node.chainman.get();
+    stakeOptions.connman = node.connman.get();
+    stakeOptions.mempool = node.mempool.get();
+
+    assert(!node.stakeman);
+    node.stakeman = std::make_unique<CStakeman>(args.GetBoolArg("-staking", true));
+
+    if (!node.stakeman->Start(*node.scheduler, stakeOptions)) {
+        return false;
+    }
+
 #if HAVE_SYSTEM
     StartupNotify(args);
 #endif
-
-    InitStakeWallet();
-    MintStake(node.chainman.get(), node.connman.get(), node.mempool.get());
 
     return true;
 }

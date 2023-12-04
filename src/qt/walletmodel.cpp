@@ -363,6 +363,7 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase)
 bool WalletModel::setWalletStaking(bool stakingEnabled)
 {
     m_wallet->setEnableStaking(stakingEnabled);
+    m_node.setStakeWallet(m_wallet->getWalletName(), stakingEnabled);
     Q_EMIT stakingStatusChanged();
     return m_wallet->getEnableStaking();
 }
