@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # Copyright (c) 2012-2020 The Bitcoin Core developers
+# Copyright (c) 2014-2023 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
 Generate valid and invalid base58/bech32(m) address and private key test vectors.
 
 Usage:
-    PYTHONPATH=../../test/functional/test_framework ./gen_key_io_test_vectors.py valid 70 > ../../src/test/data/key_io_valid.json
-    PYTHONPATH=../../test/functional/test_framework ./gen_key_io_test_vectors.py invalid 70 > ../../src/test/data/key_io_invalid.json
+    ./gen_key_io_test_vectors.py valid 70 > ../../src/test/data/key_io_valid.json
+    ./gen_key_io_test_vectors.py invalid 70 > ../../src/test/data/key_io_invalid.json
 '''
 # 2012 Wladimir J. van der Laan
 # Released under MIT License
@@ -15,18 +16,22 @@ import os
 from itertools import islice
 from base58 import b58encode_chk, b58decode_chk, b58chars
 import random
-from segwit_addr import bech32_encode, decode_segwit_address, convertbits, CHARSET, Encoding
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../test/functional'))
+
+from test_framework.segwit_addr import bech32_encode, decode_segwit_address, convertbits, CHARSET, Encoding  # noqa: E402
 
 # key types
-PUBKEY_ADDRESS = 0
-SCRIPT_ADDRESS = 5
-PUBKEY_ADDRESS_TEST = 111
-SCRIPT_ADDRESS_TEST = 196
-PUBKEY_ADDRESS_REGTEST = 111
-SCRIPT_ADDRESS_REGTEST = 196
-PRIVKEY = 128
-PRIVKEY_TEST = 239
-PRIVKEY_REGTEST = 239
+PUBKEY_ADDRESS = 0x3d
+SCRIPT_ADDRESS = 0x05
+PUBKEY_ADDRESS_TEST = 0x6f
+SCRIPT_ADDRESS_TEST = 0xc4
+PUBKEY_ADDRESS_REGTEST = 0x6f
+SCRIPT_ADDRESS_REGTEST = 0xc4
+PRIVKEY = 0xba
+PRIVKEY_TEST = 0xef
+PRIVKEY_REGTEST = 0xef
 
 # script
 OP_0 = 0x00
@@ -72,42 +77,42 @@ templates = [
 # templates for valid bech32 sequences
 bech32_templates = [
   # hrp, version, witprog_size, metadata, encoding, output_prefix
-  ('bc',    0, 20, (False, 'main',    None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('bc',    0, 32, (False, 'main',    None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('bc',    1, 32, (False, 'main',    None, True), Encoding.BECH32M, p2tr_prefix),
-  ('bc',    2,  2, (False, 'main',    None, True), Encoding.BECH32M, (OP_2, 2)),
-  ('tb',    0, 20, (False, 'test',    None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('tb',    0, 32, (False, 'test',    None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('tb',    1, 32, (False, 'test',    None, True), Encoding.BECH32M, p2tr_prefix),
-  ('tb',    3, 16, (False, 'test',    None, True), Encoding.BECH32M, (OP_3, 16)),
-  ('tb',    0, 20, (False, 'signet',  None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('tb',    0, 32, (False, 'signet',  None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('tb',    1, 32, (False, 'signet',  None, True), Encoding.BECH32M, p2tr_prefix),
-  ('tb',    3, 32, (False, 'signet',  None, True), Encoding.BECH32M, (OP_3, 32)),
-  ('bcrt',  0, 20, (False, 'regtest', None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('bcrt',  0, 32, (False, 'regtest', None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('bcrt',  1, 32, (False, 'regtest', None, True), Encoding.BECH32M, p2tr_prefix),
-  ('bcrt', 16, 40, (False, 'regtest', None, True), Encoding.BECH32M, (OP_16, 40))
+  ('rdd',   0, 20, (False, 'main',    None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('rdd',   0, 32, (False, 'main',    None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('rdd',   1, 32, (False, 'main',    None, True), Encoding.BECH32M, p2tr_prefix),
+  ('rdd',   2,  2, (False, 'main',    None, True), Encoding.BECH32M, (OP_2, 2)),
+  ('trdd',  0, 20, (False, 'test',    None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('trdd',  0, 32, (False, 'test',    None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('trdd',  1, 32, (False, 'test',    None, True), Encoding.BECH32M, p2tr_prefix),
+  ('trdd',  3, 16, (False, 'test',    None, True), Encoding.BECH32M, (OP_3, 16)),
+  ('trdd',  0, 20, (False, 'signet',  None, True), Encoding.BECH32, p2wpkh_prefix),
+  ('trdd',  0, 32, (False, 'signet',  None, True), Encoding.BECH32, p2wsh_prefix),
+  ('trdd',  1, 32, (False, 'signet',  None, True), Encoding.BECH32M, p2tr_prefix),
+  ('trdd',  3, 32, (False, 'signet',  None, True), Encoding.BECH32M, (OP_3, 32)),
+  ('rcrt',  0, 20, (False, 'regtest', None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('rcrt',  0, 32, (False, 'regtest', None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('rcrt',  1, 32, (False, 'regtest', None, True), Encoding.BECH32M, p2tr_prefix),
+  ('rcrt', 16, 40, (False, 'regtest', None, True), Encoding.BECH32M, (OP_16, 40))
 ]
 # templates for invalid bech32 sequences
 bech32_ng_templates = [
   # hrp, version, witprog_size, encoding, invalid_bech32, invalid_checksum, invalid_char
   ('tc',    0, 20, Encoding.BECH32,  False, False, False),
-  ('bt',    1, 32, Encoding.BECH32M, False, False, False),
-  ('tb',   17, 32, Encoding.BECH32M, False, False, False),
-  ('bcrt',  3,  1, Encoding.BECH32M, False, False, False),
-  ('bc',   15, 41, Encoding.BECH32M, False, False, False),
-  ('tb',    0, 16, Encoding.BECH32,  False, False, False),
-  ('bcrt',  0, 32, Encoding.BECH32,  True,  False, False),
-  ('bc',    0, 16, Encoding.BECH32,  True,  False, False),
-  ('tb',    0, 32, Encoding.BECH32,  False, True,  False),
-  ('bcrt',  0, 20, Encoding.BECH32,  False, False, True),
-  ('bc',    0, 20, Encoding.BECH32M, False, False, False),
-  ('tb',    0, 32, Encoding.BECH32M, False, False, False),
-  ('bcrt',  0, 20, Encoding.BECH32M, False, False, False),
-  ('bc',    1, 32, Encoding.BECH32,  False, False, False),
-  ('tb',    2, 16, Encoding.BECH32,  False, False, False),
-  ('bcrt', 16, 20, Encoding.BECH32,  False, False, False),
+  ('rddt',  1, 32, Encoding.BECH32M, False, False, False),
+  ('trdd', 17, 32, Encoding.BECH32M, False, False, False),
+  ('rcrt',  3,  1, Encoding.BECH32M, False, False, False),
+  ('rdd',  15, 41, Encoding.BECH32M, False, False, False),
+  ('trdd',  0, 16, Encoding.BECH32,  False, False, False),
+  ('rcrt',  0, 32, Encoding.BECH32,  True,  False, False),
+  ('rdd',   0, 16, Encoding.BECH32,  True,  False, False),
+  ('trdd',  0, 32, Encoding.BECH32,  False, True,  False),
+  ('rcrt',  0, 20, Encoding.BECH32,  False, False, True),
+  ('rdd',   0, 20, Encoding.BECH32M, False, False, False),
+  ('trdd',  0, 32, Encoding.BECH32M, False, False, False),
+  ('rcrt',  0, 20, Encoding.BECH32M, False, False, False),
+  ('rdd',   1, 32, Encoding.BECH32,  False, False, False),
+  ('trdd',  2, 16, Encoding.BECH32,  False, False, False),
+  ('rcrt', 16, 20, Encoding.BECH32,  False, False, False),
 ]
 
 def is_valid(v):
@@ -127,7 +132,7 @@ def is_valid(v):
 
 def is_valid_bech32(v):
     '''Check vector v for bech32 validity'''
-    for hrp in ['bc', 'tb', 'bcrt']:
+    for hrp in ['rdd', 'trdd', 'rcrt']:
         if decode_segwit_address(hrp, v) != (None, None):
             return True
     return False
@@ -250,7 +255,6 @@ def gen_invalid_vectors():
                 yield val,
 
 if __name__ == '__main__':
-    import sys
     import json
     iters = {'valid':gen_valid_vectors, 'invalid':gen_invalid_vectors}
     try:
