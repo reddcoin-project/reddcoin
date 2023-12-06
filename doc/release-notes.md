@@ -10,7 +10,7 @@ improvements, as well as updated translations.
 
 Please report bugs using the issue tracker at GitHub:
 
-[Reddcoin Github Issues](https://github.com/reddcoin-project/reddcoin-0.22/issues)
+[Reddcoin Github Issues](https://github.com/reddcoin-project/reddcoin/issues)
 
 To receive security and update notifications, please subscribe to:
 
@@ -51,7 +51,7 @@ P2P and network changes
 -----------------------
 - Added support for running Reddcoin Core as an
   [I2P (Invisible Internet Project)](https://en.wikipedia.org/wiki/I2P) service
-  and connect to such services. See [i2p.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/i2p.md) for details. (#20685)
+  and connect to such services. See [i2p.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/i2p.md) for details. (#20685)
 - This release removes support for Tor version 2 hidden services in favor of Tor
   v3 only, as the Tor network [dropped support for Tor
   v2](https://blog.torproject.org/v2-deprecation-timeline) with the release of
@@ -220,7 +220,7 @@ m / purpose' / coin_type' / account' / change / address_index
 - Support for multilanguage in mnemonic creation. bip39 includes support for multiple languages when creating the Mnemonic sentence within the GUI
 Languages include [English (default), chinese_simplified, chinese_traditional, french, italian, japanese, korean, spanish]
 
-- External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/external-signer.md) for details. (#16546)
+- External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/external-signer.md) for details. (#16546)
 
 - A new `listdescriptors` RPC is available to inspect the contents of descriptor-enabled wallets.
   The RPC returns public versions of all imported descriptors, including their timestamp and flags.

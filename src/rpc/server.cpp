@@ -44,7 +44,7 @@ static std::map<std::string, std::unique_ptr<RPCTimerBase> > deadlineTimers GUAR
 static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& request, UniValue& result, bool last_handler);
 
 static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
-static std::string strGithubLink = "/repos/reddcoin-project/reddcoin-0.22/releases/latest";
+static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
 
 struct RPCCommandExecutionInfo
 {
