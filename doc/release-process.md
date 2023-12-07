@@ -5,10 +5,10 @@ Release Process
 
 ### Before every release candidate
 
-* Update translations see [translation_process.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/develop/doc/translation_process.md#synchronising-translations).
+* Update translations see [translation_process.md](https://github.com/reddcoin-project/reddcoin/blob/develop/doc/translation_process.md#synchronising-translations).
 * Update release candidate version in `configure.ac` (`CLIENT_VERSION_RC`).
-* Update manpages (after rebuilding the binaries), see [gen-manpages.py](https://github.com/reddcoin-project/reddcoin-0.22/blob/develop/contrib/devtools/README.md#gen-manpagespy).
-* Update reddcoin.conf and commit, see [gen-reddcoin-conf.sh](https://github.com/reddcoin-project/reddcoin-0.22/blob/develop/contrib/devtools/README.md#gen-reddcoin-confsh).
+* Update manpages (after rebuilding the binaries), see [gen-manpages.py](https://github.com/reddcoin-project/reddcoin/blob/develop/contrib/devtools/README.md#gen-manpagespy).
+* Update reddcoin.conf and commit, see [gen-reddcoin-conf.sh](https://github.com/reddcoin-project/reddcoin/blob/develop/contrib/devtools/README.md#gen-reddcoin-confsh).
 
 ### Before every major and minor release
 

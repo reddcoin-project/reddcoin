@@ -1,29 +1,36 @@
-4.22.5 Release Notes
+4.22.5rc1 release Notes
 ==================
 
-Reddcoin Core version 4.22.5 is now available from:
+Reddcoin Core version 4.22.5 rc1 is available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/)
+[Reddcoin Core version 4.22.5rc1]<https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc1/>
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
 
+Notably, the version has been updated to better reflect previous builds.
+
+v[Major].[Minor].[Build]
+
 Please report bugs using the issue tracker at GitHub:
 
-[Reddcoin Github Issues](https://github.com/reddcoin-project/reddcoin/issues)
+  [Github Issues]<https://github.com/reddcoin-project/reddcoin-0.22/issues>
 
 To receive security and update notifications, please subscribe to:
 
-[Reddcoin Discord Channel](https://discord.com/channels/314599721039691776/610562116688281611)
+  [Discord]<https://discord.com/channels/314599721039691776/610562116688281611>
 
 How to Upgrade
 ==============
+
+**WARNING:** This is a candidate release of Reddcoin Core version 4.22.5, by running this version you acknowledge that there
+is a real risk of losing coins (both mainnet and testnet).
 
 Upgrading from earlier versions of Reddcoin Core also runs the risk of losing coins. **PLEASE CREATE BACKUPS**.
 
 If you are running an older version, shut it down. Wait until it has completely
 shut down (which might take a few minutes in some cases), then run the
-installer (on Windows) or just copy over `/Applications/Reddcoin-Qt` (on Mac)
+installer (on Windows) or just copy over `/Applications/Reddcoin-Qt` (on macOS)
 or `reddcoind`/`reddcoin-qt` (on Linux).
 
 Upgrading directly from a version of Reddcoin Core that has reached its EOL is
@@ -44,11 +51,53 @@ From Reddcoin Core 4.22.0 onwards, macOS versions earlier than 10.14 are no long
 Notable changes
 ===============
 
+ - f4eef6426 remove testnet assert used in initial testing
+ - 86a05d7da Make sure that we're accessing the coinbase maturity variable from the struct declared by chainparams, not the struct definition itself.
+ - 3103ae954 add missed include for GetDifficulty
+ - e47a1dedd add ssl library to all testing components
+ - 54fe792dd correct tests to work with per-network maturity
+ - 7e384450a allow each network to have a different coinbase maturity value
+ - 9265dd3b6 switch over from using class template to local arith_uint512
+ - d0b4233cf remove .c_str() array usage clean up some older type logging statements parameterize some debug output where not essential
+ - b975c8925 allow staking kernel debug logging to be specified as parameter
+ - 9d77d50cb qt: Avoid crash on startup if int specified in settings.json
+ - c6edd55ad fs: Make compatible with boost 1.78
+ - 3880990cb test: Call ceildiv helper with integer
+ - 54b8bc340 ci: Replace soon EOL hirsute with jammy
+ - 9c17ab4e5 build: patch qt to explicitly define previously implicit header include
+ - 158b842ed tests: Calculate fees more similarly to CFeeRate::GetFee
+ - 6489fa733 tests: Test for assertion when feerate is rounded down
+ - 9c25bfaba fees: Always round up fee calculated from a feerate
+ - f1b43aeeb wallet: fix segfault by avoiding invalid default-ctored `external_spk_managers` entry
+ - 3e67e4713 refactor: include a missing <limits> header in fs.cpp
+ - fa41ac3f1 consensus: don't call GetBlockPos in ReadBlockFromDisk without lock
+ - 40fc9f717 the result of CWallet::IsHDEnabled() was initialized with true.
+ - 4ef0906c2 build, qt: Fix typo in QtInputSupport check
+ - 59bdf4b45 system: skip trying to set the locale on NetBSD
+ - 1a0212f13 guix: Fix powerpc64(le) dynamic linker name
+ - 3210c0773 doc: Add 23061 release notes
+ - 6c37a435a Fix (inverse) meaning of -persistmempool
+ - 4466956cf build: Restrict check for CRC32C intrinsic to aarch64
+ - 4cd5e748f refactor rpc commands for reddcoin
+ - 0a43aac1f move social channels to submenu
+ - 9bc363eb2 include Wiki social channel
+ - 863d77526 add social channels to the UI help menu
+ - 32fd7c83b flush orphaned stakes prior to each staking attempt
+ - f82515d65 implement lock/unlock wallet in gui
+ - be7707e72 add GetStakingInfo
+ - fa717b5b0 add GetPoSVKernelPS
+ - 451e5c3ac move GetDifficulty to kernel.cpp
+ - 2bed66bb6 add GetCoinAgeWeight to kernel.h
+ - 44e0640aa add GetStakeWeight
+ - 1e0e3b60d skip checking vtx[0] on pos blocks during verifydb
+ - db944b74a refactor checkupdates to improve new version detection on github
+ - 1b13f46d2 correct staking icon status when launched with no active wallet
+
 P2P and network changes
 -----------------------
 - Added support for running Reddcoin Core as an
   [I2P (Invisible Internet Project)](https://en.wikipedia.org/wiki/I2P) service
-  and connect to such services. See [i2p.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/i2p.md) for details. (#20685)
+  and connect to such services. See [i2p.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/i2p.md) for details. (#20685)
 - This release removes support for Tor version 2 hidden services in favor of Tor
   v3 only, as the Tor network [dropped support for Tor
   v2](https://blog.torproject.org/v2-deprecation-timeline) with the release of
@@ -58,23 +107,16 @@ P2P and network changes
 
 - Added NAT-PMP port mapping support via
   [`libnatpmp`](https://miniupnp.tuxfamily.org/libnatpmp.html). (#18077)
-  
+
 New and Updated RPCs
 --------------------
 
-- New `setstaking` RPC will return the current staking state for all loaded wallets. Setting a boolean value (true|false) will 
-  enable/ disable staking for the selected wallet according. Additionally the state for the selected wallet can be stored to load during startup (settings.json).
-  
-- New `getinterest` RPC will return the current amount of interest earned. Accepts two additional arguments to indicate the `start` and `end` period to query.
+- The `reclaimorphanstakes` RPC returns the currently active scheduled timer value
 
-- Updated `checkupdates` RPC will return an object with the currently installed version and the latest available remote version from github.
+- `checkupdates` will return the currently installed and available remote
+  versions. It has been improved for better version trackin of github.
 
-- Updated `staking` RPC will return the current staking state. Setting a boolean value (true|false) will enable/ disable staking accordingly.
-
-- New `gethdwalletinfo` RPC returns an object containing the following fields, `hdseed`, `mnemonic`,
-  `mnemonicpassphrase`, `rootprivkey`, `extendedprivkey`, `extendedpubkey` if hdseed is available.
-
-- `dumpwallet` RPC now includes `hdseed`, `mnemonic`, `mnemonicpassphrase` in output file if mnemonic value available.
+- `staking` will return the current staking state.
 
 - Due to [BIP 350](https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki)
   being implemented, behavior for all RPCs that accept addresses is changed when
@@ -141,15 +183,6 @@ New and Updated RPCs
 
 Changes to Wallet or GUI related RPCs can be found in the GUI or Wallet section below.
 
-API
----
-
-- A standalone implementation of PKCS5_PBKDF2_HMAC_SHA512 to reduce the usage of OpenSSL
-
-- New implementation of stakemodifier cache
-
-- addition of uint512
-
 Build System
 ------------
 
@@ -169,7 +202,8 @@ Files
 New settings
 ------------
 
-- The `-stake` option has been added to load wallets for staking. The option can be called multiple times to load more than 1 wallet.
+- The `-reclaimorphanstakes` option has been added to clean up orphan stake transactions. the default is to run every 1 hour.
+
 - The `-checkupdates` option has been added to detect if a newer version is available to download.
 
 - The `-natpmp` option has been added to use NAT-PMP to map the listening port.
@@ -199,25 +233,7 @@ Tools and Utilities
 Wallet
 ------
 
-- Support for generating `bip39` (mnemonic) based wallets.
-    - select from [12,15,18,21,24] words for [128,160,192,224,256] bits entropy
-    - checking for correctness of mnemonic sentence words
-    - incorporation of mnemonic password
-
-``` shell
-m / account' / change' / address_index'
-```
-
-- Support for generating `bip44` (coin purpose) based wallets.  
-
-``` shell
-m / purpose' / coin_type' / account' / change / address_index
-```
-
-- Support for multilanguage in mnemonic creation. bip39 includes support for multiple languages when creating the Mnemonic sentence within the GUI
-Languages include [English (default), chinese_simplified, chinese_traditional, french, italian, japanese, korean, spanish]
-
-- External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/external-signer.md) for details. (#16546)
+- External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/external-signer.md) for details. (#16546)
 
 - A new `listdescriptors` RPC is available to inspect the contents of descriptor-enabled wallets.
   The RPC returns public versions of all imported descriptors, including their timestamp and flags.
@@ -238,35 +254,11 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 GUI changes
 -----------
-- New statusbar icons to control overall staking
-- A new wallet creation wizard within the GUI to create wallets.
 
-  The wizard will walk a user through the necessary steps to create a new wallet.
+- A new tab has been added to display the staking probability of available utxo's
 
-  Some of the features of the wizard include.
-    - detect if an existing wallet name in use
-    - select from available [bip32, bip39, bip44, blank] wallet types.
-    - encrypt wallet during creation.
-    - create/import seed
-    - import master key
-    - select from [12,15,18,21,24] words for [128,160,192,224,256] bits entropy
-    - checking for correctness of mnemonic sentence words
-    - incorporation of mnemonic password
-
-- A new tab has been added to display the staking probability of available utxo's for each wallet.
-
-- A new `Check for Software Updates` menu item. Help -> Check for Software Updates. Can be used to determine if there is a later version available.
-
-- A new `Open Social Websites` menu item. Help -> Open Social Websites. Providing a quick access to `reddcoin.com` ,`redd.love`, `Reddcoin Wiki`,  `Discord Chatroom`, `reddcointalk.org`.
-
-- A new `Staking` menu item. Window -> Staking. Providing further information on staking.
-
-- A new `Staking` status icon in the statusbar area providing visual feedback on current staking and to enable/disable staking per selected wallet.
-
-- An updated `Wallet` type status icon in the statusbar area providing visual feedback on current wallet type (non-hd, bip32, bip39, bip44).
-
-- Improved dark theme on the staking tab
-
+- a new `Check for Software Updates` menu item. Help -> Check for Software Updates. Can be used to determine if there is a later version available.
+-
 - External signers such as hardware wallets can now be used. These require an external tool such as [HWI](https://github.com/bitcoin-core/HWI) to be installed and configured under Options -> Wallet. When creating a new wallet a new option "External signer" will appear in the dialog. If the device is detected, its name is suggested as the wallet name. The watch-only keys are then automatically imported. Receive addresses can be verified on the device. The send dialog will automatically use the connected device. This feature is experimental and the UI may freeze for a few seconds when performing these actions.
 
 Low-level changes
@@ -291,355 +283,11 @@ RPC
 Tests
 -----
 
-- Unit test cases for bip39
-
-- Unit test cases for bip44
-  
-4.22.0 change log
+22.0 change log
 ===============
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
-### Reddcoin commit history 4.22.5
- - #ea7450023 qt: check for model before invalidating (John Nash)
- - #67c2e5665 add missing LOCK (John Nash)
- - #e7ceb99e2 move the notification to reduce the frequency of messages (John Nash)
- - #900f593ce tests: output new values for reddcoin (John Nash)
- - #47ce054b2 contrib: testgen: avoid need for manually setting PYTHONPATH (John Nash)
- - #bb7ca58b3 use reddcoin parameters (John Nash)
- - #1df6bd8ce Add and bump copyright year (John Nash)
- - #895176f7c updated translations (John Nash)
- - #a45aa6f8b consensus: remove unused variable 'params' (John Nash)
- - #0eaff5574 lint: add introduced circular dependancy (John Nash)
- - #dd56db676 separate CStakeman to own file and re-org dependant files (John Nash)
- - #6c6395204 pass atomic bool to thread function (John Nash)
- - #400901f93 add to UI (John Nash)
- - #d2ab3dbe9 add to RPC (John Nash)
- - #e8c7da2fe add node context (init) (John Nash)
- - #76d3ae916 add to node context (John Nash)
- - #b816e8824 create CStakeman Manager (John Nash)
- 
-### Reddcoin commit history 4.22.5rc3
- - #917f7967c Update assumed chain params (John Nash)
- - #b84208b11 qt: 4.22.5 translations update (John Nash)
- - #0e8878ce3 docs: update reddcoin configuration (John Nash)
- - #3a674b578 docs: update manpages (John Nash)
- - #fbdb5ddd0 translation update (John Nash)
- - #7d6b2aa37 staking: reset the lastcoinstakesearchinterval when staking is stopped (John Nash)
- - #3be4fbd19 qt: update staking status on change of wallet lock (John Nash)
- - #80294e26a staking: implement interface for ui staking (John Nash)
- - #bdfaf41fa staking: rename functions to suit wallet staking (John Nash)
- - #b15b938c0 net: Hardcoded seeds update for 4.22 (John Nash)
- - #d1b969841 contrib: update main and testnet nodes (John Nash)
- - #90b7a63bf contrib: reduce uptime percentage to 40% (John Nash)
- - #697e14fcf contrib: branding and configuration for reddcoin (John Nash)
- - #6ba67b346 build: add missing resource files to Makefile (John Nash)
- - #173182d3a build: fix compiler warning for unused variable (John Nash)
- - #0676855de qt: expand the definition of coinday (John Nash)
- - #0a5e0c856 qt: add space between words (John Nash)
- - #cc1ca4bc2 qt: override dark theme text color by specifying required text color (John Nash)
- - #d53df164e qt: use explicit code block (John Nash)
- - #19c380147 qt: use the current definition Qt::BackgroundRole to remove warning (John Nash)
- - #4b04352b6 get/set staking active (John Nash)
- - #02e2c1840 move variable to header (John Nash)
- - #d4d7494b4 qt: start/stop staking from the UI (John Nash)
- - #da861f949 qt: add signals for staking (John Nash)
- - #3ba3865ae qt: rework interface (John Nash)
- - #815a08c27 qt: enable staking in interface (John Nash)
- - #c52b2c98c qt: enable platformstyle in mintingview (John Nash)
- - #a30dc1277 tx config update (John Nash)
- - #658f9a45b translation updates (John Nash)
- - #a30e3d6bc build: update build dependency instructions for ssl (John Nash)
- - #728b17c52 branding: update package name (John Nash)
- - #74f1b704a 23.x Add missing includes to fix gcc-13 compile error (fanquake)
- - #d333114ef Add missing includes to fix gcc-13 compile error (MarcoFalke)
- - #7b9061559 qt: disable blockchain prune if txindex or is enabled (John Nash)
- - #449585519 branding: update error message (John Nash)
- - #98bcdb6e7 qt: update the blockchain start year (John Nash)
- 
-### Reddcoin commit history 4.22.5rc2
- - #1898fa09c doc: Update release notes (John Nash)
- - #905d03009 doc: update source url in github links (John Nash)
- - #c53b713ea doc: generate example reddcoin.conf for v4.22.5rc2 (John Nash)
- - #f0a9380cf doc: Update manual pages for 4.22.2rc2 (John Nash)
- - #43a146324 build: Bump version to 4.22.5rc2 (John Nash)
- - #c9155f9c1 build: update copyright year 2023 (John Nash)
- - #8abeb73e4 qt: update transifex configuration slug (John Nash)
- - #a0d34e94d doc: update init.cpp -conf help text (josibake)
- - #5427a5f78 doc: update devtools, release-process readmes (josibake)
- - #22dd09efe build: include reddcoin.conf in build outputs (josibake)
- - #40a011e57 doc: update reddcoin-conf.md (Josiah Baker)
- - #22efbe113 script: add script to generate example reddcoin.conf (josibake)
- - #21eb04349 doc: replace reddcoin.conf with placeholder file (josibake)
- - #c2cd0d1fd update gen-manpages to support reddcoin (John Nash)
- - #a344a87f0 Updated stats for blockchain transactions (John Nash)
- - #f45aa527c qt: display a warning on GUI if unable to stake (John Nash)
- - #4cef3789b update versionbit timeouts for the following versionbits (John Nash)
- - #c4c8a93e3 small update for plural changes (John Nash)
- - #04472d789 fix segfault during shutdown while staking (John Nash)
- - #498768526 update staking status (John Nash)
- - #93db5350b move nLastCoinStakeSearchInterval to wallet rather than extern (John Nash)
- - #a18b336b3 move function (John Nash)
- - #bd8c0e1b4 emit stakingstatusupdate (John Nash)
- - #a6191cb4b enable the HD wallet icon to display whether it is bip32, 39, 44 (John Nash)
- - #6fb7789df update release notes (John Nash)
- - #6e1b895be if already staking, stop existing threads (John Nash)
- - #24297ccab get the running stake thread count (John Nash)
- - #8cd66c2fe read settings file and update wallets for staking (John Nash)
- - #1fbf90e32 add -stake to the wallet initialisation arguments (John Nash)
- - #992fffdd9 add read/write set staking to load on startup (John Nash)
- - #adc406ea2 remove unnecessary parameter (John Nash)
- - #40f184267 fix help message (John Nash)
- - #bcff6bf02 add setstaking rpc call and rename value (John Nash)
- - #1e7a258fa add get/set enable staking per wallet (John Nash)
- - #d1c4a228e dont attempt to stake blank wallet (John Nash)
- - #f4b2651f3 shorten staking thread name for improved monitoring (John Nash)
- - #580b1b141 replace chainstate with chainstatemanager (John Nash)
- - #71b51d646 add functions to save stake settings to file (John Nash)
- - #306765a30 stake on startup (John Nash)
- - #e16a98843 stake multiple wallets concurrently (John Nash)
- - #303c88e4a stake multiple wallets concurrently (John Nash)
- - #99aa9c5bd consider IsCoinStake in ReacceptWalletTransactions (John Nash)
- - #551da65ed qt: English translations update (John Nash)
- - #28c1ef4f6 scripted-diff: Bump copyright headers (John Nash)
- - #25235ad0d scripted-diff: Bump copyright headers (John Nash)
- - #ece5204fe add missing copyright headers (John Nash)
- - #023170acc script: update copyright_header for reddcoin (John Nash)
- - #1521f69ee qt: rework checkupdate to display a statusbar label (John Nash)
- - #39f49907f use semver for version formatting and checking (John Nash)
- - #36e8d1241 remove create wallet from menu (John Nash)
- - #2ff3a76a9 filter transactions that cannot be staked (John Nash)
- - #e892e19f6 connect wizard (John Nash)
- - #a4b24512f change wording to reflect the usage (John Nash)
- - #34fd106b4 add page initialisation (John Nash)
- - #4be22e746 import masterkey (John Nash)
- - #7de69ca01 update reddcoin-node (John Nash)
- - #fd2d753b4 update branding in rpc calls (John Nash)
- - #c31d21e8d add -stakenotify (John Nash)
- - #187b86d7f fix gettransaction rpc (John Nash)
- - #e4a9fbf76 add getinterest rpc command (John Nash)
- - #66d5f8133 add tooltips for some wallet types (John Nash)
- - #5e4955352 use seconds (John Nash)
- - #c8d415e1b fix kernal record probability display (John Nash)
- - #1b4a8a1af Split stake when threshold reached (John Nash)
- - #0704861c0 Use the correct parameters for Reddcoin during stake splitting and combining (John Nash)
- - #a9d0d25de Do not start staking thread if private keys are disabled (lateminer)
- - #aa9f8add5 Avoid getting into infinite loops in staking thread (lateminer)
- - #3d402b78f Check if a wallet is loaded before working with stake thread (lateminer)
- - #dc35bbf95 build: update version (John Nash)
- - #406b9e3f3 doc: reset release notes (John Nash)
- - #b3f2f92a3 update NSI pixmap (John Nash)
- - #92165a68f remove duplicate include (John Nash)
- - #b9f28f03d fix strprintf missing arguments (John Nash)
- - #aa9a48031 add missing cli arguments and documentation (John Nash)
- - #9a30eae8b [consensus] remove deployments that have not been buried (John Nash)
- - #708b5cb60 fix comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<std::__cxx11::basic_string<char> (John Nash)
- - #efaa753b4 update test for Reddcoin values (John Nash)
- - #183075656 depends: add windres (John Nash)
- - #b1472d393 depends: update openssl 1.1.1s (John Nash)
- - #b6fded8ea depends: update qt 5.12 url to archive location (BlackcoinDev)
- - #f01d96d8b build: comment out unused variable (John Nash)
- - #cf7309aeb ci: Use dash when building depends in centos build (MarcoFalke)
- - #8e4b681bb ci: Bump CentOS 8 image (MarcoFalke)
- - #cb8f8ff87 build: fix depends zeromq dash compatibility (fanquake)
- - #c5f467bbf build: libXau 1.0.9 (fanquake)
- - #297f2b0e6 remove consensus build for mingw32 while itis not working (John Nash)
- - #9a41910c3 add missing resources to makefile and update resource order (John Nash)
- - #269ee1a25 comment out unused variables (John Nash)
- - #3ecccdca8 make the signness of integers equivalent (John Nash)
- - #c8353d219 update for reddcoin (John Nash)
- - #85b24dd07 [branding] update github templates (John Nash)
- - #e9da8b2fc [CI] enable CI for reddcoin (John Nash)
- - #915fc643b [build] include header for disktxpos and remove class declaration (John Nash)
- - #d57ce8388 [build] add missing headers (John Nash)
- - #0526e0001 use correct cli argument (John Nash)
- - #db7069e7a remove redundant -minting cli option (John Nash)
- - #598ba0557 [consensus] activate heightincb and cltv deployments on mainnet (John Nash)
- - #14e46cfab qt: Show all addresses without label in a less visible color (lateminer)
- - #07e089ee4 [consensus] enforce bip30 check (duplicate txes) for all blocks until after bip34 (John Nash)
- - #2419daaf5 [consensus] setup consensus activations (John Nash)
- - #62e296c8e [consensus] remove ISM (John Nash)
- - #a938d0048 [consensus] bury posv activation (John Nash)
- - #a19c57958 [consensus] bury developers donation activation (John Nash)
- - #1bc2bd3a2 [documentation] comments to note what was activated on which block version (John Nash)
- - #99dfc2454 [consensus] adjust the activation period to 10 days on mainnet (John Nash)
- - #1cdbd0282 [consensus] bury bip66 on mainnet (John Nash)
- - #f4fa8c7a0 [consensus] use the calculated block version when staking (John Nash)
- - #7f8fc47d7 [consensus] setup consensus deployment (John Nash)
- - #1e3f88fdf [branding] update client_name (John Nash)
- - #e627f3038 [consensus] setup consensus activations (John Nash)
- - #d7534d60a resize columns to fit content (John Nash)
- - #3f98859a4 format age column (John Nash)
- - #eca26d6c5 get age in hours (John Nash)
- - #deb2ac684 getdifficulty from model (John Nash)
- - #5fe9322e1 add additional time periods - 1 min - 1 hour (John Nash)
- - #90086a80c add new staking status icon add staking details into a new tab on rpcconsole (John Nash)
- - #93e79f7c6 add GetStakeWeight to walletmodel (John Nash)
- - #db0ec5795 split getstakeweight function between wallet and node (John Nash)
- - #20144c795 move nLastCoinStakeSearchInterval (John Nash)
- - #6e86fd605 add fallbackfee if smartfee has not initialised (John Nash)
- - #f520f8b78 adjust fees to better align with reddcoin (John Nash)
- - #55f315a42 Add support multilanguage tests (John Nash)
- - #9d79c8886 Add support multilanguage (John Nash)
- - #b31c6c1f5 bip44: addresses should not be hardened test for path correctness (John Nash)
- - #ef94721a9 bip39: add getWordCount() (John Nash)
- - #14b0946cb bip39: add getStrength() (John Nash)
- - #99aa92c0f bip39: add IsBip39Enabled (John Nash)
- - #868bbf03d Implement BIP44 Coin purpose (John Nash)
- - #c2c2408fa connect UI to wallet backend (John Nash)
- - #99f339e7d add createwalletwizard to build (John Nash)
- - #92ecb4489 add createwalletwizard (John Nash)
- - #cba70aa1a bip39: enable tests (John Nash)
- - #a2c29e2eb Implement PKCS5_PBKDF2_HMAC_SHA512 (John Nash)
- - #ab272ce48 bip39: extend RPC commands (John Nash)
- - #30400aefd bip39: enable GenerateNewBip39Seed() (John Nash)
- - #64919efcd bip39: add to walletDB (John Nash)
- - #b466822da Implement BIP39 128/256bits Seed to Mnemonic conversion (John Nash)
- - #a3f1d4002 update version (John Nash)
- - #6abdfdbc4 put testnet bip34 consensus activation well into the future until ready (John Nash)
- - #2c9fa579e update version and release notes (John Nash)
- - #f4eef6426 remove testnet assert used in initial testing (John Nash)
- - #86a05d7da Make sure that we're accessing the coinbase maturity variable from the struct declared by chainparams, not the struct definition itself. (barrystyle)
- - #3103ae954 add missed include for GetDifficulty (barrystyle)
- - #e47a1dedd add ssl library to all testing components (barrystyle)
- - #54fe792dd correct tests to work with per-network maturity (barrystyle)
- - #7e384450a allow each network to have a different coinbase maturity value (barrystyle)
- - #9265dd3b6 switch over from using class template to local arith_uint512 (barrystyle)
- - #d0b4233cf remove .c_str() array usage clean up some older type logging statements parameterize some debug output where not essential (barrystyle)
- - #b975c8925 allow staking kernel debug logging to be specified as parameter (barrystyle)
- - #9d77d50cb qt: Avoid crash on startup if int specified in settings.json (Ryan Ofsky)
- - #c6edd55ad fs: Make compatible with boost 1.78 (Andrew Chow)
- - #3880990cb test: Call ceildiv helper with integer (Martin Zumsande)
- - #54b8bc340 ci: Replace soon EOL hirsute with jammy (MarcoFalke)
- - #9c17ab4e5 build: patch qt to explicitly define previously implicit header include (Kittywhiskers Van Gogh)
- - #158b842ed tests: Calculate fees more similarly to CFeeRate::GetFee (Andrew Chow)
- - #6489fa733 tests: Test for assertion when feerate is rounded down (Andrew Chow)
- - #9c25bfaba fees: Always round up fee calculated from a feerate (Andrew Chow)
- - #f1b43aeeb wallet: fix segfault by avoiding invalid default-ctored `external_spk_managers` entry (Sebastian Falbesoner)
- - #3e67e4713 refactor: include a missing <limits> header in fs.cpp (Joan Karadimov)
- - #fa41ac3f1 consensus: don't call GetBlockPos in ReadBlockFromDisk without lock (Jon Atack)
- - #40fc9f717 the result of CWallet::IsHDEnabled() was initialized with true. (Saibato)
- - #4ef0906c2 build, qt: Fix typo in QtInputSupport check (Hennadii Stepanov)
- - #59bdf4b45 system: skip trying to set the locale on NetBSD (fanquake)
- - #1a0212f13 guix: Fix powerpc64(le) dynamic linker name (Carl Dong)
- - #3210c0773 doc: Add 23061 release notes (MarcoFalke)
- - #6c37a435a Fix (inverse) meaning of -persistmempool (MarcoFalke)
- - #4466956cf build: Restrict check for CRC32C intrinsic to aarch64 (W. J. van der Laan)
- - #4cd5e748f refactor rpc commands for reddcoin (John Nash)
- - #0a43aac1f move social channels to submenu (John Nash)
- - #9bc363eb2 include Wiki social channel (John Nash)
- - #863d77526 add social channels to the UI help menu (John Nash)
- - #32fd7c83b flush orphaned stakes prior to each staking attempt (barrystyle)
- - #f82515d65 implement lock/unlock wallet in gui (John Nash)
- - #be7707e72 add GetStakingInfo (John Nash)
- - #fa717b5b0 add GetPoSVKernelPS (John Nash)
- - #451e5c3ac move GetDifficulty to kernel.cpp (John Nash)
- - #2bed66bb6 add GetCoinAgeWeight to kernel.h (John Nash)
- - #44e0640aa add GetStakeWeight (John Nash)
- - #1e0e3b60d skip checking vtx[0] on pos blocks during verifydb (barrystyle)
- - #db944b74a refactor checkupdates to improve new version detection on github (John Nash)
- - #1b13f46d2 correct staking icon status when launched with no active wallet (barrystyle)
- - #4bd1ebcab [Consensus] reset deployments (John Nash)
- - #1223dbebc [Consensus] bury bip66 testnet (John Nash)
- - #e8df17920 [Consensus] Un-bury segwit deployment (John Nash)
- - #0231434ff [Consensus] Un-bury CSV deployment (John Nash)
- - #bbb8d8bce set reddcoin COINBASE_MATURITY 50 blocks (John Nash)
- - #6f0491c25 set LEGACY addresses as default during initial testing (John Nash)
- - #ddca4b32e prevent coinstake from entering mempool (barrystyle)
- - #ef5e4c98c avoid deadlock with miner.cpp; cs_main is held through wallet init, additionally reduce the sleep periods as this holds up the shutdown process. (barrystyle)
- - #5a560b684 remove unnecessary includes for pos/stake.cpp (barrystyle)
- - #167e4c032 update transaction page with POS information (John Nash)
- - #9a8a9d984 make logging optional (John Nash)
- - #600058a04 set DEFAULT_MAX_TIP_AGE to reddcoin tip age (John Nash)
- - #4386443f2 move some logging into defined categories (John Nash)
- - #755aa3dcf add POS and STAKE logging categories (John Nash)
- - #40341fa8b add interface message if staking during IBD (John Nash)
- - #5242d135a additional stakethread logging and move fEnableStaking (John Nash)
- - #83c9bcd1e revert LOCK -> LOCK2 on staking thread (John Nash)
- - #c6e37efe1 invert the value of fEnableStaking so that staking launches (John Nash)
- - #5f457bb8b update ChainTxData (John Nash)
- - #f9884be62 rebrand: continued (John Nash)
- - #6eba3c0ee update default ports (John Nash)
- - #c8e86efa2 translations: refresh translation strings after rebrand (John Nash)
- - #cab12f0ee Provide an isolated environment for alpha testing (John Nash)
- - #9ce5728bc update release notes (John Nash)
- - #35ce64203 Update README.md (TechAdeptRDD)
- - #424f2becd update transifex config (John Nash)
- - #403b19077 rebrand; update strings for translation (John Nash)
- - #28a0ff3d1 rebrand: continued (John Nash)
- - #c71be12a8 rebrand: continued (John Nash)
- - #4ccda6fc6 move checkupdate to its own tab (John Nash)
- - #508931058 pass the tag_name through a regex and extract more details. construct the download url from the details (John Nash)
- - #24ec716df make url paths as variables (John Nash)
- - #f523fd371 doc: add OpenSSL addition to release-notes.md (John Nash)
- - #1916f8c72 doc: add OpenSSL to build instructions and licensing info (John Nash)
- - #4379d0785 checkupdate when starting wallet (John Nash)
- - #ed6112d4d Added 'Check for updates' feature:   * GUI - Help > Check for software updates   * console - checkupdates   * cli - ./reddcoin-cli checkupdates (John Nash)
- - #6d9df8356 build: add OpenSSL [ssl] detection and libs (John Nash)
- - #f29a4101a build: add OpenSSL [crypto] detection and libs (John Nash)
- - #0bed17cb6 depends: add OpenSSL package (John Nash)
- - #389714f08 set version (John Nash)
- - #3ec662eb5 fix some installation paths (John Nash)
- - #96ebfe043 set release state = false (John Nash)
- - #4e027bfc4 update copyright year (John Nash)
- - #c754987fa update source repo url (John Nash)
- - #b247ad110 update copyright headers (John Nash)
- - #7111f7b8a gimp masters (John Nash)
- - #6290a8a5b update icons (John Nash)
- - #a09aaed66 update images (John Nash)
- - #83e974a4f fix macdeploy (John Nash)
- - #64ac5dac8 update .gitignore (John Nash)
- - #5b0f2798c guix: ignore additional failing certvalidator test (John Nash)
- - #3e74ddd03 rebrand codebase via autoconf to become reddcoin (John Nash)
- - #16e776e6e remove consensus build for mingw32 while itis not working (John Nash)
- - #5fe43a984 update locking for staking thread (John Nash)
- - #364e6fe26 pass the commandline switch to the staking method (John Nash)
- - #b4962149f add StopStaking() to shutdown (John Nash)
- - #5747f6c1c add staking command to console to get/ set staking action add additional control to start/stop staking thread (John Nash)
- - #6a253cba8 add staking command to console to get/ set action (John Nash)
- - #b36a6fe4d fix for compile error x86_64-apple-darwin18 (John Nash)
- - #8003af154 update minting icon & rename to staking (John Nash)
- - #4160d1d24 update testnet bech32 address prefix (John Nash)
- - #9a39e9703 allow staking to be enabled/disabled from the commandline (John Nash)
- - #d06a3d2c1 prevent segfault if wallet has not been initialized yet (barrystyle)
- - #35a100847 ensure pow end has been tested for (barrystyle)
- - #b1c017fe9 allow staking thread to exit cleanly on shutdown (barrystyle)
- - #fa531045b match the consensus flow of the legacy reddcoin client (barrystyle)
- - #0475f141a fix order so that correct dev address is selected during create stake (John Nash)
- - #4851484f4 pass correct parameter to checkstakekernelhash (barrystyle)
- - #64d041056 assign value to nCoinAge (John Nash)
- - #440f26f84 utilize uint512 for checking ProofOfStake (John Nash)
- - #298a9c30d add uint512 (John Nash)
- - #10da7fda9 move check to later location (John Nash)
- - #5e2f92746 actually fire up staking thread in background (barrystyle)
- - #66adea6fa correctly construct the stake with 4 vouts (barrystyle)
- - #a7f059337 trial new testnet staking (barrystyle)
- - #d542b5613 implement minting probability tab (barrystyle)
- - #d610c4416 implement the existing legacy testnet chain (barrystyle)
- - #2776efa2f clean up the reddcoin staking kernel (barrystyle)
- - #c11cbae6d implement stakemodifier cache (barrystyle)
- - #05583bda6 correctly journal stake data for block undo and recovery on startup (barrystyle)
- - #1e48ea2e2 allow more blocks per transfer whilst being strict on stallers (barrystyle)
- - #6b86348cd rebrand references in executable resource files (barrystyle)
- - #624b2a1cc rebrand codebase major gui strings (barrystyle)
- - #3cc85dd00 rebrand codebase config/data directory usage (barrystyle)
- - #68deffcf7 rebrand codebase via autoconf to become reddcoin (barrystyle)
- - #0330ccf64 cache the hash for a given blockindex (barrystyle)
- - #f59923ba3 correct stake modifier calculation when done by blockindex (barrystyle)
- - #51950ebec correct function calls in tests/ due to changes in declaration (barrystyle)
- - #310285355 pass chainstate pointer instead of by reference for performance (barrystyle)
- - #4359b0cdc add block staking components (barrystyle)
- - #b23c03f1a add block signing components (barrystyle)
- - #6d1b826dd store hashproof in block index, display pos data in block index json output (barrystyle)
- - #80b9c562c Migrate reddcoin basic consensus functions/posv2 over bitcoin 22.x; including several fixes from reddink (redd@redd.ink). (barrystyle)
- 
-### Reddcoin Credits
-- barrystyle
-- BlackcoinDev
-- John Nash
-- lateminer
-- TechAdeptRDD
- 
 ### Consensus
 - bitcoin/bitcoin#19438 Introduce deploymentstatus (ajtowns)
 - bitcoin/bitcoin#20207 Follow-up extra comments on taproot code and tests (sipa)
@@ -1163,7 +811,7 @@ A detailed list of changes in this version follows. To keep the list to a manage
 - bitcoin/bitcoin#21185 fuzz: Remove expensive and redundant muhash from crypto fuzz target (MarcoFalke)
 - bitcoin/bitcoin#21200 Speed up `rpc_blockchain.py` by removing miniwallet.generate() (MarcoFalke)
 - bitcoin/bitcoin#21211 Move `P2WSH_OP_TRUE` to shared test library (MarcoFalke)
-- bitcoin/bitcoin#21228 Avoid comparison of integers with different signs (jonasschnelli)
+- bitcoin/bitcoin#21228 Avoid comparision of integers with different signs (jonasschnelli)
 - bitcoin/bitcoin#21230 Fix `NODE_NETWORK_LIMITED_MIN_BLOCKS` disconnection (MarcoFalke)
 - bitcoin/bitcoin#21252 Add missing wait for sync to `feature_blockfilterindex_prune` (MarcoFalke)
 - bitcoin/bitcoin#21254 Avoid connecting to real network when running tests (MarcoFalke)
@@ -1411,7 +1059,7 @@ A detailed list of changes in this version follows. To keep the list to a manage
 - bitcoin/bitcoin#21481 Tell howto install clang-format on Debian/Ubuntu (wodry)
 - bitcoin/bitcoin#21567 Fix various misleading comments (glozow)
 - bitcoin/bitcoin#21661 Fix name of script guix-build (Emzy)
-- bitcoin/bitcoin#21672 Remove bootstrap info from `GUIX_COMMON_FLAGS` doc (fanquake)
+- bitcoin/bitcoin#21672 Remove boostrap info from `GUIX_COMMON_FLAGS` doc (fanquake)
 - bitcoin/bitcoin#21688 Note on SDK for macOS depends cross-compile (jarolrod)
 - bitcoin/bitcoin#21709 Update reduce-memory.md and bitcoin.conf -maxconnections info (jonatack)
 - bitcoin/bitcoin#21710 update helps for addnode rpc and -addnode/-maxconnections config options (jonatack)
@@ -1460,12 +1108,10 @@ Thanks to everyone who directly contributed to this release:
 - Antoine Riard
 - apawlik
 - apitko
-- barrystyles
 - Ben Carman
 - Ben Woosley
 - benk10
 - Bezdrighin
-- BlackcoinDev
 - Block Mechanic
 - Brian Liotti
 - Bruno Garcia
@@ -1510,7 +1156,6 @@ Thanks to everyone who directly contributed to this release:
 - James O'Beirne
 - Jarol Rodriguez
 - Joel Klabo
-- John Nash
 - John Newbery
 - Jon Atack
 - Jonas Schnelli
@@ -1521,7 +1166,6 @@ Thanks to everyone who directly contributed to this release:
 - Klement Tan
 - Kristaps Kaupe
 - Larry Ruane
-- lateminer
 - lisa neigut
 - Lucas Ontivero
 - Luke Dashjr
@@ -1567,7 +1211,6 @@ Thanks to everyone who directly contributed to this release:
 - Suhas Daftuar
 - Sylvain Goumy
 - t-bast
-- TechAdeptRDD
 - Troy Giorshev
 - Tushar Singla
 - Tyler Chambers
@@ -1584,4 +1227,4 @@ Thanks to everyone who directly contributed to this release:
 - Zero
 
 As well as to everyone that helped with translations on
-[Transifex](https://www.transifex.com/reddcoin/reddcoin/).
+[Transifex](https://www.transifex.com/bitcoin/bitcoin/).
