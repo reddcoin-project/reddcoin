@@ -53,7 +53,11 @@ public:
     };
     bool GetStakingActive() const { return fStakingActive; };
     void SetStakingActive(bool active);
-    int GetStakingThreadCount() { return threadStakeMinterGroup.size(); };
+    int GetStakingThreadCount()
+    {
+        LOCK(cs_threadStakeMinterGroup);
+        return threadStakeMinterGroup.size();
+    };
     void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
     void StakeWalletAdd(const std::string& walletname);
     void StakeWalletRemove(const std::string& walletname);
