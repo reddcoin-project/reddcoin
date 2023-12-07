@@ -1,9 +1,9 @@
-4.22.5rc3 Release Notes
+4.22.5 Release Notes
 ==================
 
-Reddcoin Core version 4.22.5rc3 is now available from:
+Reddcoin Core version 4.22.5 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc3/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/rc3/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -18,9 +18,6 @@ To receive security and update notifications, please subscribe to:
 
 How to Upgrade
 ==============
-
-**WARNING:** This is a candidate release of Reddcoin Core version 4.22.5, by running this version you acknowledge that there
-is a real risk of losing coins (both mainnet and testnet).
 
 Upgrading from earlier versions of Reddcoin Core also runs the risk of losing coins. **PLEASE CREATE BACKUPS**.
 
@@ -303,6 +300,25 @@ Tests
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
+### Reddcoin commit history 4.22.5
+ - #ea7450023 qt: check for model before invalidating (John Nash)
+ - #67c2e5665 add missing LOCK (John Nash)
+ - #e7ceb99e2 move the notification to reduce the frequency of messages (John Nash)
+ - #900f593ce tests: output new values for reddcoin (John Nash)
+ - #47ce054b2 contrib: testgen: avoid need for manually setting PYTHONPATH (John Nash)
+ - #bb7ca58b3 use reddcoin parameters (John Nash)
+ - #1df6bd8ce Add and bump copyright year (John Nash)
+ - #895176f7c updated translations (John Nash)
+ - #a45aa6f8b consensus: remove unused variable 'params' (John Nash)
+ - #0eaff5574 lint: add introduced circular dependancy (John Nash)
+ - #dd56db676 separate CStakeman to own file and re-org dependant files (John Nash)
+ - #6c6395204 pass atomic bool to thread function (John Nash)
+ - #400901f93 add to UI (John Nash)
+ - #d2ab3dbe9 add to RPC (John Nash)
+ - #e8c7da2fe add node context (init) (John Nash)
+ - #76d3ae916 add to node context (John Nash)
+ - #b816e8824 create CStakeman Manager (John Nash)
+ 
 ### Reddcoin commit history 4.22.5rc3
  - #917f7967c Update assumed chain params (John Nash)
  - #b84208b11 qt: 4.22.5 translations update (John Nash)
