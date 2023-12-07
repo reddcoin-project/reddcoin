@@ -639,8 +639,6 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 fNeedToClear = false;
             }
 
-            uiInterface.NotifyStakingActiveChanged(true);
-
             //
             // Create new block
             //
@@ -685,6 +683,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                         continue;
                     }
                 }
+                uiInterface.NotifyStakingActiveChanged(true);
                 LogPrintf("Staker thread [%d]: proof-of-stake block found %s\n", thread_id, pblock->GetHash().ToString());
                 ProcessBlockFound(pblock, chainman, &chainman->ActiveChainstate(), Params());
                 reservedest.KeepDestination();
