@@ -15,7 +15,6 @@
 #include <util/translation.h>
 
 #include <atomic>
-#include <bits/stdint-uintn.h>
 #include <memory>
 #include <optional>
 #include <stddef.h>
