@@ -9,22 +9,22 @@
  * network protocol versioning
  */
 
-static const int PROTOCOL_VERSION = 80000;
+static const int PROTOCOL_VERSION = 80016;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 209;
 
 //! disconnect from peers older than this proto version
-static const int MIN_PEER_PROTO_VERSION = PROTOCOL_VERSION;
+static const int MIN_PEER_PROTO_VERSION = 80000;
 
 //! BIP 0031, pong message, is enabled for all versions AFTER this one
 static const int BIP0031_VERSION = 60000;
 
+//! "sendheaders" command and announcing blocks with headers starts with this version
+static const int SENDHEADERS_VERSION = 80000;
+
 //! "filter*" commands are disabled without NODE_BLOOM after and including this version
 static const int NO_BLOOM_VERSION = 80011;
-
-//! "sendheaders" command and announcing blocks with headers starts with this version
-static const int SENDHEADERS_VERSION = 80012;
 
 //! "feefilter" tells peers to filter invs to you by fee starts with this version
 static const int FEEFILTER_VERSION = 80013;
