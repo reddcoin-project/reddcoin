@@ -299,10 +299,10 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
         if (!active_chainstate->m_chain.Next(pindex)) {
             if (gArgs.GetBoolArg("-printhashproof", DEFAULT_PRINTHASHPROOF)) {
                 if (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()) {
-                    LogPrint(BCLog::POS, "%s: reached best block at height %d from block at height %d. time = %d \n", __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
+                    LogPrintf("%s(): reached best block at height %d from block at height %d. time = %d \n", __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
                 }
             }
-            return false;
+            return error("%s() : reached best block at height %d from block at height %d. time = %d \n", __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
         }
         pindex = active_chainstate->m_chain.Next(pindex);
         if (pindex->GeneratedStakeModifier()) {
@@ -366,8 +366,7 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     int64_t nStakeModifierTime = 0;
 
     if (!GetKernelStakeModifier(active_chainstate, pindexPrev, hashBlockFrom, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake)) {
-        LogPrint(BCLog::POS, "%s: ERROR unable to determine stakemodifier nStakeModifier=%s, nStakeModifierHeight=%d, nStakeModifierTime=%d\n", __func__, nStakeModifier, nStakeModifierHeight, nStakeModifierTime);
-        return false;
+        return error("%s() : unable to determine stakemodifier nStakeModifier=%s, nStakeModifierHeight=%d, nStakeModifierTime=%d\n", __func__, nStakeModifier, nStakeModifierHeight, nStakeModifierTime);
     }
 
     ss << nStakeModifier;
@@ -394,13 +393,10 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
 
     // Now check if proof-of-stake hash meets target protocol
     if (hashProof > targetProof) {
-        if (gArgs.GetBoolArg("-printhashproof", DEFAULT_PRINTHASHPROOF)) {
-            LogPrint(BCLog::POS, "%s: WARNING high-hash for proof of stake block\n"
-                                 "              hash: %s\n"
-                                 "            target: %s\n",
-                                 __func__, hashProof.ToString().substr(64,64), targetProof.ToString().substr(64,64));
-        }
-        return false;
+        return error("%s() : high-hash for POS block\n"
+                     "              hash: %s\n"
+                     "            target: %s\n",
+                     __func__, hashProof.ToString().substr(64, 64), targetProof.ToString().substr(64, 64));
     }
 
     return true;
@@ -437,7 +433,7 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
 
     // Calculate stakehash
     if (!CheckStakeKernelHash(active_chainstate, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
-        return false;
+        return error("%s() : in CheckStakeKernelHash()", __func__);
     }
 
     return true;
