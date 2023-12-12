@@ -3742,9 +3742,17 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                 while (!queue.empty()) {
                     uint256 head = queue.front();
                     queue.pop_front();
-                    auto it = mapBlocksUnknownParent.find(head);
-                    if (it != std::end(mapBlocksUnknownParent)) {
-                        std::shared_ptr<CBlock> pblockrecursive = it->second;
+
+                    std::shared_ptr<CBlock> pblockrecursive;
+                    {
+                        LOCK(cs_main);
+                        auto it = mapBlocksUnknownParent.find(head);
+                        if (it != std::end(mapBlocksUnknownParent)) {
+                            pblockrecursive = it->second;
+                            mapBlocksUnknownParent.erase(it);
+                        }
+                    }
+                    if (pblockrecursive) {
                         auto recursiveHash = pblockrecursive->GetHash();
                         LogPrint(BCLog::NET, "%s: Processing out of order child %s of %s\n", __func__, recursiveHash.ToString(),
                                  head.ToString());
@@ -3752,7 +3760,6 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                         bool forceProcessing = false;
                         {
                             LOCK(cs_main);
-                            mapBlocksUnknownParent.erase(it);
                             forceProcessing = IsBlockRequested(recursiveHash);
                         }
                         m_chainman.ProcessNewBlock(m_chainparams, pblockrecursive, forceProcessing, &fNewBlock);
