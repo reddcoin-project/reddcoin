@@ -405,7 +405,7 @@ void checkforupdatesinfo(UniValue& result)
                  *
                  */
 
-                std::regex versionRgx("(([0-9]+).([0-9]+).([0-9]+))([-|.]?((alpha|beta|rc)([-|\.]?(.*)))|$)");
+                std::regex versionRgx("(([0-9]+).([0-9]+).([0-9]+))([-|.]?((alpha|beta|rc)([-|.]?(.*)))|$)");
                 std::smatch remoteMatches;
                 std::smatch localMatches;
 
