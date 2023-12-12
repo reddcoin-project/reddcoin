@@ -1780,6 +1780,7 @@ void CWallet::ReacceptWalletTransactions()
 
 void CWallet::AbandonOrphanedCoinstakes()
 {
+    LOCK(cs_wallet);
     for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
         const uint256& wtxid = item.first;
         CWalletTx& wtx = item.second;

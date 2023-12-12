@@ -3467,8 +3467,6 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
 // Verify hash target and signature of coinstake tx
 bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof)
 {
-    AssertLockHeld(cs_main);
-
     bool fValid;
     const uint256 hash = block.GetHash();
     if (hash != Params().GetConsensus().hashGenesisBlock) {
@@ -5327,11 +5325,17 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
     std::string strHash = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
     uint256 hash = uint256S(strHash);
 
-    if (!active_chainstate->m_blockman.m_block_index.count(hash))
-        LogPrintf("- Hash block missing\n");
+    int64_t nMoneySupplyPrev;
+    int64_t nHeightPrev;
 
-    int64_t nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
-    int64_t nHeightPrev = active_chainstate->m_blockman.m_block_index[hash]->nHeight;
+    {
+        LOCK(cs_main);
+        if (!active_chainstate->m_blockman.m_block_index.count(hash))
+            LogPrintf("- Hash block missing\n");
+
+        nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
+        nHeightPrev = active_chainstate->m_blockman.m_block_index[hash]->nHeight;
+    }
 
     nPoSVRewards = nMoneySupply - nMoneySupplyPrev;
     LogPrint(BCLog::STAKE, "%s : PoSV rewards %s in last interval.\n", __func__, FormatMoney(nPoSVRewards));

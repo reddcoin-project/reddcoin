@@ -3700,53 +3700,54 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         LogPrint(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom.GetId());
 
         bool forceProcessing = false;
-        const uint256 hash(pblock->GetHash());
+        bool fRequested = false;
+        bool fOutoforder = false;
 
-        const auto it = m_chainman.m_blockman.m_block_index.find(pblock->hashPrevBlock);
-        if (it != m_chainman.m_blockman.m_block_index.end() && ((it->second->nStatus & BLOCK_HAVE_DATA) == 0))
+        const uint256 hash(pblock->GetHash());
         {
+            LOCK(cs_main);
+            fRequested = mapBlocksInFlight.count(hash);
+            CBlockIndex* headerPrev = m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock);
+            fOutoforder = headerPrev && ((headerPrev->nStatus & BLOCK_HAVE_DATA) == 0);
+        }
+
+        if (fOutoforder) {
             LogPrint(BCLog::NET, "Received block out of order: %s\n", pblock->GetHash().ToString());
-            if (mapBlocksInFlight.count(pblock->hashPrevBlock))
-            {
+            if (fRequested) {
                 LOCK(cs_main);
                 mapBlocksUnknownParent.insert(std::make_pair(pblock->hashPrevBlock, pblock));
                 RemoveBlockRequest(pblock->hashPrevBlock);
             }
-        }
-        else
-        {
+        } else {
             {
-		    LOCK(cs_main);
-		    // Always process the block if we requested it, since we may
-		    // need it even when it's not a candidate for a new best tip.
-		    forceProcessing = IsBlockRequested(hash);
-		    RemoveBlockRequest(hash);
-		    // mapBlockSource is only used for punishing peers and setting
-		    // which peers send us compact blocks, so the race between here and
-		    // cs_main in ProcessNewBlock is fine.
-		    mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
+                LOCK(cs_main);
+                // Always process the block if we requested it, since we may
+                // need it even when it's not a candidate for a new best tip.
+                forceProcessing = IsBlockRequested(hash);
+                RemoveBlockRequest(hash);
+                // mapBlockSource is only used for punishing peers and setting
+                // which peers send us compact blocks, so the race between here and
+                // cs_main in ProcessNewBlock is fine.
+                mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
             }
 
             bool fNewBlock = false;
             m_chainman.ProcessNewBlock(m_chainparams, pblock, forceProcessing, &fNewBlock);
 
-            if (fNewBlock)
-            {
+            if (fNewBlock) {
                 pfrom.nLastBlockTime = GetTime();
 
                 std::deque<uint256> queue;
                 queue.push_back(hash);
-                while (!queue.empty())
-                {
+                while (!queue.empty()) {
                     uint256 head = queue.front();
                     queue.pop_front();
                     auto it = mapBlocksUnknownParent.find(head);
-                    if (it != std::end(mapBlocksUnknownParent))
-                    {
+                    if (it != std::end(mapBlocksUnknownParent)) {
                         std::shared_ptr<CBlock> pblockrecursive = it->second;
                         auto recursiveHash = pblockrecursive->GetHash();
                         LogPrint(BCLog::NET, "%s: Processing out of order child %s of %s\n", __func__, recursiveHash.ToString(),
-                                             head.ToString());
+                                 head.ToString());
 
                         bool forceProcessing = false;
                         {
@@ -3758,12 +3759,12 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                         queue.push_back(recursiveHash);
                     }
                 }
-            }
-            else {
+            } else {
                 LOCK(cs_main);
                 mapBlockSource.erase(pblock->GetHash());
             }
         }
+
         return;
     }
 
