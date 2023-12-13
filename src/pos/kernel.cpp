@@ -301,13 +301,12 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
 
     // loop to find the stake modifier later by a selection interval
     while (nStakeModifierTime < pindexFrom->GetBlockTime() + nStakeModifierSelectionInterval) {
-        if (!active_chainstate->m_chain.Next(pindex)) {
-            if (gArgs.GetBoolArg("-printhashproof", DEFAULT_PRINTHASHPROOF)) {
-                if (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()) {
-                    LogPrintf("%s(): reached best block at height %d from block at height %d. time = %d \n", __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
-                }
+        if (!active_chainstate->m_chain.Next(pindex)) { // reached best block; may happen if node is behind on block chain or receive out of order
+            if (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()) {
+                return error("%s(): reached best block %s at height %d from block at height %d.", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight, pindexFrom->nHeight);
+            } else {
+                return false;
             }
-            return error("%s() : reached best block at height %d from block at height %d. time = %d \n", __func__, pindex->nHeight, pindexFrom->nHeight, GetAdjustedTime());
         }
         pindex = active_chainstate->m_chain.Next(pindex);
         if (pindex->GeneratedStakeModifier()) {
