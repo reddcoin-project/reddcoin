@@ -30,7 +30,7 @@ static void AssembleBlock(benchmark::Bench& bench)
     const int NUM_BLOCKS{200};
     const int COINBASE_MATURITY = chainparams.GetConsensus().GetCoinbaseMaturity();
     std::vector<CTransactionRef> txs;
-    for (size_t b{0}; b < NUM_BLOCKS; ++b) {
+    for (int b{0}; b < NUM_BLOCKS; ++b) {
         CMutableTransaction tx;
         tx.vin.push_back(MineBlock(test_setup->m_node, P2WSH_OP_TRUE));
         tx.vin.back().scriptWitness = witness;
