@@ -122,34 +122,32 @@ static bool SelectBlockFromCandidates(CChainState* active_chainstate, std::vecto
     arith_uint256 hashBest = arith_uint256();
     *pindexSelected = nullptr;
     for (const auto& item : vSortedByTimestamp) {
-        {
-            LOCK(cs_main);
+        LOCK(cs_main);
+        if (!active_chainstate->m_blockman.LookupBlockIndex(item.second))
+            return error("SelectBlockFromCandidates: failed to find block index for candidate block %s", item.second.ToString());
+        const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(item.second);
 
-            if (!active_chainstate->m_blockman.LookupBlockIndex(item.second))
-                return error("SelectBlockFromCandidates: failed to find block index for candidate block %s", item.second.ToString());
-            const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(item.second);
-            if (fSelected && pindex->GetBlockTime() > nSelectionIntervalStop)
-                break;
-            if (mapSelectedBlocks.count(pindex->GetBlockHash()) > 0)
-                continue;
-            // compute the selection hash by hashing its proof-hash and the
-            // previous proof-of-stake modifier
-            CDataStream ss(SER_GETHASH, 0);
-            ss << uint256() << nStakeModifierPrev;
-            arith_uint256 hashSelection = UintToArith256(Hash(ss));
-            // the selection hash is divided by 2**32 so that proof-of-stake block
-            // is always favored over proof-of-work block. this is to preserve
-            // the energy efficiency property
-            if (pindex->IsProofOfStake())
-                hashSelection >>= 32;
-            if (fSelected && hashSelection < hashBest) {
-                hashBest = hashSelection;
-                *pindexSelected = (const CBlockIndex*)pindex;
-            } else if (!fSelected) {
-                fSelected = true;
-                hashBest = hashSelection;
-                *pindexSelected = (const CBlockIndex*)pindex;
-            }
+        if (fSelected && pindex->GetBlockTime() > nSelectionIntervalStop)
+            break;
+        if (mapSelectedBlocks.count(pindex->GetBlockHash()) > 0)
+            continue;
+        // compute the selection hash by hashing its proof-hash and the
+        // previous proof-of-stake modifier
+        CDataStream ss(SER_GETHASH, 0);
+        ss << uint256() << nStakeModifierPrev;
+        arith_uint256 hashSelection = UintToArith256(Hash(ss));
+        // the selection hash is divided by 2**32 so that proof-of-stake block
+        // is always favored over proof-of-work block. this is to preserve
+        // the energy efficiency property
+        if (pindex->IsProofOfStake())
+            hashSelection >>= 32;
+        if (fSelected && hashSelection < hashBest) {
+            hashBest = hashSelection;
+            *pindexSelected = (const CBlockIndex*)pindex;
+        } else if (!fSelected) {
+            fSelected = true;
+            hashBest = hashSelection;
+            *pindexSelected = (const CBlockIndex*)pindex;
         }
     }
 
