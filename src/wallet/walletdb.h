@@ -105,7 +105,7 @@ public:
     CWallet* pwallet;
 
     CHDChain(): nVersion(CHDChain::CURRENT_VERSION) { SetNull(); }
-    CHDChain(CWallet* pw): pwallet(pw), nVersion(CHDChain::CURRENT_VERSION) { SetNull(); }
+    CHDChain(CWallet* pw): nVersion(CHDChain::CURRENT_VERSION), pwallet(pw) { SetNull(); }
 
     SERIALIZE_METHODS(CHDChain, obj)
     {
