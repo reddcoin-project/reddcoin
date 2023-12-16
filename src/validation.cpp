@@ -3619,6 +3619,11 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     if (!accepted_header)
         return false;
 
+    // We should only accept blocks that can be connected to a prev block with validated PoS
+    if (pindex->pprev && !pindex->pprev->IsValid(BLOCK_VALID_TRANSACTIONS)) {
+        return error("%s: this block %s (height %d) does not connect to any valid known block", __func__, pindex->phashBlock->ToString(), pindex->nHeight);
+    }
+
     // Try to process all requested blocks that we don't have, but only
     // process an unrequested block if it's new and has enough work to
     // advance our tip, and isn't too many blocks ahead.
@@ -3676,7 +3681,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
 
     // PoSV: calculate proofhash value
     if (!VerifyHashTarget(this, pindex, block, hash)) {
-        return error("%s - error calculating hashproof (height %d)\n", __func__, pindex->nHeight);
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos", "proof of stake is incorrect");
     }
     pindex->hashProofOfStake = hash;
 
