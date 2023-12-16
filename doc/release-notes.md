@@ -1,9 +1,9 @@
-4.22.5 Release Notes
+4.22.6 Release Notes
 ==================
 
-Reddcoin Core version 4.22.5 is now available from:
+Reddcoin Core version 4.22.6 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.5/](https://download.reddcoin.com/bin/reddcoin-core-4.22.5/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.6/](https://download.reddcoin.com/bin/reddcoin-core-4.22.6/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -43,6 +43,10 @@ From Reddcoin Core 4.22.0 onwards, macOS versions earlier than 10.14 are no long
 
 Notable changes
 ===============
+
+Blockchain Synchronisation
+--------------------------
+- Improved the behaviour during IBD and out of order blocks.
 
 P2P and network changes
 -----------------------
@@ -300,6 +304,28 @@ Tests
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
+### Reddcoin commit history 4.22.6
+ - #01516b7e5 consensus: remove the error return, just return false. (John Nash)
+ - #0b925b0f3 net: fine tune download parameters (John Nash)
+ - #a0c278d90 consensus: do not accept block if it cannot be connected to the previous validated block (John Nash)
+ - #59b9e0e56 consensus: set state.invalid, rather than error (John Nash)
+ - #ec767e15c kernel: modify lock (John Nash)
+ - #e9a8ec761 kernel: rework GetKernelStakeModifier (John Nash)
+ - #aa6bee33a build: fix error field 'pwallet' will be initialized after field 'nVersion' (John Nash)
+ - #9d17041f6 test: include libssl-dev in tests (John Nash)
+ - #28ab4226b build: fix comparison of integer expressions of different signedness: ‘size_t’ (John Nash)
+ - #69e7a7e4f qt: functions override a member function but is not marked 'override' (John Nash)
+ - #94e871c26 consensus: 'active_chainstate->m_blockman.LookupBlockIndex()' requires holding mutex 'cs_main' (John Nash)
+ - #7ff997b76 consensus: 'mapBlocksUnknownParent' requires holding mutex 'cs_main' (John Nash)
+ - #a524c0bfb build: remove compile warning for unknown escape sequence '\.' (John Nash)
+ - #518cb9a28 update versions (John Nash)
+ - #ff4973a43 update error messages (John Nash)
+ - #8658294f8 consensus: remove lock (John Nash)
+ - #990a28394 consensus: 'mapWallet' requires holding mutex 'cs_wallet' (John Nash)
+ - #9add2a298 consensus: 'active_chainstate->m_blockman.m_block_index' requires holding mutex 'cs_main' (John Nash)
+ - #5ffa71154 consensus: 'm_block_index' requires holding mutex 'cs_main' (John Nash)
+ - #d07e692d9 remove missing include (John Nash)
+
 ### Reddcoin commit history 4.22.5
  - #ea7450023 qt: check for model before invalidating (John Nash)
  - #67c2e5665 add missing LOCK (John Nash)
@@ -310,8 +336,8 @@ A detailed list of changes in this version follows. To keep the list to a manage
  - #1df6bd8ce Add and bump copyright year (John Nash)
  - #895176f7c updated translations (John Nash)
  - #a45aa6f8b consensus: remove unused variable 'params' (John Nash)
- - #0eaff5574 lint: add introduced circular dependancy (John Nash)
- - #dd56db676 separate CStakeman to own file and re-org dependant files (John Nash)
+ - #0eaff5574 lint: add introduced circular dependency (John Nash)
+ - #dd56db676 separate CStakeman to own file and re-org dependent files (John Nash)
  - #6c6395204 pass atomic bool to thread function (John Nash)
  - #400901f93 add to UI (John Nash)
  - #d2ab3dbe9 add to RPC (John Nash)
@@ -420,7 +446,7 @@ A detailed list of changes in this version follows. To keep the list to a manage
  - #e4a9fbf76 add getinterest rpc command (John Nash)
  - #66d5f8133 add tooltips for some wallet types (John Nash)
  - #5e4955352 use seconds (John Nash)
- - #c8d415e1b fix kernal record probability display (John Nash)
+ - #c8d415e1b fix kernel record probability display (John Nash)
  - #1b4a8a1af Split stake when threshold reached (John Nash)
  - #0704861c0 Use the correct parameters for Reddcoin during stake splitting and combining (John Nash)
  - #a9d0d25de Do not start staking thread if private keys are disabled (lateminer)
