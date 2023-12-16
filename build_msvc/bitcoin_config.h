@@ -10,7 +10,7 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* Version Build */
-#define CLIENT_VERSION_BUILD 5
+#define CLIENT_VERSION_BUILD 6
 
 /* Version is release */
 #define CLIENT_VERSION_IS_RELEASE true
@@ -255,7 +255,7 @@
 #define PACKAGE_NAME "Reddcoin Core"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Reddcoin Core 4.22.5"
+#define PACKAGE_STRING "Reddcoin Core 4.22.6"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "reddcoin"
@@ -264,7 +264,7 @@
 #define PACKAGE_URL "https://reddcoin.com/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.22.5"
+#define PACKAGE_VERSION "4.22.6"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */
