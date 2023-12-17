@@ -396,10 +396,11 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
 
     // Now check if proof-of-stake hash meets target protocol
     if (hashProof > targetProof) {
-        return error("%s() : high-hash for POS block\n"
+        LogPrint(BCLog::POS, "%s() : high-hash for POS block\n"
                      "              hash: %s\n"
                      "            target: %s\n",
                      __func__, hashProof.ToString().substr(64, 64), targetProof.ToString().substr(64, 64));
+        return false;
     }
 
     return true;
