@@ -94,7 +94,7 @@ private:
     QLineEdit* wallet_name_line_edit;
     QSpacerItem* verticalSpacer;
 
-    bool isComplete() const;
+    bool isComplete() const override;
 };
 
 class wizPage_walletType : public QWizardPage
@@ -180,7 +180,7 @@ public:
     // void generateWords();
     //    void generateWords(int value);
 
-    void initializePage();
+    void initializePage() override;
     int nextId() const override;
 
 private:
@@ -206,7 +206,7 @@ private:
 
     bool fCapsLock;
 
-    bool isComplete() const;
+    bool isComplete() const override;
     int getStrength(int idx);
     void secureClearPassFields();
 
@@ -236,7 +236,7 @@ private:
     QTextEdit* textEdit_confirmMnemonic;
     QSpacerItem* verticalSpacer_5;
 
-    bool isComplete() const;
+    bool isComplete() const override;
 };
 
 class wizPage_enterSeed : public QWizardPage
@@ -259,7 +259,7 @@ private:
     QLabel* lblHelp;
     QSpacerItem* verticalSpacer_2;
 
-    bool isComplete() const;
+    bool isComplete() const override;
 };
 
 class wizPage_finish : public QWizardPage
