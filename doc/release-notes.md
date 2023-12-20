@@ -1,9 +1,9 @@
-4.22.6 Release Notes
+4.22.7 Release Notes
 ==================
 
-Reddcoin Core version 4.22.6 is now available from:
+Reddcoin Core version 4.22.7 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.6/](https://download.reddcoin.com/bin/reddcoin-core-4.22.6/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.7/](https://download.reddcoin.com/bin/reddcoin-core-4.22.7/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -304,6 +304,25 @@ Tests
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
+### Reddcoin commit history 4.22.7
+ - #b9280f8ec Fixes bitcoin#26490 by preventing notifications (John Moffett)
+ - #3f0b6993a Disallow encryption of watchonly wallets (Andrew Chow)
+ - #da73e8813 rpc: add non-regression test about deriveaddresses crash when index is 2147483647 (muxator)
+ - #1cac02c4e rpc: fix crash in deriveaddresses when derivation index is 2147483647 (muxator)
+ - #c42f9e4ca Prevent data race for `pathHandlers` (Hennadii Stepanov)
+ - #8a6bbd86f doc: remove brew install sqlite from macOS docs (fanquake)
+ - #7f80f52a9 Revert "build: Use Homebrew's sqlite package if it is available" (fanquake)
+ - #426da65e9 Swap out hashlib.ripemd160 for own implementation (Pieter Wuille)
+ - #989abf2cc Add pure Python RIPEMD-160 (Pieter Wuille)
+ - #5d6288537 rpc: Capture potentially large UniValue by ref for rpcdoccheck (Martin Zumsande)
+ - #303e3191f build: explicitly disable libsecp256k1 openssl based tests (John Nash)
+ - #f9b604686 build: add missing include (John Nash)
+ - #5c3fee30c consensus: using a value of MAX_MONEY or higher would overflow (John Nash)
+ - #50141f477 test: create new test to check amount size limits (John Nash)
+ - #add4311cd tests: update rpcnested for reddcoin (John Nash)
+ - #fa19e3a8e tests: update uri tests for reddcoin (John Nash)
+ - #4a6c0297e qt: add missing override (John Nash)
+ 
 ### Reddcoin commit history 4.22.6
  - #01516b7e5 consensus: remove the error return, just return false. (John Nash)
  - #0b925b0f3 net: fine tune download parameters (John Nash)
