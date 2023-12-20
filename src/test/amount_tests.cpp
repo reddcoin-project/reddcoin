@@ -6,6 +6,8 @@
 #include <amount.h>
 #include <policy/feerate.h>
 
+#include <test/util/setup_common.h>
+
 #include <limits>
 
 #include <boost/test/unit_test.hpp>
@@ -84,8 +86,15 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     // some more integer checks
     BOOST_CHECK(CFeeRate(CAmount(26), 789) == CFeeRate(32));
     BOOST_CHECK(CFeeRate(CAmount(27), 789) == CFeeRate(34));
+}
+
+BOOST_AUTO_TEST_CASE(SizeLimitTest)
+{
     // Maximum size in bytes, should not crash
-    CFeeRate(MAX_MONEY, std::numeric_limits<uint32_t>::max()).GetFeePerK();
+    BOOST_CHECK(CFeeRate(MAX_MONEY, std::numeric_limits<uint32_t>::max()) == CFeeRate(2147483648487));
+    BOOST_CHECK_EQUAL(CFeeRate(MAX_MONEY, std::numeric_limits<uint32_t>::max()).ToString() , "21474.83648487 RDD/kvB");
+    BOOST_CHECK_EQUAL(CFeeRate(MAX_MONEY, std::numeric_limits<uint32_t>::max()).ToString(FeeEstimateMode::BTC_KVB) , "21474.83648487 RDD/kvB");
+    BOOST_CHECK_EQUAL(CFeeRate(MAX_MONEY, std::numeric_limits<uint32_t>::max()).ToString(FeeEstimateMode::SAT_VB) , "2147483648.487 sat/vB");
 }
 
 BOOST_AUTO_TEST_CASE(BinaryOperatorTest)
