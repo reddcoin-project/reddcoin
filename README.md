@@ -6,9 +6,6 @@ https://github.com/reddcoin-project/reddcoin
 For an immediately usable, binary version of the ReddCoin Core software, see
 https://download.reddcoin.com or https://github.com/reddcoin-project/reddcoin
 
-NOTE: REDDCOIN CORE 0.22 or 4.22 IN ANY VERSION IS NOT RECOMMENDED FOR PRODUCTION NETWORK USE AS OF THIS TIME.
-FOR NORMAL USE OF THE REDDCOIN NETWORK, PLEASE USE CLIENT v3.10.3
-
 Further information about ReddCoin Core is available in the [doc folder](/doc).
 
 What is ReddCoin?
