@@ -134,8 +134,8 @@ private:
     WalletFrame* walletFrame = nullptr;
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
-    LockWalletStatusBarControl* lockWalletControl = nullptr;
-    GUIUtil::ClickableLabel* labelWalletEncryptionIcon = nullptr;
+    LockWalletStatusBarControl* labelWalletEncryptionIcon = nullptr;
+    // GUIUtil::ThemedLabel* labelWalletEncryptionIcon = nullptr;
     GUIUtil::ThemedLabel* labelWalletHDStatusIcon = nullptr;
     GUIUtil::ClickableLabel* labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel* connectionsControl = nullptr;

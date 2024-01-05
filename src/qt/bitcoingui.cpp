@@ -162,7 +162,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->setContentsMargins(3,0,3,0);
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
-    lockWalletControl = new LockWalletStatusBarControl(platformStyle);
+    labelWalletEncryptionIcon = new LockWalletStatusBarControl(platformStyle);
     stakingStatusControl = new StakingStatusBarControl(platformStyle);
     globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
@@ -174,12 +174,12 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         frameBlocksLayout->addStretch();
         frameBlocksLayout->addWidget(unitDisplayControl);
         frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(lockWalletControl);
+        frameBlocksLayout->addWidget(labelWalletEncryptionIcon);
         frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
         frameBlocksLayout->addStretch();
         frameBlocksLayout->addWidget(stakingStatusControl);
 
-        lockWalletControl->setWalletFrame(walletFrame);
+        labelWalletEncryptionIcon->setWalletFrame(walletFrame);
         stakingStatusControl->setRPCConsole(rpcConsole);
         stakingStatusControl->setWalletFrame(walletFrame);
     }
@@ -839,7 +839,7 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
     if (!walletFrame) return;
 
     labelWalletHDStatusIcon->hide();
-    lockWalletControl->hide();
+    labelWalletEncryptionIcon->hide();
     stakingStatusControl->hide();
 
     int index = m_wallet_selector->findData(QVariant::fromValue(walletModel));
@@ -1503,7 +1503,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     case WalletModel::Unencrypted:
-        lockWalletControl->hide();
+        labelWalletEncryptionIcon->hide();
         encryptWalletAction->setChecked(false);
         changePassphraseAction->setEnabled(false);
         unlockWalletAction->setVisible(false);
@@ -1511,26 +1511,26 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(true);
         break;
     case WalletModel::Unlocked:
-        lockWalletControl->show();
-        lockWalletControl->setThemedPixmap(QStringLiteral(":/icons/lock_open"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-        lockWalletControl->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
+        labelWalletEncryptionIcon->show();
+        labelWalletEncryptionIcon->setThemedPixmap(QStringLiteral(":/icons/lock_open"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(false);
         lockWalletAction->setVisible(true);
         encryptWalletAction->setEnabled(false);
-        lockWalletControl->setLockState(true);
+        labelWalletEncryptionIcon->setLockState(true);
         break;
     case WalletModel::Locked:
-        lockWalletControl->show();
-        lockWalletControl->setThemedPixmap(QStringLiteral(":/icons/lock_closed"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-        lockWalletControl->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
+        labelWalletEncryptionIcon->show();
+        labelWalletEncryptionIcon->setThemedPixmap(QStringLiteral(":/icons/lock_closed"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(true);
         lockWalletAction->setVisible(false);
         encryptWalletAction->setEnabled(false);
-        lockWalletControl->setLockState(false);
+        labelWalletEncryptionIcon->setLockState(false);
         break;
     }
 
