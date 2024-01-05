@@ -368,7 +368,7 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
     int64_t nStakeModifierTime = 0;
 
     if (!GetKernelStakeModifier(active_chainstate, pindexPrev, hashBlockFrom, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake)) {
-        return error("%s() : unable to determine stakemodifier nStakeModifier=%s, nStakeModifierHeight=%d, nStakeModifierTime=%d\n", __func__, nStakeModifier, nStakeModifierHeight, nStakeModifierTime);
+        return error("%s() : unable to determine stakemodifier nStakeModifier=%s, nStakeModifierHeight=%d, nStakeModifierTime=%d", __func__, nStakeModifier, nStakeModifierHeight, nStakeModifierTime);
     }
 
     ss << nStakeModifier;
