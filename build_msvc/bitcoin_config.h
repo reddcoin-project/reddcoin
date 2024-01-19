@@ -1,5 +1,5 @@
 // Copyright (c) 2018-2020 The Bitcoin Core developers
-// Copyright (c) 2018-2023 The Reddcoin Core developers
+// Copyright (c) 2018-2024 The Reddcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,7 +10,7 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* Version Build */
-#define CLIENT_VERSION_BUILD 7
+#define CLIENT_VERSION_BUILD 8
 
 /* Version is release */
 #define CLIENT_VERSION_IS_RELEASE true

@@ -1,9 +1,9 @@
-4.22.8 Release Notes
+4.22.7 Release Notes
 ==================
 
-Reddcoin Core version 4.22.8 is now available from:
+Reddcoin Core version 4.22.7 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.8/](https://download.reddcoin.com/bin/reddcoin-core-4.22.8/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.7/](https://download.reddcoin.com/bin/reddcoin-core-4.22.7/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -303,11 +303,6 @@ Tests
 ===============
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
-
-### Reddcoin commit history 4.22.8
- - #d27218355 consensus: add vchBlockSig to block encodings (John Nash)
- - #a8de97de0 logging: fix format by removing unnecessary \n (John Nash)
- - #5d8dae47b qt: rename encryption widget (John Nash)
 
 ### Reddcoin commit history 4.22.7
  - #b9280f8ec Fixes bitcoin#26490 by preventing notifications (John Moffett)
