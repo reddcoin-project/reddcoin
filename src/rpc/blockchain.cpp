@@ -434,6 +434,76 @@ static RPCHelpMan getdifficulty()
     };
 }
 
+static RPCHelpMan getinflation()
+{
+    return RPCHelpMan{
+        "getinflation",
+        "\nReturns details on the current inflation.\n",
+        {
+            {"height", RPCArg::Type::NUM, RPCArg::Default{0}, "Block height (default=current block tip)."},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "", {
+                                              {RPCResult::Type::NUM, "height", "Block height"},
+                                              {RPCResult::Type::NUM, "inflation", "Current inflation"},
+                                          }},
+        RPCExamples{HelpExampleCli("getinflation", "") + HelpExampleRpc("getinflation", "")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            ChainstateManager& chainman = EnsureAnyChainman(request.context);
+
+            int height;
+            LOCK(cs_main);
+
+            if (!request.params[1].isNull() && request.params[1].get_int() > 0) {
+                height = request.params[0].get_int();
+            } else {
+                height = chainman.ActiveChain().Height();
+            }
+
+            UniValue ret(UniValue::VOBJ);
+            ret.pushKV("height", chainman.ActiveChain().Height());
+            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus()));
+            return ret;
+        },
+    };
+}
+
+static RPCHelpMan getinflationmultiplier()
+{
+    return RPCHelpMan{
+        "getinflationmultiplier",
+        "\nReturns details on the current inflationmultiplier.\n",
+        {
+            {"height", RPCArg::Type::NUM, RPCArg::Default{0}, "Block height (default=current block tip)."},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "", {
+                                              {RPCResult::Type::NUM, "height", "Block height"},
+                                              {RPCResult::Type::NUM, "inflation", "Current inflation"},
+                                              {RPCResult::Type::NUM, "multiplier", "Current inflation multiplier"},
+                                          }},
+        RPCExamples{HelpExampleCli("getinflationmultiplier", "") + HelpExampleRpc("getinflationmultiplier", "")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            ChainstateManager& chainman = EnsureAnyChainman(request.context);
+
+            int height;
+            LOCK(cs_main);
+
+            if (!request.params[1].isNull() && request.params[1].get_int() > 0) {
+                height = request.params[0].get_int();
+            } else {
+                height = chainman.ActiveChain().Height();
+            }
+
+            UniValue ret(UniValue::VOBJ);
+            ret.pushKV("height", chainman.ActiveChain().Height());
+            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus()));
+            ret.pushKV("multiplier", GetInflationAdjustment(&chainman.ActiveChainstate(), Params().GetConsensus()));
+            return ret;
+        },
+    };
+}
+
 static std::vector<RPCResult> MempoolEntryDescription() { return {
     RPCResult{RPCResult::Type::NUM, "vsize", "virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
     RPCResult{RPCResult::Type::NUM, "weight", "transaction weight as defined in BIP 141."},
@@ -2627,6 +2697,8 @@ static const CRPCCommand commands[] =
     { "blockchain",         &getblockheader,                     },
     { "blockchain",         &getchaintips,                       },
     { "blockchain",         &getdifficulty,                      },
+    { "blockchain",         &getinflation,                       },
+    { "blockchain",         &getinflationmultiplier,                       },
     { "blockchain",         &getmempoolancestors,                },
     { "blockchain",         &getmempooldescendants,              },
     { "blockchain",         &getmempoolentry,                    },

@@ -5358,3 +5358,49 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
 
     return nInflationAdjustment;
 }
+
+/**
+ * PoSV2 determine the current inflation rate
+ */
+double GetInflation(CChainState* active_chainstate, const Consensus::Params& consensusParams)
+{
+    CBlockIndex* pindex = active_chainstate->m_chain.Tip();
+
+    int64_t nMoneySupply = pindex->pprev->nMoneySupply;
+    int64_t nMoneySupplyPrev;
+    // some rounding for year/ leap year
+    int64_t nBlocksPerDay = 1440; // generate block per 60sec
+    int64_t nBlocksPerYear = ((365 * 33 + 8.0) / 33.0) * nBlocksPerDay;
+    // month are a consistent period
+    int64_t nBlocksPerMonth = nBlocksPerYear / 12;
+
+    double nInflation = 0;
+    int64_t nPoSVRewards = 0;
+
+    if (pindex && pindex->nHeight >= consensusParams.nLastPowHeight) {
+        if (pindex->nHeight - consensusParams.nLastPowHeight < nBlocksPerMonth) {
+            nBlocksPerMonth = pindex->nHeight - consensusParams.nLastPowHeight;
+        }
+    }
+
+    // get previous block interval
+    std::string strHash = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
+    uint256 hash = uint256S(strHash);
+
+    {
+      LOCK(cs_main);
+      if (!active_chainstate->m_blockman.m_block_index.count(hash))
+	LogPrint(BCLog::STAKE, "%s: Hash block missing\n", __func__);
+
+      nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
+    }
+
+
+
+    nPoSVRewards = nMoneySupply - nMoneySupplyPrev;
+    nInflation = (double(nPoSVRewards) / double(nMoneySupply)) * 12 * 100;
+
+    LogPrint(BCLog::STAKE, "%s: Block rewards in last interval = %s. Inflation1 = %s\n", __func__, FormatMoney(nPoSVRewards), nInflation);
+
+    return nInflation;
+}
