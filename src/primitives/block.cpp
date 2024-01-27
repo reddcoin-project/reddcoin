@@ -35,14 +35,15 @@ bool CBlockHeader::IsProofOfStake() const
 std::string CBlock::ToString() const
 {
     std::stringstream s;
-    s << strprintf("CBlock(hash=%s, ver=0x%08x, hashPrevBlock=%s, hashMerkleRoot=%s, nTime=%u, nBits=%08x, nNonce=%u, type=%s, vtx=%u)\n",
+    s << strprintf("CBlock(hash=%s, ver=0x%08x, hashPrevBlock=%s, hashMerkleRoot=%s, nTime=%u, nBits=%08x, nNonce=%u, type=%s, vtx=%u, vchBlockSig=%s)\n",
         GetHash().ToString(),
         nVersion,
         hashPrevBlock.ToString(),
         hashMerkleRoot.ToString(),
         nTime, nBits, nNonce,
         IsProofOfStake() ? "PoS" : "PoW",
-        vtx.size());
+        vtx.size(),
+        HexStr(vchBlockSig));
     for (const auto& tx : vtx) {
         s << "  " << tx->ToString() << "\n";
     }
