@@ -132,6 +132,7 @@ private:
     void finish();
 
     int m_walletType;
+    bool m_importing;
     SecureString m_passphrase;
     SecureString m_ssMnemonic;
     SecureString m_ssMnemonicPassphrase;
@@ -159,6 +160,7 @@ private:
     void finish();
 
     int m_walletType;
+    bool m_importing;
     SecureString m_passphrase;
     SecureString m_ssMnemonic;
     SecureString m_ssMnemonicPassphrase;

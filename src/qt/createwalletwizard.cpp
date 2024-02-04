@@ -34,12 +34,13 @@
 #include <QWizardPage>
 
 
-CreateWalletWizard::CreateWalletWizard(QWidget* parent, SecureString* ssMnemonic_out, SecureString* ssMnemonicPassphrase_out, SecureString* ssMasterKey_out, int* walletType_out) : QWizard(parent, GUIUtil::dialog_flags),
+CreateWalletWizard::CreateWalletWizard(QWidget* parent, SecureString* ssMnemonic_out, SecureString* ssMnemonicPassphrase_out, SecureString* ssMasterKey_out, int* walletType_out, bool* importing_out) : QWizard(parent, GUIUtil::dialog_flags),
                                                                                                                                                                                     ui(new Ui::CreateWalletWizard),
                                                                                                                                                                                     m_ssMnemonic_out(ssMnemonic_out),
                                                                                                                                                                                     m_ssMnemonicPassphrase_out(ssMnemonicPassphrase_out),
                                                                                                                                                                                     m_ssMasterKey_out(ssMasterKey_out),
-                                                                                                                                                                                    m_wallettype_out(walletType_out)
+                                                                                                                                                                                    m_wallettype_out(walletType_out),
+                                                                                                                                                                                    m_importing_out(importing_out)
 {
     ui->setupUi(this);
 
@@ -100,6 +101,11 @@ int CreateWalletWizard::getWalletType() const
     return this->field("type.wallet").toInt();
 }
 
+bool CreateWalletWizard::getImporting() const
+{
+    return this->field("importing").toBool();
+}
+
 void CreateWalletWizard::setSigners(const std::vector<ExternalSigner>& signers)
 {
     m_has_signers = !signers.empty();
@@ -118,6 +124,7 @@ void CreateWalletWizard::accept()
     SecureString ssMnemonicPassphrase;
     SecureString ssMasterKey;
     int wallettype;
+    bool importing;
 
     ssMnemonic.reserve(MAX_PASSPHRASE_SIZE);
     ssMnemonicPassphrase.reserve(MAX_PASSPHRASE_SIZE);
@@ -140,7 +147,9 @@ void CreateWalletWizard::accept()
     m_ssMasterKey_out->assign(ssMasterKey);
 
     wallettype = this->field("type.wallet").toInt();
+    importing = this->field("importing").toBool();
     m_wallettype_out = &wallettype;
+    m_importing_out = &importing;
 
     QDialog::accept();
 }
@@ -451,6 +460,11 @@ wizPage_walletKeystore::wizPage_walletKeystore(QWidget* parent)
     verticalSpacer_1 = new QSpacerItem(20, 96, QSizePolicy::Minimum, QSizePolicy::Expanding);
 
     verticalLayout->addItem(verticalSpacer_1);
+
+    registerField("importing", radioButton_importSeed);
+    connect(radioButton_importSeed, &QCheckBox::toggled, [this](bool checked) {
+        setField("importing", checked);
+    });
 
     setLayout(verticalLayout);
 }

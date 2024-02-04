@@ -561,7 +561,7 @@ public:
     void setMockTime(int64_t time) override { return SetMockTime(time); }
 
     //! WalletClient methods
-    std::unique_ptr<Wallet> createWallet(const std::string& name, const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, const SecureString& ssMasterKey, const SecureString& passphrase, const int& walletType, uint64_t wallet_creation_flags, bilingual_str& error, std::vector<bilingual_str>& warnings) override
+    std::unique_ptr<Wallet> createWallet(const std::string& name, const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, const SecureString& ssMasterKey, const SecureString& passphrase, const int& walletType, const bool& importing, uint64_t wallet_creation_flags, bilingual_str& error, std::vector<bilingual_str>& warnings) override
     {
         std::shared_ptr<CWallet> wallet;
         DatabaseOptions options;
@@ -574,6 +574,7 @@ public:
         walletOptions.ssMnemonicPassphrase = ssMnemonicPassphrase;
         walletOptions.ssMasterKey = ssMasterKey;
         walletOptions.walletType = walletType;
+        walletOptions.importing = importing;
         return MakeWallet(CreateWallet(*m_context.chain, name, true /* load_on_start */, options, walletOptions, status, error, warnings));
     }
     std::unique_ptr<Wallet> loadWallet(const std::string& name, bilingual_str& error, std::vector<bilingual_str>& warnings) override
