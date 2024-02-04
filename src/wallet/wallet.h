@@ -268,6 +268,10 @@ private:
      * Used to keep track of last coinstake interval */
     int64_t nLastCoinStakeSearchInterval = 0;
     /**
+     * Was this wallet imported
+     */
+    bool fImporting = false;
+    /**
      * Used to keep track of spent outpoints, and
      * detect and report conflicts (double-spends or
      * mutated transactions where the mutant gets mined).
@@ -797,6 +801,11 @@ public:
     bool GetEnableStaking() const { return fEnableStaking; }
     /** Set whether this wallet unlocked for staking only. */
     void SetEnableStaking(bool enableStaking) { fEnableStaking = enableStaking; }
+
+    /** Inquire whether this wallet unlocked for staking only. */
+    bool GetImporting() const { return fImporting; }
+    /** Set whether this wallet unlocked for staking only. */
+    void SetImporting(bool importing) { fImporting = importing; }
 
     /** Inquire for this wallet last coinstake search interval. */
     int64_t GetLastCoinStakeSearchInterval() const { return nLastCoinStakeSearchInterval; }

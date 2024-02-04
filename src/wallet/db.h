@@ -220,6 +220,7 @@ enum walletType {
 struct WalletOptions {
     int walletType;
     int bits;
+    bool importing;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
     SecureString ssMasterKey;

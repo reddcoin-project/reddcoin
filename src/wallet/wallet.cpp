@@ -2660,7 +2660,9 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
             }
         }
 
-        if (chain) {
+        walletInstance->SetImporting(walletoptions.importing);
+
+        if (chain && !walletInstance->GetImporting()) {
             walletInstance->chainStateFlushed(chain->getTipLocator());
         }
     } else if (wallet_creation_flags & WALLET_FLAG_DISABLE_PRIVATE_KEYS) {
@@ -2886,15 +2888,17 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
         chain.initMessage(_("Rescanning…").translated);
         walletInstance->WalletLogPrintf("Rescanning last %i blocks (from block %i)...\n", *tip_height - rescan_height, rescan_height);
 
-        // No need to read and scan block if block was created before
-        // our wallet birthday (as adjusted for block time variability)
-        std::optional<int64_t> time_first_key;
-        for (auto spk_man : walletInstance->GetAllScriptPubKeyMans()) {
-            int64_t time = spk_man->GetTimeFirstKey();
-            if (!time_first_key || time < *time_first_key) time_first_key = time;
-        }
-        if (time_first_key) {
-            chain.findFirstBlockWithTimeAndHeight(*time_first_key - TIMESTAMP_WINDOW, rescan_height, FoundBlock().height(rescan_height));
+        if (!walletInstance->fImporting) {
+            // No need to read and scan block if block was created before
+            // our wallet birthday (as adjusted for block time variability)
+            std::optional<int64_t> time_first_key;
+            for (auto spk_man : walletInstance->GetAllScriptPubKeyMans()) {
+                int64_t time = spk_man->GetTimeFirstKey();
+                if (!time_first_key || time < *time_first_key) time_first_key = time;
+            }
+            if (time_first_key) {
+                chain.findFirstBlockWithTimeAndHeight(*time_first_key - TIMESTAMP_WINDOW, rescan_height, FoundBlock().height(rescan_height));
+            }
         }
 
         {
@@ -2903,6 +2907,7 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
                 error = _("Failed to rescan the wallet during initialization");
                 return false;
             }
+            walletInstance->SetImporting(false);
         }
         walletInstance->chainStateFlushed(chain.getTipLocator());
         walletInstance->GetDatabase().IncrementUpdateCounter();
