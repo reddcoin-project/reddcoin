@@ -227,7 +227,12 @@ public:
 
     bool IsProofOfStake() const
     {
-        return (nNonce == 0);
+        return (nFlags & BLOCK_PROOF_OF_STAKE);
+    }
+
+    void SetProofOfStake()
+    {
+        nFlags |= BLOCK_PROOF_OF_STAKE;
     }
 
     unsigned int GetStakeEntropyBit() const

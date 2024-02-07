@@ -3665,6 +3665,11 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
         return error("%s: %s", __func__, state.ToString());
     }
 
+    // PoSV: set nFlag
+    if (block.IsProofOfStake()) {
+        pindex->SetProofOfStake();
+    }
+
     // PoSV: get stake entropy bit
     uint256 hash = pblock->GetHash();
     if (!pindex->SetStakeEntropyBit(StakeEntropyBitFromHash(hash))) {
