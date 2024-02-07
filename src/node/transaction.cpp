@@ -157,3 +157,40 @@ CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMe
     }
     return nullptr;
 }
+
+CTransactionRef GetTransaction(const uint256& txhash, uint256& hashBlock)
+{
+    if (g_txindex) {
+        CTransactionRef tx;
+        uint256 block_hash;
+        if (g_txindex->FindTx(txhash, block_hash, tx)) {
+            hashBlock = block_hash;
+            return tx;
+        }
+    }
+
+    return nullptr;
+}
+
+CTransactionRef GetTransaction(const uint256& txhash)
+{
+    if (g_txindex) {
+        CDiskTxPos postx;
+        if (g_txindex->FindTxPosition(txhash, postx)) {
+            // Read block header
+            CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+            CBlockHeader header;
+            CTransactionRef tx;
+            try {
+                file >> header;
+                fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+                file >> tx;
+                return tx;
+            } catch (std::exception& e) {
+                return nullptr;
+            }
+        }
+    }
+
+    return nullptr;
+}
