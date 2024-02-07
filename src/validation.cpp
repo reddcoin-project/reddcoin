@@ -4446,9 +4446,12 @@ void CChainState::LoadExternalBlockFile(FILE* fileIn, FlatFilePos* dbp)
                     if (!ActivateBestChain(state, nullptr)) {
                         break;
                     }
+                } else {
+                    BlockValidationState state; // Only used to report errors, not invalidity - ignore it
+                    if (!ActivateBestChain(state, pblock)) {
+                	break;
+                    }
                 }
-
-                NotifyHeaderTip(*this);
 
                 // Recursively process earlier encountered successors of this block
                 std::deque<uint256> queue;
@@ -4472,7 +4475,10 @@ void CChainState::LoadExternalBlockFile(FILE* fileIn, FlatFilePos* dbp)
                         }
                         range.first++;
                         mapBlocksUnknownParent.erase(it);
-                        NotifyHeaderTip(*this);
+                        BlockValidationState state; // Only used to report errors, not invalidity - ignore it
+                        if (!ActivateBestChain(state, pblockrecursive)) {
+                            break;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
