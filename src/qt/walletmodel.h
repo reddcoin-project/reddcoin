@@ -163,6 +163,9 @@ public:
     bool isMultiwallet();
 
     bool GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight);
+    std::atomic<bool> updateStakeWeight;
+    uint64_t nAverageStakeWeight;
+    uint64_t nTotalStakeWeight;
 
     AddressTableModel* getAddressTableModel() const { return addressTableModel; }
 
