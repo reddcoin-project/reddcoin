@@ -4,9 +4,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <consensus/validation.h>
+#include <index/txindex.h>
 #include <net.h>
 #include <net_processing.h>
+#include <node/blockstorage.h>
 #include <node/context.h>
+#include <txmempool.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <node/transaction.h>
@@ -118,4 +121,76 @@ TransactionError BroadcastTransaction(NodeContext& node, const CTransactionRef t
     }
 
     return TransactionError::OK;
+}
+
+CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMemPool* const mempool, const uint256& hash, const Consensus::Params& consensusParams, uint256& hashBlock)
+{
+    LOCK(cs_main);
+
+    if (mempool && !block_index) {
+        CTransactionRef ptx = mempool->get(hash);
+        if (ptx) return ptx;
+    }
+    if (g_txindex) {
+        CTransactionRef tx;
+        uint256 block_hash;
+        if (g_txindex->FindTx(hash, block_hash, tx)) {
+            if (!block_index || block_index->GetBlockHash() == block_hash) {
+                // Don't return the transaction if the provided block hash doesn't match.
+                // The case where a transaction appears in multiple blocks (e.g. reorgs or
+                // BIP30) is handled by the block lookup below.
+                hashBlock = block_hash;
+                return tx;
+            }
+        }
+    }
+    if (block_index) {
+        CBlock block;
+        if (ReadBlockFromDisk(block, block_index, consensusParams)) {
+            for (const auto& tx : block.vtx) {
+                if (tx->GetHash() == hash) {
+                    hashBlock = block_index->GetBlockHash();
+                    return tx;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+CTransactionRef GetTransaction(const uint256& txhash, uint256& hashBlock)
+{
+    if (g_txindex) {
+        CTransactionRef tx;
+        uint256 block_hash;
+        if (g_txindex->FindTx(txhash, block_hash, tx)) {
+            hashBlock = block_hash;
+            return tx;
+        }
+    }
+
+    return nullptr;
+}
+
+CTransactionRef GetTransaction(const uint256& txhash)
+{
+    if (g_txindex) {
+        CDiskTxPos postx;
+        if (g_txindex->FindTxPosition(txhash, postx)) {
+            // Read block header
+            CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+            CBlockHeader header;
+            CTransactionRef tx;
+            try {
+                file >> header;
+                fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+                file >> tx;
+                return tx;
+            } catch (std::exception& e) {
+                return nullptr;
+            }
+        }
+    }
+
+    return nullptr;
 }

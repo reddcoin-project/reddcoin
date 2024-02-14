@@ -8,9 +8,8 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <hash.h>
-#include <index/disktxpos.h>
-#include <index/txindex.h>
 #include <node/blockstorage.h>
+#include <node/transaction.h>
 #include <pos/modifiercache.h>
 #include <random.h>
 #include <script/interpreter.h>
@@ -410,30 +409,21 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, co
 bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CTransactionRef& tx, unsigned int nBits, uint256& hashProofOfStake)
 {
     if (!tx->IsCoinStake())
-        return error("CheckProofOfStake() : called on non-coinstake %s", tx->GetHash().ToString());
+        return error("%s() : called on non-coinstake %s", __func__, tx->GetHash().ToString());
 
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx->vin[0];
 
-    // Get transaction index for the previous transaction
-    CDiskTxPos postx;
-    if (!g_txindex->FindTxPosition(txin.prevout.hash, postx)) {
-        return error("CheckProofOfStake() : tx index not found");
-    }
+    uint256 blockHash;
+    CTransactionRef txPrev = GetTransaction(txin.prevout.hash, blockHash);
+    if (!txPrev)
+        return error("%s() : tx %s not found", __func__, txin.prevout.hash.ToString());
 
-    // Read txPrev and header of its block
-    CBlockHeader header;
-    CTransactionRef txPrev;
-    {
-        CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
-        try {
-            file >> header;
-            fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
-            file >> txPrev;
-        } catch (std::exception& e) {
-            return error("%s() : deserialize or I/O error in CheckProofOfStake()", __func__);
-        }
-    }
+    const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(blockHash);
+    if (!pindex)
+          return error("%s() : block %s not found in index", __func__, blockHash.ToString());
+
+    CBlockHeader header = pindex->GetBlockHeader();
 
     // Calculate stakehash
     if (!CheckStakeKernelHash(active_chainstate, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
