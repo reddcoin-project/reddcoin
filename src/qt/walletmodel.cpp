@@ -57,6 +57,9 @@ WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel
     mintingTableModel = new MintingTableModel(this);
     transactionTableModel = new TransactionTableModel(platformStyle, this);
     recentRequestsTableModel = new RecentRequestsTableModel(this);
+    nAverageStakeWeight = 0;
+    nTotalStakeWeight = 0;
+    updateStakeWeight = true;
 
     subscribeToCoreSignals();
 }
@@ -154,13 +157,22 @@ bool WalletModel::validateAddress(const QString &address)
 
 bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight)
 {
+    int numBlocks = -1;
+    bool isSyncing = false;
+
+    if (!m_node.tryGetSyncInfo(numBlocks, isSyncing))
+        return false;
+
+    if (isSyncing)
+        return false;
+
     std::set<CInputCoin> setCoins;
-    if(!m_wallet->GetStakeWeightSet(setCoins))
+    if (!m_wallet->GetStakeWeightSet(setCoins))
         return false;
     if (setCoins.empty())
         return false;
 
-    if(!m_node.getStakeWeight(setCoins, nAverageWeight, nTotalWeight))
+    if (!m_node.getStakeWeight(setCoins, nAverageWeight, nTotalWeight))
         return false;
 
     return true;

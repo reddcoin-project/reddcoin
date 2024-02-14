@@ -309,6 +309,31 @@ public:
         LOCK(::cs_main);
         return chainman().ActiveChainstate().CoinsTip().GetCoin(output, coin);
     }
+    void getSyncInfo(int& numBlocks, bool& isSyncing) override
+    {
+        LOCK(::cs_main);
+        // Get node synchronization information with minimal locks
+        numBlocks = chainman().ActiveChain().Height();
+        int64_t blockTime = chainman().ActiveChain().Tip() ? chainman().ActiveChain().Tip()->GetBlockTime() :
+                                                  Params().GenesisBlock().GetBlockTime();
+        int64_t secs = GetTime() - blockTime;
+        isSyncing = secs >= 90*60 ? true : false;
+    }
+    bool tryGetSyncInfo(int& numBlocks, bool& isSyncing) override
+    {
+        TRY_LOCK(::cs_main, lockMain);
+        if (lockMain) {
+            // Get node synchronization information with minimal locks
+            numBlocks = chainman().ActiveChain().Height();
+            int64_t blockTime = chainman().ActiveChain().Tip() ? chainman().ActiveChain().Tip()->GetBlockTime() :
+                                                      Params().GenesisBlock().GetBlockTime();
+            int64_t secs = GetTime() - blockTime;
+            isSyncing = secs >= 90*60 ? true : false;
+            return true;
+        }
+
+        return false;
+    }
     WalletClient& walletClient() override
     {
         return *Assert(m_context->wallet_client);
