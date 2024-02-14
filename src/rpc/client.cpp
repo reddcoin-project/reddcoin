@@ -197,6 +197,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "setstaking", 1, "load_on_startup" },
     { "getinterest", 0, "start" },
     { "getinterest", 1, "end" },
+    { "getinflation", 0, "height" },
+    { "getinflationmultiplier", 0, "height" },
 };
 // clang-format on
 
