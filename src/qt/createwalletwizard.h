@@ -47,7 +47,7 @@ public:
            Page5_confirmSeed,
            Page7_enterSeed,
            Page8_finish };
-    explicit CreateWalletWizard(QWidget* parent, SecureString* m_ssMnemonic_out = nullptr, SecureString* m_ssMnemonicPassphrase_out = nullptr, SecureString* m_ssMasterKey_out = nullptr, int* m_wallettype_out = nullptr);
+    explicit CreateWalletWizard(QWidget* parent, SecureString* m_ssMnemonic_out = nullptr, SecureString* m_ssMnemonicPassphrase_out = nullptr, SecureString* m_ssMasterKey_out = nullptr, int* m_wallettype_out = nullptr, bool* m_importing_out = nullptr);
     virtual ~CreateWalletWizard();
 
     void accept() override;
@@ -62,6 +62,7 @@ public:
     bool isDescriptorWalletChecked() const;
     bool isExternalSignerChecked() const;
     int getWalletType() const;
+    bool getImporting() const;
 
 private:
     Ui::CreateWalletWizard* ui;
@@ -70,6 +71,7 @@ private:
     SecureString* m_ssMnemonicPassphrase_out;
     SecureString* m_ssMasterKey_out;
     int* m_wallettype_out;
+    bool* m_importing_out;
 };
 
 
