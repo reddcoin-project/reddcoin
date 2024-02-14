@@ -9,7 +9,6 @@
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
 #include <consensus/validation.h>
-#include <pos/kernel.h>
 #include <validation.h>
 
 // TODO remove the following dependencies
