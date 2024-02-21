@@ -334,13 +334,23 @@ void WalletView::unlockWallet()
     }
 }
 
-void WalletView::lockWallet()
+void WalletView::lockWallet(bool lock_wallet)
 {
-    if(!walletModel)
+    if (!walletModel)
         return;
-    // Lock wallet when requested by wallet model
-    walletModel->setWalletLocked(true);
 
+    if (lock_wallet) {
+        // Lock wallet when requested by wallet model
+        walletModel->setWalletLocked(lock_wallet);
+        return;
+    }
+
+    // Unlock wallet when requested by wallet model
+    if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
+        AskPassphraseDialog dlg(AskPassphraseDialog::Unlock, this);
+        dlg.setModel(walletModel);
+        dlg.exec();
+    }
 }
 
 void WalletView::enableStaking()

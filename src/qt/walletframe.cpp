@@ -227,11 +227,11 @@ void WalletFrame::unlockWallet()
         walletView->unlockWallet();
 }
 
-void WalletFrame::lockWallet()
+void WalletFrame::lockWallet(bool lock_wallet)
 {
     WalletView *walletView = currentWalletView();
     if (walletView)
-        walletView->lockWallet();
+        walletView->lockWallet(lock_wallet);
 }
 
 void WalletFrame::enableStaking()

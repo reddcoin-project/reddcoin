@@ -29,7 +29,6 @@
 #include <memory>
 
 class ClientModel;
-class LockWalletStatusBarControl;
 class NetworkStyle;
 class Notificator;
 class OptionsModel;
@@ -134,8 +133,7 @@ private:
     WalletFrame* walletFrame = nullptr;
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
-    LockWalletStatusBarControl* labelWalletEncryptionIcon = nullptr;
-    // GUIUtil::ThemedLabel* labelWalletEncryptionIcon = nullptr;
+    GUIUtil::ClickableLabel* labelWalletEncryptionIcon = nullptr;
     GUIUtil::ThemedLabel* labelWalletHDStatusIcon = nullptr;
     GUIUtil::ClickableLabel* labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel* connectionsControl = nullptr;
@@ -278,6 +276,7 @@ public Q_SLOTS:
     void updateStakingStatus();
     /** Set staking state shown in the UI */
     void setStakingActive(bool staking_active);
+    void setWalletLocked(bool wallet_locked);
 
 private:
     /** Set the encryption status as shown in the UI.
@@ -402,46 +401,6 @@ private Q_SLOTS:
     /** When Display Units are changed on OptionsModel it will refresh the display text of the control on the status bar */
     void updateDisplayUnit(int newUnits);
     /** Tells underlying optionsModel to update its current display unit. */
-    void onMenuSelection(QAction* action);
-};
-
-class LockWalletStatusBarControl : public QLabel
-{
-  Q_OBJECT
-
-public:
-    explicit LockWalletStatusBarControl(const PlatformStyle *platformStyle);
-    /** Lets the control know about the Wallet Frame Model (and its signals) */
-    void setWalletFrame(WalletFrame *walletFrame);
-    void setThemedPixmap(const QString& image_filename, int width, int height);
-    void setLockState(bool lock_active);
-
-protected:
-    /** So that it responds to left-button clicks */
-    void mousePressEvent(QMouseEvent *event) override;
-    void changeEvent(QEvent* e) override;
-
-private:
-    // OptionsModel *optionsModel;
-    WalletFrame *walletFrame;
-    QMenu* menu;
-    QAction* unlockWalletAction = nullptr;
-    QAction* lockWalletAction = nullptr;
-    const PlatformStyle* m_platform_style;
-    QString m_image_filename;
-    int m_pixmap_width;
-    int m_pixmap_height;
-    void updateThemedPixmap();
-
-    /** Shows context menu with Lock wallet options by the mouse coordinates */
-    void onLockWalletClicked(const QPoint& point);
-    /** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
-    void createContextMenu();
-
-private Q_SLOTS:
-    /** When wallet lock status is changed on walletFrame it will refresh the display text of the control on the status bar */
-    void updateLockWallet(int newUnits);
-    /** Tells underlying walletFrame to update its current status. */
     void onMenuSelection(QAction* action);
 };
 

@@ -162,7 +162,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->setContentsMargins(3,0,3,0);
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
-    labelWalletEncryptionIcon = new LockWalletStatusBarControl(platformStyle);
+    labelWalletEncryptionIcon = new GUIUtil::ClickableLabel(platformStyle);
     stakingStatusControl = new StakingStatusBarControl(platformStyle);
     globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
@@ -178,8 +178,6 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
         frameBlocksLayout->addStretch();
         frameBlocksLayout->addWidget(stakingStatusControl);
-
-        labelWalletEncryptionIcon->setWalletFrame(walletFrame);
         stakingStatusControl->setRPCConsole(rpcConsole);
         stakingStatusControl->setWalletFrame(walletFrame);
     }
@@ -747,6 +745,9 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         {
             walletFrame->setClientModel(_clientModel);
         }
+        connect(labelWalletEncryptionIcon, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_lock_context_menu, QCursor::pos());
+                });
 #endif // ENABLE_WALLET
         unitDisplayControl->setOptionsModel(_clientModel->getOptionsModel());
 
@@ -1492,6 +1493,18 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
     labelWalletHDStatusIcon->setEnabled(hdEnabled > 0);
 }
 
+void BitcoinGUI::setWalletLocked(bool wallet_locked)
+{
+    m_lock_context_menu->clear();
+    m_lock_context_menu->addAction(
+        wallet_locked ?
+            //: A context menu item.
+            tr("Unlock Wallet") :
+            //: A context menu item. The stake state activity was unlocked previously.
+            tr("Lock Wallet"),
+        [this, new_state = !wallet_locked] { walletFrame->lockWallet(new_state); });
+}
+
 void BitcoinGUI::setEncryptionStatus(int status)
 {
     switch(status)
@@ -1519,7 +1532,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         unlockWalletAction->setVisible(false);
         lockWalletAction->setVisible(true);
         encryptWalletAction->setEnabled(false);
-        labelWalletEncryptionIcon->setLockState(true);
+        setWalletLocked(false);
         break;
     case WalletModel::Locked:
         labelWalletEncryptionIcon->show();
@@ -1530,7 +1543,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         unlockWalletAction->setVisible(true);
         lockWalletAction->setVisible(false);
         encryptWalletAction->setEnabled(false);
-        labelWalletEncryptionIcon->setLockState(false);
+        setWalletLocked(true);
         break;
     }
 
@@ -1852,119 +1865,6 @@ void UnitDisplayStatusBarControl::onMenuSelection(QAction* action)
     {
         optionsModel->setDisplayUnit(action->data());
     }
-}
-
-LockWalletStatusBarControl::LockWalletStatusBarControl(const PlatformStyle *platformStyle)
-    : walletFrame(nullptr),
-      menu(nullptr),
-      m_platform_style{platformStyle}
-{
-    createContextMenu();
-    int max_width = 0;
-    setMinimumSize(max_width, 0);
-    setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    setStyleSheet(QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name()));
-}
-
-/** So that it responds to button clicks */
-void LockWalletStatusBarControl::mousePressEvent(QMouseEvent *event)
-{
-    onLockWalletClicked(event->pos());
-}
-
-void LockWalletStatusBarControl::changeEvent(QEvent* e)
-{
-    if (e->type() == QEvent::PaletteChange) {
-        QString style = QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name());
-        if (style != styleSheet()) {
-            setStyleSheet(style);
-        }
-    }
-
-    QLabel::changeEvent(e);
-}
-
-/** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
-void LockWalletStatusBarControl::createContextMenu()
-{
-    menu = new QMenu(this);
-
-    lockWalletAction = new QAction(tr("Lock Wallet"));
-    lockWalletAction->setStatusTip(tr("Lock wallet"));
-    lockWalletAction->setData(QVariant(1));
-    unlockWalletAction = new QAction(tr("Unlock Wallet"));
-    unlockWalletAction->setStatusTip(tr("Unlock wallet"));
-    unlockWalletAction->setData(QVariant(0));
-
-    menu->addAction(lockWalletAction);
-    menu->addAction(unlockWalletAction);
-    connect(menu, &QMenu::triggered, this, &LockWalletStatusBarControl::onMenuSelection);
-}
-
-void LockWalletStatusBarControl::setWalletFrame(WalletFrame *_walletFrame)
-{
-  if (_walletFrame)
-  {
-      this->walletFrame = _walletFrame;
-
-      // be aware of wallet lock change reported by the WalletFrame object.
-      connect(_walletFrame, &WalletFrame::walletLockStatusChanged, this, &LockWalletStatusBarControl::updateLockWallet);
-
-      // initialize the wallet lock icon with the current value in the model.
-      //updateLockWallet();
-  }
-}
-
-/** When status is changed on walletFrame it will refresh the display text of the control on the status bar */
-void LockWalletStatusBarControl::updateLockWallet(int newUnits)
-{
-    setText(QString(""));
-}
-
-/** Shows context menu with lock wallet options by the mouse coordinates */
-void LockWalletStatusBarControl::onLockWalletClicked(const QPoint& point)
-{
-    QPoint globalPos = mapToGlobal(point);
-    menu->exec(globalPos);
-}
-
-/** Tells underlying walletFrame to update its current state. */
-void LockWalletStatusBarControl::onMenuSelection(QAction* action)
-{
-    if (action)
-    {
-	bool bLockWallet = action->data().toInt();
-        if(bLockWallet) {
-            walletFrame->lockWallet();
-	} else {
-	    walletFrame->unlockWallet();
-	}
-    }
-}
-
-/** Updates the menu items list. */
-void LockWalletStatusBarControl::setLockState(bool lock_active)
-{
-    menu->clear();
-    menu->addAction(
-	lock_active ?
-	    //: A context menu item.
-	    lockWalletAction :
-	    //: A context menu item. The lock state activity was disabled previously.
-	    unlockWalletAction);
-}
-
-void LockWalletStatusBarControl::setThemedPixmap(const QString& image_filename, int width, int height)
-{
-    m_image_filename = image_filename;
-    m_pixmap_width = width;
-    m_pixmap_height = height;
-    updateThemedPixmap();
-}
-
-void LockWalletStatusBarControl::updateThemedPixmap()
-{
-    setPixmap(m_platform_style->SingleColorIcon(m_image_filename).pixmap(m_pixmap_width, m_pixmap_height));
 }
 
 StakingStatusBarControl::StakingStatusBarControl(const PlatformStyle *platformStyle)
