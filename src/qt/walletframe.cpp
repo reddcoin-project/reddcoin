@@ -234,18 +234,11 @@ void WalletFrame::lockWallet(bool lock_wallet)
         walletView->lockWallet(lock_wallet);
 }
 
-void WalletFrame::enableStaking()
+void WalletFrame::enableStaking(bool enable_staking)
 {
     WalletView *walletView = currentWalletView();
     if (walletView)
-        walletView->enableStaking();
-}
-
-void WalletFrame::disableStaking()
-{
-    WalletView *walletView = currentWalletView();
-    if (walletView)
-        walletView->disableStaking();
+        walletView->enableStaking(enable_staking);
 }
 
 void WalletFrame::usedSendingAddresses()

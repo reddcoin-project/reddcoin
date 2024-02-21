@@ -108,8 +108,7 @@ public Q_SLOTS:
     void lockWallet(bool lock_wallet);
 
     /** Enable/Disable staking */
-    void enableStaking();
-    void disableStaking();
+    void enableStaking(bool enable_staking);
 
     /** Show used sending addresses */
     void usedSendingAddresses();

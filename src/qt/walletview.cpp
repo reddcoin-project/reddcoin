@@ -353,20 +353,12 @@ void WalletView::lockWallet(bool lock_wallet)
     }
 }
 
-void WalletView::enableStaking()
+void WalletView::enableStaking(bool enable_staking)
 {
     if(!walletModel)
         return;
 
-    walletModel->setWalletStaking(true);
-}
-
-void WalletView::disableStaking()
-{
-    if(!walletModel)
-        return;
-
-    walletModel->setWalletStaking(false);
+    walletModel->setWalletStaking(enable_staking);
 }
 
 void WalletView::usedSendingAddresses()
