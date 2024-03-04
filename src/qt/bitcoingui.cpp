@@ -163,7 +163,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
     labelWalletEncryptionIcon = new GUIUtil::ClickableLabel(platformStyle);
-    stakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
+    walletstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
@@ -177,7 +177,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         frameBlocksLayout->addWidget(labelWalletEncryptionIcon);
         frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
         frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(stakingStatusControl);
+        frameBlocksLayout->addWidget(walletstakingStatusControl);
     }
     frameBlocksLayout->addWidget(labelProxyIcon);
     frameBlocksLayout->addStretch();
@@ -746,7 +746,7 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         connect(labelWalletEncryptionIcon, &GUIUtil::ClickableLabel::clicked, [this] {
                     GUIUtil::PopupMenu(m_lock_context_menu, QCursor::pos());
                 });
-        connect(stakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+        connect(walletstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
                     GUIUtil::PopupMenu(m_wallet_staking_context_menu, QCursor::pos());
                 });
 #endif // ENABLE_WALLET
@@ -842,7 +842,7 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
 
     labelWalletHDStatusIcon->hide();
     labelWalletEncryptionIcon->hide();
-    stakingStatusControl->hide();
+    walletstakingStatusControl->hide();
 
     int index = m_wallet_selector->findData(QVariant::fromValue(walletModel));
     m_wallet_selector->removeItem(index);
@@ -1609,7 +1609,7 @@ void BitcoinGUI::updateStakingStatus()
 
     if (staking && m_node.getStakingActive()) {
         msg = tr("Wallet is staking");
-        stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        walletstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     } else {
         if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
             msg = tr("Not staking because wallet is locked");
@@ -1627,7 +1627,7 @@ void BitcoinGUI::updateStakingStatus()
             msg = tr("Waiting for staking to start");
         }
 
-        stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        walletstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
     walletstakingStatusControl->setToolTip(msg);
