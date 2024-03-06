@@ -366,6 +366,10 @@ public:
     {
         return MakeHandler(::uiInterface.NotifyNodeStakingActiveChanged_connect(fn));
     }
+    std::unique_ptr<Handler> handleNotifyWalletStakingActiveChanged(NotifyWalletStakingActiveChangedFn fn) override
+    {
+        return MakeHandler(::uiInterface.NotifyWalletStakingActiveChanged_connect(fn));
+    }
     std::unique_ptr<Handler> handleNotifyAlertChanged(NotifyAlertChangedFn fn) override
     {
         return MakeHandler(::uiInterface.NotifyAlertChanged_connect(fn));

@@ -690,6 +690,9 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
                     return;
             }
+
+            uiInterface.NotifyWalletStakingActiveChanged(true);
+
             if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
                 return;
 

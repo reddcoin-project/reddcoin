@@ -96,6 +96,7 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_notify_num_connections_changed;
     std::unique_ptr<interfaces::Handler> m_handler_notify_network_active_changed;
     std::unique_ptr<interfaces::Handler> m_handler_notify_nodestaking_active_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_walletstaking_active_changed;
     std::unique_ptr<interfaces::Handler> m_handler_notify_alert_changed;
     std::unique_ptr<interfaces::Handler> m_handler_banned_list_changed;
     std::unique_ptr<interfaces::Handler> m_handler_notify_block_tip;
@@ -117,6 +118,7 @@ Q_SIGNALS:
     void mempoolSizeChanged(long count, size_t mempoolSizeInBytes);
     void networkActiveChanged(bool networkActive);
     void nodeStakingActiveChanged(bool stakingActive);
+    void walletStakingActiveChanged(bool stakingActive);
     void alertsChanged(const QString &warnings);
     void bytesChanged(quint64 totalBytesIn, quint64 totalBytesOut);
 
@@ -130,6 +132,7 @@ public Q_SLOTS:
     void updateNumConnections(int numConnections);
     void updateNetworkActive(bool networkActive);
     void updateNodeStakingActive(bool stakingActive);
+    void updateWalletStakingActive(bool stakingActive);
     void updateAlert();
     void updateBanlist();
 };

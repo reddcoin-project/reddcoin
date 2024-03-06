@@ -235,6 +235,10 @@ public:
     using NotifyNodeStakingActiveChangedFn = std::function<void(bool staking_active)>;
     virtual std::unique_ptr<Handler> handleNotifyNodeStakingActiveChanged(NotifyNodeStakingActiveChangedFn fn) = 0;
 
+    //! Register handler for wallet staking active messages.
+    using NotifyWalletStakingActiveChangedFn = std::function<void(bool staking_active)>;
+    virtual std::unique_ptr<Handler> handleNotifyWalletStakingActiveChanged(NotifyWalletStakingActiveChangedFn fn) = 0;
+
     //! Register handler for notify alert messages.
     using NotifyAlertChangedFn = std::function<void()>;
     virtual std::unique_ptr<Handler> handleNotifyAlertChanged(NotifyAlertChangedFn fn) = 0;

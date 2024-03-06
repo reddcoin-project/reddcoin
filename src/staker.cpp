@@ -224,7 +224,7 @@ void CStakeman::StakeWalletAdd(const std::string& walletname)
                 }
 
                 LogPrintf("CStakeman::%s Launching wallet..  [%s]\n", __func__, wallet->GetName());
-                uiInterface.NotifyStakingActiveChanged(true);
+                uiInterface.NotifyWalletStakingActiveChanged(true);
             }
         }
     }
@@ -245,6 +245,7 @@ void CStakeman::StakeWalletRemove(const std::string& walletname)
 
         tm_.erase(walletname);
         LogPrintf("CStakeman::%s Thread %s removed\n", __func__, walletname);
+        uiInterface.NotifyWalletStakingActiveChanged(false);
     }
 }
 

@@ -163,6 +163,11 @@ void ClientModel::updateNodeStakingActive(bool stakingActive)
     Q_EMIT nodeStakingActiveChanged(stakingActive);
 }
 
+void ClientModel::updateWalletStakingActive(bool stakingActive)
+{
+    Q_EMIT walletStakingActiveChanged(stakingActive);
+}
+
 void ClientModel::updateAlert()
 {
     Q_EMIT alertsChanged(getStatusBarWarnings());
@@ -283,6 +288,14 @@ static void NotifyNodeStakingActiveChanged(ClientModel *clientmodel, bool stakin
     assert(invoked);
 }
 
+static void NotifyWalletStakingActiveChanged(ClientModel *clientmodel, bool stakingActive)
+{
+    qDebug() << QString("%1: Wallet Staking updated to %2").arg(__func__).arg(stakingActive);
+    bool invoked = QMetaObject::invokeMethod(clientmodel, "updateWalletStakingActive", Qt::QueuedConnection,
+                              Q_ARG(bool, stakingActive));
+    assert(invoked);
+}
+
 static void NotifyAlertChanged(ClientModel *clientmodel)
 {
     qDebug() << "NotifyAlertChanged";
@@ -333,6 +346,7 @@ void ClientModel::subscribeToCoreSignals()
     m_handler_notify_num_connections_changed = m_node.handleNotifyNumConnectionsChanged(std::bind(NotifyNumConnectionsChanged, this, std::placeholders::_1));
     m_handler_notify_network_active_changed = m_node.handleNotifyNetworkActiveChanged(std::bind(NotifyNetworkActiveChanged, this, std::placeholders::_1));
     m_handler_notify_nodestaking_active_changed = m_node.handleNotifyNodeStakingActiveChanged(std::bind(NotifyNodeStakingActiveChanged, this, std::placeholders::_1));
+    m_handler_notify_walletstaking_active_changed = m_node.handleNotifyWalletStakingActiveChanged(std::bind(NotifyWalletStakingActiveChanged, this, std::placeholders::_1));
     m_handler_notify_alert_changed = m_node.handleNotifyAlertChanged(std::bind(NotifyAlertChanged, this));
     m_handler_banned_list_changed = m_node.handleBannedListChanged(std::bind(BannedListChanged, this));
     m_handler_notify_block_tip = m_node.handleNotifyBlockTip(std::bind(BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, false));
@@ -346,6 +360,7 @@ void ClientModel::unsubscribeFromCoreSignals()
     m_handler_notify_num_connections_changed->disconnect();
     m_handler_notify_network_active_changed->disconnect();
     m_handler_notify_nodestaking_active_changed->disconnect();
+    m_handler_notify_walletstaking_active_changed->disconnect();
     m_handler_notify_alert_changed->disconnect();
     m_handler_banned_list_changed->disconnect();
     m_handler_notify_block_tip->disconnect();
