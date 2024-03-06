@@ -716,11 +716,6 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         });
         connect(_clientModel, &ClientModel::numConnectionsChanged, this, &BitcoinGUI::setNumConnections);
         connect(_clientModel, &ClientModel::networkActiveChanged, this, &BitcoinGUI::setNetworkActive);
-        setNodeStakingActive(m_node.getStakingActive());
-        connect(nodestakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
-                    GUIUtil::PopupMenu(m_node_staking_context_menu, QCursor::pos());
-                });
-        connect(_clientModel, &ClientModel::stakingActiveChanged, this, &BitcoinGUI::setNodeStakingActive);
 
         modalOverlay->setKnownBestHeight(tip_info->header_height, QDateTime::fromTime_t(tip_info->header_time));
         setNumBlocks(tip_info->block_height, QDateTime::fromTime_t(tip_info->block_time), tip_info->verification_progress, false, SynchronizationState::INIT_DOWNLOAD);
@@ -743,13 +738,18 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         {
             walletFrame->setClientModel(_clientModel);
         }
-        updateNodeStakingStatus();
         connect(labelWalletEncryptionIcon, &GUIUtil::ClickableLabel::clicked, [this] {
                     GUIUtil::PopupMenu(m_lock_context_menu, QCursor::pos());
                 });
         connect(walletstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
                     GUIUtil::PopupMenu(m_wallet_staking_context_menu, QCursor::pos());
                 });
+        setNodeStakingActive(m_node.getNodeStakingActive());
+        connect(nodestakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_node_staking_context_menu, QCursor::pos());
+                });
+        updateNodeStakingStatus();
+        connect(_clientModel, &ClientModel::nodeStakingActiveChanged, this, &BitcoinGUI::setNodeStakingActive);
 #endif // ENABLE_WALLET
         unitDisplayControl->setOptionsModel(_clientModel->getOptionsModel());
 
@@ -1597,7 +1597,7 @@ void BitcoinGUI::updateWalletStakingStatus()
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
     }
 
-    if (staking && m_node.getStakingActive()) {
+    if (staking && m_node.getNodeStakingActive()) {
         msg = tr("Wallet is staking");
         walletstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     } else {
@@ -1611,7 +1611,7 @@ void BitcoinGUI::updateWalletStakingStatus()
             msg = tr("Not staking because you don't have mature coins");
         } else if (!walletModel->getWalletStaking()) {
             msg = tr("Wallet staking is disabled");
-        } else if (!m_node.getStakingActive()) {
+        } else if (!m_node.getNodeStakingActive()) {
             msg = tr("Staking is not enabled");
         } else if (!staking) {
             msg = tr("Waiting for staking to start");
@@ -1635,13 +1635,13 @@ void BitcoinGUI::setNodeStakingActive(bool staking_active)
             tr("Disable Node Staking") :
             //: A context menu item. The stake state activity was disabled previously.
             tr("Enable Node Staking"),
-        [this, new_state = !staking_active] { m_node.setStakingActive(new_state); });
+        [this, new_state = !staking_active] { m_node.setNodeStakingActive(new_state); });
 }
 
 void BitcoinGUI::updateNodeStakingStatus()
 {
   QString msg;
-  if (m_node.getStakingActive()) {
+  if (m_node.getNodeStakingActive()) {
       msg = tr("Staking is enabled");
       nodestakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
   } else {

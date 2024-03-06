@@ -260,7 +260,7 @@ public:
     {
       return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);
     }
-    void setStakingActive(bool active) override
+    void setNodeStakingActive(bool active) override
     {
         if (m_context->stakeman) {
             m_context->stakeman->SetStakingActive(active);
@@ -281,7 +281,7 @@ public:
             m_context->stakeman->StakeWalletRemove(walletname);
         }
     }
-    bool getStakingActive() override { return m_context->stakeman && m_context->stakeman->GetStakingActive(); }
+    bool getNodeStakingActive() override { return m_context->stakeman && m_context->stakeman->GetNodeStakingActive(); }
     bool getReindex() override { return ::fReindex; }
     bool getImporting() override { return ::fImporting; }
     void setNetworkActive(bool active) override
@@ -362,9 +362,9 @@ public:
     {
         return MakeHandler(::uiInterface.NotifyNetworkActiveChanged_connect(fn));
     }
-    std::unique_ptr<Handler> handleNotifyStakingActiveChanged(NotifyStakingActiveChangedFn fn) override
+    std::unique_ptr<Handler> handleNotifyNodeStakingActiveChanged(NotifyNodeStakingActiveChangedFn fn) override
     {
-        return MakeHandler(::uiInterface.NotifyStakingActiveChanged_connect(fn));
+        return MakeHandler(::uiInterface.NotifyNodeStakingActiveChanged_connect(fn));
     }
     std::unique_ptr<Handler> handleNotifyAlertChanged(NotifyAlertChangedFn fn) override
     {

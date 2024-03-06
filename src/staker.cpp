@@ -95,6 +95,7 @@ bool CStakeman::Start()
     if (!fStakingActive) {
         return false;
     }
+    uiInterface.NotifyNodeStakingActiveChanged(fStakingActive);
     InitWallets();
     LogPrintf("CStakeman::%s\n", __func__);
 
@@ -187,7 +188,7 @@ void CStakeman::StopThreads()
         tm_.clear();
     }
 
-    uiInterface.NotifyStakingActiveChanged(false);
+    uiInterface.NotifyNodeStakingActiveChanged(false);
     LogPrintf("CStakeman::%s done!\n", __func__);
 }
 
@@ -201,8 +202,6 @@ void CStakeman::SetStakingActive(bool active)
 
     fStakingActive = active;
     gArgs.ForceSetArg("-staking", active ? "1" : "0");
-
-    uiInterface.NotifyStakingActiveChanged(fStakingActive);
 }
 
 void CStakeman::StakeWalletAdd(const std::string& walletname)
@@ -246,7 +245,6 @@ void CStakeman::StakeWalletRemove(const std::string& walletname)
 
         tm_.erase(walletname);
         LogPrintf("CStakeman::%s Thread %s removed\n", __func__, walletname);
-        uiInterface.NotifyStakingActiveChanged(false);
     }
 }
 
@@ -263,7 +261,7 @@ void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CCon
     }
     pwallet->SetLastCoinStakeSearchInterval(0);
     LogPrintf("CStakeman::%s Staking thread [%s] stopped\n", __func__, thread_id);
-    uiInterface.NotifyStakingActiveChanged(false);
+    uiInterface.NotifyNodeStakingActiveChanged(false);
 }
 
 
