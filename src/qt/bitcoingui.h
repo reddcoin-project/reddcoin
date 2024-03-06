@@ -204,6 +204,7 @@ private:
     QMenu* m_network_context_menu = new QMenu(this);
     QMenu* m_lock_context_menu = new QMenu(this);
     QMenu* m_wallet_staking_context_menu = new QMenu(this);
+    QMenu* m_node_staking_context_menu = new QMenu(this);
 
 #ifdef Q_OS_MAC
     CAppNapInhibitor* m_app_nap_inhibitor = nullptr;
@@ -273,8 +274,10 @@ public Q_SLOTS:
     */
     void updateWalletStatus();
     void updateWalletStakingStatus();
+    void updateNodeStakingStatus();
     /** Set staking state shown in the UI */
     void setWalletStakingActive(bool staking_active);
+    void setNodeStakingActive(bool staking_active);
     void setWalletLocked(bool wallet_locked);
 
 private:
