@@ -272,7 +272,7 @@ public Q_SLOTS:
     /** Set the UI status indicators based on the currently selected wallet.
     */
     void updateWalletStatus();
-    void updateStakingStatus();
+    void updateWalletStakingStatus();
     /** Set staking state shown in the UI */
     void setWalletStakingActive(bool staking_active);
     void setWalletLocked(bool wallet_locked);

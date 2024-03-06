@@ -827,7 +827,7 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
         this->message(title, message, style);
     });
     connect(wallet_view, &WalletView::encryptionStatusChanged, this, &BitcoinGUI::updateWalletStatus);
-    connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateStakingStatus);
+    connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateWalletStakingStatus);
     connect(wallet_view, &WalletView::incomingTransaction, this, &BitcoinGUI::incomingTransaction);
     connect(wallet_view, &WalletView::hdEnabledStatusChanged, this, &BitcoinGUI::updateWalletStatus);
     connect(this, &BitcoinGUI::setPrivacy, wallet_view, &WalletView::setPrivacy);
@@ -1548,12 +1548,12 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     }
 
-    updateStakingStatus();
+    updateWalletStakingStatus();
 }
 
 void BitcoinGUI::setWalletStakingActive(bool staking_active)
 {
-    updateStakingStatus();
+    updateWalletStakingStatus();
 
     m_wallet_staking_context_menu->clear();
     m_wallet_staking_context_menu->addAction(
@@ -1572,7 +1572,7 @@ void BitcoinGUI::setWalletStakingActive(bool staking_active)
 	    [this, new_state = !staking_active] { walletFrame->enableStaking(new_state); });
 }
 
-void BitcoinGUI::updateStakingStatus()
+void BitcoinGUI::updateWalletStakingStatus()
 {
     if (!walletFrame) {
         return;
@@ -1653,7 +1653,7 @@ void BitcoinGUI::updateWalletStatus()
         hdType = HD_ENABLED_32;
     }
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
-    updateStakingStatus();
+    updateWalletStakingStatus();
     setWalletStakingActive(walletModel->getWalletStaking());
 }
 #endif // ENABLE_WALLET
