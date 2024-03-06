@@ -140,7 +140,7 @@ private:
     GUIUtil::ClickableLabel* labelCheckUpdate = nullptr;
     GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
     GUIUtil::ClickableLabel* walletstakingStatusControl = nullptr;
-    GUIUtil::ClickableLabel* globalstakingStatusControl = nullptr;
+    GUIUtil::ClickableLabel* nodestakingStatusControl = nullptr;
     QLabel* progressBarLabel = nullptr;
     GUIUtil::ClickableProgressBar* progressBar = nullptr;
     QProgressDialog* progressDialog = nullptr;

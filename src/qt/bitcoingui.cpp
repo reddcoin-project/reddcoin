@@ -164,7 +164,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
     labelWalletEncryptionIcon = new GUIUtil::ClickableLabel(platformStyle);
     walletstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
-    globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
+    nodestakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
     connectionsControl = new GUIUtil::ClickableLabel(platformStyle);
@@ -187,7 +187,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->addStretch();
     if (enableWallet)
     {
-        frameBlocksLayout->addWidget(globalstakingStatusControl);
+        frameBlocksLayout->addWidget(nodestakingStatusControl);
         frameBlocksLayout->addStretch();
     }
 
@@ -717,7 +717,7 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         connect(_clientModel, &ClientModel::numConnectionsChanged, this, &BitcoinGUI::setNumConnections);
         connect(_clientModel, &ClientModel::networkActiveChanged, this, &BitcoinGUI::setNetworkActive);
         setNodeStakingActive(m_node.getStakingActive());
-        connect(globalstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+        connect(nodestakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
                     GUIUtil::PopupMenu(m_node_staking_context_menu, QCursor::pos());
                 });
         connect(_clientModel, &ClientModel::stakingActiveChanged, this, &BitcoinGUI::setNodeStakingActive);
@@ -1643,13 +1643,13 @@ void BitcoinGUI::updateNodeStakingStatus()
   QString msg;
   if (m_node.getStakingActive()) {
       msg = tr("Staking is enabled");
-      globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+      nodestakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
   } else {
       msg = tr("Staking is disabled");
-      globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+      nodestakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
   }
 
-  globalstakingStatusControl->setToolTip(msg);
+  nodestakingStatusControl->setToolTip(msg);
 
   updateWalletStakingStatus();
 }
