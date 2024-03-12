@@ -31,6 +31,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QDebug>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QProgressDialog>
@@ -280,6 +281,7 @@ void WalletView::updateEncryptionStatus()
 
 void WalletView::updateStakingStatus()
 {
+    qDebug() << QString("%1: Staking updated").arg(__func__);
     Q_EMIT stakingStatusChanged();
 }
 

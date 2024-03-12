@@ -507,6 +507,10 @@ public:
     {
         return MakeHandler(m_wallet->NotifyStatusChanged.connect([fn](CWallet*) { fn(); }));
     }
+    std::unique_ptr<Handler> handleNotifyWalletStakingStatusChanged(NotifyWalletStakingStatusChangedFn fn) override
+    {
+        return MakeHandler(m_wallet->NotifyWalletStakingStatusChanged.connect(fn));
+    }
     std::unique_ptr<Handler> handleAddressBookChanged(AddressBookChangedFn fn) override
     {
         return MakeHandler(m_wallet->NotifyAddressBookChanged.connect(

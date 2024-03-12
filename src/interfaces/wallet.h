@@ -308,6 +308,10 @@ public:
     using StatusChangedFn = std::function<void()>;
     virtual std::unique_ptr<Handler> handleStatusChanged(StatusChangedFn fn) = 0;
 
+    //! Register handler for wallet staking status messages.
+    using NotifyWalletStakingStatusChangedFn = std::function<void()>;
+    virtual std::unique_ptr<Handler> handleNotifyWalletStakingStatusChanged(NotifyWalletStakingStatusChangedFn fn) = 0;
+
     //! Register handler for address book changed messages.
     using AddressBookChangedFn = std::function<void(const CTxDestination& address,
         const std::string& label,

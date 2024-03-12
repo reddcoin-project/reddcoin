@@ -5,6 +5,7 @@
 #include <staker.h>
 
 #include <fs.h>
+#include <interfaces/wallet.h>
 #include <logging.h>
 #include <miner.h>
 #include <net_processing.h>
@@ -224,7 +225,7 @@ void CStakeman::StakeWalletAdd(const std::string& walletname)
                 }
 
                 LogPrintf("CStakeman::%s Launching wallet..  [%s]\n", __func__, wallet->GetName());
-                uiInterface.NotifyWalletStakingActiveChanged(true);
+                wallet.get()->NotifyWalletStakingStatusChanged();
             }
         }
     }
@@ -262,7 +263,7 @@ void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CCon
     }
     pwallet->SetLastCoinStakeSearchInterval(0);
     LogPrintf("CStakeman::%s Staking thread [%s] stopped\n", __func__, thread_id);
-    uiInterface.NotifyNodeStakingActiveChanged(false);
+    pwallet->NotifyWalletStakingStatusChanged();
 }
 
 

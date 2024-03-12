@@ -177,6 +177,7 @@ private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
     std::unique_ptr<interfaces::Handler> m_handler_unload;
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_walletstaking_status_changed;
     std::unique_ptr<interfaces::Handler> m_handler_address_book_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
     std::unique_ptr<interfaces::Handler> m_handler_show_progress;
@@ -250,6 +251,8 @@ public Q_SLOTS:
 
     /* Wallet status might have changed */
     void updateStatus();
+    /* Wallet staking status might have changed */
+    void updateStakingStatus();
     /* New transaction, or transaction changed status */
     void updateTransaction();
     /* New, updated or removed address book entry */
