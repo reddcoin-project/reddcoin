@@ -99,6 +99,11 @@ void WalletModel::updateStakingStatus()
     Q_EMIT stakingStatusChanged();
 }
 
+void WalletModel::updateStakingActive()
+{
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
+}
+
 void WalletModel::pollBalanceChanged()
 {
     // Avoid recomputing wallet balances unless a TransactionChanged or
@@ -386,7 +391,7 @@ bool WalletModel::setWalletStaking(bool stakingEnabled)
     qDebug() << QString("%1: Staking updated to %2").arg(__func__).arg(stakingEnabled);
     m_wallet->setEnableStaking(stakingEnabled);
     m_node.setStakeWallet(m_wallet->getWalletName(), stakingEnabled);
-    Q_EMIT stakingStatusChanged();
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
     return m_wallet->getEnableStaking();
 }
 
@@ -398,7 +403,7 @@ bool WalletModel::getWalletStaking()
 bool WalletModel::setWalletUnlockStaking(bool unlockStaking)
 {
     m_wallet->setUnlockWalletStaking(unlockStaking);
-    Q_EMIT stakingStatusChanged();
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
     return m_wallet->getUnlockWalletStaking();
 }
 

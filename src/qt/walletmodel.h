@@ -220,6 +220,9 @@ Q_SIGNALS:
     // Staking status of wallet changed
     void stakingStatusChanged();
 
+    // Staking active of wallet changed
+    void stakingActiveChanged(bool staking);
+
     // Signal emitted when wallet needs to be unlocked
     // It is valid behaviour for listeners to keep the wallet locked after this signal;
     // this means that the unlocking failed or was cancelled.
@@ -251,6 +254,8 @@ public Q_SLOTS:
 
     /* Wallet status might have changed */
     void updateStatus();
+    /* Wallet staking active might have changed */
+    void updateStakingActive();
     /* Wallet staking status might have changed */
     void updateStakingStatus();
     /* New transaction, or transaction changed status */

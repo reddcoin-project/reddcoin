@@ -118,6 +118,9 @@ public Q_SLOTS:
     /** Re-emit encryption status signal */
     void updateEncryptionStatus();
 
+    /** Re-emit staking active signal */
+    void updateStakingActive();
+
     /** Re-emit staking status signal */
     void updateStakingStatus();
 
@@ -132,6 +135,8 @@ Q_SIGNALS:
     void message(const QString &title, const QString &message, unsigned int style);
     /** Encryption status of wallet changed */
     void encryptionStatusChanged();
+    /** Staking active of wallet changed */
+    void stakingActiveChanged(bool staking);
     /** Staking status of wallet changed */
     void stakingStatusChanged();
     /** HD-Enabled status of wallet changed (only possible during startup) */
