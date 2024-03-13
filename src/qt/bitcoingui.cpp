@@ -1288,6 +1288,10 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
     labelBlocksIcon->setToolTip(tooltip);
     progressBarLabel->setToolTip(tooltip);
     progressBar->setToolTip(tooltip);
+
+#ifdef ENABLE_WALLET
+    updateWalletStakingStatus();
+#endif // ENABLE_WALLET
 }
 
 void BitcoinGUI::message(const QString& title, QString message, unsigned int style, bool* ret, const QString& detailed_message)
@@ -1588,10 +1592,11 @@ void BitcoinGUI::updateWalletStakingStatus()
         return;
     }
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
-    int64_t nLastCoinStakeSearchInterval = 0;
+    int64_t nLastCoinStakeSearchInterval;
     bool staking = false;
 
     QString msg;
+    QString icon = "";
     if (walletModel) {
         walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
         nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
@@ -1600,28 +1605,36 @@ void BitcoinGUI::updateWalletStakingStatus()
 
     if (staking && m_node.getNodeStakingActive()) {
         msg = tr("Wallet is staking");
-        walletstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        icon = ":/icons/staking_on";
     } else {
-        if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
+        if (!walletModel->getWalletStaking()) {
+            msg = tr("Wallet staking is disabled");
+            icon = ":/icons/staking_off";
+        } else if (!m_node.getNodeStakingActive()) {
+            msg = tr("Node Staking is not enabled");
+            icon = ":/icons/warning";
+        } else if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
             msg = tr("Not staking because wallet is locked");
+            icon = ":/icons/warning";
         } else if (!m_node.getNetworkActive()) {
             msg = tr("Not staking because wallet is offline");
+            icon = ":/icons/warning";
         } else if (m_node.isInitialBlockDownload()) {
             msg = tr("Not staking because wallet is syncing");
+            icon = ":/icons/warning";
         } else if (!nAverageWeight) {
             msg = tr("Not staking because you don't have mature coins");
-        } else if (!walletModel->getWalletStaking()) {
-            msg = tr("Wallet staking is disabled");
-        } else if (!m_node.getNodeStakingActive()) {
-            msg = tr("Staking is not enabled");
+            icon = ":/icons/warning";
         } else if (!staking) {
             msg = tr("Waiting for staking to start");
+            icon = ":/icons/warning";
+        } else {
+            icon = ":/icons/staking_off";
         }
-
-        walletstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
     walletstakingStatusControl->setToolTip(msg);
+    walletstakingStatusControl->setThemedPixmap(icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
 }
 
 
