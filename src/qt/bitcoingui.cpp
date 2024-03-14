@@ -1688,8 +1688,6 @@ void BitcoinGUI::updateWalletStatus()
         hdType = HD_ENABLED_32;
     }
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
-    updateWalletStakingStatus();
-    setWalletStakingActive(walletModel->getWalletStaking());
 }
 #endif // ENABLE_WALLET
 
