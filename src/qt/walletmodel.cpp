@@ -57,9 +57,6 @@ WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel
     mintingTableModel = new MintingTableModel(this);
     transactionTableModel = new TransactionTableModel(platformStyle, this);
     recentRequestsTableModel = new RecentRequestsTableModel(this);
-    nAverageStakeWeight = 0;
-    nTotalStakeWeight = 0;
-    updateStakeWeight = true;
 
     subscribeToCoreSignals();
 }
