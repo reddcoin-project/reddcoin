@@ -189,6 +189,7 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
     result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS));
     result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
     result.pushKV("weight", (int)::GetBlockWeight(block));
+    result.pushKV("moneysupply", ValueFromAmount(tip->nMoneySupply));
     UniValue txs(UniValue::VARR);
     if (txDetails) {
         CBlockUndo blockUndo;
@@ -999,6 +1000,7 @@ static RPCHelpMan getblock()
                     {RPCResult::Type::NUM, "size", "The block size"},
                     {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data"},
                     {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141"},
+                    {RPCResult::Type::NUM, "moneysupply", "the current supply of Reddcoin"},
                     {RPCResult::Type::NUM, "height", "The block height or index"},
                     {RPCResult::Type::NUM, "version", "The block version"},
                     {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
@@ -1475,6 +1477,7 @@ RPCHelpMan getblockchaininfo()
                         {RPCResult::Type::NUM, "headers", "the current number of headers we have validated"},
                         {RPCResult::Type::STR, "bestblockhash", "the hash of the currently best block"},
                         {RPCResult::Type::NUM, "difficulty", "the current difficulty"},
+                        {RPCResult::Type::NUM, "moneysupply", "the current supply of Reddcoin"},
                         {RPCResult::Type::NUM, "mediantime", "median time for the current best block"},
                         {RPCResult::Type::NUM, "verificationprogress", "estimate of verification progress [0..1]"},
                         {RPCResult::Type::BOOL, "initialblockdownload", "(debug information) estimate of whether this node is in Initial Block Download mode"},
@@ -1531,6 +1534,7 @@ RPCHelpMan getblockchaininfo()
     obj.pushKV("headers",               pindexBestHeader ? pindexBestHeader->nHeight : -1);
     obj.pushKV("bestblockhash",         tip->GetBlockHash().GetHex());
     obj.pushKV("difficulty",            (double)GetDifficulty(tip));
+    obj.pushKV("moneysupply",           ValueFromAmount(tip->nMoneySupply));
     obj.pushKV("mediantime",            (int64_t)tip->GetMedianTimePast());
     obj.pushKV("verificationprogress",  GuessVerificationProgress(Params().TxData(), tip));
     obj.pushKV("initialblockdownload",  active_chainstate.IsInitialBlockDownload());
