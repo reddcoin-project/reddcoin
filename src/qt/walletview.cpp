@@ -284,13 +284,13 @@ void WalletView::updateEncryptionStatus()
 
 void WalletView::updateStakingActive()
 {
-    qDebug() << QString("%1: Staking updated to %2").arg(__func__).arg(walletModel->getWalletStaking());
+    qDebug() << QString("WalletView::%1: Staking updated to %2").arg(__func__).arg(walletModel->getWalletStaking());
     Q_EMIT stakingActiveChanged(walletModel->getWalletStaking());
 }
 
 void WalletView::updateStakingStatus()
 {
-    qDebug() << QString("%1: Staking updated").arg(__func__);
+    qDebug() << QString("WalletView::%1: Staking updated").arg(__func__);
     Q_EMIT stakingStatusChanged();
 }
 

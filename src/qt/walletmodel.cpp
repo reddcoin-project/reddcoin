@@ -385,7 +385,7 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase)
 
 bool WalletModel::setWalletStaking(bool stakingEnabled)
 {
-    qDebug() << QString("%1: Staking updated to %2").arg(__func__).arg(stakingEnabled);
+    qDebug() << QString("WalletModel::%1: Staking updated to %2").arg(__func__).arg(stakingEnabled);
     m_wallet->setEnableStaking(stakingEnabled);
     m_node.setStakeWallet(m_wallet->getWalletName(), stakingEnabled);
     Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
@@ -432,7 +432,7 @@ static void NotifyKeyStoreStatusChanged(WalletModel *walletmodel)
 
 static void NotifyWalletStakingStatusChanged(WalletModel *walletmodel)
 {
-    qDebug() << QString("%1: Wallet Staking updated").arg(__func__);
+    qDebug() << QString("WalletModel::%1: Wallet Staking updated").arg(__func__);
     bool invoked = QMetaObject::invokeMethod(walletmodel, "updateStakingStatus", Qt::QueuedConnection);
     assert(invoked);
 }

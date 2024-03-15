@@ -50,6 +50,7 @@
 #include <QComboBox>
 #include <QCursor>
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QListWidget>
@@ -1559,6 +1560,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
 
 void BitcoinGUI::setWalletStakingActive(bool staking_active)
 {
+    qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(staking_active);
     updateWalletStakingStatus();
 
     m_wallet_staking_context_menu->clear();
@@ -1598,6 +1600,7 @@ void BitcoinGUI::updateWalletStakingStatus()
     QString msg;
     QString icon = "";
     if (walletModel) {
+        qDebug() << QString("BitcoinGUI::%1: wallet %2 updated").arg(__func__).arg(walletModel->getDisplayName());
         walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
         nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
@@ -1640,6 +1643,7 @@ void BitcoinGUI::updateWalletStakingStatus()
 
 void BitcoinGUI::setNodeStakingActive(bool staking_active)
 {
+    qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(staking_active);
     updateNodeStakingStatus();
 
     m_node_staking_context_menu->clear();
@@ -1654,6 +1658,7 @@ void BitcoinGUI::setNodeStakingActive(bool staking_active)
 
 void BitcoinGUI::updateNodeStakingStatus()
 {
+  qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(m_node.getNodeStakingActive());
   QString msg;
   if (m_node.getNodeStakingActive()) {
       msg = tr("Staking is enabled");
