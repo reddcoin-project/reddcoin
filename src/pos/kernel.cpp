@@ -419,6 +419,7 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     if (!txPrev)
         return error("%s() : tx %s not found", __func__, txin.prevout.hash.ToString());
 
+    LOCK(cs_main);
     const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(blockHash);
     if (!pindex)
           return error("%s() : block %s not found in index", __func__, blockHash.ToString());
