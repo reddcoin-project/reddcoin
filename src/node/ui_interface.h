@@ -88,9 +88,11 @@ public:
     /** Network activity state changed. */
     ADD_SIGNALS_DECL_WRAPPER(NotifyNetworkActiveChanged, void, bool networkActive);
 
-    /** Network activity state changed. */
-    ADD_SIGNALS_DECL_WRAPPER(NotifyStakingActiveChanged, void, bool stakingActive);
+    /** Node staking activity state changed. */
+    ADD_SIGNALS_DECL_WRAPPER(NotifyNodeStakingActiveChanged, void, bool stakingActive);
 
+    /** Wallet staking activity state changed. */
+    ADD_SIGNALS_DECL_WRAPPER(NotifyWalletStakingActiveChanged, void, bool stakingActive);
     /**
      * Status bar alerts changed.
      */

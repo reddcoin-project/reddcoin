@@ -51,7 +51,7 @@ public:
     {
         StopThreads();
     };
-    bool GetStakingActive() const { return fStakingActive; };
+    bool GetNodeStakingActive() const { return fStakingActive; };
     void SetStakingActive(bool active);
     int GetStakingThreadCount()
     {

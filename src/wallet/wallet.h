@@ -786,6 +786,10 @@ public:
      * Note: Called without locks held.
      */
     boost::signals2::signal<void (CWallet* wallet)> NotifyStatusChanged;
+    /**
+     * Walletstaking status
+     */
+    boost::signals2::signal<void ()> NotifyWalletStakingStatusChanged;
 
     /** Inquire whether this wallet broadcasts transactions. */
     bool GetBroadcastTransactions() const { return fBroadcastTransactions; }

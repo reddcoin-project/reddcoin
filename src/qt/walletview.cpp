@@ -31,6 +31,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QDebug>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QProgressDialog>
@@ -135,9 +136,12 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
         connect(_walletModel, &WalletModel::encryptionStatusChanged, this, &WalletView::encryptionStatusChanged);
         updateEncryptionStatus();
 
+        // Handle changes in staking active
+        connect(_walletModel, &WalletModel::stakingActiveChanged, this, &WalletView::stakingActiveChanged);
+        updateStakingActive();
+
         // Handle changes in staking status
         connect(_walletModel, &WalletModel::stakingStatusChanged, this, &WalletView::stakingStatusChanged);
-        updateStakingStatus();
 
         // update HD status
         Q_EMIT hdEnabledStatusChanged();
@@ -278,8 +282,15 @@ void WalletView::updateEncryptionStatus()
     Q_EMIT encryptionStatusChanged();
 }
 
+void WalletView::updateStakingActive()
+{
+    qDebug() << QString("WalletView::%1: Staking updated to %2").arg(__func__).arg(walletModel->getWalletStaking());
+    Q_EMIT stakingActiveChanged(walletModel->getWalletStaking());
+}
+
 void WalletView::updateStakingStatus()
 {
+    qDebug() << QString("WalletView::%1: Staking updated").arg(__func__);
     Q_EMIT stakingStatusChanged();
 }
 
@@ -334,29 +345,31 @@ void WalletView::unlockWallet()
     }
 }
 
-void WalletView::lockWallet()
+void WalletView::lockWallet(bool lock_wallet)
 {
-    if(!walletModel)
+    if (!walletModel)
         return;
-    // Lock wallet when requested by wallet model
-    walletModel->setWalletLocked(true);
 
+    if (lock_wallet) {
+        // Lock wallet when requested by wallet model
+        walletModel->setWalletLocked(lock_wallet);
+        return;
+    }
+
+    // Unlock wallet when requested by wallet model
+    if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
+        AskPassphraseDialog dlg(AskPassphraseDialog::Unlock, this);
+        dlg.setModel(walletModel);
+        dlg.exec();
+    }
 }
 
-void WalletView::enableStaking()
+void WalletView::enableStaking(bool enable_staking)
 {
     if(!walletModel)
         return;
 
-    walletModel->setWalletStaking(true);
-}
-
-void WalletView::disableStaking()
-{
-    if(!walletModel)
-        return;
-
-    walletModel->setWalletStaking(false);
+    walletModel->setWalletStaking(enable_staking);
 }
 
 void WalletView::usedSendingAddresses()

@@ -156,10 +156,10 @@ public:
     virtual bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t & nTotalWeight) = 0;
 
     //! Set staking active.
-    virtual void setStakingActive(bool active) = 0;
+    virtual void setNodeStakingActive(bool active) = 0;
 
     //! Get staking active.
-    virtual bool getStakingActive() = 0;
+    virtual bool getNodeStakingActive() = 0;
 
     //! Start wallet staking.
     virtual void setStakeWallet(const std::string& walletname, bool active) = 0;
@@ -232,8 +232,12 @@ public:
     virtual std::unique_ptr<Handler> handleNotifyNetworkActiveChanged(NotifyNetworkActiveChangedFn fn) = 0;
 
     //! Register handler for staking active messages.
-    using NotifyStakingActiveChangedFn = std::function<void(bool staking_active)>;
-    virtual std::unique_ptr<Handler> handleNotifyStakingActiveChanged(NotifyStakingActiveChangedFn fn) = 0;
+    using NotifyNodeStakingActiveChangedFn = std::function<void(bool staking_active)>;
+    virtual std::unique_ptr<Handler> handleNotifyNodeStakingActiveChanged(NotifyNodeStakingActiveChangedFn fn) = 0;
+
+    //! Register handler for wallet staking active messages.
+    using NotifyWalletStakingActiveChangedFn = std::function<void(bool staking_active)>;
+    virtual std::unique_ptr<Handler> handleNotifyWalletStakingActiveChanged(NotifyWalletStakingActiveChangedFn fn) = 0;
 
     //! Register handler for notify alert messages.
     using NotifyAlertChangedFn = std::function<void()>;

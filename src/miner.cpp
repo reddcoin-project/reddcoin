@@ -599,6 +599,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
                     uiInterface.NotifyAlertChanged();
+                    pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
@@ -614,6 +615,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
+                    pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
@@ -628,6 +630,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 if (strMintWarning != strMintSyncMessage) {
                     strMintWarning = strMintSyncMessage;
                     uiInterface.NotifyAlertChanged();
+                    pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
@@ -636,6 +639,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
             if (fNeedToClear) {
                 strMintWarning = strMintEmpty;
                 uiInterface.NotifyAlertChanged();
+                pwallet->NotifyWalletStakingStatusChanged();
                 fNeedToClear = false;
             }
 
@@ -663,6 +667,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 }
                 strMintWarning = strMintBlockMessage;
                 uiInterface.NotifyAlertChanged();
+                pwallet->NotifyWalletStakingStatusChanged();
                 LogPrintf("Staker thread [%d]: Error in ReddcoinMiner: Keypool ran out, please call keypoolrefill before restarting the mining thread\n", thread_id);
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
                    return;
@@ -671,6 +676,8 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
             }
             pblock = &pblocktemplate->block;
             IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+
+            pwallet->NotifyWalletStakingStatusChanged();
 
             // reddcoin: if proof-of-stake block found then process block
             if (pblock->IsProofOfStake())
@@ -683,7 +690,6 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                         continue;
                     }
                 }
-                uiInterface.NotifyStakingActiveChanged(true);
                 LogPrintf("Staker thread [%d]: proof-of-stake block found %s\n", thread_id, pblock->GetHash().ToString());
                 ProcessBlockFound(pblock, chainman, &chainman->ActiveChainstate(), Params());
                 reservedest.KeepDestination();
@@ -691,6 +697,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
                     return;
             }
+
             if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
                 return;
 

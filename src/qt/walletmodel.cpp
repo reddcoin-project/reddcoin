@@ -57,9 +57,6 @@ WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel
     mintingTableModel = new MintingTableModel(this);
     transactionTableModel = new TransactionTableModel(platformStyle, this);
     recentRequestsTableModel = new RecentRequestsTableModel(this);
-    nAverageStakeWeight = 0;
-    nTotalStakeWeight = 0;
-    updateStakeWeight = true;
 
     subscribeToCoreSignals();
 }
@@ -91,8 +88,17 @@ void WalletModel::updateStatus()
 
     if(cachedEncryptionStatus != newEncryptionStatus) {
         Q_EMIT encryptionStatusChanged();
-        Q_EMIT stakingStatusChanged();
     }
+}
+
+void WalletModel::updateStakingStatus()
+{
+    Q_EMIT stakingStatusChanged();
+}
+
+void WalletModel::updateStakingActive()
+{
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
 }
 
 void WalletModel::pollBalanceChanged()
@@ -379,9 +385,10 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase)
 
 bool WalletModel::setWalletStaking(bool stakingEnabled)
 {
+    qDebug() << QString("WalletModel::%1: Staking updated to %2").arg(__func__).arg(stakingEnabled);
     m_wallet->setEnableStaking(stakingEnabled);
     m_node.setStakeWallet(m_wallet->getWalletName(), stakingEnabled);
-    Q_EMIT stakingStatusChanged();
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
     return m_wallet->getEnableStaking();
 }
 
@@ -393,7 +400,7 @@ bool WalletModel::getWalletStaking()
 bool WalletModel::setWalletUnlockStaking(bool unlockStaking)
 {
     m_wallet->setUnlockWalletStaking(unlockStaking);
-    Q_EMIT stakingStatusChanged();
+    Q_EMIT stakingActiveChanged(m_wallet->getEnableStaking());
     return m_wallet->getUnlockWalletStaking();
 }
 
@@ -420,6 +427,13 @@ static void NotifyKeyStoreStatusChanged(WalletModel *walletmodel)
 {
     qDebug() << "NotifyKeyStoreStatusChanged";
     bool invoked = QMetaObject::invokeMethod(walletmodel, "updateStatus", Qt::QueuedConnection);
+    assert(invoked);
+}
+
+static void NotifyWalletStakingStatusChanged(WalletModel *walletmodel)
+{
+    qDebug() << QString("WalletModel::%1: Wallet Staking updated").arg(__func__);
+    bool invoked = QMetaObject::invokeMethod(walletmodel, "updateStakingStatus", Qt::QueuedConnection);
     assert(invoked);
 }
 
@@ -476,6 +490,7 @@ void WalletModel::subscribeToCoreSignals()
     // Connect signals to wallet
     m_handler_unload = m_wallet->handleUnload(std::bind(&NotifyUnload, this));
     m_handler_status_changed = m_wallet->handleStatusChanged(std::bind(&NotifyKeyStoreStatusChanged, this));
+    m_handler_notify_walletstaking_status_changed = m_wallet->handleNotifyWalletStakingStatusChanged(std::bind(NotifyWalletStakingStatusChanged, this));
     m_handler_address_book_changed = m_wallet->handleAddressBookChanged(std::bind(NotifyAddressBookChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5));
     m_handler_transaction_changed = m_wallet->handleTransactionChanged(std::bind(NotifyTransactionChanged, this, std::placeholders::_1, std::placeholders::_2));
     m_handler_show_progress = m_wallet->handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2));
@@ -488,6 +503,7 @@ void WalletModel::unsubscribeFromCoreSignals()
     // Disconnect signals from wallet
     m_handler_unload->disconnect();
     m_handler_status_changed->disconnect();
+    m_handler_notify_walletstaking_status_changed->disconnect();
     m_handler_address_book_changed->disconnect();
     m_handler_transaction_changed->disconnect();
     m_handler_show_progress->disconnect();

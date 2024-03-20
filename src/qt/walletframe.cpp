@@ -106,6 +106,7 @@ void WalletFrame::setCurrentWallet(WalletModel* wallet_model)
     walletStack->setCurrentWidget(walletView);
     walletView->updateEncryptionStatus();
     walletView->updateStakingStatus();
+    walletView->updateStakingActive();
 }
 
 void WalletFrame::removeWallet(WalletModel* wallet_model)
@@ -227,25 +228,18 @@ void WalletFrame::unlockWallet()
         walletView->unlockWallet();
 }
 
-void WalletFrame::lockWallet()
+void WalletFrame::lockWallet(bool lock_wallet)
 {
     WalletView *walletView = currentWalletView();
     if (walletView)
-        walletView->lockWallet();
+        walletView->lockWallet(lock_wallet);
 }
 
-void WalletFrame::enableStaking()
+void WalletFrame::enableStaking(bool enable_staking)
 {
     WalletView *walletView = currentWalletView();
     if (walletView)
-        walletView->enableStaking();
-}
-
-void WalletFrame::disableStaking()
-{
-    WalletView *walletView = currentWalletView();
-    if (walletView)
-        walletView->disableStaking();
+        walletView->enableStaking(enable_staking);
 }
 
 void WalletFrame::usedSendingAddresses()

@@ -50,6 +50,7 @@
 #include <QComboBox>
 #include <QCursor>
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QListWidget>
@@ -162,9 +163,9 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->setContentsMargins(3,0,3,0);
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl(platformStyle);
-    labelWalletEncryptionIcon = new LockWalletStatusBarControl(platformStyle);
-    stakingStatusControl = new StakingStatusBarControl(platformStyle);
-    globalstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
+    labelWalletEncryptionIcon = new GUIUtil::ClickableLabel(platformStyle);
+    walletstakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
+    nodestakingStatusControl = new GUIUtil::ClickableLabel(platformStyle);
     labelWalletHDStatusIcon = new GUIUtil::ThemedLabel(platformStyle);
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
     connectionsControl = new GUIUtil::ClickableLabel(platformStyle);
@@ -177,11 +178,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
         frameBlocksLayout->addWidget(labelWalletEncryptionIcon);
         frameBlocksLayout->addWidget(labelWalletHDStatusIcon);
         frameBlocksLayout->addStretch();
-        frameBlocksLayout->addWidget(stakingStatusControl);
-
-        labelWalletEncryptionIcon->setWalletFrame(walletFrame);
-        stakingStatusControl->setRPCConsole(rpcConsole);
-        stakingStatusControl->setWalletFrame(walletFrame);
+        frameBlocksLayout->addWidget(walletstakingStatusControl);
     }
     frameBlocksLayout->addWidget(labelProxyIcon);
     frameBlocksLayout->addStretch();
@@ -191,7 +188,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->addStretch();
     if (enableWallet)
     {
-        frameBlocksLayout->addWidget(globalstakingStatusControl);
+        frameBlocksLayout->addWidget(nodestakingStatusControl);
         frameBlocksLayout->addStretch();
     }
 
@@ -720,12 +717,6 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         });
         connect(_clientModel, &ClientModel::numConnectionsChanged, this, &BitcoinGUI::setNumConnections);
         connect(_clientModel, &ClientModel::networkActiveChanged, this, &BitcoinGUI::setNetworkActive);
-        setStakingActive(m_node.getStakingActive());
-        connect(globalstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
-                    GUIUtil::PopupMenu(m_staking_context_menu, QCursor::pos());
-                });
-        connect(_clientModel, &ClientModel::stakingActiveChanged, this, &BitcoinGUI::setStakingActive);
-
         modalOverlay->setKnownBestHeight(tip_info->header_height, QDateTime::fromTime_t(tip_info->header_time));
         setNumBlocks(tip_info->block_height, QDateTime::fromTime_t(tip_info->block_time), tip_info->verification_progress, false, SynchronizationState::INIT_DOWNLOAD);
         connect(_clientModel, &ClientModel::numBlocksChanged, this, &BitcoinGUI::setNumBlocks);
@@ -747,6 +738,19 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         {
             walletFrame->setClientModel(_clientModel);
         }
+        connect(labelWalletEncryptionIcon, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_lock_context_menu, QCursor::pos());
+                });
+        connect(walletstakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_wallet_staking_context_menu, QCursor::pos());
+                });
+        setNodeStakingActive(m_node.getNodeStakingActive());
+        connect(nodestakingStatusControl, &GUIUtil::ClickableLabel::clicked, [this] {
+                    GUIUtil::PopupMenu(m_node_staking_context_menu, QCursor::pos());
+                });
+        updateNodeStakingStatus();
+        connect(_clientModel, &ClientModel::nodeStakingActiveChanged, this, &BitcoinGUI::setNodeStakingActive);
+        connect(_clientModel, &ClientModel::walletStakingActiveChanged, this, &BitcoinGUI::updateWalletStakingStatus);
 #endif // ENABLE_WALLET
         unitDisplayControl->setOptionsModel(_clientModel->getOptionsModel());
 
@@ -825,7 +829,8 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
         this->message(title, message, style);
     });
     connect(wallet_view, &WalletView::encryptionStatusChanged, this, &BitcoinGUI::updateWalletStatus);
-    connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateStakingStatus);
+    connect(wallet_view, &WalletView::stakingActiveChanged, this, &BitcoinGUI::setWalletStakingActive);
+    connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateWalletStakingStatus);
     connect(wallet_view, &WalletView::incomingTransaction, this, &BitcoinGUI::incomingTransaction);
     connect(wallet_view, &WalletView::hdEnabledStatusChanged, this, &BitcoinGUI::updateWalletStatus);
     connect(this, &BitcoinGUI::setPrivacy, wallet_view, &WalletView::setPrivacy);
@@ -840,7 +845,7 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
 
     labelWalletHDStatusIcon->hide();
     labelWalletEncryptionIcon->hide();
-    stakingStatusControl->hide();
+    walletstakingStatusControl->hide();
 
     int index = m_wallet_selector->findData(QVariant::fromValue(walletModel));
     m_wallet_selector->removeItem(index);
@@ -1284,6 +1289,10 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
     labelBlocksIcon->setToolTip(tooltip);
     progressBarLabel->setToolTip(tooltip);
     progressBar->setToolTip(tooltip);
+
+#ifdef ENABLE_WALLET
+    updateWalletStakingStatus();
+#endif // ENABLE_WALLET
 }
 
 void BitcoinGUI::message(const QString& title, QString message, unsigned int style, bool* ret, const QString& detailed_message)
@@ -1492,6 +1501,18 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
     labelWalletHDStatusIcon->setEnabled(hdEnabled > 0);
 }
 
+void BitcoinGUI::setWalletLocked(bool wallet_locked)
+{
+    m_lock_context_menu->clear();
+    m_lock_context_menu->addAction(
+        wallet_locked ?
+            //: A context menu item.
+            tr("Unlock Wallet") :
+            //: A context menu item. The stake state activity was unlocked previously.
+            tr("Lock Wallet"),
+        [this, new_state = !wallet_locked] { walletFrame->lockWallet(new_state); });
+}
+
 void BitcoinGUI::setEncryptionStatus(int status)
 {
     switch(status)
@@ -1519,7 +1540,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         unlockWalletAction->setVisible(false);
         lockWalletAction->setVisible(true);
         encryptWalletAction->setEnabled(false);
-        labelWalletEncryptionIcon->setLockState(true);
+        setWalletLocked(false);
         break;
     case WalletModel::Locked:
         labelWalletEncryptionIcon->show();
@@ -1530,28 +1551,36 @@ void BitcoinGUI::setEncryptionStatus(int status)
         unlockWalletAction->setVisible(true);
         lockWalletAction->setVisible(false);
         encryptWalletAction->setEnabled(false);
-        labelWalletEncryptionIcon->setLockState(false);
+        setWalletLocked(true);
         break;
     }
 
-    updateStakingStatus();
+    updateWalletStakingStatus();
 }
 
-void BitcoinGUI::setStakingActive(bool staking_active)
+void BitcoinGUI::setWalletStakingActive(bool staking_active)
 {
-    updateStakingStatus();
+    qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(staking_active);
+    updateWalletStakingStatus();
 
-    m_staking_context_menu->clear();
-    m_staking_context_menu->addAction(
-	staking_active ?
-	    //: A context menu item.
-	    tr("Disable Staking") :
-	    //: A context menu item. The stake state activity was disabled previously.
-	    tr("Enable Staking"),
-	    [this, new_state = !staking_active] { m_node.setStakingActive(new_state); });
+    m_wallet_staking_context_menu->clear();
+    m_wallet_staking_context_menu->addAction(
+        //: A context menu item. The "Stake tab" is an element of the "Node window".
+        tr("Show Staking tab"),
+        [this] {
+            rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
+            showDebugWindow();
+        });
+    m_wallet_staking_context_menu->addAction(
+        staking_active ?
+            //: A context menu item.
+            tr("Disable Staking") :
+            //: A context menu item. The stake state activity was disabled previously.
+            tr("Enable Staking"),
+            [this, new_state = !staking_active] { walletFrame->enableStaking(new_state); });
 }
 
-void BitcoinGUI::updateStakingStatus()
+void BitcoinGUI::updateWalletStakingStatus()
 {
     if (!walletFrame) {
         return;
@@ -1565,52 +1594,83 @@ void BitcoinGUI::updateStakingStatus()
         return;
     }
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
-    int64_t nLastCoinStakeSearchInterval = 0;
+    int64_t nLastCoinStakeSearchInterval;
     bool staking = false;
 
     QString msg;
-    QString gmsg;
+    QString icon = "";
     if (walletModel) {
+        qDebug() << QString("BitcoinGUI::%1: wallet %2 updated").arg(__func__).arg(walletModel->getDisplayName());
         walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
         nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
     }
 
-    if (m_node.getStakingActive()) {
-        gmsg = tr("Staking is enabled");
-        globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-    } else {
-        gmsg = tr("Staking is disabled");
-        globalstakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
-    }
-
-    globalstakingStatusControl->setToolTip(gmsg);
-
-    if (staking && m_node.getStakingActive()) {
+    if (staking && m_node.getNodeStakingActive()) {
         msg = tr("Wallet is staking");
-        stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        icon = ":/icons/staking_on";
     } else {
-        if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
+        if (!walletModel->getWalletStaking()) {
+            msg = tr("Wallet staking is disabled");
+            icon = ":/icons/staking_off";
+        } else if (!m_node.getNodeStakingActive()) {
+            msg = tr("Node Staking is not enabled");
+            icon = ":/icons/warning";
+        } else if (walletModel->getEncryptionStatus() == WalletModel::Locked) {
             msg = tr("Not staking because wallet is locked");
+            icon = ":/icons/warning";
         } else if (!m_node.getNetworkActive()) {
             msg = tr("Not staking because wallet is offline");
+            icon = ":/icons/warning";
         } else if (m_node.isInitialBlockDownload()) {
             msg = tr("Not staking because wallet is syncing");
+            icon = ":/icons/warning";
         } else if (!nAverageWeight) {
             msg = tr("Not staking because you don't have mature coins");
-        } else if (!walletModel->getWalletStaking()) {
-            msg = tr("Wallet staking is disabled");
-        } else if (!m_node.getStakingActive()) {
-            msg = tr("Staking is not enabled");
+            icon = ":/icons/warning";
         } else if (!staking) {
             msg = tr("Waiting for staking to start");
+            icon = ":/icons/warning";
+        } else {
+            icon = ":/icons/staking_off";
         }
-
-        stakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     }
 
-    stakingStatusControl->setToolTip(msg);
-    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
+    walletstakingStatusControl->setToolTip(msg);
+    walletstakingStatusControl->setThemedPixmap(icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+}
+
+
+void BitcoinGUI::setNodeStakingActive(bool staking_active)
+{
+    qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(staking_active);
+    updateNodeStakingStatus();
+
+    m_node_staking_context_menu->clear();
+    m_node_staking_context_menu->addAction(
+        staking_active ?
+            //: A context menu item.
+            tr("Disable Node Staking") :
+            //: A context menu item. The stake state activity was disabled previously.
+            tr("Enable Node Staking"),
+        [this, new_state = !staking_active] { m_node.setNodeStakingActive(new_state); });
+}
+
+void BitcoinGUI::updateNodeStakingStatus()
+{
+  qDebug() << QString("BitcoinGUI::%1: Staking updated to %2").arg(__func__).arg(m_node.getNodeStakingActive());
+  QString msg;
+  if (m_node.getNodeStakingActive()) {
+      msg = tr("Staking is enabled");
+      nodestakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_on"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+  } else {
+      msg = tr("Staking is disabled");
+      nodestakingStatusControl->setThemedPixmap(QStringLiteral(":/icons/global_staking_off"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+  }
+
+  nodestakingStatusControl->setToolTip(msg);
+
+  updateWalletStakingStatus();
 }
 
 void BitcoinGUI::updateWalletStatus()
@@ -1633,8 +1693,6 @@ void BitcoinGUI::updateWalletStatus()
         hdType = HD_ENABLED_32;
     }
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
-    updateStakingStatus();
-    stakingStatusControl->setStakingActive(!walletModel->getWalletStaking());
 }
 #endif // ENABLE_WALLET
 
@@ -1854,249 +1912,3 @@ void UnitDisplayStatusBarControl::onMenuSelection(QAction* action)
     }
 }
 
-LockWalletStatusBarControl::LockWalletStatusBarControl(const PlatformStyle *platformStyle)
-    : walletFrame(nullptr),
-      menu(nullptr),
-      m_platform_style{platformStyle}
-{
-    createContextMenu();
-    int max_width = 0;
-    setMinimumSize(max_width, 0);
-    setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    setStyleSheet(QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name()));
-}
-
-/** So that it responds to button clicks */
-void LockWalletStatusBarControl::mousePressEvent(QMouseEvent *event)
-{
-    onLockWalletClicked(event->pos());
-}
-
-void LockWalletStatusBarControl::changeEvent(QEvent* e)
-{
-    if (e->type() == QEvent::PaletteChange) {
-        QString style = QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name());
-        if (style != styleSheet()) {
-            setStyleSheet(style);
-        }
-    }
-
-    QLabel::changeEvent(e);
-}
-
-/** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
-void LockWalletStatusBarControl::createContextMenu()
-{
-    menu = new QMenu(this);
-
-    lockWalletAction = new QAction(tr("Lock Wallet"));
-    lockWalletAction->setStatusTip(tr("Lock wallet"));
-    lockWalletAction->setData(QVariant(1));
-    unlockWalletAction = new QAction(tr("Unlock Wallet"));
-    unlockWalletAction->setStatusTip(tr("Unlock wallet"));
-    unlockWalletAction->setData(QVariant(0));
-
-    menu->addAction(lockWalletAction);
-    menu->addAction(unlockWalletAction);
-    connect(menu, &QMenu::triggered, this, &LockWalletStatusBarControl::onMenuSelection);
-}
-
-void LockWalletStatusBarControl::setWalletFrame(WalletFrame *_walletFrame)
-{
-  if (_walletFrame)
-  {
-      this->walletFrame = _walletFrame;
-
-      // be aware of wallet lock change reported by the WalletFrame object.
-      connect(_walletFrame, &WalletFrame::walletLockStatusChanged, this, &LockWalletStatusBarControl::updateLockWallet);
-
-      // initialize the wallet lock icon with the current value in the model.
-      //updateLockWallet();
-  }
-}
-
-/** When status is changed on walletFrame it will refresh the display text of the control on the status bar */
-void LockWalletStatusBarControl::updateLockWallet(int newUnits)
-{
-    setText(QString(""));
-}
-
-/** Shows context menu with lock wallet options by the mouse coordinates */
-void LockWalletStatusBarControl::onLockWalletClicked(const QPoint& point)
-{
-    QPoint globalPos = mapToGlobal(point);
-    menu->exec(globalPos);
-}
-
-/** Tells underlying walletFrame to update its current state. */
-void LockWalletStatusBarControl::onMenuSelection(QAction* action)
-{
-    if (action)
-    {
-	bool bLockWallet = action->data().toInt();
-        if(bLockWallet) {
-            walletFrame->lockWallet();
-	} else {
-	    walletFrame->unlockWallet();
-	}
-    }
-}
-
-/** Updates the menu items list. */
-void LockWalletStatusBarControl::setLockState(bool lock_active)
-{
-    menu->clear();
-    menu->addAction(
-	lock_active ?
-	    //: A context menu item.
-	    lockWalletAction :
-	    //: A context menu item. The lock state activity was disabled previously.
-	    unlockWalletAction);
-}
-
-void LockWalletStatusBarControl::setThemedPixmap(const QString& image_filename, int width, int height)
-{
-    m_image_filename = image_filename;
-    m_pixmap_width = width;
-    m_pixmap_height = height;
-    updateThemedPixmap();
-}
-
-void LockWalletStatusBarControl::updateThemedPixmap()
-{
-    setPixmap(m_platform_style->SingleColorIcon(m_image_filename).pixmap(m_pixmap_width, m_pixmap_height));
-}
-
-StakingStatusBarControl::StakingStatusBarControl(const PlatformStyle *platformStyle)
-    : walletFrame(nullptr),
-      menu(nullptr),
-      m_platform_style{platformStyle}
-{
-    createContextMenu();
-    int max_width = 0;
-    setMinimumSize(max_width, 0);
-    setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    setStyleSheet(QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name()));
-}
-
-/** So that it responds to button clicks */
-void StakingStatusBarControl::mousePressEvent(QMouseEvent *event)
-{
-    onLockWalletClicked(event->pos());
-}
-
-void StakingStatusBarControl::changeEvent(QEvent* e)
-{
-    if (e->type() == QEvent::PaletteChange) {
-        QString style = QString("QLabel { color : %1 }").arg(m_platform_style->SingleColor().name());
-        if (style != styleSheet()) {
-            setStyleSheet(style);
-        }
-    }
-
-    QLabel::changeEvent(e);
-}
-
-/** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
-void StakingStatusBarControl::createContextMenu()
-{
-    menu = new QMenu(this);
-
-    disableStakingAction = new QAction(tr("Disable Staking"));
-    disableStakingAction->setData(QVariant(0));
-    enableStakingAction = new QAction(tr("Enable Staking"));
-    enableStakingAction->setData(QVariant(1));
-    displayStakingAction = new QAction(tr("Show Staking Tab"));
-    displayStakingAction->setData(QVariant(2));
-
-    menu->addAction(displayStakingAction);
-    menu->addAction(enableStakingAction);
-    menu->addAction(disableStakingAction);
-    connect(menu, &QMenu::triggered, this, &StakingStatusBarControl::onMenuSelection);
-
-}
-
-void StakingStatusBarControl::setWalletFrame(WalletFrame *_walletFrame)
-{
-  if (_walletFrame)
-  {
-      this->walletFrame = _walletFrame;
-  }
-}
-
-void StakingStatusBarControl::setRPCConsole(RPCConsole* _rpcConsole)
-{
-  if (rpcConsole)
-  {
-      this->rpcConsole = _rpcConsole;
-
-      // be aware of wallet lock change reported by the WalletFrame object.
-      //connect(_walletFrame, &WalletFrame::walletLockStatusChanged, this, &StakingStatusBarControl::updateLockWallet);
-
-      // initialize the wallet lock icon with the current value in the model.
-      //updateLockWallet();
-  }
-}
-
-/** When status is changed on walletFrame it will refresh the display text of the control on the status bar */
-void StakingStatusBarControl::updateLockWallet(int newUnits)
-{
-    setText(QString(""));
-}
-
-/** Shows context menu with lock wallet options by the mouse coordinates */
-void StakingStatusBarControl::onLockWalletClicked(const QPoint& point)
-{
-    QPoint globalPos = mapToGlobal(point);
-    menu->exec(globalPos);
-}
-
-/** Tells underlying walletFrame to update its current state. */
-void StakingStatusBarControl::onMenuSelection(QAction* action)
-{
-    if (action)
-    {
-        int bOptionEnable = action->data().toInt();
-        if (bOptionEnable == 0) {
-            walletFrame->disableStaking();
-        } else if (bOptionEnable == 1) {
-            walletFrame->enableStaking();
-        } else if (bOptionEnable == 2) {
-            rpcConsole->setTabFocus(RPCConsole::TabTypes::STAKE);
-            showDebugWindow();
-        }
-    }
-}
-
-/** Updates the menu items list. */
-void StakingStatusBarControl::setStakingActive(bool stake_active)
-{
-    menu->clear();
-    menu->addAction(displayStakingAction);
-    menu->addAction(
-	stake_active ?
-	    //: A context menu item.
-	    enableStakingAction :
-	    //: A context menu item. The lock state activity was disabled previously.
-	    disableStakingAction);
-
-}
-
-void StakingStatusBarControl::setThemedPixmap(const QString& image_filename, int width, int height)
-{
-    m_image_filename = image_filename;
-    m_pixmap_width = width;
-    m_pixmap_height = height;
-    updateThemedPixmap();
-}
-
-void StakingStatusBarControl::updateThemedPixmap()
-{
-    setPixmap(m_platform_style->SingleColorIcon(m_image_filename).pixmap(m_pixmap_width, m_pixmap_height));
-}
-
-void StakingStatusBarControl::showDebugWindow()
-{
-    GUIUtil::bringToFront(rpcConsole);
-    Q_EMIT consoleShown(rpcConsole);
-}

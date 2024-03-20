@@ -163,9 +163,6 @@ public:
     bool isMultiwallet();
 
     bool GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight);
-    std::atomic<bool> updateStakeWeight;
-    uint64_t nAverageStakeWeight;
-    uint64_t nTotalStakeWeight;
 
     AddressTableModel* getAddressTableModel() const { return addressTableModel; }
 
@@ -177,6 +174,7 @@ private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
     std::unique_ptr<interfaces::Handler> m_handler_unload;
     std::unique_ptr<interfaces::Handler> m_handler_status_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_notify_walletstaking_status_changed;
     std::unique_ptr<interfaces::Handler> m_handler_address_book_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
     std::unique_ptr<interfaces::Handler> m_handler_show_progress;
@@ -219,6 +217,9 @@ Q_SIGNALS:
     // Staking status of wallet changed
     void stakingStatusChanged();
 
+    // Staking active of wallet changed
+    void stakingActiveChanged(bool staking);
+
     // Signal emitted when wallet needs to be unlocked
     // It is valid behaviour for listeners to keep the wallet locked after this signal;
     // this means that the unlocking failed or was cancelled.
@@ -250,6 +251,10 @@ public Q_SLOTS:
 
     /* Wallet status might have changed */
     void updateStatus();
+    /* Wallet staking active might have changed */
+    void updateStakingActive();
+    /* Wallet staking status might have changed */
+    void updateStakingStatus();
     /* New transaction, or transaction changed status */
     void updateTransaction();
     /* New, updated or removed address book entry */

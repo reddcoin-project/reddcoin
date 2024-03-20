@@ -94,11 +94,10 @@ public Q_SLOTS:
     void changePassphrase();
     /** Ask for passphrase to unlock wallet temporarily */
     void unlockWallet();
-    void lockWallet();
+    void lockWallet(bool lock_wallet);
 
     /** Enable/Disable staking */
-    void enableStaking();
-    void disableStaking();
+    void enableStaking(bool enable_staking);
 
     /** Show used sending addresses */
     void usedSendingAddresses();
