@@ -120,9 +120,12 @@ EXPECTED_HOLDER_NAMES = [
     r"The Zcash developers",
     r"Jeremy Rubin",
     r"Colin Percival",
+    r"ArtForz",
+    r"pooler",
     r"Peter Csajtai",
     r"Tomas Dzetkulic",
     r"Pavol Rusnak",
+    r"Peter Csajtai <peter.csajtai@outlook.com>",
 ]
 
 DOMINANT_STYLE_COMPILED = {}
