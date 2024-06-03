@@ -1,9 +1,9 @@
-4.22.8 Release Notes
+4.22.9rc1 Release Notes
 ==================
 
-Reddcoin Core version 4.22.8 is now available from:
+Reddcoin Core version 4.22.9rc1 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.8/](https://download.reddcoin.com/bin/reddcoin-core-4.22.8/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc1/](https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc1/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -47,9 +47,11 @@ Notable changes
 Blockchain Synchronisation
 --------------------------
 - Improved the behaviour during IBD and out of order blocks.
+- Dont calculate stakeweight during sync.
 
 P2P and network changes
 -----------------------
+- MIN_PEER_PROTO_VERSION bumped to 80001. version 3 clients are obsolete
 - Added support for running Reddcoin Core as an
   [I2P (Invisible Internet Project)](https://en.wikipedia.org/wiki/I2P) service
   and connect to such services. See [i2p.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/i2p.md) for details. (#20685)
@@ -66,6 +68,8 @@ P2P and network changes
 New and Updated RPCs
 --------------------
 
+- New `getinflation` added back to available commands
+- New `getinflationmultipier` added back to available commands
 - New `setstaking` RPC will return the current staking state for all loaded wallets. Setting a boolean value (true|false) will 
   enable/ disable staking for the selected wallet according. Additionally the state for the selected wallet can be stored to load during startup (settings.json).
   
@@ -74,6 +78,8 @@ New and Updated RPCs
 - Updated `checkupdates` RPC will return an object with the currently installed version and the latest available remote version from github.
 
 - Updated `staking` RPC will return the current staking state. Setting a boolean value (true|false) will enable/ disable staking accordingly.
+
+- Updated `getblockchaininfo` RPC will return the current MoneySuppy.
 
 - New `gethdwalletinfo` RPC returns an object containing the following fields, `hdseed`, `mnemonic`,
   `mnemonicpassphrase`, `rootprivkey`, `extendedprivkey`, `extendedpubkey` if hdseed is available.
@@ -242,6 +248,7 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 GUI changes
 -----------
+- Time interval lines added to the network data monitor
 - New statusbar icons to control overall staking
 - A new wallet creation wizard within the GUI to create wallets.
 
@@ -304,6 +311,66 @@ Tests
 
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
+### Reddcoin commit history 4.22.9
+ - #acfaa01d5 scripted-diff: Bump copyright headers (John Nash)
+ - #74fdfab87 revert SEND_HEADERS version Set MIN_PEER_PROTO_VERSION (v3 clients are obsolete) (John Nash)
+ - #3cf35b0ff Reduce bandwidth during initial headers sync when a block is found (Suhas Daftuar)
+ - #237f56607 bump chain sync verification (John Nash)
+ - #564483173 Don't send getheaders message when another request is outstanding (Suhas Daftuar)
+ - #9045f00c4 Cleanup received_new_header calculation to use WITH_LOCK (Suhas Daftuar)
+ - #2eb85547f Move peer state updates from headers message into separate function (Suhas Daftuar)
+ - #bfe9c8445 Move headers direct fetch to end of ProcessHeadersMessage (Suhas Daftuar)
+ - #63c2d4e44 Move headers-direct-fetch logic into own function (Suhas Daftuar)
+ - #608d66e7c Move additional headers fetching to own function (Suhas Daftuar)
+ - #e59bebb85 Add helper function for checking header continuity (Suhas Daftuar)
+ - #b931e5cce Move handling of unconnecting headers into own function (Suhas Daftuar)
+ - #c5698d0ae always draw dynamic time intervals (John Nash)
+ - #447ff0c6c draw time intervals over the top (John Nash)
+ - #db6738e6e draw dynamic time intervals (John Nash)
+ - #45b661ac2 Add test for getheaders behavior (Suhas Daftuar)
+ - #7ae9a8a0a Respond to getheaders if we have sufficient chainwork (Suhas Daftuar)
+ - #ecb119ff7 qt: update translations (John Nash)
+ - #360aee688 policy: read/write the correct min version to the file (John Nash)
+ - #90aae7712 gui: fix for lockwallet not working from menu (John Nash)
+ - #483184192 gui: add toolbar label (John Nash)
+ - #f49df3957 check config for prune mode being enabled on start and disable (John Nash)
+ - #c0e87a2cf gui: add menu item to enable/disable staking (John Nash)
+ - #0648a0c54 gui: create theme chooser (John Nash)
+ - #3db667617 gui: colorize the logo in the utility dialogue (John Nash)
+ - #24c542f01 gui: update windows icon for testnet (John Nash)
+ - #760755e7e refactor: include some debugging (John Nash)
+ - #36fd6984d refactor: remove unused variables (John Nash)
+ - #e4fe5ce84 refactor: remove unnecessary signals (John Nash)
+ - #8233a0b7d refactor: provide a warning icon for states that are neither staking on or staking off (John Nash)
+ - #cd2527e4c refactor: create separate signals for wallet staking active (John Nash)
+ - #bd4887970 refactor: create separate signals for wallet staking status (John Nash)
+ - #2d291438a refactor: create separate signals for wallet staking (John Nash)
+ - #2d49d0d9d refactor: create separate signals for node staking (John Nash)
+ - #286e39322 refactor: rename globalstakingStatusControl (John Nash)
+ - #e51d1aa43 refactor: rename setNodeStakingActive (John Nash)
+ - #78cab1781 missing LOCK (John Nash)
+ - #3f5727fd0 rpc: include moneysupply in rpc call (John Nash)
+ - #27e6b88ae refactor: rename updateStakingStatus -> updateWalletStakingStatus (John Nash)
+ - #a8e074ecc refactor: rename stakingStatusControl -> walletstakingStatusControl (John Nash)
+ - #b6567e327 refactor: remove custom class and utilize GUIUtil::ClickableLabel (John Nash)
+ - #bee71b4d6 refactor: remove custom class and utilize GUIUtil::ClickableLabel (John Nash)
+ - #53ff9586b refactor: move tests only (John Nash)
+ - #f4880247e gui: dont calculate stake weight while syncing (John Nash)
+ - #8d97c6dce kernel: activatechainstate during block load (John Nash)
+ - #7e4f5bc83 kernel: cleanup headers (John Nash)
+ - #9a1708ceb kernel: use GetTransaction over direct disk access (John Nash)
+ - #9686d60bb refactor: additional GetTransaction(...) (John Nash)
+ - #cfd8be54b index: set block proof of stake flag (John Nash)
+ - #153c2c582 doc: GetTransaction()/getrawtransaction follow-ups to #22383 (John Newbery)
+ - #6c924340f refactor: move `GetTransaction(...)` to node/transaction.cpp (Sebastian Falbesoner)
+ - #9b9faa166 prefer to use txindex if available for GetTransaction (Jameson Lopp)
+ - #c23f23c0a qt: pass import state from GUI (John Nash)
+ - #019ce6d6b wallet: set variable for importing HD wallet (John Nash)
+ - #6e453e7b3 fee: Increase the max tx fee by a factor of 10 to reduce the warning (John Nash)
+ - #b26d4bdc2 build: update copyright year (John Nash)
+ - #895b5e68d rpc: add rpc commands getinflation and getinflationmultipier (John Nash)
+ - #cdb5ad74a add signature to block ToString() (John Nash)
+ 
 ### Reddcoin commit history 4.22.8
  - #d27218355 consensus: add vchBlockSig to block encodings (John Nash)
  - #a8de97de0 logging: fix format by removing unnecessary \n (John Nash)
