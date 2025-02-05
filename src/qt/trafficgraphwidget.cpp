@@ -72,6 +72,7 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *)
 
     QColor axisCol(Qt::gray);
     int h = height() - YMARGIN * 2;
+    int w = width() - XMARGIN * 2;
     painter.setPen(axisCol);
     painter.drawLine(XMARGIN, YMARGIN + h, width() - XMARGIN, YMARGIN + h);
 
@@ -105,6 +106,49 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *)
         }
     }
 
+    // draw lines
+    painter.setPen(axisCol);
+    painter.drawLine(XMARGIN, YMARGIN + h, width() - XMARGIN, YMARGIN + h); // X-Axis
+
+    // Time range in minutes
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch() / 1000; // Get current time in seconds
+    qint64 startTime = currentTime - (nMins * 60);  // Start of the graph
+
+    // Determine interval dynamically
+    int interval;
+    if (nMins <= 15) interval = 1 * 60;        // 1-minute intervals
+    else if (nMins <= 60) interval = 5 * 60;   // 5-minute intervals
+    else if (nMins <= 180) interval = 10 * 60; // 10-minute intervals
+    else if (nMins <= 360) interval = 30 * 60; // 30-minute intervals
+    else interval = 3600;                      // 1-hour intervals
+
+    // **2. Compute scrolling offset dynamically**
+    qint64 lastMajorTime = currentTime - (currentTime % interval); // Last fixed interval
+    float pixelsPerSecond = (float)w / (nMins * 60);
+    float timeOffset = (currentTime % interval) * pixelsPerSecond;
+    int currentTimeX = width() - XMARGIN;
+
+    // **4. Draw moving vertical grid lines**
+
+    for (qint64 t = lastMajorTime; t >= startTime; t -= interval) {
+        int x = currentTimeX - ((currentTime - t) * pixelsPerSecond) - timeOffset;
+
+        if (x < XMARGIN) x += w; // Ensure smooth reappearance on the left
+
+        painter.setPen(axisCol); // Light gray for normal lines
+        painter.drawLine(x, YMARGIN, x, YMARGIN + h);
+
+        // Draw time labels
+        QDateTime dateTime = QDateTime::fromSecsSinceEpoch(t);
+        QString timeLabel = dateTime.toString("hh:mm");
+        painter.setPen(Qt::white);
+        painter.drawText(x - 15, YMARGIN + h - yMarginText, timeLabel);
+    }
+
+    // **5. Force refresh every 100ms for smooth animation**
+    QTimer::singleShot(100, this, [this]() { this->update(); });
+
+    // Render Traffic Graph (same as before)
     painter.setRenderHint(QPainter::Antialiasing);
     if(!vSamplesIn.empty()) {
         QPainterPath p;
