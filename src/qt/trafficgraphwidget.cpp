@@ -68,59 +68,60 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.fillRect(rect(), Qt::black);
 
-    if(fMax <= 0.0f) return;
-
     QColor axisCol(Qt::gray);
     int h = height() - YMARGIN * 2;
     int w = width() - XMARGIN * 2;
+    const float yMarginText = 2.0;
     painter.setPen(axisCol);
     painter.drawLine(XMARGIN, YMARGIN + h, width() - XMARGIN, YMARGIN + h);
 
-    // decide what order of magnitude we are
-    int base = floor(log10(fMax));
-    float val = pow(10.0f, base);
+    if(fMax > 0.0f) {
 
-    const QString units = tr("kB/s");
-    const float yMarginText = 2.0;
+        // decide what order of magnitude we are
+        int base = floor(log10(fMax));
+        float val = pow(10.0f, base);
 
-    // draw lines
-    painter.setPen(axisCol);
-    painter.drawText(XMARGIN, YMARGIN + h - h * val / fMax-yMarginText, QString("%1 %2").arg(val).arg(units));
-    for(float y = val; y < fMax; y += val) {
-        int yy = YMARGIN + h - h * y / fMax;
-        painter.drawLine(XMARGIN, yy, width() - XMARGIN, yy);
-    }
-    // if we drew 3 or fewer lines, break them up at the next lower order of magnitude
-    if(fMax / val <= 3.0f) {
-        axisCol = axisCol.darker();
-        val = pow(10.0f, base - 1);
+        const QString units = tr("kB/s");
+
+        // draw lines
         painter.setPen(axisCol);
         painter.drawText(XMARGIN, YMARGIN + h - h * val / fMax-yMarginText, QString("%1 %2").arg(val).arg(units));
-        int count = 1;
-        for(float y = val; y < fMax; y += val, count++) {
-            // don't overwrite lines drawn above
-            if(count % 10 == 0)
-                continue;
+        for(float y = val; y < fMax; y += val) {
             int yy = YMARGIN + h - h * y / fMax;
             painter.drawLine(XMARGIN, yy, width() - XMARGIN, yy);
         }
-    }
+        // if we drew 3 or fewer lines, break them up at the next lower order of magnitude
+        if(fMax / val <= 3.0f) {
+            axisCol = axisCol.darker();
+            val = pow(10.0f, base - 1);
+            painter.setPen(axisCol);
+            painter.drawText(XMARGIN, YMARGIN + h - h * val / fMax-yMarginText, QString("%1 %2").arg(val).arg(units));
+            int count = 1;
+            for(float y = val; y < fMax; y += val, count++) {
+                // don't overwrite lines drawn above
+                if(count % 10 == 0)
+                    continue;
+                int yy = YMARGIN + h - h * y / fMax;
+                painter.drawLine(XMARGIN, yy, width() - XMARGIN, yy);
+            }
+        }
 
-    // Render Traffic Graph (same as before)
-    painter.setRenderHint(QPainter::Antialiasing);
-    if(!vSamplesIn.empty()) {
-        QPainterPath p;
-        paintPath(p, vSamplesIn);
-        painter.fillPath(p, QColor(0, 255, 0, 128));
-        painter.setPen(Qt::green);
-        painter.drawPath(p);
-    }
-    if(!vSamplesOut.empty()) {
-        QPainterPath p;
-        paintPath(p, vSamplesOut);
-        painter.fillPath(p, QColor(255, 0, 0, 128));
-        painter.setPen(Qt::red);
-        painter.drawPath(p);
+        // Render Traffic Graph (same as before)
+        painter.setRenderHint(QPainter::Antialiasing);
+        if(!vSamplesIn.empty()) {
+            QPainterPath p;
+            paintPath(p, vSamplesIn);
+            painter.fillPath(p, QColor(0, 255, 0, 128));
+            painter.setPen(Qt::green);
+            painter.drawPath(p);
+        }
+        if(!vSamplesOut.empty()) {
+            QPainterPath p;
+            paintPath(p, vSamplesOut);
+            painter.fillPath(p, QColor(255, 0, 0, 128));
+            painter.setPen(Qt::red);
+            painter.drawPath(p);
+        }
     }
 
     // draw vertical time lines, placed over top
