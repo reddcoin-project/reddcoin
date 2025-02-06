@@ -622,7 +622,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     return;
             }
 
-            while (GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.996)
+            while (GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.9996)
             {
                 if (ShutdownRequested())
                     return;
