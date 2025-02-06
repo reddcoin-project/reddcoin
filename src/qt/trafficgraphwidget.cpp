@@ -106,7 +106,24 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *)
         }
     }
 
-    // draw lines
+    // Render Traffic Graph (same as before)
+    painter.setRenderHint(QPainter::Antialiasing);
+    if(!vSamplesIn.empty()) {
+        QPainterPath p;
+        paintPath(p, vSamplesIn);
+        painter.fillPath(p, QColor(0, 255, 0, 128));
+        painter.setPen(Qt::green);
+        painter.drawPath(p);
+    }
+    if(!vSamplesOut.empty()) {
+        QPainterPath p;
+        paintPath(p, vSamplesOut);
+        painter.fillPath(p, QColor(255, 0, 0, 128));
+        painter.setPen(Qt::red);
+        painter.drawPath(p);
+    }
+
+    // draw vertical time lines, placed over top
     painter.setPen(axisCol);
     painter.drawLine(XMARGIN, YMARGIN + h, width() - XMARGIN, YMARGIN + h); // X-Axis
 
@@ -147,23 +164,6 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *)
 
     // **5. Force refresh every 100ms for smooth animation**
     QTimer::singleShot(100, this, [this]() { this->update(); });
-
-    // Render Traffic Graph (same as before)
-    painter.setRenderHint(QPainter::Antialiasing);
-    if(!vSamplesIn.empty()) {
-        QPainterPath p;
-        paintPath(p, vSamplesIn);
-        painter.fillPath(p, QColor(0, 255, 0, 128));
-        painter.setPen(Qt::green);
-        painter.drawPath(p);
-    }
-    if(!vSamplesOut.empty()) {
-        QPainterPath p;
-        paintPath(p, vSamplesOut);
-        painter.fillPath(p, QColor(255, 0, 0, 128));
-        painter.setPen(Qt::red);
-        painter.drawPath(p);
-    }
 }
 
 void TrafficGraphWidget::updateRates()
