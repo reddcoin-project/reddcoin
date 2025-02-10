@@ -123,8 +123,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000000021d523bccf49bada");
-        consensus.defaultAssumeValid = uint256S("0x23b0377d1291c4585f5952d82a902065561db71a644e129b621801d958b718c2");  // 5125800
+        consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000261a88258d4b86bb");
+        consensus.defaultAssumeValid = uint256S("0x88695d994d63a64435d3ee17556a65d22c06051255988c6b4979285b3452d474");  // 5773551
 
         /**
          * The message start string is designed to be unlikely to occur in normal data.
@@ -269,6 +269,68 @@ public:
                 {3228679, uint256S("0x20b15eac55ba0cef31977e540d9034a0fdba574a3cb02c0f02b64ee947216eac")},
                 {3268999, uint256S("0x02bcaeebf00136b943cdd30832147e1f36f063cb6f71df52b6d0e55b5c633b5f")}, 
                 {3309319, uint256S("0x68ff1ef71586f083ab77090f60e52bc8bd121734baadf8b5c6afbada869649ae")}, 
+                {3349639, uint256S("0x2b5b24ff88d25596ea3d357c1ccc33a45422685e9352c64a5c7ec68be4b03630")},
+                {3389959, uint256S("0x1f3a1e378d8f92f65e31f7f11623f9e35363d86a03ebdd24c30f86198e29154c")},
+                {3430279, uint256S("0xac0ed9835030142d092c54f097c01568425e69185ee516b0f634c8f5047cabe3")},
+                {3470599, uint256S("0x121fc00ce30c70406d158a11133761651a4f2d4f0c8f2734f545c1d44fb24f87")},
+                {3510919, uint256S("0x608c4fa4715524886dfa7f22758eadcad03625327c5786bd3667dc4bb0c7c826")},
+                {3551239, uint256S("0x579516df945b6d0a8a761107cc8b35b1489043ae721e29897b1c6049ec687eee")},
+                {3591559, uint256S("0xa24fef71db4aba719feb72ffe0a4fd7ebbbd7b90167d6745144e945d5fb2661c")},
+                {3631879, uint256S("0xef64ae4a51dd2532a5f17a67838c8f694585d1fc1cd914c45f7ba9c8ca022c1f")},
+                {3672199, uint256S("0x345e413bb0a3de9f3420ddb03f6dd512d8ee7fcae83fe46253d6fca57da2e2af")},
+                {3712519, uint256S("0xfedcd4978f35273ccabc0ab9dcc140ad18c7668dec8a698109cba0f939c7e6cf")},
+                {3752839, uint256S("0x4361dc341929b5d229c86bbfb7bcec10adeee4b44d3239da054a3e3e884b1ad0")},
+                {3793159, uint256S("0xa5144d4d8bfb6c287a6b224bd701a22215d0940326919f55e4de83f1fb011910")},
+                {3833479, uint256S("0x9a0cf348d0f8ed288944038f86f8dbfd77e05ec186820f39e7387c9daee1e95d")},
+                {3873799, uint256S("0xda2ec964bbad7499458eec05ef1f6645793234c7f8c67809e91d189e69ce8ad1")},
+                {3914119, uint256S("0xa9c5db5dd1f7134212ee94863931690ab6af32341d483281c1824f4af84d5d20")},
+                {3954439, uint256S("0x40e2db42b54271717892531123314b15636cb6b69ba21b1a1697e8562197f0a0")},
+                {3994759, uint256S("0x09c30d8ded9b40198637578d221a55bc06f2f84cae59c139042452adf5a2f9c3")},
+                {4035079, uint256S("0x73de0d3f5dd0a55b60fc01bcbf3bec7edec47be3d066e00c2182f2693749b61f")},
+                {4075399, uint256S("0x2253ca1b16c165b81388b71a8603b18e1afcde3c6c7f76a4d3ea2ae6dee5edcd")},
+                {4115719, uint256S("0xe636574f9006f80abc8309531e9c40c0bd8b53e9d8641f1984691990d403a88c")},
+                {4156039, uint256S("0x08f35a1f0c721b62bcaa45a7818fe77e123f0cdc54f5b922bfdb4b9aa6eaf7fd")},
+                {4196359, uint256S("0x24ec5db09623084313fd4324c84c2f90888014e305f0f23934ee051a4f49e72b")},
+                {4236679, uint256S("0x7c1660725c7299b63731c3990e88fe07c019fda01c41f3af7a43dd53a69ac02c")},
+                {4276999, uint256S("0x42fefcaaca90419b963fe06e666405801c9cda209ae617d72ff71cac61d27aa0")},
+                {4317319, uint256S("0x581f845161918cf7edc37beb678ef8a5ba3c1facc34a1cb67bbae7fa38f19269")},
+                {4357639, uint256S("0x18e5b622a44704d009d174e8e1022e0c081a447be27f8c6c811630894e2ac81b")},
+                {4397959, uint256S("0x20c1a73fcc32386f98aeb04a664927d67dd7556972bd41af6b7ef4910cc548b0")},
+                {4438279, uint256S("0xcb7c03774a2de0155a915fec39534bb04e026bb1a3608bc92b134915e9eff3de")},
+                {4478599, uint256S("0x199929644e26d8bace4fd5d36bf03a3fc6d5927ffebbd839f395090d94b96a2d")},
+                {4518919, uint256S("0x5efd0a5e1fb3d97ddbac6c874665addd952bf7565ec4849b25beb5a339c28039")},
+                {4559239, uint256S("0x0d3a9e121cbb0c5a551ff4faa29c6c14edc57929a737ba9cc7d676b561fa85a9")},
+                {4599559, uint256S("0x462d0741b2dcdfc37891e8c4dd8f79bb129f351c8ea4172d790847fbdddf0160")},
+                {4639879, uint256S("0x109dc22cd2b4ea8bd85165557625c6ce896ff5e2f93566693ff95ffc1c9e09c2")},
+                {4680199, uint256S("0xd87dca6ea4bd6e0a0c29f5c70a36b8b35b143da157ab5ee84696d19a58ef3c80")},
+                {4720519, uint256S("0xba336d9989cadcdd89cb388739db8a95045cbff9f250d60cb271405728d51859")},
+                {4760839, uint256S("0xa3930276855882ef4eab87f9c22adb4844b1a79169103528b79110a81c54ff78")},
+                {4801159, uint256S("0xfcb8d36d2acf371d2a719f2497a1570a5cbea5dca6149cfee7dd9b5f3d2c3e02")},
+                {4841479, uint256S("0xec8e73afa7696065c4737d064bc20c04e171531f45a40fe721123857937eb774")},
+                {4881799, uint256S("0xbcef9ae53ba352ddb4868878f3055335c6b74af1c069725fc094d544635657b3")},
+                {4922119, uint256S("0x9cb4e5663ab93c65f85cdb421fbfc2820e9a523321abd08dea22a7c8a0cc4743")},
+                {4962439, uint256S("0x7fb581b628d5cf4827c9338ea701e0ccd30a58f74641723c79b85ee514f327f4")},
+                {5002759, uint256S("0x6b545ca8ddd68db00d767553e48adf0309e12198f7569c695606b272a5b4ff84")},
+                {5043079, uint256S("0x46d4fa073ce53242f279cdb2b2e86c25447fa25cc5ad3d2790052ccd35a044da")},
+                {5083399, uint256S("0x5a7173e3ef55b0f5061630e865acc73732e15fc91e3fd2a48d470396cdadb56f")},
+                {5123719, uint256S("0x597d4dccd63e7f9579292dcde9eb3c901d63b5655cec9bd22bfb6025ec1e4bf8")},
+                {5164039, uint256S("0xc818e11e73e72534fbb4f9c0b4e1315e68db2d75ba379d32b526f43805fc8001")},
+                {5204359, uint256S("0xb390ca7d4611046e905baf8e051bfaf374edbd09f9a5e2c74c2a44fd969dd11f")},
+                {5244679, uint256S("0x2d86051512729490a1e914e8ce9715065c9279ad232599427e4dbe3c00494d45")},
+                {5284999, uint256S("0xa8421cdf5ecfcd99375504b3138a2aaf89e186b4fe860bcce5d32e737ed37ca6")},
+                {5325319, uint256S("0x4b25b40ff42ac97f8efaefc618aeb968d0691fcf395249d8894ce25222e58978")},
+                {5365639, uint256S("0x98f6af55aa13d3e3b583525f40f1dc9289078ac4c34968ead0451f03d435d396")},
+                {5405959, uint256S("0x8d6e08e244b86177a52bf6104d98dbede014e79fc73459614b648836d8b33ab9")},
+                {5446279, uint256S("0x560b0b1b3b29d3364f81be975acbb1229369be39efe0b624d118cf005ae84634")},
+		{5448005, uint256S("0x99e1ba495f4da89c2a0c8a0296cb1df69d5a76488c06517a5aee5c0000c496da")},
+                {5486599, uint256S("0x22b86c9191acc687b155db4715720f3ba1f9aaa2bd9d50ff3e2db4344504ba28")},
+		{5519068, uint256S("0x1d6ebb2d73dccc03b7b9b013c3b08ec8a83919ed4480edbad6e0604be53f5b40")},
+                {5526919, uint256S("0x491daa3b96d8550d07526b0675c451dbe94f7f01504746a15520c6c647d0c2b5")},
+                {5567239, uint256S("0x46eaedef033b01184150cf6314b9506b3fb486d4805ef86eafd605dd84210a6e")},
+                {5607559, uint256S("0x2411f735e03dd197f2d289d2da07127f31b92e092096c44aaf6665709b0ce4d5")},
+                {5647879, uint256S("0x56530119101dc7e959cc04e55c6048ddf2ab4440aa614b9dfc1185e6bf565f78")},
+                {5688199, uint256S("0x124b519807dc416f4d4bd0a63a21bd48118a2fe4d625b89581e10ce91c996a19")},
+                {5728519, uint256S("0x979c540d1580cbab3c4b7a84596e823c771d95544dc6f5c5785550b14b0f31fe")},
             }
         };
 
@@ -278,9 +340,9 @@ public:
 
         chainTxData = ChainTxData{
             // Data from RPC: getchaintxstats 4096 23b0377d1291c4585f5952d82a902065561db71a644e129b621801d958b718c2
-            /* nTime    */ 1700102781,
-            /* nTxCount */ 13460929,
-            /* dTxRate  */ 0.033982042,
+            /* nTime    */ 1738288799,
+            /* nTxCount */ 15082518,
+            /* dTxRate  */ 0.03306431243309559,
         };
     }
 };
