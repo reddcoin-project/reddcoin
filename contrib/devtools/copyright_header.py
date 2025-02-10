@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2016-2020 The Bitcoin Core developers
-# Copyright (c) 2016-2023 The Reddcoin Core developers
+# Copyright (c) 2016-2024 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -120,9 +120,12 @@ EXPECTED_HOLDER_NAMES = [
     r"The Zcash developers",
     r"Jeremy Rubin",
     r"Colin Percival",
+    r"ArtForz",
+    r"pooler",
     r"Peter Csajtai",
     r"Tomas Dzetkulic",
     r"Pavol Rusnak",
+    r"Peter Csajtai <peter.csajtai@outlook.com>",
 ]
 
 DOMINANT_STYLE_COMPILED = {}
