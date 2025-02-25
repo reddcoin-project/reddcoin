@@ -227,7 +227,7 @@ public:
 
     bool IsProofOfStake() const
     {
-        return (nFlags & BLOCK_PROOF_OF_STAKE);
+        return (nNonce == 0);
     }
 
     void SetProofOfStake()
