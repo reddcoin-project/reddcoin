@@ -1,9 +1,9 @@
-4.22.9rc1 Release Notes
+4.22.9rc2 Release Notes
 ==================
 
-Reddcoin Core version 4.22.9rc1 is now available from:
+Reddcoin Core version 4.22.9rc2 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc1/](https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc1/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc2/](https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc2/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -51,6 +51,7 @@ Blockchain Synchronisation
 
 P2P and network changes
 -----------------------
+- POS index flag reverted
 - MIN_PEER_PROTO_VERSION bumped to 80001. version 3 clients are obsolete
 - Added support for running Reddcoin Core as an
   [I2P (Invisible Internet Project)](https://en.wikipedia.org/wiki/I2P) service
@@ -312,6 +313,7 @@ Tests
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
 ### Reddcoin commit history 4.22.9
+ - #dd87b8791 index: revert set block proof of stake flag (John Nash)
  - #acfaa01d5 scripted-diff: Bump copyright headers (John Nash)
  - #74fdfab87 revert SEND_HEADERS version Set MIN_PEER_PROTO_VERSION (v3 clients are obsolete) (John Nash)
  - #3cf35b0ff Reduce bandwidth during initial headers sync when a block is found (Suhas Daftuar)
