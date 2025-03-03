@@ -2888,17 +2888,22 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
         chain.initMessage(_("Rescanning…").translated);
         walletInstance->WalletLogPrintf("Rescanning last %i blocks (from block %i)...\n", *tip_height - rescan_height, rescan_height);
 
-        if (!walletInstance->fImporting) {
-            // No need to read and scan block if block was created before
-            // our wallet birthday (as adjusted for block time variability)
-            std::optional<int64_t> time_first_key;
+
+        // No need to read and scan block if block was created before
+        // our wallet birthday (as adjusted for block time variability)
+        // If importing, then we need to go back to earliest possible key time.
+        std::optional<int64_t> time_first_key;
+        if (walletInstance->fImporting) {
+            time_first_key = 0; //
+        } else {
             for (auto spk_man : walletInstance->GetAllScriptPubKeyMans()) {
                 int64_t time = spk_man->GetTimeFirstKey();
                 if (!time_first_key || time < *time_first_key) time_first_key = time;
             }
-            if (time_first_key) {
-                chain.findFirstBlockWithTimeAndHeight(*time_first_key - TIMESTAMP_WINDOW, rescan_height, FoundBlock().height(rescan_height));
-            }
+        }
+
+        if (time_first_key) {
+            chain.findFirstBlockWithTimeAndHeight(*time_first_key - TIMESTAMP_WINDOW, rescan_height, FoundBlock().height(rescan_height));
         }
 
         {
