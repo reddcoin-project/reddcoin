@@ -22,6 +22,10 @@ static const CAmount MAX_MINT_PROOF_OF_WORK = 9999 * COIN;
 
 /** No amount larger than this (in satoshi) is valid.
  *
+ * The max value of int64_t is 1<<63 - 1. The value below
+ * is chosen to be just below (1<<63 - 1) / 1e8
+ * 9223372036854775807 / 100000000
+ *
  * Note that this constant is *not* the total money supply, which in Bitcoin
  * currently happens to be less than 21,000,000 BTC for various reasons, but
  * rather a sanity check. As this sanity check is used by consensus-critical
