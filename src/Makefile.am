@@ -153,6 +153,12 @@ BITCOIN_CORE_H = \
   httprpc.h \
   httpserver.h \
   i2p.h \
+  id/reddid.h \
+  id/namespace.h \
+  id/auction.h \
+  id/profile.h \
+  id/reddid_db.h \
+  id/reddid_p2p.h \
   index/base.h \
   index/blockfilterindex.h \
   index/coinstatsindex.h \
@@ -216,6 +222,7 @@ BITCOIN_CORE_H = \
   rpc/net.h \
   rpc/protocol.h \
   rpc/rawtransaction_util.h \
+  rpc/reddid.h \
   rpc/register.h \
   rpc/request.h \
   rpc/semver.h \
@@ -350,6 +357,12 @@ libbitcoin_server_a_SOURCES = \
   httprpc.cpp \
   httpserver.cpp \
   i2p.cpp \
+  id/reddid.cpp \
+  id/namespace.cpp \
+  id/auction.cpp \
+  id/profile.cpp \
+  id/reddid_db.cpp \
+  id/reddid_p2p.cpp \
   index/base.cpp \
   index/blockfilterindex.cpp \
   index/coinstatsindex.cpp \
@@ -383,7 +396,9 @@ libbitcoin_server_a_SOURCES = \
   rpc/mining.cpp \
   rpc/misc.cpp \
   rpc/net.cpp \
+  rpc/reddid.cpp \
   rpc/rawtransaction.cpp \
+  rpc/reddid.cpp \
   rpc/server.cpp \
   script/sigcache.cpp \
   shutdown.cpp \

@@ -330,6 +330,11 @@ AC_ARG_ENABLE([external-signer],
     [use_external_signer=$enableval],
     [use_external_signer=yes])
 
+AC_ARG_ENABLE([reddid],
+    [AS_HELP_STRING([--enable-reddid],[enable ReddID identity system (default is yes)])],
+    [enable_reddid=$enableval],
+    [enable_reddid=yes])
+
 AC_LANG_PUSH([C++])
 
 dnl Check for a flag to turn compiler warnings into errors. This is helpful for checks which may
@@ -1654,6 +1659,15 @@ else
   AC_MSG_RESULT(no)
 fi
 
+dnl enable reddid
+AC_MSG_CHECKING([if reddid should be enabled])
+if test x$enable_reddid != xno; then
+  AC_DEFINE([ENABLE_REDDID], [1], [Define to 1 to enable ReddID identity system])
+  AC_MSG_NOTICE([ReddID identity system enabled])
+else
+  AC_MSG_NOTICE([ReddID identity system disabled])
+fi
+
 dnl enable upnp support
 AC_MSG_CHECKING([whether to build with support for UPnP])
 if test x$have_miniupnpc = xno; then
@@ -1802,6 +1816,7 @@ AM_CONDITIONAL([USE_ASM],[test x$use_asm = xyes])
 AM_CONDITIONAL([WORDS_BIGENDIAN],[test x$ac_cv_c_bigendian = xyes])
 AM_CONDITIONAL([USE_NATPMP],[test x$use_natpmp = xyes])
 AM_CONDITIONAL([USE_UPNP],[test x$use_upnp = xyes])
+AM_CONDITIONAL([ENABLE_REDDID], [test x$enable_reddid = xyes])
 
 AC_DEFINE(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR, [Major version])
 AC_DEFINE(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR, [Minor version])
@@ -1935,6 +1950,7 @@ echo "Options used to compile and link:"
 echo "  external signer = $use_external_signer"
 echo "  multiprocess    = $build_multiprocess"
 echo "  with libs       = $build_bitcoin_libs"
+echo "  with reddid     = $enable_reddid"
 echo "  with wallet     = $enable_wallet"
 if test "x$enable_wallet" != "xno"; then
     echo "    with sqlite   = $use_sqlite"
