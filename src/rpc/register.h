@@ -22,6 +22,8 @@ void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC);
 /** Register raw transaction RPC commands */
 void RegisterSignerRPCCommands(CRPCTable &tableRPC);
 
+void RegisterReddIDRPCCommands(CRPCTable &tableRPC);
+
 static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
 {
     RegisterBlockchainRPCCommands(t);
@@ -29,6 +31,7 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterMiscRPCCommands(t);
     RegisterMiningRPCCommands(t);
     RegisterRawTransactionRPCCommands(t);
+    RegisterReddIDRPCCommands(t);
 #ifdef ENABLE_EXTERNAL_SIGNER
     RegisterSignerRPCCommands(t);
 #endif // ENABLE_EXTERNAL_SIGNER

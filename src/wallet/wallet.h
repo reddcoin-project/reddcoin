@@ -91,6 +91,8 @@ static const bool DEFAULT_SPEND_ZEROCONF_CHANGE = true;
 static const bool DEFAULT_CHECK_GITHUB = true;
 
 static const CAmount DEFAULT_RESERVEBALANCE = 0;
+//! Default for -reddid
+static const bool DEFAULT_ENABLE_REDDID = true;
 //! Default for -staking
 static const bool DEFAULT_ENABLE_STAKING = true;
 /** Default for -stake time out, Set proof-of-stake timeout in ms */

@@ -22,6 +22,7 @@
 #include <hash.h>
 #include <httprpc.h>
 #include <httpserver.h>
+#include <id/reddid.h>
 #include <index/blockfilterindex.h>
 #include <index/coinstatsindex.h>
 #include <index/txindex.h>
@@ -175,6 +176,11 @@ void Interrupt(NodeContext& node)
     }
     if (node.stakeman)
         node.stakeman->Interrupt();
+
+    if (node.reddid) {
+        node.reddid->Interrupt();
+    }
+
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Interrupt(); });
     if (g_coin_stats_index) {
         g_coin_stats_index->Interrupt();
@@ -204,6 +210,7 @@ void Shutdown(NodeContext& node)
         client->flush();
     }
     StopMapPort();
+
 
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
@@ -260,6 +267,12 @@ void Shutdown(NodeContext& node)
     }
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Stop(); });
     DestroyAllBlockFilterIndexes();
+
+    // Shutdown ReddID components if initialized
+    if (node.reddid) {
+        node.reddid->Stop();
+        node.reddid.reset();
+    }
 
     // Any future callbacks will be dropped. This should absolutely be safe - if
     // missing a callback results in an unrecoverable situation, unclean shutdown
@@ -1202,7 +1215,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(),
-                                     *node.scheduler, chainman, *node.mempool, ignores_incoming_txs);
+                                     *node.scheduler, chainman, *node.mempool, ignores_incoming_txs, node);
     RegisterValidationInterface(node.peerman.get());
 
     // sanitize comments per BIP-0014, format user agent and check total size
@@ -1590,6 +1603,18 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!client->load()) {
             return false;
         }
+    }
+
+    // ********************************************************* Step 9.1: Initialize ReddID system
+
+    if (args.GetBoolArg("-reddid", true)) {
+        node.reddid = std::make_unique<ReddIDManager>(node);
+        if (!node.reddid->Init()) {
+            return false;
+        }
+    }
+    if (node.reddid) {
+        node.reddid->Start();
     }
 
     // ********************************************************* Step 10: data directory maintenance

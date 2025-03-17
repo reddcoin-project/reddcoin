@@ -21,6 +21,7 @@ class CStakeman;
 class CTxMemPool;
 class ChainstateManager;
 class PeerManager;
+class ReddIDManager;
 namespace interfaces {
 class Chain;
 class ChainClient;
@@ -58,6 +59,7 @@ struct NodeContext {
     std::unique_ptr<CScheduler> scheduler;
     std::function<void()> rpc_interruption_point = [] {};
     std::unique_ptr<CStakeman> stakeman;
+    std::unique_ptr<ReddIDManager> reddid;
 
     //! Declare default constructor and destructor that are not inline, so code
     //! instantiating the NodeContext struct doesn't need to #include class

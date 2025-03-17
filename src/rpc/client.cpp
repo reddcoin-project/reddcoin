@@ -199,6 +199,9 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "getinterest", 1, "end" },
     { "getinflation", 0, "height" },
     { "getinflationmultiplier", 0, "height" },
+    { "createnamespacesauction", 1, "reserve_price"},
+    { "createnamespacesauction", 2, "duration_days"},
+    { "createnamespacesauction", 3, "auction_type"},
 };
 // clang-format on
 

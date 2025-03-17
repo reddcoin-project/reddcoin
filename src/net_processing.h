@@ -13,6 +13,7 @@ class CAddrMan;
 class CChainParams;
 class CTxMemPool;
 class ChainstateManager;
+struct NodeContext;
 
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
@@ -38,7 +39,7 @@ class PeerManager : public CValidationInterface, public NetEventsInterface
 public:
     static std::unique_ptr<PeerManager> make(const CChainParams& chainparams, CConnman& connman, CAddrMan& addrman,
                                              BanMan* banman, CScheduler& scheduler, ChainstateManager& chainman,
-                                             CTxMemPool& pool, bool ignore_incoming_txs);
+                                             CTxMemPool& pool, bool ignore_incoming_txs, NodeContext& node);
     virtual ~PeerManager() { }
 
     /** Get statistics from node state */
