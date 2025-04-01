@@ -1610,12 +1610,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     if (args.GetBoolArg("-reddid", true)) {
         node.reddid = std::make_unique<ReddIDManager>(node);
         if (!node.reddid->Init()) {
-            return false;
+            return InitError(_("Failed to initialize ReddID system"));
         }
     }
-    if (node.reddid) {
-        node.reddid->Start();
-    }
+
+    node.reddid->Start();
 
     // ********************************************************* Step 10: data directory maintenance
 

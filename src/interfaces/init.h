@@ -15,6 +15,7 @@ class Echo;
 class Ipc;
 class Node;
 class WalletClient;
+class ReddID;
 
 //! Initial interface created when a process is first started, and used to give
 //! and get access to other interfaces (Node, Chain, Wallet, etc).
@@ -32,6 +33,7 @@ public:
     virtual std::unique_ptr<WalletClient> makeWalletClient(Chain& chain);
     virtual std::unique_ptr<Echo> makeEcho();
     virtual Ipc* ipc();
+    virtual std::unique_ptr<ReddID> makeReddid();
 };
 
 //! Return implementation of Init interface for the node process. If the argv
