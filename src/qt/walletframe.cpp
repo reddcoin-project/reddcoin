@@ -6,6 +6,7 @@
 #include <qt/walletframe.h>
 
 #include <qt/overviewpage.h>
+#include <qt/reddidview.h>
 #include <qt/walletmodel.h>
 #include <qt/walletview.h>
 
@@ -198,6 +199,13 @@ void WalletFrame::gotoLoadPSBT(bool from_clipboard)
     if (walletView) {
         walletView->gotoLoadPSBT(from_clipboard);
     }
+}
+
+void WalletFrame::gotoReddIDPage()
+{
+    QMap<WalletModel*, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoReddIDPage();
 }
 
 void WalletFrame::encryptWallet()

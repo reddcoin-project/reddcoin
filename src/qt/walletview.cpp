@@ -14,6 +14,7 @@
 #include <qt/overviewpage.h>
 #include <qt/platformstyle.h>
 #include <qt/receivecoinsdialog.h>
+#include <qt/reddidview.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/signverifymessagedialog.h>
 #include <qt/transactiontablemodel.h>
@@ -74,11 +75,14 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     usedSendingAddressesPage = new AddressBookPage(platformStyle, AddressBookPage::ForEditing, AddressBookPage::SendingTab, this);
     usedReceivingAddressesPage = new AddressBookPage(platformStyle, AddressBookPage::ForEditing, AddressBookPage::ReceivingTab, this);
 
+    reddIDView = new ReddIDView(platformStyle, this);
+
     addWidget(overviewPage);
     addWidget(transactionsPage);
     addWidget(mintingPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
+    addWidget(reddIDView);
 
     connect(overviewPage, &OverviewPage::transactionClicked, this, &WalletView::transactionClicked);
     // Clicking on a transaction on the overview pre-selects the transaction on the transaction history page
@@ -112,6 +116,7 @@ void WalletView::setClientModel(ClientModel *_clientModel)
     overviewPage->setClientModel(_clientModel);
     sendCoinsPage->setClientModel(_clientModel);
     if (walletModel) walletModel->setClientModel(_clientModel);
+    reddIDView->setClientModel(_clientModel);
 }
 
 void WalletView::setWalletModel(WalletModel *_walletModel)
@@ -203,6 +208,11 @@ void WalletView::gotoSendCoinsPage(QString addr)
 
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
+}
+
+void WalletView::gotoReddIDPage()
+{
+    setCurrentWidget(reddIDView);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

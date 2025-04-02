@@ -33,6 +33,7 @@ class NetworkStyle;
 class Notificator;
 class OptionsModel;
 class PlatformStyle;
+class ReddIDView;
 class RPCConsole;
 class SendCoinsRecipient;
 class UnitDisplayStatusBarControl;
@@ -192,6 +193,7 @@ private:
     QAction* openForumAction = nullptr;
     QAction* m_wallet_selector_action = nullptr;
     QAction* m_mask_values_action{nullptr};
+    QAction* reddIDAction = nullptr;
 
     QLabel *m_wallet_selector_label = nullptr;
     QComboBox* m_wallet_selector = nullptr;
@@ -203,6 +205,7 @@ private:
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
     ModalOverlay* modalOverlay = nullptr;
+    ReddIDView* reddIDPage = nullptr;
 
     QMenu* m_network_context_menu = new QMenu(this);
     QMenu* m_lock_context_menu = new QMenu(this);
@@ -329,6 +332,8 @@ public Q_SLOTS:
     void gotoVerifyMessageTab(QString addr = "");
     /** Load Partially Signed Bitcoin Transaction from file or clipboard */
     void gotoLoadPSBT(bool from_clipboard = false);
+
+    void gotoReddIDPage();
 
     /** Show open dialog */
     void openClicked();

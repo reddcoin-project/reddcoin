@@ -15,6 +15,7 @@ class ClientModel;
 class OverviewPage;
 class PlatformStyle;
 class ReceiveCoinsDialog;
+class ReddIDView;
 class SendCoinsDialog;
 class SendCoinsRecipient;
 class TransactionView;
@@ -74,6 +75,8 @@ private:
     AddressBookPage *usedReceivingAddressesPage;
     QPushButton *exportButton = nullptr;
 
+    ReddIDView *reddIDView;
+
     TransactionView *transactionView;
     MintingView *mintingView;
 
@@ -98,6 +101,8 @@ public Q_SLOTS:
     void gotoVerifyMessageTab(QString addr = "");
     /** Load Partially Signed Bitcoin Transaction */
     void gotoLoadPSBT(bool from_clipboard = false);
+
+    void gotoReddIDPage();
 
     /** Show incoming transaction notification for new transactions.
 

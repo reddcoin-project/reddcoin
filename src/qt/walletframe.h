@@ -86,6 +86,8 @@ public Q_SLOTS:
     /** Load Partially Signed Bitcoin Transaction */
     void gotoLoadPSBT(bool from_clipboard = false);
 
+    void gotoReddIDPage();
+
     /** Encrypt the wallet */
     void encryptWallet();
     /** Backup the wallet */

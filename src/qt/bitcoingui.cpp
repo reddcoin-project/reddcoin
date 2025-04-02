@@ -355,6 +355,13 @@ void BitcoinGUI::createActions()
     mintingAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
     tabGroup->addAction(mintingAction);
 
+    reddIDAction = new QAction(platformStyle->SingleColorIcon(":/icons/id_card"), tr("&ReddID"), this);
+    reddIDAction->setStatusTip(tr("Manage your ReddID namespaces and identities"));
+    reddIDAction->setToolTip(reddIDAction->statusTip());
+    reddIDAction->setCheckable(true);
+    reddIDAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
+    tabGroup->addAction(reddIDAction);
+
 #ifdef ENABLE_WALLET
     // These showNormalIfMinimized are needed because Send Coins and Receive Coins
     // can be triggered from the tray menu, and need to show the GUI to be useful.
@@ -372,6 +379,8 @@ void BitcoinGUI::createActions()
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
     connect(mintingAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(mintingAction, &QAction::triggered, this, &BitcoinGUI::gotoMintingPage);
+    connect(reddIDAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+    connect(reddIDAction, &QAction::triggered, this, &BitcoinGUI::gotoReddIDPage);
 #endif // ENABLE_WALLET
 
     quitAction = new QAction(tr("E&xit"), this);
@@ -695,6 +704,7 @@ void BitcoinGUI::createToolBars()
         toolbar->addAction(receiveCoinsAction);
         toolbar->addAction(historyAction);
         toolbar->addAction(mintingAction);
+        toolbar->addAction(reddIDAction);
         overviewAction->setChecked(true);
 
 #ifdef ENABLE_WALLET
@@ -1001,6 +1011,8 @@ void BitcoinGUI::createTrayIconMenu()
         trayIconMenu->addAction(signMessageAction);
         trayIconMenu->addAction(verifyMessageAction);
         trayIconMenu->addSeparator();
+        trayIconMenu->addAction(reddIDAction);
+        trayIconMenu->addSeparator();
     }
     trayIconMenu->addAction(optionsAction);
     trayIconMenu->addAction(openRPCConsoleAction);
@@ -1106,6 +1118,12 @@ void BitcoinGUI::gotoSendCoinsPage(QString addr)
     if (walletFrame) walletFrame->gotoSendCoinsPage(addr);
 }
 
+void BitcoinGUI::gotoReddIDPage()
+{
+    reddIDAction->setChecked(true);
+    if (walletFrame) walletFrame->gotoReddIDPage();
+}
+
 void BitcoinGUI::gotoSignMessageTab(QString addr)
 {
     if (walletFrame) walletFrame->gotoSignMessageTab(addr);
@@ -1115,6 +1133,7 @@ void BitcoinGUI::gotoVerifyMessageTab(QString addr)
 {
     if (walletFrame) walletFrame->gotoVerifyMessageTab(addr);
 }
+
 void BitcoinGUI::gotoLoadPSBT(bool from_clipboard)
 {
     if (walletFrame) walletFrame->gotoLoadPSBT(from_clipboard);
@@ -1410,6 +1429,7 @@ void BitcoinGUI::changeEvent(QEvent *e)
         receiveCoinsAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/receiving_addresses")));
         historyAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/history")));
         mintingAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/staking")));
+        reddIDAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/id_card")));
         imageLogo->setPixmap(createLogo());
     }
 
