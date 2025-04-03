@@ -173,6 +173,7 @@ BITCOIN_CORE_H = \
   interfaces/init.h \
   interfaces/ipc.h \
   interfaces/node.h \
+  interfaces/reddid.h \
   interfaces/wallet.h \
   key.h \
   key_io.h \
@@ -360,6 +361,7 @@ libbitcoin_server_a_SOURCES = \
   id/reddid.cpp \
   id/namespace.cpp \
   id/auction.cpp \
+  id/interfaces.cpp \
   id/profile.cpp \
   id/reddid_db.cpp \
   id/reddid_p2p.cpp \
