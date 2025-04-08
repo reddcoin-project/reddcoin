@@ -62,6 +62,7 @@ namespace BCLog {
         IPC         = (1 << 23),
         POS         = (1 << 24),
         STAKE       = (1 << 25),
+        REDDID      = (1 << 26),
         ALL         = ~(uint32_t)0,
     };
 
