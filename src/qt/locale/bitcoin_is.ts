@@ -452,17 +452,6 @@
     </message>
     </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Læsa veski </translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Aflæsa veski </translation>
-    </message>
-</context>
-<context>
     <name>CoinControlDialog</name>
     <message>
         <source>Quantity:</source>

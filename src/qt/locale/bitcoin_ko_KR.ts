@@ -493,17 +493,6 @@
     </message>
     </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">지갑 잠금</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">지갑 잠금 해제</translation>
-    </message>
-</context>
-<context>
     <name>UnitDisplayStatusBarControl</name>
     <message>
         <source>Unit to show amounts in. Click to select another unit.</source>

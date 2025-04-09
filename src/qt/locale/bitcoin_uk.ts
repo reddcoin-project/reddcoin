@@ -525,17 +525,6 @@
     </message>
     </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Заблокувати гаманець</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Розблокувати гаманець</translation>
-    </message>
-</context>
-<context>
     <name>UnitDisplayStatusBarControl</name>
     <message>
         <source>Unit to show amounts in. Click to select another unit.</source>

@@ -946,6 +946,16 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Закрытый ключ &lt;b&gt;отключен&lt;/b&gt;</translation>
     </message>
     <message>
+        <source>Unlock Wallet</source>
+        <extracomment>A context menu item.</extracomment>
+        <translation type="unfinished">Разблокировать кошелек</translation>
+    </message>
+    <message>
+        <source>Lock Wallet</source>
+        <extracomment>A context menu item. The stake state activity was unlocked previously.</extracomment>
+        <translation type="unfinished">Заблокировать кошелёк</translation>
+    </message>
+    <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
         <translation>Кошелёк &lt;b&gt;зашифрован&lt;/b&gt; и сейчас &lt;b&gt;разблокирован&lt;/b&gt;</translation>
     </message>
@@ -996,50 +1006,12 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Ставки в кошельке отключены</translation>
     </message>
     <message>
-        <source>Staking is not enabled</source>
-        <translation type="unfinished">Ставки не включены</translation>
-    </message>
-    <message>
         <source>Waiting for staking to start</source>
         <translation type="unfinished">Ожидание начала ставок</translation>
     </message>
     <message>
         <source>Original message:</source>
         <translation type="unfinished">Исходное сообщение:</translation>
-    </message>
-</context>
-<context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock Wallet</source>
-        <translation type="unfinished">Заблокировать кошелёк</translation>
-    </message>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Закрыть кошелёк</translation>
-    </message>
-    <message>
-        <source>Unlock Wallet</source>
-        <translation type="unfinished">Разблокировать кошелек</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Разблокировать бумажник</translation>
-    </message>
-</context>
-<context>
-    <name>StakingStatusBarControl</name>
-    <message>
-        <source>Disable Staking</source>
-        <translation type="unfinished">Отключить ставки</translation>
-    </message>
-    <message>
-        <source>Enable Staking</source>
-        <translation type="unfinished">Включить ставки</translation>
-    </message>
-    <message>
-        <source>Show Staking Tab</source>
-        <translation type="unfinished">Показать вкладку «Ставки»</translation>
     </message>
 </context>
 <context>
@@ -1254,7 +1226,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
     <message>
         <source>default wallet</source>
-        <translation type="unfinished">кошелек по умолчанию</translation>
+        <translation type="unfinished">стандартный кошелек</translation>
     </message>
     <message>
         <source>Opening Wallet &lt;b&gt;%1&lt;/b&gt;…</source>
@@ -2067,7 +2039,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
     <message>
         <source>Blockchain pruning is not compatible with Reddcoin</source>
-        <translation type="unfinished">Обрезка блокчейна несовместима с Reddcoin</translation>
+        <translation type="unfinished">Обрезка цепочки блоков несовместима с Reddcoin</translation>
     </message>
     <message>
         <source>Compiled without external signing support (required for external signing)</source>
@@ -2360,7 +2332,7 @@ If you are receiving this error you should request the merchant provide a BIP21 
     <message>
         <source>User Agent</source>
         <extracomment>Title of Peers Table column which contains the peer's User Agent string.</extracomment>
-        <translation type="unfinished">Версия клиента</translation>
+        <translation type="unfinished">Пользовательский агент</translation>
     </message>
     <message>
         <source>Ping</source>
@@ -2570,7 +2542,7 @@ If you are receiving this error you should request the merchant provide a BIP21 
     </message>
     <message>
         <source>Wallet</source>
-        <translation type="unfinished">Бумажник</translation>
+        <translation type="unfinished">Кошелек</translation>
     </message>
     <message>
         <source>Staking Information</source>
@@ -3029,7 +3001,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Wallet:</source>
-        <translation type="unfinished">Кошелёк:</translation>
+        <translation type="unfinished">Кошелек:</translation>
     </message>
     <message>
         <source>Copy &amp;URI</source>
@@ -3115,7 +3087,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Bytes:</source>
-        <translation type="unfinished">Байт:</translation>
+        <translation type="unfinished">Байтов:</translation>
     </message>
     <message>
         <source>Amount:</source>
@@ -4072,7 +4044,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee rate of "100 satos
     </message>
     <message>
         <source>Copy transaction &amp;ID</source>
-        <translation type="unfinished">Копировать транзакцию и идентификатор</translation>
+        <translation type="unfinished">Копировать &amp;ID транзакции</translation>
     </message>
     <message>
         <source>Copy &amp;raw transaction</source>
@@ -4235,7 +4207,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>default wallet</source>
-        <translation type="unfinished">кошелек по умолчанию</translation>
+        <translation type="unfinished">стандартный кошелек</translation>
     </message>
 </context>
 <context>
@@ -4306,7 +4278,7 @@ Go to File &gt; Open Wallet to load a wallet.
     <name>bitcoin-core</name>
     <message>
         <source>The %s developers</source>
-        <translation type="unfinished">%sразработчики</translation>
+        <translation type="unfinished">%s разработчики</translation>
     </message>
     <message>
         <source>-maxtxfee is set very high! Fees this large could be paid on a single transaction.</source>

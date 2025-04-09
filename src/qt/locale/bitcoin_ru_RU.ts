@@ -70,6 +70,12 @@
         <translation type="unfinished">Ваши адреса для получения средств. Совет: проверьте сумму и адрес назначения перед переводом.</translation>
     </message>
     <message>
+        <source>These are your Reddcoin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.
+Signing is only possible with addresses of the type 'legacy'.</source>
+        <translation type="unfinished">Это ваши адреса Reddcoin для приема платежей. Используйте кнопку «Создать новый адрес получения» на вкладке «Получение», чтобы создать новые адреса.
+Подписание возможно только с адресами типа «устаревшие».</translation>
+    </message>
+    <message>
         <source>&amp;Copy Address</source>
         <translation type="unfinished">&amp;Копировать адрес</translation>
     </message>
@@ -84,6 +90,11 @@
     <message>
         <source>Export Address List</source>
         <translation type="unfinished">Экспортировать список адресов</translation>
+    </message>
+    <message>
+        <source>Comma separated file</source>
+        <extracomment>Expanded name of the CSV file format. See https://en.wikipedia.org/wiki/Comma-separated_values</extracomment>
+        <translation type="unfinished">Файл, разделенный запятыми</translation>
     </message>
     <message>
         <source>There was an error trying to save the address list to %1. Please try again.</source>
@@ -129,6 +140,10 @@
         <translation>Повторите новую парольную фразу</translation>
     </message>
     <message>
+        <source>Show passphrase</source>
+        <translation type="unfinished">Показать парольную фразу</translation>
+    </message>
+    <message>
         <source>For staking only</source>
         <translation type="unfinished">Только для майнинга (стейкинга)</translation>
     </message>
@@ -165,8 +180,36 @@
         <translation type="unfinished">Предупреждение: Если Вы зашифруете свой кошелёк и потеряете свой пароль, &lt;b&gt;ВЫ ПОТЕРЯЕТЕ ВСЕ СВОИ REDDCOIN МОНЕТЫ&lt;/b&gt;!</translation>
     </message>
     <message>
+        <source>Remember that encrypting your wallet cannot fully protect your reddcoins from being stolen by malware infecting your computer.</source>
+        <translation type="unfinished">Помните, что шифрование вашего кошелька не может полностью защитить ваши монеты от кражи вредоносным ПО, заразившим ваш компьютер.</translation>
+    </message>
+    <message>
         <source>Wallet encrypted</source>
         <translation type="unfinished">Бумажник зашифрован</translation>
+    </message>
+    <message>
+        <source>Enter the new passphrase for the wallet.&lt;br/&gt;Please use a passphrase of &lt;b&gt;ten or more random characters&lt;/b&gt;, or &lt;b&gt;eight or more words&lt;/b&gt;.</source>
+        <translation type="unfinished">Введите новую парольную фразу для кошелька.&lt;br/&gt;Пожалуйста, используйте парольную фразу &lt;b&gt; десять или более случайных символов &lt;/b&gt;, или &lt;b&gt; восемь или более слов &lt;/b&gt;.</translation>
+    </message>
+    <message>
+        <source>Unlock wallet for staking</source>
+        <translation type="unfinished">Разблокировать кошелек для ставок</translation>
+    </message>
+    <message>
+        <source>Enter the old passphrase and new passphrase for the wallet.</source>
+        <translation type="unfinished">Введите старую и новую парольную фразу для кошелька.</translation>
+    </message>
+    <message>
+        <source>Wallet to be encrypted</source>
+        <translation type="unfinished">Кошелек будет зашифрован</translation>
+    </message>
+    <message>
+        <source>Your wallet is about to be encrypted. </source>
+        <translation type="unfinished">Ваш кошелек будет зашифрован.</translation>
+    </message>
+    <message>
+        <source>Your wallet is now encrypted. </source>
+        <translation type="unfinished">Ваш кошелек теперь зашифрован.</translation>
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. For security reasons, previous backups of the unencrypted wallet file will become useless as soon as you start using the new, encrypted wallet.</source>
@@ -202,10 +245,56 @@
     </message>
 </context>
 <context>
+    <name>BanTableModel</name>
+    <message>
+        <source>IP/Netmask</source>
+        <translation type="unfinished">IP/Сетевая маска</translation>
+    </message>
+    <message>
+        <source>Banned Until</source>
+        <translation type="unfinished">Заблокирован до</translation>
+    </message>
+</context>
+<context>
+    <name>BitcoinApplication</name>
+    <message>
+        <source>Runaway exception</source>
+        <translation type="unfinished">Исключение побега</translation>
+    </message>
+    <message>
+        <source>A fatal error occurred. %1 can no longer continue safely and will quit.</source>
+        <translation type="unfinished">Произошла фатальная ошибка. %1 больше не может безопасно продолжать работу и завершает работу.</translation>
+    </message>
+    <message>
+        <source>Internal error</source>
+        <translation type="unfinished">Внутренняя ошибка</translation>
+    </message>
+    <message>
+        <source>An internal error occurred. %1 will attempt to continue safely. This is an unexpected bug which can be reported as described below.</source>
+        <translation type="unfinished">Возникла внутренняя ошибка. %1 попытается продолжить работать безопасно. Это непредвиденная ошибка, о которой можно сообщить, как описано ниже.</translation>
+    </message>
+</context>
+<context>
     <name>QObject</name>
     <message>
         <source>Error: Specified data directory "%1" does not exist.</source>
         <translation type="unfinished">Ошибка: указанный каталог "%1" не существует.</translation>
+    </message>
+    <message>
+        <source>Error: Cannot parse configuration file: %1.</source>
+        <translation type="unfinished">Ошибка: Невозможно проанализировать файл конфигурации: %1.</translation>
+    </message>
+    <message>
+        <source>Error: %1</source>
+        <translation type="unfinished">Ошибка: %1</translation>
+    </message>
+    <message>
+        <source>Error initializing settings: %1</source>
+        <translation type="unfinished">Ошибка инициализации настроек: %1</translation>
+    </message>
+    <message>
+        <source>%1 didn't yet exit safely…</source>
+        <translation type="unfinished">%1 еще не выполнил безопасный выход…</translation>
     </message>
     <message>
         <source>unknown</source>
@@ -410,6 +499,34 @@
         <source>Verify messages to ensure they were signed with specified Reddcoin addresses</source>
         <translation type="unfinished">Проверяйте сообщения, чтобы убедиться, что они подписаны конкретными биткоин-адресами</translation>
     </message>
+    <message>
+        <source>Load Partially Signed Reddcoin Transaction</source>
+        <translation type="unfinished">Загрузить частично подписанную транзакцию Reddcoin</translation>
+    </message>
+    <message>
+        <source>Load Partially Signed Reddcoin Transaction from clipboard</source>
+        <translation type="unfinished">Загрузить частично подписанную транзакцию Reddcoin из буфера обмена</translation>
+    </message>
+    <message>
+        <source>Open a reddcoin: URI</source>
+        <translation type="unfinished">Открыть Reddcoin: URI</translation>
+    </message>
+    <message>
+        <source>Show the %1 help message to get a list with possible Reddcoin command-line options</source>
+        <translation type="unfinished">Покажите справочное сообщение %1, чтобы получить список возможных параметров командной строки Reddcoin.</translation>
+    </message>
+    <message>
+        <source>&amp;Check for software updates</source>
+        <translation type="unfinished">&amp;Проверить наличие обновлений программного обеспечения</translation>
+    </message>
+    <message>
+        <source>Check for available %1 software updates</source>
+        <translation type="unfinished">Проверьте наличие доступных обновлений программного обеспечения %1</translation>
+    </message>
+    <message>
+        <source>Wallet:</source>
+        <translation type="unfinished">Кошелек:</translation>
+    </message>
     <message numerus="yes">
         <source>%n active connection(s) to Reddcoin network.</source>
         <extracomment>A substring of the tooltip.</extracomment>
@@ -418,6 +535,15 @@
             <numerusform>%n активных подключений к сети.</numerusform>
             <numerusform>%n активных подключений к сети.</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Network activity disabled.</source>
+        <extracomment>A substring of the tooltip.</extracomment>
+        <translation type="unfinished">Сетевая активность отключена.</translation>
+    </message>
+    <message>
+        <source>Proxy is &lt;b&gt;enabled&lt;/b&gt;: %1</source>
+        <translation type="unfinished">Прокси &lt;b&gt; включен &lt;/b&gt;: %1</translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -436,6 +562,10 @@
         <translation>&amp;Получить</translation>
     </message>
     <message>
+        <source>&amp;Options…</source>
+        <translation type="unfinished">&amp;Опции...</translation>
+    </message>
+    <message>
         <source>&amp;Show / Hide</source>
         <translation>&amp;Показать / Спрятать</translation>
     </message>
@@ -444,8 +574,48 @@
         <translation>Показать или скрыть главное окно</translation>
     </message>
     <message>
+        <source>&amp;Encrypt Wallet…</source>
+        <translation type="unfinished">&amp;Зашифровать кошелек…</translation>
+    </message>
+    <message>
         <source>Encrypt the private keys that belong to your wallet</source>
         <translation>Зашифровать приватные ключи, принадлежащие вашему кошельку</translation>
+    </message>
+    <message>
+        <source>&amp;Backup Wallet…</source>
+        <translation type="unfinished">&amp;Создать резервную копию кошелька...</translation>
+    </message>
+    <message>
+        <source>&amp;Change Passphrase…</source>
+        <translation type="unfinished">&amp;Изменить парольную фразу</translation>
+    </message>
+    <message>
+        <source>Sign &amp;message…</source>
+        <translation type="unfinished">Подписать &amp;сообщение...</translation>
+    </message>
+    <message>
+        <source>&amp;Verify message…</source>
+        <translation type="unfinished">&amp;Проверить сообщение...</translation>
+    </message>
+    <message>
+        <source>&amp;Load PSBT from file…</source>
+        <translation type="unfinished">&amp;Загрузить PSBT из файла...</translation>
+    </message>
+    <message>
+        <source>Load PSBT from clipboard…</source>
+        <translation type="unfinished">Загрузить PSBT из буфера обмена...</translation>
+    </message>
+    <message>
+        <source>Open &amp;URI…</source>
+        <translation type="unfinished">Открыть &amp;URI...</translation>
+    </message>
+    <message>
+        <source>Close Wallet…</source>
+        <translation type="unfinished">Закрыть кошелек...</translation>
+    </message>
+    <message>
+        <source>Close All Wallets…</source>
+        <translation type="unfinished">Закрыть все кошельки...</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -464,6 +634,30 @@
         <translation>Панель вкладок</translation>
     </message>
     <message>
+        <source>Syncing Headers (%1%)…</source>
+        <translation type="unfinished">Синхронизация заголовков (%1%)...</translation>
+    </message>
+    <message>
+        <source>Synchronizing with network…</source>
+        <translation type="unfinished">Синхронизация с сетью…</translation>
+    </message>
+    <message>
+        <source>Indexing blocks on disk…</source>
+        <translation type="unfinished">Индексация блоков на диске…</translation>
+    </message>
+    <message>
+        <source>Processing blocks on disk…</source>
+        <translation type="unfinished">Обработка блоков на диске…</translation>
+    </message>
+    <message>
+        <source>Reindexing blocks on disk…</source>
+        <translation type="unfinished">Переиндексация блоков на диске…</translation>
+    </message>
+    <message>
+        <source>Connecting to peers…</source>
+        <translation type="unfinished">Подключение к узлам...</translation>
+    </message>
+    <message>
         <source>Show the list of used sending addresses and labels</source>
         <translation type="unfinished">Показать список использованных адресов и меток отправки</translation>
     </message>
@@ -478,14 +672,18 @@
     <message numerus="yes">
         <source>Processed %n block(s) of transaction history.</source>
         <translation>
-            <numerusform />
-            <numerusform />
-            <numerusform />
+            <numerusform>Обработан %n блок истории транзакций.</numerusform>
+            <numerusform>Обработано %n блоков истории транзакций.</numerusform>
+            <numerusform>Обработано %n блоков истории транзакций.</numerusform>
         </translation>
     </message>
     <message>
         <source>%1 behind</source>
         <translation>Отстаём на %1</translation>
+    </message>
+    <message>
+        <source>Catching up…</source>
+        <translation type="unfinished">Догоняем...</translation>
     </message>
     <message>
         <source>Last received block was generated %1 ago.</source>
@@ -512,6 +710,14 @@
         <translation>Синхронизировано</translation>
     </message>
     <message>
+        <source>Update to %1 is available.</source>
+        <translation type="unfinished">Доступно обновление до %1.</translation>
+    </message>
+    <message>
+        <source>&amp;Unlock Wallet</source>
+        <translation type="unfinished">&amp;Разблокировать кошелёк</translation>
+    </message>
+    <message>
         <source>Unlock wallet</source>
         <translation type="unfinished">Разблокировать бумажник</translation>
     </message>
@@ -524,6 +730,106 @@
         <translation type="unfinished">Закрыть кошелёк</translation>
     </message>
     <message>
+        <source>Node window</source>
+        <translation type="unfinished">Окно узла</translation>
+    </message>
+    <message>
+        <source>Open node debugging and diagnostic console</source>
+        <translation type="unfinished">Открыть консоль диагностики и отладки узла</translation>
+    </message>
+    <message>
+        <source>&amp;Sending addresses</source>
+        <translation type="unfinished">&amp;Адреса отправки</translation>
+    </message>
+    <message>
+        <source>&amp;Receiving addresses</source>
+        <translation type="unfinished">&amp;Адреса получения</translation>
+    </message>
+    <message>
+        <source>Open Wallet</source>
+        <translation type="unfinished">Открыть кошелек</translation>
+    </message>
+    <message>
+        <source>Open a wallet</source>
+        <translation type="unfinished">Открыть кошелек</translation>
+    </message>
+    <message>
+        <source>Close wallet</source>
+        <translation type="unfinished">Закрыть кошелек</translation>
+    </message>
+    <message>
+        <source>Create/ Restore Wallet…</source>
+        <translation type="unfinished">Создать/Восстановить кошелек…</translation>
+    </message>
+    <message>
+        <source>Create or restore a new HD wallet</source>
+        <translation type="unfinished">Создать или восстановить новый HD-кошелек</translation>
+    </message>
+    <message>
+        <source>Close all wallets</source>
+        <translation type="unfinished">Закрыть все кошельки</translation>
+    </message>
+    <message>
+        <source>Open Social Websites</source>
+        <translation type="unfinished">Открыть социальные сайты</translation>
+    </message>
+    <message>
+        <source>&amp;Website - reddcoin.com</source>
+        <translation type="unfinished">&amp;Веб-сайт — reddcoin.com</translation>
+    </message>
+    <message>
+        <source>Open the Reddcoin website in a web browser.</source>
+        <translation type="unfinished">Открыть сайт Reddcoin в веб-браузере.</translation>
+    </message>
+    <message>
+        <source>&amp;Website - redd.love</source>
+        <translation type="unfinished">&amp;Веб-сайт — redd.love</translation>
+    </message>
+    <message>
+        <source>Open the Redd Love website in a web browser.</source>
+        <translation type="unfinished">Открыть веб-сайт Redd.Love в веб-браузере.</translation>
+    </message>
+    <message>
+        <source>&amp;Website - Reddcoin Wiki</source>
+        <translation type="unfinished">&amp;Веб-сайт — Reddcoin Wiki</translation>
+    </message>
+    <message>
+        <source>Open the Reddcoin Wiki website in a web browser.</source>
+        <translation type="unfinished">Открыть сайт Reddcoin Wiki в веб-браузере.</translation>
+    </message>
+    <message>
+        <source>&amp;Chatroom - Discord</source>
+        <translation type="unfinished">&amp;Чат — Discord</translation>
+    </message>
+    <message>
+        <source>Open the Reddcoin Discord chat in a web browser.</source>
+        <translation type="unfinished">Открыть чат Reddcoin Discord в веб-браузере.</translation>
+    </message>
+    <message>
+        <source>&amp;Forum</source>
+        <translation type="unfinished">&amp;Форум</translation>
+    </message>
+    <message>
+        <source>Open reddcointalk.org in a web browser.</source>
+        <translation type="unfinished">Открыть reddcointalk.org в веб-браузере.</translation>
+    </message>
+    <message>
+        <source>&amp;Mask values</source>
+        <translation type="unfinished">&amp;Значения маски</translation>
+    </message>
+    <message>
+        <source>Mask the values in the Overview tab</source>
+        <translation type="unfinished">Значения маски на вкладке Обзор</translation>
+    </message>
+    <message>
+        <source>default wallet</source>
+        <translation type="unfinished">кошелек по умолчанию</translation>
+    </message>
+    <message>
+        <source>No wallets available</source>
+        <translation type="unfinished">Нет доступных кошельков</translation>
+    </message>
+    <message>
         <source>&amp;Window</source>
         <translation type="unfinished">&amp;Окно</translation>
     </message>
@@ -532,12 +838,110 @@
         <translation type="unfinished">Минимизировать</translation>
     </message>
     <message>
+        <source>Zoom</source>
+        <translation type="unfinished">Приблизить</translation>
+    </message>
+    <message>
+        <source>Main Window</source>
+        <translation type="unfinished">Главное окно</translation>
+    </message>
+    <message>
+        <source>%1 client</source>
+        <translation type="unfinished">%1 клиент</translation>
+    </message>
+    <message>
+        <source>Click for more actions.</source>
+        <extracomment>A substring of the tooltip. "More actions" are available via the context menu.</extracomment>
+        <translation type="unfinished">Нажмите, чтобы увидеть больше действий.</translation>
+    </message>
+    <message>
+        <source>Show Peers tab</source>
+        <extracomment>A context menu item. The "Peers tab" is an element of the "Node window".</extracomment>
+        <translation type="unfinished">Показать вкладку «Узлы»</translation>
+    </message>
+    <message>
+        <source>Disable network activity</source>
+        <extracomment>A context menu item.</extracomment>
+        <translation type="unfinished">Отключить сетевую активность</translation>
+    </message>
+    <message>
+        <source>Enable network activity</source>
+        <extracomment>A context menu item. The network activity was disabled previously.</extracomment>
+        <translation type="unfinished">Включить сетевую активность</translation>
+    </message>
+    <message>
+        <source>Error: %1</source>
+        <translation type="unfinished">Ошибка: %1</translation>
+    </message>
+    <message>
+        <source>Warning: %1</source>
+        <translation type="unfinished">Предупреждение: %1</translation>
+    </message>
+    <message>
+        <source>Date: %1
+</source>
+        <translation type="unfinished">Дата: %1
+</translation>
+    </message>
+    <message>
+        <source>Amount: %1
+</source>
+        <translation type="unfinished">Сумма: %1
+</translation>
+    </message>
+    <message>
+        <source>Wallet: %1
+</source>
+        <translation type="unfinished">Кошелек: %1
+</translation>
+    </message>
+    <message>
+        <source>Type: %1
+</source>
+        <translation type="unfinished">Тип: %1
+</translation>
+    </message>
+    <message>
+        <source>Label: %1
+</source>
+        <translation type="unfinished">Метка: %1
+</translation>
+    </message>
+    <message>
+        <source>Address: %1
+</source>
+        <translation type="unfinished">Адрес: %1
+</translation>
+    </message>
+    <message>
         <source>Sent transaction</source>
         <translation>Отправленная транзакция</translation>
     </message>
     <message>
         <source>Incoming transaction</source>
         <translation>Входящая транзакция</translation>
+    </message>
+    <message>
+        <source>HD key generation is &lt;b&gt;enabled&lt;/b&gt;</source>
+        <translation type="unfinished">HD генерация ключа &lt;b&gt;включена&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>HD key generation is &lt;b&gt;disabled&lt;/b&gt;</source>
+        <translation type="unfinished">HD генерация ключа &lt;b&gt;отключена&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Private key &lt;b&gt;disabled&lt;/b&gt;</source>
+        <translation type="unfinished">Закрытый ключ &lt;b&gt;отключен&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Unlock Wallet</source>
+        <extracomment>A context menu item.</extracomment>
+        <translation type="unfinished">Разблокировать кошелек</translation>
+    </message>
+    <message>
+        <source>Lock Wallet</source>
+        <extracomment>A context menu item. The stake state activity was unlocked previously.</extracomment>
+        <translation type="unfinished">Заблокировать кошелёк</translation>
     </message>
     <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
@@ -590,50 +994,12 @@
         <translation type="unfinished">Ставки в кошельке отключены</translation>
     </message>
     <message>
-        <source>Staking is not enabled</source>
-        <translation type="unfinished">Ставки не включены</translation>
-    </message>
-    <message>
         <source>Waiting for staking to start</source>
         <translation type="unfinished">Ожидание начала ставок</translation>
     </message>
     <message>
         <source>Original message:</source>
         <translation type="unfinished">Исходное сообщение:</translation>
-    </message>
-</context>
-<context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock Wallet</source>
-        <translation type="unfinished">Заблокировать кошелёк</translation>
-    </message>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Закрыть кошелёк</translation>
-    </message>
-    <message>
-        <source>Unlock Wallet</source>
-        <translation type="unfinished">Разблокировать кошелек</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Разблокировать бумажник</translation>
-    </message>
-</context>
-<context>
-    <name>StakingStatusBarControl</name>
-    <message>
-        <source>Disable Staking</source>
-        <translation type="unfinished">Отключить ставки</translation>
-    </message>
-    <message>
-        <source>Enable Staking</source>
-        <translation type="unfinished">Включить ставки</translation>
-    </message>
-    <message>
-        <source>Show Staking Tab</source>
-        <translation type="unfinished">Показать вкладку «Ставки»</translation>
     </message>
 </context>
 <context>
@@ -2623,7 +2989,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Wallet:</source>
-        <translation type="unfinished">Кошелёк:</translation>
+        <translation type="unfinished">Кошелек:</translation>
     </message>
     <message>
         <source>Copy &amp;URI</source>
