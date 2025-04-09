@@ -1,9 +1,9 @@
-4.22.9rc2 Release Notes
+4.22.9 Release Notes
 ==================
 
-Reddcoin Core version 4.22.9rc2 is now available from:
+Reddcoin Core version 4.22.9 is now available from:
 
-[https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc2/](https://download.reddcoin.com/bin/reddcoin-core-4.22.9rc2/)
+[https://download.reddcoin.com/bin/reddcoin-core-4.22.9/](https://download.reddcoin.com/bin/reddcoin-core-4.22.9/)
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -313,6 +313,9 @@ Tests
 A detailed list of changes in this version follows. To keep the list to a manageable length, small refactors and typo fixes are not included, and similar changes are sometimes condensed into one line.
 
 ### Reddcoin commit history 4.22.9
+ - #7801f55bb update translations (John Nash)
+ - #c27de7a3f docs: add information why MAX_MONEY value set (John Nash)
+ - #fa4488107 when importing bip39/44 seed, it is not possible to know the original time. (John Nash)
  - #dd87b8791 index: revert set block proof of stake flag (John Nash)
  - #acfaa01d5 scripted-diff: Bump copyright headers (John Nash)
  - #74fdfab87 revert SEND_HEADERS version Set MIN_PEER_PROTO_VERSION (v3 clients are obsolete) (John Nash)
