@@ -501,6 +501,16 @@ Bitte versuchen Sie es erneut.</translation>
         <translation>Eingehende Transaktion</translation>
     </message>
     <message>
+        <source>Unlock Wallet</source>
+        <extracomment>A context menu item.</extracomment>
+        <translation type="unfinished">Wallet entsperren</translation>
+    </message>
+    <message>
+        <source>Lock Wallet</source>
+        <extracomment>A context menu item. The stake state activity was unlocked previously.</extracomment>
+        <translation type="unfinished">Wallet sperren</translation>
+    </message>
+    <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
         <translation>Wallet ist &lt;b&gt;verschlüsselt&lt;/b&gt; und aktuell &lt;b&gt;entsperrt&lt;/b&gt;</translation>
     </message>
@@ -533,36 +543,6 @@ Bitte versuchen Sie es erneut.</translation>
     <message>
         <source>Not staking because you don't have mature coins</source>
         <translation type="unfinished">Kein Staking, da Sie kein maturierten Reddcoins besitzen</translation>
-    </message>
-    </context>
-<context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock Wallet</source>
-        <translation type="unfinished">Wallet sperren</translation>
-    </message>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Wallet sperren</translation>
-    </message>
-    <message>
-        <source>Unlock Wallet</source>
-        <translation type="unfinished">Wallet entsperren</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Wallet entsperren</translation>
-    </message>
-</context>
-<context>
-    <name>StakingStatusBarControl</name>
-    <message>
-        <source>Disable Staking</source>
-        <translation type="unfinished">Staking deaktivieren</translation>
-    </message>
-    <message>
-        <source>Enable Staking</source>
-        <translation type="unfinished">Staking aktivieren</translation>
     </message>
     </context>
 <context>

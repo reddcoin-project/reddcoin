@@ -665,17 +665,6 @@ La signature n'est possible qu'avec des adresses de type 'legacy'.</translation>
     </message>
 </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Lock wallet</source>
-        <translation type="unfinished">Verrouiller le portefeuille</translation>
-    </message>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Déverrouiller le portefeuille</translation>
-    </message>
-</context>
-<context>
     <name>UnitDisplayStatusBarControl</name>
     <message>
         <source>Unit to show amounts in. Click to select another unit.</source>

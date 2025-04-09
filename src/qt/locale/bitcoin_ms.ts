@@ -742,13 +742,6 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
 </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Membuka kunci dompet</translation>
-    </message>
-</context>
-<context>
     <name>UnitDisplayStatusBarControl</name>
     <message>
         <source>Unit to show amounts in. Click to select another unit.</source>

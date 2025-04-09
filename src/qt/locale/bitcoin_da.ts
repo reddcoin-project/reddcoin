@@ -421,13 +421,6 @@
     </message>
     </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Lås tegnebog op</translation>
-    </message>
-</context>
-<context>
     <name>CoinControlDialog</name>
     <message>
         <source>Quantity:</source>

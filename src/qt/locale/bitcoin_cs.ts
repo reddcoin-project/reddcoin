@@ -424,13 +424,6 @@
     </message>
     </context>
 <context>
-    <name>LockWalletStatusBarControl</name>
-    <message>
-        <source>Unlock wallet</source>
-        <translation type="unfinished">Odemkni peněženku</translation>
-    </message>
-</context>
-<context>
     <name>CoinControlDialog</name>
     <message>
         <source>Quantity:</source>
