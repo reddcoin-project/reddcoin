@@ -25,12 +25,22 @@ class ReddIDP2PManager;
  * Class to manage namespace operations in the ReddID system
  */
 class NamespaceManager {
-private:
+ private:
+    struct CachedNamespace {
+        NamespaceInfo info;
+        int64_t cacheTime;
+    };
+
+    mutable std::map<std::string, CachedNamespace> m_namespaceCache;
+    mutable std::mutex namespaceCacheMutex;
+    static const int64_t NAMESPACE_CACHE_TTL = 3600;  // 1 hour
+    mutable std::map<std::string, int64_t> cacheAccessTimes;
+
     std::map<std::string, NamespaceInfo> namespaces;
     std::map<uint256, AuctionInfo> namespaceAuctions;
     std::map<uint256, std::vector<BidInfo>> namespaceAuctionBids;
     std::map<std::string, std::vector<PricingTier>> namespacePricingTiers;
-    
+
     ReddIDManager* reddIDManager;        // Reference to the manager
     ReddIDDB* reddidDB;                  // Pointer to the database
     ReddIDP2PManager* reddidP2P;         // Pointer to the P2P manager
@@ -40,38 +50,44 @@ private:
     bool ValidateNamespaceCharacters(const std::string& namespaceId);
     uint256 CalculateConfigHash(const NamespaceInfo& config);
     void DistributeNamespaceAuctionProceeds(const AuctionInfo& auction, const BidInfo& winningBid);
-    
-public:
+
+ public:
     NamespaceManager(ReddIDManager& manager);
     ~NamespaceManager();
-    
+
+    // Helper for cached access
+    bool GetNamespaceFromCache(const std::string& namespaceId, NamespaceInfo& info) const;
+    void AddNamespaceToCache(const std::string& namespaceId, const NamespaceInfo& info) const;
+    void InvalidateCache(const std::string& namespaceId) const;
+    void MaintainNamespaceCache() const;
+
     // Core namespace operations
     bool CreateNamespace(const NamespaceInfo& namespaceInfo);
     bool UpdateNamespace(const NamespaceInfo& namespaceInfo);
     bool RenewNamespace(const std::string& namespaceId, const CKeyID& owner, int renewalDays);
     bool TransferNamespace(const std::string& namespaceId, const CKeyID& from, const CKeyID& to);
     bool ExpireNamespace(const std::string& namespaceId);
-    
+
     // Namespace auction operations
     bool CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator,
                               CAmount reservePrice, int durationDays, AuctionType type,
                               uint256& auctionId);
-    bool BidOnNamespaceAuction(const uint256& auctionId, const CKeyID& bidder, 
+    bool BidOnNamespaceAuction(const uint256& auctionId, const CKeyID& bidder,
                              CAmount bidAmount, uint256& bidId);
     bool FinalizeNamespaceAuction(const uint256& auctionId);
     bool CancelNamespaceAuction(const uint256& auctionId, const CKeyID& creator);
-    
+
     // Namespace price tier operations
     bool AddPricingTier(const std::string& namespaceId, int minLength, CAmount minPrice);
     bool UpdatePricingTier(const std::string& namespaceId, int minLength, CAmount minPrice);
     bool RemovePricingTier(const std::string& namespaceId, int minLength);
-    
+
     // Validation methods
     bool IsNamespaceAvailable(const std::string& namespaceId) const;
     bool IsNamespaceValid(const std::string& namespaceId) const;
     bool IsOwner(const std::string& namespaceId, const CKeyID& keyId) const;
     bool HasExpired(const std::string& namespaceId) const;
-    
+
     // Query methods
     bool GetNamespaceInfo(const std::string& namespaceId, NamespaceInfo& result) const;
     bool GetAuctionInfo(const uint256& auctionId, AuctionInfo& result) const;
@@ -80,23 +96,27 @@ public:
     std::vector<NamespaceInfo> GetNamespaces() const;
     std::vector<PricingTier> GetPricingTiers(const std::string& namespaceId) const;
     CAmount CalculateMinPrice(const std::string& namespaceId) const;
-    
+
     // Configuration validation
     bool ValidateNamespaceID(const std::string& name) const;
-    
+
     // Fee calculations
     CAmount CalculateRenewalFee(const std::string& namespaceId) const;
-    
+
     // Transaction processing
     bool ProcessTransaction(const CTransaction& tx, int nHeight);
-    
+    bool ProcessNamespaceAuctionCreate(const CTransaction& tx, const std::vector<unsigned char>& data, int nHeight);
+    bool ProcessNamespaceAuctionBid(const CTransaction& tx, const std::vector<unsigned char>& data, int nHeight);
+    bool ProcessNamespaceAuctionFinalize(const CTransaction& tx, const std::vector<unsigned char>& data, int nHeight);
+    bool ProcessNamespaceAuctionCancel(const CTransaction& tx, const std::vector<unsigned char>& data, int nHeight);
+
     // Database operations
     bool Load();
     bool Save() const;
-    
+
     // Access to the database and other components through ReddIDManager
-    ReddIDDB* GetDB() const;
-    ReddIDP2PManager* GetP2P() const;
+    ReddIDDB* GetDB() const { return reddidDB; }
+    ReddIDP2PManager* GetP2P() const { return reddidP2P; }
 };
 
-#endif // BITCOIN_ID_NAMESPACE_H
+#endif  // BITCOIN_ID_NAMESPACE_H
