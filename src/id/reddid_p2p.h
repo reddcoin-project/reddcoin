@@ -16,6 +16,16 @@
 #include <string>
 #include <vector>
 
+
+// Constants for P2P message handling
+static const size_t MAX_REDDID_MESSAGE_SIZE = 1 * 1024 * 1024; // 1 MB maximum message size
+static const int DEFAULT_MAX_MESSAGES_PER_MINUTE = 20;
+static const int MAX_AUCTION_ANNOUNCES_PER_MINUTE = 10;
+static const int MAX_AUCTION_BIDS_PER_MINUTE = 20;
+static const int MAX_PROFILE_UPDATES_PER_MINUTE = 5;
+static const int MAX_CONNECTIONS_PER_MINUTE = 15;
+static const int RATE_LIMIT_WINDOW_SECONDS = 60;
+
 /**
  * ReddID P2P message types
  */
@@ -241,29 +251,51 @@ public:
 class ReddIDP2PManager {
 private:
     std::atomic<bool> running{false};
-    std::set<NodeId> subscribedNodes;
+    std::atomic<bool> initialized{false};
+
     ReddIDManager* reddIDManager; // Reference to parent ReddIDManager
     NodeContext* node; // Pointer to the NodeContext
     CConnman* connman; // Pointer to the connection manager
     NamespaceManager* namespaceManager;  // Pointer to the Namespace Manager
     ProfileManager* profileManager;      // Pointer to the Profile Manager
     AuctionManager* auctionManager;      // Pointer to the Auction Manager
-    
+
+    // Thread-safe containers with their mutexes
+    mutable RecursiveMutex cs_subscriptions;
+    std::set<NodeId> subscribedNodes GUARDED_BY(cs_subscriptions);
+    std::set<NodeId> reddidCapableNodes GUARDED_BY(cs_subscriptions);
+
+    mutable RecursiveMutex cs_message_rates;
+    std::map<NodeId, std::map<std::string, std::pair<int64_t, int>>> m_messageRateLimits GUARDED_BY(cs_message_rates);
+
     // Store registered message handlers
     std::map<std::string, ReddIDMessageHandlerFn> messageHandlers;
-    
-    // Message handling methods - now with more detail
+
+    // Message handling methods
     bool ProcessNamespaceAuctionAnnounce(CNode* pfrom, CDataStream& vRecv, int64_t timestamp);
     bool ProcessNamespaceConfigRequest(CNode* pfrom, const std::string& namespaceId);
     bool ProcessNamespaceConfigResponse(CNode* pfrom, const CNamespaceConfig& msg);
     bool ProcessAuctionBid(CNode* pfrom, const CAuctionBid& msg);
     bool ProcessAuctionFinalize(CNode* pfrom, const CAuctionFinalize& msg);
+    bool ProcessNamespaceAuctionCancel(CNode* pfrom, const uint256& auctionId);
     bool ProcessUserIDAuctionAnnounce(CNode* pfrom, const CUserIDAuctionAnnounce& msg);
+    bool ProcessUserIDAuctionBid(CNode* pfrom, const CAuctionBid& msg);
+    bool ProcessUserIDAuctionFinalize(CNode* pfrom, const CAuctionFinalize& msg);
+    bool ProcessUserIDAuctionCancel(CNode* pfrom, const uint256& auctionId);
     bool ProcessReddIDProfileUpdate(CNode* pfrom, const CReddIDProfileUpdate& msg);
     bool ProcessReddIDProfileRequest(CNode* pfrom, const CReddIDProfileRequest& msg);
+    bool ProcessReddIDProfileResponse(CNode* pfrom, const CReddIDProfileUpdate& msg);
     bool ProcessReddIDConnection(CNode* pfrom, const CReddIDConnection& msg);
     bool ProcessReddIDReputationUpdate(CNode* pfrom, const CReddIDReputationUpdate& msg);
     
+    bool CheckMessageRate(CNode* pfrom, const std::string& strCommand);
+    void CleanupRateLimitData();
+
+    // Helper method to check ReddID compatibility
+    bool NodeSupportsReddID(const CNode* pnode) const {
+        return pnode && pnode->nVersion >= REDDID_PROTO_VERSION;
+    }
+
 public:
     ReddIDP2PManager(NodeContext& nodeIn);
     ~ReddIDP2PManager();
@@ -306,12 +338,16 @@ public:
     bool RequestProfile(const std::string& reddId);
     bool AnnounceConnection(const ReddIDConnection& connection);
     bool AnnounceReputationUpdate(const ReddIDReputation& reputation);
-    
+
     // Node subscription management for efficient message relay
     bool SubscribeNode(NodeId nodeId);
     bool UnsubscribeNode(NodeId nodeId);
     bool IsNodeSubscribed(NodeId nodeId) const;
-    
+
+    // Network event handlers
+    void OnNodeConnected(CNode* pnode);
+    void OnNodeDisconnected(NodeId nodeId);
+
     // Message relay helper
     void RelayMessage(const std::string& command, const CDataStream& data, 
                      const std::vector<NodeId>& exceptNodes = {});

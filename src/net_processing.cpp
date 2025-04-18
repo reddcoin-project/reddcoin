@@ -1458,6 +1458,13 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
     // schedule next run for 10-15 minutes in the future
     const std::chrono::milliseconds delta = std::chrono::minutes{10} + GetRandMillis(std::chrono::minutes{5});
     scheduler.scheduleFromNow([&] { ReattemptInitialBroadcast(scheduler); }, delta);
+
+    // Register ID message handlers
+    if (node.reddid && node.reddid->GetP2PManager()) {
+        // Register ReddID message handlers with the P2P manager
+        node.reddid->GetP2PManager()->RegisterMessageHandlers();
+        LogPrint(BCLog::REDDID, "ReddID P2P message handlers registered\n");
+    }
 }
 
 /**
@@ -4183,17 +4190,22 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
     if (msg_type.substr(0, 2) == "ns" || msg_type.substr(0, 3) == "uid" || msg_type.substr(0, 3) == "rid") {
         // Access the ReddID manager through node context stored in PeerManagerImpl
         if (m_node && m_node->reddid && m_node->reddid->GetP2PManager()) {
-            // Call the ReddID P2P manager's ProcessMessage function (which is now void)
-            m_node->reddid->GetP2PManager()->ProcessMessage(
-                pfrom,
-                msg_type,
-                vRecv,
-                count_microseconds(time_received));
+            try {
+                // Call the ReddID P2P manager's ProcessMessage function
+                m_node->reddid->GetP2PManager()->ProcessMessage(
+                    pfrom,
+                    msg_type,
+                    vRecv,
+                    count_microseconds(time_received));
+            } catch (const std::exception& e) {
+                LogPrint(BCLog::NET, "Error processing ReddID message %s: %s\n",
+                         SanitizeString(msg_type), e.what());
+            }
         } else {
             LogPrint(BCLog::NET, "ReddID P2P manager not available for message %s from peer=%d\n",
                      SanitizeString(msg_type), pfrom.GetId());
         }
-        return; // Just return without a value since the function is void
+        return;
     }
 
     // Ignore unknown commands for extensibility
