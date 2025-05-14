@@ -12,6 +12,7 @@
  */
 
 // Declare RPC methods
+UniValue getreddidnetworkinfo(const UniValue& params, bool fHelp);
 UniValue getnamespacelist(const UniValue& params, bool fHelp);
 UniValue getnamespaceinfo(const UniValue& params, bool fHelp);
 UniValue getnamespaceauctionlist(const UniValue& params, bool fHelp);

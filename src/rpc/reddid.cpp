@@ -10,7 +10,9 @@
 #include <id/reddid.h>
 #include <id/reddid_db.h>
 #include <key_io.h>
+#include <net.h>  // For CConnman and CNode
 #include <node/context.h>
+#include <protocol.h>  // For NODE_REDDID
 #include <rpc/blockchain.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
@@ -46,6 +48,55 @@ CKeyID GetNewWalletDestination(CWallet* pwallet, std::string& error, OutputType 
     }
     
     return keyID;
+}
+
+static RPCHelpMan getreddidnetworkinfo()
+{
+    return RPCHelpMan{"getreddidnetworkinfo",
+                "\nReturns information about ReddID network status.\n",
+                {},
+	        RPCResult{
+	            RPCResult::Type::OBJ, "", "",
+	            {
+	                {RPCResult::Type::BOOL, "enabled", "Whether this node has ReddID enabled"},
+	                {RPCResult::Type::NUM, "connections", "Number of ReddID-capable peers"},
+	                {RPCResult::Type::ARR, "peers", "List of ReddID peer IDs",
+	                    {
+	                        {RPCResult::Type::NUM, "", "peer node ID"}
+	                    }
+	                },
+	            }
+	        },
+	        RPCExamples{
+	            HelpExampleCli("getreddidnetworkinfo", "")
+	            + HelpExampleRpc("getreddidnetworkinfo", "")
+	        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+	NodeContext& node = EnsureAnyNodeContext(request.context);
+	UniValue obj(UniValue::VOBJ);
+
+	// Check if ReddID is enabled
+	bool reddidEnabled = (node.connman->GetLocalServices() & NODE_REDDID) != 0;
+	obj.pushKV("enabled", reddidEnabled);
+
+	// Get ReddID-capable peers
+	UniValue peers(UniValue::VARR);
+	int reddidPeerCount = 0;
+
+	node.connman->ForEachNode([&](CNode* pnode) {
+	    if (pnode->nServices.load() & NODE_REDDID) {
+		peers.push_back(pnode->GetId());
+		reddidPeerCount++;
+	    }
+	});
+
+	obj.pushKV("connections", reddidPeerCount);
+	obj.pushKV("peers", peers);
+
+	return obj;
+},
+    };
 }
 
 static RPCHelpMan getnamespacelist()
@@ -4438,6 +4489,9 @@ void RegisterReddIDRPCCommands(CRPCTable &t)
 {
 // clang-format off
 static const CRPCCommand commands[] = {
+    // Reddid Network
+    { "reddid", &getreddidnetworkinfo,             },
+
     // Namespace commands
     { "reddid", &getnamespacelist,                 },
     { "reddid", &getnamespaceinfo,                 },
