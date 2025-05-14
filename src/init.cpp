@@ -1612,6 +1612,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.reddid->Init()) {
             return InitError(_("Failed to initialize ReddID system"));
         }
+        nLocalServices =  ServiceFlags(nLocalServices | NODE_REDDID);
     }
 
     node.reddid->Start();
