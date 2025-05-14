@@ -16,6 +16,7 @@
 #include <serialize.h>
 #include <uint256.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <validation.h>
 
 #include <algorithm>
@@ -25,68 +26,108 @@
 #include <vector>
 
 ReddIDP2PManager::ReddIDP2PManager(NodeContext& nodeIn)
-    : running(false), reddIDManager(nullptr), node(&nodeIn), connman(nullptr) {
+    : m_initialized(false),
+      m_running(false),
+      reddIDManager(nullptr),
+      namespaceManager(nullptr),
+      profileManager(nullptr),
+      auctionManager(nullptr),
+      node(&nodeIn),
+      connman(nullptr) {
 }
 
 ReddIDP2PManager::~ReddIDP2PManager() {
+    Stop();
 }
 
-bool ReddIDP2PManager::Init() {
-    LogPrintf("Initializing ReddID P2P manager\n");
-    if (initialized) {
-	return true;
-    }
-
-    initialized = true;
-    return true;
-}
-
-bool ReddIDP2PManager::Start() {
-    LogPrintf("Starting ReddID P2P manager\n");
-
-    if (running) {
+bool ReddIDP2PManager::Init(ReddIDManager* manager) {
+    if (m_initialized) {
+        LogPrint(BCLog::REDDID, "P2Pmanager already initialized\n");
         return true;
     }
 
-    running = true;
+    if (!manager) {
+        LogPrintf("ERROR: P2Pmanager::Init: Null ReddIDManager\n");
+        return false;
+    }
+
+    LogPrint(BCLog::REDDID, "Initializing P2Pmanager manager\n");
+
+    try {
+        // Store the manager reference
+        reddIDManager = manager;
+
+        namespaceManager = manager->GetNamespaceManager();
+        if (!namespaceManager) {
+            LogPrint(BCLog::REDDID, "WARNING: ReddIDP2PManager::Init: namespaceManager not available yet\n");
+        }
+
+        auctionManager = manager->GetAuctionManager();
+        if (!auctionManager) {
+            LogPrint(BCLog::REDDID, "WARNING: ReddIDP2PManager::Init: auctionManager not available yet\n");
+        }
+
+        profileManager = manager->GetProfileManager();
+        if (!profileManager) {
+            LogPrint(BCLog::REDDID, "WARNING: ReddIDP2PManager::Init: profileManager not available yet\n");
+        }
+
+        m_initialized = true;
+        LogPrint(BCLog::REDDID, "ReddIDP2PManager initialized successfully\n");
+        return true;
+    } catch (const std::exception& e) {
+        LogPrintf("ERROR: P2Pmanager::Init: Exception: %s\n", e.what());
+        return false;
+    }
+}
+
+bool ReddIDP2PManager::Start() {
+    if (!m_initialized) {
+        LogPrintf("ERROR: ReddIDP2PManager::Start: Not initialized\n");
+        return false;
+    }
+
+    if (m_running) {
+        LogPrint(BCLog::REDDID, "ReddIDP2PManager already running\n");
+        return true;
+    }
+
+    LogPrint(BCLog::REDDID, "Starting P2PManager\n");
+
+    m_running = true;
     return true;
 }
 
 void ReddIDP2PManager::Interrupt() {
-    LogPrintf("Interrupting ReddID P2P manager\n");
-    running = false;
-}
-
-bool ReddIDP2PManager::Stop() {
-    LogPrintf("Stopping ReddID P2P manager\n");
-
-    if (!running) {
-        return true;
-    }
-
-    SetManagerActive(false);
-    return true;
-}
-
-void ReddIDP2PManager::SetManagerActive(bool active) {
-    LogPrintf("ReddIDP2PManager: %s: %s\n", __func__, active);
-
-    if (running == active) {
+    if (!m_running) {
         return;
     }
 
-    running = active;
+    LogPrint(BCLog::REDDID, "Interrupting P2PManager manager\n");
+    m_running = false;
 }
 
-void ReddIDP2PManager::ConnectReddIDManager(ReddIDManager& manager) {
-    reddIDManager = &manager;
-    namespaceManager = manager.GetNamespaceManager();
-    auctionManager = manager.GetAuctionManager();
-    profileManager = manager.GetProfileManager();
+bool ReddIDP2PManager::Stop() {
+    if (!m_initialized) {
+        return true;
+    }
+
+    LogPrintf("Stopping P2Pmanager\n");
+
+    // Mark as not running
+    m_running = false;
+
+    // Clear references
+    reddIDManager = nullptr;
+
+    m_initialized = false;
+
+    LogPrint(BCLog::REDDID, "P2PManager stopped\n");
+    return true;
 }
 
 bool ReddIDP2PManager::RegisterMessageHandlers() {
-    if (!running || !node || !node->connman) {
+    if (!m_running || !node || !node->connman) {
         LogPrint(BCLog::REDDID, "Cannot register message handlers: node or connman not available\n");
         return false;
     }
@@ -295,15 +336,16 @@ bool ReddIDP2PManager::RegisterMessageHandlers() {
 void ReddIDP2PManager::ProcessMessage(CNode& pfrom, const std::string& strCommand,
                                      CDataStream& vRecv, int64_t nTimeReceived) {
     // Early return if we're not running
-    if (!running) {
+    if (!m_running) {
         LogPrint(BCLog::REDDID, "Ignoring message %s - manager not running\n", strCommand);
         return;
     }
 
     // Check if node supports ReddID
-    if (!NodeSupportsReddID(&pfrom)) {
-        LogPrint(BCLog::REDDID, "Ignoring ReddID message %s from incompatible peer %d (version %d < %d)\n",
-                 strCommand, pfrom.GetId(), pfrom.nVersion, REDDID_PROTO_VERSION);
+    if (!(pfrom.nServices & NODE_REDDID)) {
+        std::string serviceStr = Join(serviceFlagsToStr(pfrom.nServices), "|");
+        LogPrint(BCLog::REDDID, "Ignoring ReddID message %s from incompatible peer %d (service %s)\n",
+                 strCommand, pfrom.GetId(), serviceStr);
         return;
     }
 
@@ -365,29 +407,67 @@ bool ReddIDP2PManager::ProcessNamespaceAuctionAnnounce(CNode* pfrom, CDataStream
         CNamespaceAuctionAnnounce announce;
         vRecv >> announce;
 
-        LogPrintf("Received namespace auction announcement for %s\n", announce.namespaceId);
+        LogPrint(BCLog::REDDID, "Received namespace auction announcement for %s\n", announce.namespaceId);
 
         // Validate the namespace ID
         if (!namespaceManager->ValidateNamespaceID(announce.namespaceId)) {
-            LogPrintf("Invalid namespace ID: %s\n", announce.namespaceId);
+            LogPrint(BCLog::REDDID, "Invalid namespace ID: %s\n", announce.namespaceId);
+            return false;
+        }
+
+        // Check if namespace is available
+        if (!namespaceManager->IsNamespaceAvailable(announce.namespaceId)) {
+            LogPrint(BCLog::REDDID, "Namespace not available: %s\n", announce.namespaceId);
             return false;
         }
 
         // Check if we already know about this auction
         AuctionInfo auction;
-        if (namespaceManager->GetAuctionInfo(announce.auctionId, auction)) {
-            LogPrintf("Already know about auction %s\n", announce.auctionId.ToString());
+        if (auctionManager->GetAuctionInfo(announce.auctionId, auction)) {
+            LogPrint(BCLog::REDDID, "Already know about auction %s\n", announce.auctionId.ToString());
             return true;
         }
 
-        // Create the auction
+        // Create the auction info from the announcement
         auction.auctionId = announce.auctionId;
+        auction.name = "";  // Empty for namespace auctions
         auction.namespaceId = announce.namespaceId;
         auction.startTime = announce.startTime;
         auction.endTime = announce.endTime;
         auction.reservePrice = announce.reservePrice;
         auction.type = announce.type;
         auction.state = AUCTION_PENDING;
+
+        // We don't have creator information in the announcement yet
+        // This should be added to the CNamespaceAuctionAnnounce structure
+        // For now, we'll use a zero key which isn't ideal
+        auction.creator = CKeyID();  // TODO(gnasher): Add creator to announcement message
+
+        // Validate the auction parameters
+        if (auction.endTime <= auction.startTime) {
+            LogPrint(BCLog::REDDID, "Invalid auction times for %s\n", auction.namespaceId);
+            return false;
+        }
+
+        // Verify the reserve price meets minimum requirements
+        CAmount minPrice = namespaceManager->CalculateMinPrice(auction.namespaceId);
+        if (auction.reservePrice < minPrice) {
+            LogPrint(BCLog::REDDID, "Reserve price too low for namespace %s: %s < %s\n",
+                    auction.namespaceId,
+                    FormatMoney(auction.reservePrice),
+                    FormatMoney(minPrice));
+            return false;
+        }
+
+        // Save the auction using AuctionManager
+        uint256 auctionId = auction.auctionId;
+        if (!auctionManager->CreateAuction(auction, auctionId)) {
+            LogPrint(BCLog::REDDID, "Failed to create auction from announcement\n");
+            return false;
+        }
+
+        LogPrint(BCLog::REDDID, "Successfully created auction %s from P2P announcement\n",
+                auctionId.ToString());
 
         // Create a data stream to serialize the message for relay
         CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
@@ -398,18 +478,30 @@ bool ReddIDP2PManager::ProcessNamespaceAuctionAnnounce(CNode* pfrom, CDataStream
 
         return true;
     } catch (const std::exception& e) {
-        LogPrintf("Error processing namespace auction announcement: %s\n", e.what());
+        LogPrint(BCLog::REDDID, "Error processing namespace auction announcement: %s\n", e.what());
         return false;
     }
 }
 
 bool ReddIDP2PManager::ProcessNamespaceConfigRequest(CNode* pfrom, const std::string& namespaceId) {
-    LogPrintf("Received namespace config request for %s\n", namespaceId);
+    if (!pfrom || namespaceId.empty()) {
+        LogPrint(BCLog::REDDID, "Invalid namespace config request: null node or empty namespace ID\n");
+        return false;
+    }
+
+    LogPrint(BCLog::REDDID, "Received namespace config request for %s from node %d\n",
+             namespaceId, pfrom->GetId());
+
+    // Check if managers are initialized
+    if (!namespaceManager) {
+        LogPrint(BCLog::REDDID, "Namespace manager not initialized\n");
+        return false;
+    }
 
     // Check if we have this namespace
     NamespaceInfo namespaceInfo;
     if (!namespaceManager->GetNamespaceInfo(namespaceId, namespaceInfo)) {
-        LogPrintf("Don't have info for namespace %s\n", namespaceId);
+        LogPrint(BCLog::REDDID, "Don't have info for namespace %s\n", namespaceId);
         return false;
     }
 
@@ -418,50 +510,40 @@ bool ReddIDP2PManager::ProcessNamespaceConfigRequest(CNode* pfrom, const std::st
 }
 
 bool ReddIDP2PManager::ProcessNamespaceConfigResponse(CNode* pfrom, const CNamespaceConfig& msg) {
-    LogPrint(BCLog::NET, "Received namespace config response for %s\n", msg.config.id);
+    try {
+        LogPrint(BCLog::REDDID, "Received namespace config response for %s\n", msg.config.id);
 
-    // Since ValidateNamespaceConfig is private, we need to use an alternative approach
-    // Try to use a public method or implement the validation here
-
-    // Method 1: Use an existing public method if available
-    // For example, check if the namespace exists or try to retrieve it
-    bool isValid = true;  // Start with assumption it's valid
-
-    // Check some basic validation rules (implement similar to what ValidateNamespaceConfig would do)
-    if (msg.config.id.empty() || msg.config.id.length() > MAX_NAMESPACE_LENGTH) {
-        LogPrint(BCLog::NET, "Invalid namespace id: %s\n", msg.config.id);
-        isValid = false;
-    }
-
-    // Validate percentage distribution
-    if (msg.config.burnPct + msg.config.devPct + msg.config.namespaceRevenuePct + msg.config.nodePct != 100) {
-        LogPrint(BCLog::NET, "Invalid percentage distribution in namespace config: %s\n", msg.config.id);
-        isValid = false;
-    }
-
-    // Other validation checks as needed
-
-    if (!isValid) {
-        LogPrint(BCLog::NET, "Invalid namespace config for %s\n", msg.config.id);
-        return false;
-    }
-
-    // Check if we already have this namespace
-    NamespaceInfo existingConfig;
-    bool haveNamespace = namespaceManager->GetNamespaceInfo(msg.config.id, existingConfig);
-
-    if (haveNamespace) {
-        // We already have this namespace, check if it's more recent
-        if (msg.config.lastUpdated <= existingConfig.lastUpdated) {
-            LogPrint(BCLog::NET, "Already have more recent config for %s\n", msg.config.id);
-            return true;
+        // Basic validation
+        if (msg.config.id.empty() || msg.config.id.length() > MAX_NAMESPACE_LENGTH) {
+            LogPrint(BCLog::REDDID, "Invalid namespace id: %s\n", msg.config.id);
+            return false;
         }
-    }
 
-    // Save the config - use a public method like CreateNamespace
-    bool success = namespaceManager->CreateNamespace(msg.config);
+        // Validate percentage distribution
+        if (msg.config.burnPct + msg.config.devPct + msg.config.namespaceRevenuePct + msg.config.nodePct != 100) {
+            LogPrint(BCLog::REDDID, "Invalid percentage distribution in namespace config: %s\n", msg.config.id);
+            return false;
+        }
 
-    if (success) {
+        // Check if we already have this namespace
+        NamespaceInfo existingConfig;
+        bool haveNamespace = namespaceManager->GetNamespaceInfo(msg.config.id, existingConfig);
+
+        if (haveNamespace) {
+            // We already have this namespace, check if it's more recent
+            if (msg.config.lastUpdated <= existingConfig.lastUpdated) {
+                LogPrint(BCLog::REDDID, "Already have more recent config for %s\n", msg.config.id);
+                return true;
+            }
+        }
+
+        // Save the config
+        bool success = namespaceManager->CreateNamespace(msg.config);
+        if (!success) {
+            LogPrint(BCLog::REDDID, "Failed to create namespace %s\n", msg.config.id);
+            return false;
+        }
+
         // Add pricing tiers
         for (const auto& tier : msg.pricingTiers) {
             namespaceManager->AddPricingTier(msg.config.id, tier.minLength, tier.minPrice);
@@ -473,35 +555,112 @@ bool ReddIDP2PManager::ProcessNamespaceConfigResponse(CNode* pfrom, const CNames
 
         // Forward the config to other nodes
         RelayMessage(MSG_NAMESPACE_CONFIG_RESPONSE, data, {pfrom->GetId()});
-    }
 
-    return success;
+        return true;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing namespace config response: %s\n", e.what());
+        return false;
+    }
 }
 
 bool ReddIDP2PManager::ProcessAuctionBid(CNode* pfrom, const CAuctionBid& msg) {
-    LogPrintf("Received auction bid for auction %s\n", msg.auctionId.ToString());
+    try {
+        LogPrint(BCLog::REDDID, "Received auction bid for auction %s: %s RDD\n",
+                msg.auctionId.ToString(), FormatMoney(msg.bidAmount));
 
-    // Check if we know about this auction
-    AuctionInfo auction;
-    if (!auctionManager->GetAuctionInfo(msg.auctionId, auction)) {
-        LogPrintf("Unknown auction %s\n", msg.auctionId.ToString());
+        // Check if we know about this auction
+        AuctionInfo auction;
+        if (!auctionManager->GetAuctionInfo(msg.auctionId, auction)) {
+            LogPrint(BCLog::REDDID, "Unknown auction %s for bid\n", msg.auctionId.ToString());
+
+            // We might request auction information here, but for now, just reject the bid
+            return false;
+        }
+
+        // Check if the auction is in a valid state for bids
+        if (auction.state != AUCTION_ACTIVE && auction.state != AUCTION_PENDING) {
+            LogPrint(BCLog::REDDID, "Auction %s is not active or pending (state: %d)\n",
+                    msg.auctionId.ToString(), auction.state);
+            return false;
+        }
+
+        // Check if auction has ended
+        int64_t currentTime = GetTime();
+        if (auction.endTime <= currentTime) {
+            LogPrint(BCLog::REDDID, "Auction %s has ended, cannot accept bids\n",
+                    msg.auctionId.ToString());
+            return false;
+        }
+
+        // Check if we already know about this bid
+        BidInfo existingBid;
+        if (auctionManager->GetBidInfo(msg.bidId, existingBid)) {
+            LogPrint(BCLog::REDDID, "Already know about bid %s\n", msg.bidId.ToString());
+            return true;
+        }
+
+        // Check if bid meets minimum price
+        if (msg.bidAmount < auction.reservePrice) {
+            LogPrint(BCLog::REDDID, "Bid amount %s is below reserve price %s\n",
+                    FormatMoney(msg.bidAmount), FormatMoney(auction.reservePrice));
+            return false;
+        }
+
+        // If there are existing bids, check if this bid meets minimum increment
+        if (auction.currentBid > 0) {
+            // Get namespace info for minimum bid increment
+            double minIncrementPct = 0.05; // Default 5%
+
+            if (namespaceManager) {
+                NamespaceInfo namespaceInfo;
+                if (namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
+                    minIncrementPct = namespaceInfo.minBidIncrement / 100.0;
+                }
+            }
+
+            CAmount minBid = auction.currentBid * (1.0 + minIncrementPct);
+            if (msg.bidAmount < minBid) {
+                LogPrint(BCLog::REDDID, "Bid amount %s does not meet minimum increment (minimum: %s)\n",
+                        FormatMoney(msg.bidAmount), FormatMoney(minBid));
+                return false;
+            }
+        }
+
+        // Create the bid
+        BidInfo bid;
+        bid.bidId = msg.bidId;
+        bid.auctionId = msg.auctionId;
+        bid.bidder = msg.bidder;  // Assuming the message includes bidder info
+        bid.bidAmount = msg.bidAmount;
+        bid.depositAmount = msg.depositAmount;
+        bid.bidTime = msg.timestamp;
+        bid.isWinner = false;
+        bid.refunded = false;
+
+        // Save the bid locally using AuctionManager
+        uint256 bidId = bid.bidId;
+        // We need to adapt this call to match the AuctionManager's PlaceBid signature
+        // which doesn't take a pre-constructed BidInfo
+        if (!auctionManager->PlaceBid(msg.auctionId, bid.bidder, bid.bidAmount, bidId, bid.bidTime)) {
+            LogPrint(BCLog::REDDID, "Failed to process auction bid\n");
+            return false;
+        }
+
+        LogPrint(BCLog::REDDID, "Successfully processed bid %s on auction %s: %s RDD\n",
+                bidId.ToString(), msg.auctionId.ToString(), FormatMoney(msg.bidAmount));
+
+        // Create a data stream to serialize the message
+        CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+        data << msg;
+
+        // Forward the bid to other nodes
+        RelayMessage(MSG_NAMESPACE_AUCTION_BID, data, {pfrom->GetId()});
+
+        return true;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing auction bid: %s\n", e.what());
         return false;
     }
-
-    // Check if the auction is active
-    if (auction.state != AUCTION_ACTIVE && auction.state != AUCTION_PENDING) {
-        LogPrintf("Auction %s is not active\n", msg.auctionId.ToString());
-        return false;
-    }
-
-    // Create a data stream to serialize the message
-    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-    data << msg;
-
-    // Forward the bid to other nodes
-    RelayMessage(MSG_NAMESPACE_AUCTION_BID, data, {pfrom->GetId()});
-
-    return true;
 }
 
 bool ReddIDP2PManager::ProcessAuctionFinalize(CNode* pfrom, const CAuctionFinalize& msg) {
@@ -563,34 +722,134 @@ bool ReddIDP2PManager::ProcessNamespaceAuctionCancel(CNode* pfrom, const uint256
 }
 
 bool ReddIDP2PManager::ProcessUserIDAuctionAnnounce(CNode* pfrom, const CUserIDAuctionAnnounce& msg) {
-    LogPrintf("Received user ID auction announcement for %s.%s\n", msg.name, msg.namespaceId);
+    try {
+        LogPrint(BCLog::REDDID, "Received user ID auction announcement for %s.%s\n", msg.name, msg.namespaceId);
 
-    // Check if we know about this namespace
-    NamespaceInfo namespaceInfo;
-    if (!namespaceManager->GetNamespaceInfo(msg.namespaceId, namespaceInfo)) {
-        LogPrintf("Unknown namespace %s\n", msg.namespaceId);
+        // Validate namespace exists
+        NamespaceInfo namespaceInfo;
+        if (!namespaceManager->GetNamespaceInfo(msg.namespaceId, namespaceInfo)) {
+            LogPrint(BCLog::REDDID, "Unknown namespace %s for user ID auction\n", msg.namespaceId);
+            return false;
+        }
+
+        // Validate user ID format based on namespace rules
+        if (msg.name.size() < namespaceInfo.minLength || msg.name.size() > namespaceInfo.maxLength) {
+            LogPrint(BCLog::REDDID, "Invalid name length for %s.%s: %zu (should be %d-%d)\n",
+                    msg.name, msg.namespaceId, msg.name.size(),
+                    namespaceInfo.minLength, namespaceInfo.maxLength);
+            return false;
+        }
+
+        // Check character validation based on namespace rules
+        bool nameValid = true;
+        for (const char& c : msg.name) {
+            bool charValid = (c >= 'a' && c <= 'z');  // Letters always allowed
+
+            // Check if numbers are allowed
+            if (!charValid && namespaceInfo.allowNumbers && (c >= '0' && c <= '9')) {
+                charValid = true;
+            }
+
+            // Check if hyphens are allowed
+            if (!charValid && namespaceInfo.allowHyphens && c == '-') {
+                charValid = true;
+            }
+
+            // Check if underscores are allowed
+            if (!charValid && namespaceInfo.allowUnderscores && c == '_') {
+                charValid = true;
+            }
+
+            if (!charValid) {
+                nameValid = false;
+                break;
+            }
+        }
+
+        if (!nameValid) {
+            LogPrint(BCLog::REDDID, "Invalid characters in name: %s.%s\n", msg.name, msg.namespaceId);
+            return false;
+        }
+
+        // Check if name already exists and is not expired
+        UserIDInfo existingUserID;
+        if (reddIDManager && reddIDManager->GetUserIDInfo(msg.name, msg.namespaceId, existingUserID)) {
+            int64_t currentTime = GetTime();
+            if (existingUserID.expirationTime > currentTime) {
+                LogPrint(BCLog::REDDID, "User ID %s.%s already exists and has not expired\n",
+                        msg.name, msg.namespaceId);
+                return false;
+            }
+        }
+
+        // Check if we already know about this auction
+        AuctionInfo existingAuction;
+        if (auctionManager->GetAuctionInfo(msg.auctionId, existingAuction)) {
+            LogPrint(BCLog::REDDID, "Already know about auction %s\n", msg.auctionId.ToString());
+            return true;
+        }
+
+        // Validate auction duration against namespace rules
+        int durationDays = (msg.endTime - msg.startTime) / (24 * 60 * 60);
+        if (durationDays < namespaceInfo.minAuctionDuration || durationDays > namespaceInfo.maxAuctionDuration) {
+            LogPrint(BCLog::REDDID, "Invalid auction duration for %s.%s: %d days (should be %d-%d)\n",
+                    msg.name, msg.namespaceId, durationDays,
+                    namespaceInfo.minAuctionDuration, namespaceInfo.maxAuctionDuration);
+            return false;
+        }
+
+        // Check reserve price against namespace rules
+        CAmount minPrice = 0;
+        if (reddIDManager) {
+            minPrice = reddIDManager->CalculateMinPriceForUserID(msg.name, msg.namespaceId);
+        } else {
+            // Fallback to default minimum
+            minPrice = REDDID_MIN_FEE;
+        }
+
+        if (msg.reservePrice < minPrice) {
+            LogPrint(BCLog::REDDID, "Reserve price too low for %s.%s: %s (minimum: %s)\n",
+                    msg.name, msg.namespaceId, FormatMoney(msg.reservePrice), FormatMoney(minPrice));
+            return false;
+        }
+
+        // Create the auction object
+        AuctionInfo auction;
+        auction.auctionId = msg.auctionId;
+        auction.name = msg.name;
+        auction.namespaceId = msg.namespaceId;
+        auction.creator = msg.creator;
+        auction.startTime = msg.startTime;
+        auction.endTime = msg.endTime;
+        auction.reservePrice = msg.reservePrice;
+        auction.currentBid = 0;
+        auction.type = msg.type;
+        auction.state = AUCTION_PENDING;
+        auction.depositAmount = auction.reservePrice * 0.1;  // Default 10% deposit
+
+        // Save the auction
+        uint256 auctionId = msg.auctionId;
+        if (!auctionManager->CreateAuction(auction, auctionId)) {
+            LogPrint(BCLog::REDDID, "Failed to create user ID auction from announcement\n");
+            return false;
+        }
+
+        LogPrint(BCLog::REDDID, "Successfully created user ID auction %s for %s.%s from P2P announcement\n",
+                auctionId.ToString(), msg.name, msg.namespaceId);
+
+        // Create a data stream to serialize the message
+        CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+        data << msg;
+
+        // Forward the announcement to other nodes
+        RelayMessage(MSG_USERID_AUCTION_ANNOUNCE, data, {pfrom->GetId()});
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing user ID auction announcement: %s\n", e.what());
         return false;
     }
-
-    // Create the auction
-    AuctionInfo auction;
-    auction.auctionId = msg.auctionId;
-    auction.name = msg.name;
-    auction.namespaceId = msg.namespaceId;
-    auction.startTime = msg.startTime;
-    auction.endTime = msg.endTime;
-    auction.reservePrice = msg.reservePrice;
-    auction.type = msg.type;
-    auction.state = AUCTION_PENDING;
-
-    // Create a data stream to serialize the message
-    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-    data << msg;
-
-    // Forward the announcement to other nodes
-    RelayMessage(MSG_USERID_AUCTION_ANNOUNCE, data, {pfrom->GetId()});
-
-    return true;
 }
 
 bool ReddIDP2PManager::ProcessUserIDAuctionBid(CNode* pfrom, const CAuctionBid& msg) {
@@ -619,7 +878,7 @@ bool ReddIDP2PManager::ProcessUserIDAuctionBid(CNode* pfrom, const CAuctionBid& 
     if (auction.currentBid > 0) {
         // Calculate minimum increment (based on namespace settings)
         NamespaceInfo namespaceInfo;
-        double minIncrement = 0.05; // Default 5%
+        double minIncrement = 0.05;  // Default 5%
 
         if (namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
             minIncrement = namespaceInfo.minBidIncrement / 100.0;
@@ -728,74 +987,74 @@ bool ReddIDP2PManager::ProcessUserIDAuctionCancel(CNode* pfrom, const uint256& a
 }
 
 bool ReddIDP2PManager::ProcessReddIDProfileUpdate(CNode* pfrom, const CReddIDProfileUpdate& msg) {
-    LogPrint(BCLog::NET, "Received profile update for %s\n", msg.reddId);
+    try {
+        LogPrint(BCLog::REDDID, "Received profile update for %s\n", msg.reddId);
 
-    // Since ValidateProfile is private, implement simplified validation directly
-    bool isValid = true;
-
-    // Check ReddID format - similar logic to ValidateProfile
-    if (msg.reddId.empty() || msg.reddId.length() < MIN_REDDID_LENGTH || msg.reddId.length() > MAX_REDDID_LENGTH) {
-        LogPrint(BCLog::NET, "Invalid ReddID length: %s\n", msg.reddId);
-        isValid = false;
-    }
-
-    // Check allowed characters
-    for (const char& c : msg.reddId) {
-        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-            LogPrint(BCLog::NET, "Invalid character in ReddID: %s\n", msg.reddId);
-            isValid = false;
-            break;
+        // Validate ReddID format
+        if (msg.reddId.empty() || msg.reddId.length() < MIN_REDDID_LENGTH || msg.reddId.length() > MAX_REDDID_LENGTH) {
+            LogPrint(BCLog::REDDID, "Invalid ReddID length: %s\n", msg.reddId);
+            return false;
         }
-    }
 
-    // Cannot begin or end with underscore
-    if (isValid && (msg.reddId[0] == '_' || msg.reddId[msg.reddId.size() - 1] == '_')) {
-        LogPrint(BCLog::NET, "ReddID cannot begin or end with underscore: %s\n", msg.reddId);
-        isValid = false;
-    }
+        // Check allowed characters
+        for (const char& c : msg.reddId) {
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
+                LogPrint(BCLog::REDDID, "Invalid character in ReddID: %s\n", msg.reddId);
+                return false;
+            }
+        }
 
-    // Check display name length
-    if (isValid && msg.profile.displayName.size() > 64) {
-        LogPrint(BCLog::NET, "Display name too long: %s\n", msg.reddId);
-        isValid = false;
-    }
+        // Cannot begin or end with underscore
+        if (msg.reddId[0] == '_' || msg.reddId[msg.reddId.size() - 1] == '_') {
+            LogPrint(BCLog::REDDID, "ReddID cannot begin or end with underscore: %s\n", msg.reddId);
+            return false;
+        }
 
-    // Check bio length
-    if (isValid && msg.profile.bio.size() > 256) {
-        LogPrint(BCLog::NET, "Bio too long: %s\n", msg.reddId);
-        isValid = false;
-    }
+        // Check display name length
+        if (msg.profile.displayName.size() > 64) {
+            LogPrint(BCLog::REDDID, "Display name too long: %s\n", msg.reddId);
+            return false;
+        }
 
-    if (!isValid) {
-        LogPrint(BCLog::NET, "Invalid profile for %s\n", msg.reddId);
+        // Check bio length
+        if (msg.profile.bio.size() > 256) {
+            LogPrint(BCLog::REDDID, "Bio too long: %s\n", msg.reddId);
+            return false;
+        }
+
+        // Check if we already have this profile
+        ReddIDProfile existingProfile;
+        bool haveProfile = profileManager->GetProfile(msg.reddId, existingProfile);
+
+        if (haveProfile) {
+            // We already have this profile, check if it's more recent
+            if (msg.profile.lastUpdated <= existingProfile.lastUpdated) {
+                LogPrint(BCLog::REDDID, "Already have more recent profile for %s\n", msg.reddId);
+                return true;
+            }
+        }
+
+        // Update the profile using a public method
+        bool success = profileManager->UpdateProfile(msg.profile);
+
+        if (success) {
+            // Create a data stream to serialize the message
+            CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+            data << msg;
+
+            // Forward the update to other nodes
+            RelayMessage(MSG_REDDID_PROFILE_UPDATE, data, {pfrom->GetId()});
+
+            LogPrint(BCLog::REDDID, "Successfully processed profile update for %s\n", msg.reddId);
+        } else {
+            LogPrint(BCLog::REDDID, "Failed to update profile for %s\n", msg.reddId);
+        }
+
+        return success;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing profile update: %s\n", e.what());
         return false;
     }
-
-    // Check if we already have this profile
-    ReddIDProfile existingProfile;
-    bool haveProfile = profileManager->GetProfile(msg.reddId, existingProfile);
-
-    if (haveProfile) {
-        // We already have this profile, check if it's more recent
-        if (msg.profile.lastUpdated <= existingProfile.lastUpdated) {
-            LogPrint(BCLog::NET, "Already have more recent profile for %s\n", msg.reddId);
-            return true;
-        }
-    }
-
-    // Update the profile using a public method
-    bool success = profileManager->UpdateProfile(msg.profile);
-
-    if (success) {
-        // Create a data stream to serialize the message
-        CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-        data << msg;
-
-        // Forward the update to other nodes
-        RelayMessage(MSG_REDDID_PROFILE_UPDATE, data, {pfrom->GetId()});
-    }
-
-    return success;
 }
 
 bool ReddIDP2PManager::ProcessReddIDProfileRequest(CNode* pfrom, const CReddIDProfileRequest& msg) {
@@ -882,100 +1141,149 @@ bool ReddIDP2PManager::ProcessReddIDProfileResponse(CNode* pfrom, const CReddIDP
 }
 
 bool ReddIDP2PManager::ProcessReddIDConnection(CNode* pfrom, const CReddIDConnection& msg) {
-    LogPrint(BCLog::NET, "Received connection from %s to %s\n",
-             msg.connection.fromReddId, msg.connection.toReddId);
-
-    // Since ValidateConnection is private, implement simplified validation directly
-    bool isValid = true;
-
-    // Check that it's not a self-connection
-    if (msg.connection.fromReddId == msg.connection.toReddId) {
-        LogPrint(BCLog::NET, "Self-connection not allowed from %s\n", msg.connection.fromReddId);
-        isValid = false;
-    }
-
-    // Check valid connection type
-    if (isValid && (msg.connection.connectionType < CONNECTION_FOLLOW ||
-                  msg.connection.connectionType > CONNECTION_BLOCK)) {
-        LogPrint(BCLog::NET, "Invalid connection type from %s to %s\n",
+    try {
+        LogPrint(BCLog::REDDID, "Received connection from %s to %s\n",
                  msg.connection.fromReddId, msg.connection.toReddId);
-        isValid = false;
-    }
 
-    // Check valid visibility
-    if (isValid && (msg.connection.visibility < 0 || msg.connection.visibility > 2)) {
-        LogPrint(BCLog::NET, "Invalid visibility from %s to %s\n",
-                 msg.connection.fromReddId, msg.connection.toReddId);
-        isValid = false;
-    }
+        // Validate the connection
+        if (msg.connection.fromReddId == msg.connection.toReddId) {
+            LogPrint(BCLog::REDDID, "Self-connection not allowed from %s\n", msg.connection.fromReddId);
+            return false;
+        }
 
-    if (!isValid) {
-        LogPrint(BCLog::NET, "Invalid connection from %s to %s\n",
-                 msg.connection.fromReddId, msg.connection.toReddId);
+        // Check valid connection type
+        if (msg.connection.connectionType < CONNECTION_FOLLOW ||
+            msg.connection.connectionType > CONNECTION_BLOCK) {
+            LogPrint(BCLog::REDDID, "Invalid connection type from %s to %s\n",
+                    msg.connection.fromReddId, msg.connection.toReddId);
+            return false;
+        }
+
+        // Check valid visibility
+        if (msg.connection.visibility < 0 || msg.connection.visibility > 2) {
+            LogPrint(BCLog::REDDID, "Invalid visibility from %s to %s\n",
+                    msg.connection.fromReddId, msg.connection.toReddId);
+            return false;
+        }
+
+        // Check if the profiles exist
+        if (!profileManager->ProfileExists(msg.connection.fromReddId) ||
+            !profileManager->ProfileExists(msg.connection.toReddId)) {
+            LogPrint(BCLog::REDDID, "One or both profiles don't exist\n");
+            return false;
+        }
+
+        // Check if we already know about this connection
+        ReddIDConnection existingConnection;
+        if (profileManager->GetConnection(msg.connection.fromReddId, msg.connection.toReddId, existingConnection)) {
+            LogPrint(BCLog::REDDID, "Connection from %s to %s already exists\n",
+                    msg.connection.fromReddId, msg.connection.toReddId);
+
+            // Check if the received connection is more recent
+            if (msg.connection.lastInteraction <= existingConnection.lastInteraction) {
+                LogPrint(BCLog::REDDID, "Already have more recent connection data\n");
+                return true;
+            }
+        }
+
+        // Save the connection locally
+        bool success = profileManager->CreateConnection(msg.connection);
+
+        if (success) {
+            LogPrint(BCLog::REDDID, "Successfully saved connection from %s to %s\n",
+                    msg.connection.fromReddId, msg.connection.toReddId);
+
+            // Create a data stream to serialize the message
+            CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+            data << msg;
+
+            // Forward the connection to other nodes
+            RelayMessage(MSG_REDDID_CONNECTION, data, {pfrom->GetId()});
+        } else {
+            LogPrint(BCLog::REDDID, "Failed to save connection from %s to %s\n",
+                    msg.connection.fromReddId, msg.connection.toReddId);
+        }
+
+        return success;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing ReddID connection: %s\n", e.what());
         return false;
     }
+}
 
-    // Check if the profiles exist
-    if (!profileManager->ProfileExists(msg.connection.fromReddId) ||
-        !profileManager->ProfileExists(msg.connection.toReddId)) {
-        LogPrint(BCLog::NET, "One or both profiles don't exist\n");
-        return false;
-    }
+bool ReddIDP2PManager::ProcessReddIDReputationUpdate(CNode* pfrom, const CReddIDReputationUpdate& msg) {
+    try {
+        LogPrint(BCLog::REDDID, "Received reputation update for %s\n", msg.reputation.reddId);
 
-    // Create the connection using a public method
-    bool success = profileManager->CreateConnection(msg.connection);
+        // Check if the profile exists
+        if (!profileManager->ProfileExists(msg.reputation.reddId)) {
+            LogPrint(BCLog::REDDID, "Profile %s doesn't exist\n", msg.reputation.reddId);
+            return false;
+        }
 
-    if (success) {
+        // Validate reputation scores - all scores should be between 0 and 100
+        if (msg.reputation.overallScore < 0 || msg.reputation.overallScore > 100 ||
+            msg.reputation.longevityScore < 0 || msg.reputation.longevityScore > 100 ||
+            msg.reputation.transactionScore < 0 || msg.reputation.transactionScore > 100 ||
+            msg.reputation.engagementScore < 0 || msg.reputation.engagementScore > 100 ||
+            msg.reputation.verificationScore < 0 || msg.reputation.verificationScore > 100 ||
+            msg.reputation.auctionScore < 0 || msg.reputation.auctionScore > 100) {
+
+            LogPrint(BCLog::REDDID, "Invalid reputation score values for %s: overall=%.1f, longevity=%.1f, "
+                    "transaction=%.1f, engagement=%.1f, verification=%.1f, auction=%.1f\n",
+                    msg.reputation.reddId,
+                    msg.reputation.overallScore,
+                    msg.reputation.longevityScore,
+                    msg.reputation.transactionScore,
+                    msg.reputation.engagementScore,
+                    msg.reputation.verificationScore,
+                    msg.reputation.auctionScore);
+            return false;
+        }
+
+        // Check if we already have a more recent reputation score
+        ReddIDReputation existingRep;
+        if (profileManager->GetReputation(msg.reputation.reddId, existingRep)) {
+            if (msg.reputation.lastCalculated <= existingRep.lastCalculated) {
+                LogPrint(BCLog::REDDID, "Already have more recent reputation for %s\n", msg.reputation.reddId);
+                return true;
+            }
+        }
+
+        // Update the reputation in our database
+        bool success = profileManager->UpdateReputation(msg.reputation);
+
+        if (!success) {
+            LogPrint(BCLog::REDDID, "Failed to update reputation for %s\n", msg.reputation.reddId);
+            return false;
+        }
+
+        LogPrint(BCLog::REDDID, "Successfully updated reputation for %s from P2P announcement\n",
+                 msg.reputation.reddId);
+
         // Create a data stream to serialize the message
         CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
         data << msg;
 
-        // Forward the connection to other nodes
-        RelayMessage(MSG_REDDID_CONNECTION, data, {pfrom->GetId()});
-    }
+        // Forward the update to other nodes
+        RelayMessage(MSG_REDDID_REPUTATION_UPDATE, data, {pfrom->GetId()});
 
-    return success;
-}
-
-bool ReddIDP2PManager::ProcessReddIDReputationUpdate(CNode* pfrom, const CReddIDReputationUpdate& msg) {
-    LogPrintf("Received reputation update for %s\n", msg.reputation.reddId);
-
-    // Check if the profile exists
-    if (!profileManager->ProfileExists(msg.reputation.reddId)) {
-        LogPrintf("Profile %s doesn't exist\n", msg.reputation.reddId);
+        return true;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::REDDID, "Error processing reputation update: %s\n", e.what());
         return false;
     }
-
-    // Check if we already have a more recent reputation score
-    ReddIDReputation existingRep;
-    if (profileManager->GetReputation(msg.reputation.reddId, existingRep)) {
-        if (msg.reputation.lastCalculated <= existingRep.lastCalculated) {
-            LogPrintf("Already have more recent reputation for %s\n", msg.reputation.reddId);
-            return true;
-        }
-    }
-
-    // Update the reputation
-    profileManager->UpdateReputation(msg.reputation);
-
-    // Create a data stream to serialize the message
-    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-    data << msg;
-
-    // Forward the update to other nodes
-    RelayMessage(MSG_REDDID_REPUTATION_UPDATE, data, {pfrom->GetId()});
-
-    return true;
 }
 
 bool ReddIDP2PManager::AnnounceNamespaceAuction(const AuctionInfo& auction) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
     CNamespaceAuctionAnnounce announce;
     announce.auctionId = auction.auctionId;
     announce.namespaceId = auction.namespaceId;
+    announce.creator = auction.creator;  // Add creator field
     announce.startTime = auction.startTime;
     announce.endTime = auction.endTime;
     announce.reservePrice = auction.reservePrice;
@@ -993,13 +1301,14 @@ bool ReddIDP2PManager::AnnounceNamespaceAuction(const AuctionInfo& auction) {
 }
 
 bool ReddIDP2PManager::AnnounceNamespaceBid(const BidInfo& bid) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
     CAuctionBid bidMsg;
     bidMsg.auctionId = bid.auctionId;
     bidMsg.bidId = bid.bidId;
+    bidMsg.bidder = bid.bidder;    // Include bidder information
     bidMsg.bidAmount = bid.bidAmount;
     bidMsg.depositAmount = bid.depositAmount;
     bidMsg.timestamp = GetTime();
@@ -1014,29 +1323,29 @@ bool ReddIDP2PManager::AnnounceNamespaceBid(const BidInfo& bid) {
     return true;
 }
 
-bool ReddIDP2PManager::AnnounceNamespaceFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
-    if (!running) {
-        return false;
-    }
-
-    CAuctionFinalize finalize;
-    finalize.auctionId = auctionId;
-    finalize.winningBidId = winningBidId;
-    finalize.finalPrice = finalPrice;
-    finalize.timestamp = GetTime();
-
-    // Serialize to data stream
-    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-    data << finalize;
-
-    // Relay to all subscribed nodes
-    RelayMessage(MSG_NAMESPACE_AUCTION_FINALIZE, data, {});
-
-    return true;
-}
+//bool ReddIDP2PManager::AnnounceNamespaceFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
+//    if (!m_running) {
+//        return false;
+//    }
+//
+//    CAuctionFinalize finalize;
+//    finalize.auctionId = auctionId;
+//    finalize.winningBidId = winningBidId;
+//    finalize.finalPrice = finalPrice;
+//    finalize.timestamp = GetTime();
+//
+//    // Serialize to data stream
+//    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+//    data << finalize;
+//
+//    // Relay to all subscribed nodes
+//    RelayMessage(MSG_NAMESPACE_AUCTION_FINALIZE, data, {});
+//
+//    return true;
+//}
 
 bool ReddIDP2PManager::AnnounceNamespaceCancel(const uint256& auctionId) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1051,7 +1360,7 @@ bool ReddIDP2PManager::AnnounceNamespaceCancel(const uint256& auctionId) {
 }
 
 bool ReddIDP2PManager::SendNamespaceConfig(CNode* pfrom, const std::string& namespaceId) {
-    if (!running || !node || !node->connman) {
+    if (!m_running || !node || !node->connman) {
         return false;
     }
 
@@ -1081,7 +1390,7 @@ bool ReddIDP2PManager::SendNamespaceConfig(CNode* pfrom, const std::string& name
 }
 
 bool ReddIDP2PManager::RequestNamespaceConfig(const std::string& namespaceId) {
-    if (!running || !node || !node->connman) {
+    if (!m_running || !node || !node->connman) {
         return false;
     }
 
@@ -1105,8 +1414,57 @@ bool ReddIDP2PManager::RequestNamespaceConfig(const std::string& namespaceId) {
     return sentRequest;
 }
 
+bool ReddIDP2PManager::RequestAllNamespaceConfigs(CNode* targetNode) {
+    if (!m_running || !node || !node->connman || !namespaceManager) {
+        LogPrint(BCLog::REDDID, "Cannot request all namespaces: manager or connman not available\n");
+        return false;
+    }
+
+    // Get all known namespaces
+    std::vector<NamespaceInfo> allNamespaces = namespaceManager->GetNamespaces();
+
+    if (allNamespaces.empty()) {
+        LogPrint(BCLog::REDDID, "No namespaces to request configs for\n");
+        return true;  // Not an error, just nothing to do
+    }
+
+    CNetMsgMaker msgMaker(PROTOCOL_VERSION);
+    bool sentAnyRequest = false;
+
+    for (const auto& ns : allNamespaces) {
+        if (targetNode) {
+            // Send to specific node
+            if (IsNodeSubscribed(targetNode->GetId())) {
+                CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+                data << ns.id;
+                node->connman->PushMessage(targetNode, msgMaker.Make(MSG_NAMESPACE_CONFIG_REQUEST, data));
+                sentAnyRequest = true;
+                LogPrint(BCLog::REDDID, "Requested namespace config for %s from node %d\n",
+                        ns.id, targetNode->GetId());
+            }
+        } else {
+            // Send to first available subscribed node
+            node->connman->ForEachNode([&](CNode* pnode) {
+                if (IsNodeSubscribed(pnode->GetId())) {
+                    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+                    data << ns.id;
+                    node->connman->PushMessage(pnode, msgMaker.Make(MSG_NAMESPACE_CONFIG_REQUEST, data));
+                    sentAnyRequest = true;
+                    LogPrint(BCLog::REDDID, "Requested namespace config for %s from node %d\n",
+                            ns.id, pnode->GetId());
+                    return false; // Stop after first node
+                }
+                return true; // Continue to next node
+            });
+        }
+    }
+
+    LogPrint(BCLog::REDDID, "Requested configs for %d namespaces\n", allNamespaces.size());
+    return sentAnyRequest;
+}
+
 bool ReddIDP2PManager::AnnounceUserIDAuction(const AuctionInfo& auction) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1114,30 +1472,32 @@ bool ReddIDP2PManager::AnnounceUserIDAuction(const AuctionInfo& auction) {
     announce.auctionId = auction.auctionId;
     announce.name = auction.name;
     announce.namespaceId = auction.namespaceId;
+    announce.creator = auction.creator;  // Add creator field
     announce.startTime = auction.startTime;
     announce.endTime = auction.endTime;
     announce.reservePrice = auction.reservePrice;
     announce.type = auction.type;
     announce.timestamp = GetTime();
 
-    // Create a data stream to serialize the message
+    // Serialize to data stream
     CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
     data << announce;
 
-    // Forward the announcement to other nodes
+    // Relay to all subscribed nodes
     RelayMessage(MSG_USERID_AUCTION_ANNOUNCE, data, {});
 
     return true;
 }
 
 bool ReddIDP2PManager::AnnounceUserIDBid(const BidInfo& bid) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
     CAuctionBid bidMsg;
     bidMsg.auctionId = bid.auctionId;
     bidMsg.bidId = bid.bidId;
+    bidMsg.bidder = bid.bidder;    // Include bidder information
     bidMsg.bidAmount = bid.bidAmount;
     bidMsg.depositAmount = bid.depositAmount;
     bidMsg.timestamp = GetTime();
@@ -1152,29 +1512,93 @@ bool ReddIDP2PManager::AnnounceUserIDBid(const BidInfo& bid) {
     return true;
 }
 
-bool ReddIDP2PManager::AnnounceUserIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
-    if (!running) {
-        return false;
-    }
-
-    CAuctionFinalize finalize;
-    finalize.auctionId = auctionId;
-    finalize.winningBidId = winningBidId;
-    finalize.finalPrice = finalPrice;
-    finalize.timestamp = GetTime();
-
-    // Serialize to data stream
-    CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
-    data << finalize;
-
-    // Relay to all subscribed nodes
-    RelayMessage(MSG_USERID_AUCTION_FINALIZE, data, {});
-
-    return true;
-}
+//bool ReddIDP2PManager::AnnounceUserIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
+//    try {
+//        if (!m_running) {
+//            LogPrint(BCLog::REDDID, "Cannot announce UserID auction finalization: manager not running\n");
+//            return false;
+//        }
+//
+//        LogPrint(BCLog::REDDID, "Announcing UserID auction finalization for auction %s\n", auctionId.ToString());
+//
+//        // Default creator to empty key
+//        CKeyID creator;
+//
+//        // First update the local auction state
+//        if (auctionManager) {
+//            // Get the current auction info
+//            AuctionInfo auction;
+//            if (!auctionManager->GetAuctionInfo(auctionId, auction)) {
+//                LogPrint(BCLog::REDDID, "Failed to get auction info for %s\n", auctionId.ToString());
+//                return false;
+//            }
+//
+//            // Store the creator for the message
+//            creator = auction.creator;
+//
+//            // Verify it's a user ID auction
+//            if (auction.name.empty()) {
+//                LogPrint(BCLog::REDDID, "Auction %s is not a user ID auction\n", auctionId.ToString());
+//                return false;
+//            }
+//
+//            // Check if the auction is in a state that can be finalized
+//            if (auction.state != AUCTION_ACTIVE && auction.state != AUCTION_ENDED) {
+//                LogPrint(BCLog::REDDID, "Auction %s cannot be finalized in state %d\n",
+//                        auctionId.ToString(), auction.state);
+//                return false;
+//            }
+//
+//            // Validate the winning bid exists
+//            BidInfo winningBid;
+//            if (!auctionManager->GetBidInfo(winningBidId, winningBid)) {
+//                LogPrint(BCLog::REDDID, "Winning bid %s not found for auction %s\n",
+//                       winningBidId.ToString(), auctionId.ToString());
+//                return false;
+//            }
+//
+//            // Update the auction state
+//            auction.state = AUCTION_FINALIZED;
+//            auction.winningBidId = winningBidId;
+//            auction.finalPrice = finalPrice;
+//
+//            // Save the updated auction
+//            if (!auctionManager->UpdateAuction(auction)) {
+//                LogPrint(BCLog::REDDID, "Failed to update auction %s\n", auctionId.ToString());
+//                return false;
+//            }
+//
+//            LogPrint(BCLog::REDDID, "Successfully finalized auction %s with winning bid %s for %s\n",
+//                    auctionId.ToString(), winningBidId.ToString(), FormatMoney(finalPrice));
+//        } else {
+//            LogPrint(BCLog::REDDID, "Warning: Auction manager not available, can't update local state\n");
+//            // Continue anyway to relay the message
+//        }
+//
+//        // Create message for relay
+//        CAuctionFinalize finalize;
+//        finalize.auctionId = auctionId;
+//        finalize.winningBidId = winningBidId;
+//        finalize.finalPrice = finalPrice;
+//        finalize.creator = creator;  // Set the creator field
+//        finalize.timestamp = GetTime();
+//
+//        // Serialize to data stream
+//        CDataStream data(SER_NETWORK, PROTOCOL_VERSION);
+//        data << finalize;
+//
+//        // Relay to all subscribed nodes
+//        RelayMessage(MSG_USERID_AUCTION_FINALIZE, data, {});
+//
+//        return true;
+//    } catch (const std::exception& e) {
+//        LogPrint(BCLog::REDDID, "Error announcing user ID auction finalization: %s\n", e.what());
+//        return false;
+//    }
+//}
 
 bool ReddIDP2PManager::AnnounceUserIDCancel(const uint256& auctionId) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1189,7 +1613,7 @@ bool ReddIDP2PManager::AnnounceUserIDCancel(const uint256& auctionId) {
 }
 
 bool ReddIDP2PManager::AnnounceReddIDAuction(const AuctionInfo& auction) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1215,7 +1639,7 @@ bool ReddIDP2PManager::AnnounceReddIDAuction(const AuctionInfo& auction) {
 }
 
 bool ReddIDP2PManager::AnnounceReddIDBid(const BidInfo& bid) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1238,7 +1662,7 @@ bool ReddIDP2PManager::AnnounceReddIDBid(const BidInfo& bid) {
 }
 
 bool ReddIDP2PManager::AnnounceReddIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1260,7 +1684,7 @@ bool ReddIDP2PManager::AnnounceReddIDFinalize(const uint256& auctionId, const ui
 }
 
 bool ReddIDP2PManager::AnnounceProfileUpdate(const std::string& reddId, const ReddIDProfile& profile) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1283,7 +1707,7 @@ bool ReddIDP2PManager::AnnounceProfileUpdate(const std::string& reddId, const Re
 }
 
 bool ReddIDP2PManager::RequestProfile(const std::string& reddId) {
-    if (!running || !node || !node->connman) {
+    if (!m_running || !node || !node->connman) {
         return false;
     }
 
@@ -1312,7 +1736,7 @@ bool ReddIDP2PManager::RequestProfile(const std::string& reddId) {
 }
 
 bool ReddIDP2PManager::AnnounceConnection(const ReddIDConnection& connection) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1331,7 +1755,7 @@ bool ReddIDP2PManager::AnnounceConnection(const ReddIDConnection& connection) {
 }
 
 bool ReddIDP2PManager::AnnounceReputationUpdate(const ReddIDReputation& reputation) {
-    if (!running) {
+    if (!m_running) {
         return false;
     }
 
@@ -1350,27 +1774,20 @@ bool ReddIDP2PManager::AnnounceReputationUpdate(const ReddIDReputation& reputati
 }
 
 bool ReddIDP2PManager::SubscribeNode(NodeId nodeId) {
-    LOCK(cs_subscriptions);
+    // Now update our subscription list
+    {
+        LOCK(cs_subscriptions);
 
-    // Check if node supports ReddID first
-    bool isCapable = false;
-    node->connman->ForNode(nodeId, [&](CNode* pnode) {
-        isCapable = NodeSupportsReddID(pnode);
-        return true;
-    });
+        // Check if already subscribed
+        if (subscribedNodes.find(nodeId) != subscribedNodes.end()) {
+            LogPrint(BCLog::REDDID, "Node %d already subscribed to ReddID updates\n", nodeId);
+            return true;  // Already subscribed, but that's okay
+        }
 
-    if (!isCapable) {
-        LogPrint(BCLog::REDDID, "Cannot subscribe non-ReddID node %d\n", nodeId);
-        return false;
+        subscribedNodes.insert(nodeId);
     }
 
-    subscribedNodes.insert(nodeId);
-    return true;
-}
-
-bool ReddIDP2PManager::UnsubscribeNode(NodeId nodeId) {
-    LOCK(cs_subscriptions);
-    subscribedNodes.erase(nodeId);
+    LogPrint(BCLog::REDDID, "Successfully subscribed node %d to ReddID updates\n", nodeId);
     return true;
 }
 
@@ -1379,29 +1796,78 @@ bool ReddIDP2PManager::IsNodeSubscribed(NodeId nodeId) const {
     return subscribedNodes.find(nodeId) != subscribedNodes.end();
 }
 
+std::vector<NodeId> ReddIDP2PManager::GetSubscribedNodes() const {
+    LOCK(cs_subscriptions);
+    return std::vector<NodeId>(subscribedNodes.begin(), subscribedNodes.end());
+}
+
+bool ReddIDP2PManager::UnsubscribeNode(NodeId nodeId) {
+    LOCK(cs_subscriptions);
+    subscribedNodes.erase(nodeId);
+    return true;
+}
+
 void ReddIDP2PManager::OnNodeConnected(CNode* pnode) {
     if (!pnode) return;
 
-    LOCK(cs_subscriptions);
+    if (pnode->GetLocalServices() & NODE_REDDID) {
+        SubscribeNode(pnode->GetId());
+        std::string serviceStr = Join(serviceFlagsToStr(pnode->GetLocalServices()), "|");
+        LogPrint(BCLog::REDDID, "Connected to ReddID-capable node %d (services %s)\n",
+                 pnode->GetId(), serviceStr);
 
-    if (NodeSupportsReddID(pnode)) {
-        reddidCapableNodes.insert(pnode->GetId());
-        LogPrint(BCLog::REDDID, "Connected to ReddID-capable node %d (version %d)\n",
-                 pnode->GetId(), pnode->nVersion);
+        RequestAllNamespaceConfigs(pnode);  // Request all namespaces
     } else {
-        LogPrint(BCLog::REDDID, "Connected to legacy node %d (version %d)\n",
-                 pnode->GetId(), pnode->nVersion);
+        std::string serviceStr = Join(serviceFlagsToStr(pnode->GetLocalServices()), "|");
+        LogPrint(BCLog::REDDID, "Connected to non-ReddID node %d (services %s)\n",
+                 pnode->GetId(), serviceStr);
     }
 }
 
 void ReddIDP2PManager::OnNodeDisconnected(NodeId nodeId) {
-    LOCK(cs_subscriptions);
-    reddidCapableNodes.erase(nodeId);
-    subscribedNodes.erase(nodeId);
+    UnsubscribeNode(nodeId);
 
     // Clean up rate limiting data
     LOCK(cs_message_rates);
     m_messageRateLimits.erase(nodeId);
+}
+
+std::vector<NodeId> ReddIDP2PManager::GetReddIDNodes() const {
+    std::vector<NodeId> result;
+
+    if (!node || !node->connman) {
+        return result;
+    }
+
+    node->connman->ForEachNode([&](CNode* pnode) {
+        if (pnode->GetLocalServices() & NODE_REDDID) {
+            result.push_back(pnode->GetId());
+        }
+    });
+
+    return result;
+}
+
+bool ReddIDP2PManager::HasReddIDPeers() const {
+    if (!node || !node->connman) {
+        return false;
+    }
+
+    bool hasReddIDPeer = false;
+
+    node->connman->ForEachNode([&](CNode* pnode) {
+        if (pnode->GetLocalServices() & NODE_REDDID) {
+            hasReddIDPeer = true;
+            return false;  // Stop iteration
+        }
+        return true;  // Continue iteration
+    });
+
+    return hasReddIDPeer;
+}
+
+bool ReddIDP2PManager::IsReddIDEnabled() const {
+    return (connman->GetLocalServices() & NODE_REDDID) != 0;
 }
 
 void ReddIDP2PManager::RelayMessage(const std::string& command, const CDataStream& data,
@@ -1410,6 +1876,12 @@ void ReddIDP2PManager::RelayMessage(const std::string& command, const CDataStrea
     if (!node || !node->connman) {
         LogPrint(BCLog::REDDID, "Cannot relay message: node or connman not available\n");
         return;
+    }
+
+    // Only relay if we're advertising ReddID support
+    if (!IsReddIDEnabled()) {
+	LogPrint(BCLog::REDDID, "Not relaying ReddID messages - service not enabled\n");
+	return;
     }
 
     CNetMsgMaker msgMaker(PROTOCOL_VERSION);

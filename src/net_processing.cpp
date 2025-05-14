@@ -1164,6 +1164,10 @@ void PeerManagerImpl::InitializeNode(CNode *pnode)
     if (!pnode->IsInboundConn()) {
         PushNodeVersion(*pnode, GetTime());
     }
+    if (m_node->reddid->GetP2PManager()) {
+        m_node->reddid->GetP2PManager()->OnNodeConnected(pnode);
+    }
+
 }
 
 void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
@@ -1240,6 +1244,9 @@ void PeerManagerImpl::FinalizeNode(const CNode& node)
         // call Connected() for feeler connections since they don't have
         // fSuccessfullyConnected set.
         m_addrman.Connected(node.addr);
+    }
+    if (m_node->reddid->GetP2PManager()) {
+        m_node->reddid->GetP2PManager()->OnNodeDisconnected(nodeid);
     }
     LogPrint(BCLog::NET, "Cleared nodestate for peer=%d\n", nodeid);
 }
