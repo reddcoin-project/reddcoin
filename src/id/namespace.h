@@ -13,6 +13,7 @@
 #include <uint256.h>
 
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -41,6 +42,9 @@ class NamespaceManager {
     std::map<uint256, std::vector<BidInfo>> namespaceAuctionBids;
     std::map<std::string, std::vector<PricingTier>> namespacePricingTiers;
 
+    std::atomic<bool> m_initialized{false};
+    std::atomic<bool> m_running{false};
+
     ReddIDManager* reddIDManager;        // Reference to the manager
     ReddIDDB* reddidDB;                  // Pointer to the database
     ReddIDP2PManager* reddidP2P;         // Pointer to the P2P manager
@@ -54,6 +58,14 @@ class NamespaceManager {
  public:
     NamespaceManager(ReddIDManager& manager);
     ~NamespaceManager();
+
+    // Lifecycle methods
+    bool Init(ReddIDManager* manager);
+    bool Start();
+    void Interrupt();
+    bool Stop();
+    bool IsInitialized() const { return m_initialized; }
+    bool IsRunning() const { return m_running; }
 
     // Helper for cached access
     bool GetNamespaceFromCache(const std::string& namespaceId, NamespaceInfo& info) const;

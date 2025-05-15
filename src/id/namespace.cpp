@@ -22,24 +22,146 @@
 #include <vector>
 
 NamespaceManager::NamespaceManager(ReddIDManager& manager)
-    : reddIDManager(&manager) {
+    : m_initialized(false),
+      m_running(false),
+      reddIDManager(nullptr),
+      reddidDB(nullptr),
+      reddidP2P(nullptr),
+      namespaceCacheMutex() {
+
     // Initialize with ReddIDManager references
     reddidDB = manager.GetReddIDDB();
     reddidP2P = manager.GetP2PManager();
-}
 
-NamespaceManager::~NamespaceManager() {
-    Save();
-}
-
-bool NamespaceManager::Load() {
-    LogPrintf("Loading namespace data...\n");
-
-    // Clear existing data
+    // Initialize empty containers
     namespaces.clear();
     namespaceAuctions.clear();
     namespaceAuctionBids.clear();
     namespacePricingTiers.clear();
+    m_namespaceCache.clear();
+    cacheAccessTimes.clear();
+}
+
+NamespaceManager::~NamespaceManager() {
+    Stop();
+}
+
+bool NamespaceManager::Init(ReddIDManager* manager) {
+    if (m_initialized) {
+        LogPrint(BCLog::REDDID, "NamespaceManager already initialized\n");
+        return true;
+    }
+
+    if (!manager) {
+        LogPrintf("ERROR: NamespaceManager::Init: Null ReddIDManager\n");
+        return false;
+    }
+
+    LogPrint(BCLog::REDDID, "Initializing namespace manager\n");
+
+    try {
+        // Store the manager reference
+        reddIDManager = manager;
+
+        // Get the database reference
+        reddidDB = manager->GetReddIDDB();
+        if (!reddidDB) {
+            LogPrintf("ERROR: NamespaceManager::Init: Failed to get database\n");
+            return false;
+        }
+
+        // Get the P2P manager reference
+        reddidP2P = manager->GetP2PManager();
+        if (!reddidP2P) {
+            LogPrint(BCLog::REDDID, "WARNING: NamespaceManager::Init: P2P manager not available yet\n");
+            // This is OK during initialization, P2P manager is created later
+        }
+
+        // Load existing data from database
+        if (!Load()) {
+            LogPrintf("WARNING: NamespaceManager::Init: Failed to load namespace data\n");
+            // Continue anyway, database might be empty
+        }
+
+        m_initialized = true;
+        LogPrint(BCLog::REDDID, "Namespace manager initialized successfully\n");
+        return true;
+
+    } catch (const std::exception& e) {
+        LogPrintf("ERROR: NamespaceManager::Init: Exception: %s\n", e.what());
+        return false;
+    }
+}
+
+bool NamespaceManager::Start() {
+    if (!m_initialized) {
+        LogPrintf("ERROR: NamespaceManager::Start: Not initialized\n");
+        return false;
+    }
+
+    if (m_running) {
+        LogPrint(BCLog::REDDID, "NamespaceManager already running\n");
+        return true;
+    }
+
+    LogPrint(BCLog::REDDID, "Starting namespace manager\n");
+
+    // Get updated P2P manager reference if we didn't have it during init
+    if (!reddidP2P && reddIDManager) {
+        reddidP2P = reddIDManager->GetP2PManager();
+        if (reddidP2P) {
+            LogPrint(BCLog::REDDID, "NamespaceManager::Start: P2P manager now available\n");
+        }
+    }
+
+    m_running = true;
+    return true;
+}
+
+void NamespaceManager::Interrupt() {
+    if (!m_running) {
+        return;
+    }
+
+    LogPrint(BCLog::REDDID, "Interrupting namespace manager\n");
+    m_running = false;
+}
+
+bool NamespaceManager::Stop() {
+    if (!m_initialized) {
+        return true;
+    }
+
+    LogPrint(BCLog::REDDID, "Stopping namespace manager\n");
+
+    // Mark as not running
+    m_running = false;
+
+    // Save current state
+    if (!Save()) {
+        LogPrintf("WARNING: NamespaceManager::Stop: Failed to save namespace data\n");
+    }
+
+    // Clear caches
+    {
+        std::lock_guard<std::mutex> lock(namespaceCacheMutex);
+        m_namespaceCache.clear();
+        cacheAccessTimes.clear();
+    }
+
+    // Clear references
+    reddidP2P = nullptr;
+    reddidDB = nullptr;
+    reddIDManager = nullptr;
+
+    m_initialized = false;
+
+    LogPrint(BCLog::REDDID, "Namespace manager stopped\n");
+    return true;
+}
+
+bool NamespaceManager::Load() {
+    LogPrintf("Loading namespace data...\n");
 
     // Load namespaces
     std::vector<std::string> namespaceIds;
@@ -360,6 +482,11 @@ bool NamespaceManager::ExpireNamespace(const std::string& namespaceId) {
 bool NamespaceManager::CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator,
                                             CAmount reservePrice, int durationDays, AuctionType type,
                                             uint256& auctionId) {
+    if (!m_initialized || !m_running) {
+	LogPrintf("ERROR: NamespaceManager not initialized or not running\n");
+	return false;
+    }
+
     // Validate namespace ID
     if (!ValidateNamespaceID(namespaceId)) {
         return false;
@@ -1505,6 +1632,10 @@ void NamespaceManager::DistributeNamespaceAuctionProceeds(const AuctionInfo& auc
 }
 
 bool NamespaceManager::GetNamespaceFromCache(const std::string& namespaceId, NamespaceInfo& info) const {
+    if (namespaceId.empty()) {
+        return false;
+    }
+
     std::lock_guard<std::mutex> lock(namespaceCacheMutex);
 
     auto it = m_namespaceCache.find(namespaceId);
@@ -1514,9 +1645,12 @@ bool NamespaceManager::GetNamespaceFromCache(const std::string& namespaceId, Nam
 
         // Update access time for LRU
         it->second.cacheTime = GetTime();  // Update the timestamp in the CachedNamespace
+
+        LogPrint(BCLog::REDDID, "Cache hit for namespace: %s\n", namespaceId);
         return true;
     }
 
+    LogPrint(BCLog::REDDID, "Cache miss for namespace: %s\n", namespaceId);
     return false;
 }
 
