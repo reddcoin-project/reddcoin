@@ -30,7 +30,11 @@
 #include <utility>
 #include <vector>
 
-ReddIDManager::ReddIDManager(NodeContext& nodeIn) : running(false), node(&nodeIn) {
+ReddIDManager::ReddIDManager(NodeContext& nodeIn)
+    : m_initialized(false),
+      m_running(false),
+      chainstate(nullptr),
+      node(&nodeIn) {
     // Components will be initialized in Init()
 }
 
@@ -61,26 +65,16 @@ bool ReddIDManager::Init() {
 
     LogPrintf("ReddID: Using %u MB for database cache\n", nCacheSize);
 
-    try {
-        reddidDB = std::make_unique<ReddIDDB>(nCacheSize, fMemory, fWipe);
-    } catch (const std::exception& e) {
-        LogPrintf("Failed to initialize ReddID database: %s\n", e.what());
-        return false;
-    }
-
     // Initialize managers
     try {
-        // Create P2P manager first
-        p2pManager = std::make_unique<ReddIDP2PManager>(*node);
-        LogPrintf("ReddIDManager::Init P2P manager created: %p\n", p2pManager.get());
-
-        // Connect P2P manager to this ReddIDManager
-        p2pManager->ConnectReddIDManager(*this);
+        // Initialize database
+        reddidDB = std::make_unique<ReddIDDB>(nCacheSize, fMemory, fWipe);
 
         // Create other managers
         namespaceManager = std::make_unique<NamespaceManager>(*this);
         auctionManager = std::make_unique<AuctionManager>(*this);
         profileManager = std::make_unique<ProfileManager>(*this);
+        p2pManager = std::make_unique<ReddIDP2PManager>(*node);
 
         // Initialize chainstate reference
         if (node && node->chainman) {
@@ -91,23 +85,22 @@ bool ReddIDManager::Init() {
             LogPrintf("Warning: ReddID manager initialized without chainstate access\n");
         }
 
-        // Initialize P2P manager
-        if (!p2pManager->Init()) {
+        // Initialize mmanagers in order
+        if (!namespaceManager->Init(this)) {
+            LogPrintf("Warning: Failed to load namespace data\n");
+        }
+
+        if (!p2pManager->Init(this)) {
             LogPrintf("Failed to initialize ReddID P2P manager\n");
             return false;
         }
 
-        // Load data from database
-        if (!namespaceManager->Load()) {
-            LogPrintf("Warning: Failed to load namespace data\n");
+        if (!auctionManager->Init(this)) {
+            LogPrintf("Warning: Failed to initialize auction manager\n");
         }
 
-        if (!auctionManager->Load()) {
-            LogPrintf("Warning: Failed to load auction data\n");
-        }
-
-        if (!profileManager->Load()) {
-            LogPrintf("Warning: Failed to load profile data\n");
+        if (!profileManager->Init(this)) {
+            LogPrintf("Warning: Failed to initialize profile manager\n");
         }
 
         if (auctionManager && chainstate) {
@@ -116,7 +109,6 @@ bool ReddIDManager::Init() {
 
         // Set initialization flag to true
         m_initialized = true;
-
     } catch (const std::exception& e) {
         LogPrintf("Failed to initialize ReddID components: %s\n", e.what());
         return false;
@@ -128,7 +120,7 @@ bool ReddIDManager::Init() {
 bool ReddIDManager::Start() {
     LogPrintf("Starting ReddID manager\n");
 
-    if (running) {
+    if (m_running) {
         return true;
     }
 
@@ -140,6 +132,21 @@ bool ReddIDManager::Start() {
 
     // Register with validation interface
     RegisterValidationInterface(this);
+
+    if (!namespaceManager->Start()) {
+        LogPrintf("Failed to start namespace manager\n");
+        return false;
+    }
+
+    if (!auctionManager->Start()) {
+        LogPrintf("Failed to start auction manager\n");
+        return false;
+    }
+
+    if (!profileManager->Start()) {
+        LogPrintf("Failed to start profile manager\n");
+       return false;
+    }
 
     // Start P2P manager
     if (!p2pManager->Start()) {
@@ -164,7 +171,7 @@ bool ReddIDManager::Start() {
         LogPrintf("Warning: Scheduler not available, periodic tasks disabled\n");
     }
 
-    running = true;
+    m_running = true;
     return true;
 }
 
@@ -177,16 +184,20 @@ void ReddIDManager::Interrupt() {
         return;
     }
 
+    if (namespaceManager) namespaceManager->Interrupt();
+    if (auctionManager) auctionManager->Interrupt();
+    if (profileManager) profileManager->Interrupt();
+
     if (p2pManager) {
         p2pManager->Interrupt();
     }
 
     // Flag as not running, but don't clean up yet
-    running = false;
+    m_running = false;
 }
 
 bool ReddIDManager::Stop() {
-    if (!running) {
+    if (!m_running) {
         return true;
     }
 
@@ -202,15 +213,15 @@ bool ReddIDManager::Stop() {
 
     // Save data
     if (namespaceManager) {
-        namespaceManager->Save();
+        namespaceManager->Stop();
     }
 
     if (auctionManager) {
-        auctionManager->Save();
+        auctionManager->Stop();
     }
 
     if (profileManager) {
-        profileManager->Save();
+        profileManager->Stop();
     }
 
     // Clear member pointers
@@ -220,7 +231,7 @@ bool ReddIDManager::Stop() {
     namespaceManager.reset();
     reddidDB.reset();
 
-    running = false;
+    m_running = false;
     m_initialized = false;
 
     return true;
@@ -228,13 +239,13 @@ bool ReddIDManager::Stop() {
 
 // ValidationInterface implementations
 void ReddIDManager::TransactionAddedToMempool(const CTransactionRef& tx, uint64_t mempool_sequence) {
-    if (running) {
+    if (m_running) {
         ProcessTransaction(*tx, 0);  // Height 0 for mempool transactions
     }
 }
 
 void ReddIDManager::BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) {
-    if (!running) return;
+    if (!m_running) return;
 
     // Process transactions in the block
     for (const auto& tx : block->vtx) {

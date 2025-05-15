@@ -512,7 +512,7 @@ public:
 class ReddIDManager : public CValidationInterface
 {
 private:
-    std::atomic<bool> running;
+    std::atomic<bool> m_running{false};
     std::atomic<bool> m_initialized{false};
     NodeContext* node;
     
@@ -534,7 +534,7 @@ public:
     bool Start();
     void Interrupt();
     bool Stop();
-    bool IsRunning() const { return running; }
+    bool IsRunning() const { return m_running; }
     bool IsInitialized() const { return m_initialized; }
     
     // ValidationInterface overrides
