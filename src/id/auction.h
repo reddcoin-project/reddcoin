@@ -34,6 +34,9 @@ class AuctionManager {
 
     CChainState* chainstate;  // Reference to the chain state
 
+    std::atomic<bool> m_initialized{false};
+    std::atomic<bool> m_running{false};
+
     // References to other components
     ReddIDManager* reddIDManager;        // Reference to the manager
     ReddIDDB* reddidDB;                  // Pointer to the database
@@ -53,6 +56,14 @@ class AuctionManager {
  public:
     AuctionManager(ReddIDManager& manager);
     ~AuctionManager();
+
+    // Lifecycle methods
+    bool Init(ReddIDManager* manager);
+    bool Start();
+    void Interrupt();
+    bool Stop();
+    bool IsInitialized() const { return m_initialized; }
+    bool IsRunning() const { return m_running; }
 
     // Core auction operations
     bool CreateAuction(AuctionInfo& auction, uint256& auctionId);

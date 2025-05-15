@@ -22,32 +22,133 @@
 #include <string>
 #include <vector>
 
-AuctionManager::AuctionManager(ReddIDManager& manager) :
-    reddIDManager(&manager),
-    reddidDB(nullptr),
-    reddidP2P(nullptr),
-    namespaceManager(nullptr),
-    chainstate(nullptr) {
-    // Initialize with ReddIDManager references
-    reddidDB = manager.GetReddIDDB();
-    reddidP2P = manager.GetP2PManager();
-    namespaceManager = manager.GetNamespaceManager();
-    chainstate = manager.GetChainState();
-
-    LogPrint(BCLog::REDDID, "AuctionManager initialized\n");
-}
-
-AuctionManager::~AuctionManager() {
-    Save();
-}
-
-bool AuctionManager::Load() {
-    LogPrint(BCLog::REDDID, "Loading auction data...\n");
+AuctionManager::AuctionManager(ReddIDManager& manager)
+    : m_initialized(false),
+      m_running(false),
+      reddIDManager(&manager),
+      reddidDB(nullptr),
+      reddidP2P(nullptr),
+      namespaceManager(nullptr),
+      chainstate(nullptr) {
 
     // Clear existing data
     auctions.clear();
     auctionBids.clear();
     activeAuctions.clear();
+}
+
+AuctionManager::~AuctionManager() {
+    Stop();
+}
+
+bool AuctionManager::Init(ReddIDManager* manager) {
+    if (m_initialized) {
+        LogPrint(BCLog::REDDID, "AuctionManager already initialized\n");
+        return true;
+    }
+
+    if (!manager) {
+        LogPrintf("ERROR: AuctionManager::Init: Null ReddIDManager\n");
+        return false;
+    }
+
+    LogPrint(BCLog::REDDID, "Initializing Auction manager\n");
+
+    try {
+        // Store the manager reference
+        reddIDManager = manager;
+
+        namespaceManager = manager->GetNamespaceManager();
+        if (!namespaceManager) {
+            LogPrint(BCLog::REDDID, "WARNING: AuctionManager::Init: namespaceManager not available yet\n");
+        }
+
+        reddidDB = manager->GetReddIDDB();
+        if (!reddidDB) {
+            LogPrint(BCLog::REDDID, "WARNING: AuctionManager::Init: reddidDB not available yet\n");
+        }
+
+        reddidP2P = manager->GetP2PManager();
+        if (!reddidP2P) {
+            LogPrint(BCLog::REDDID, "WARNING: AuctionManager::Init: reddidP2P not available yet\n");
+        }
+
+        chainstate = manager->GetChainState();
+        if (!chainstate) {
+           LogPrint(BCLog::REDDID, "WARNING: AuctionManager::Init: chainstate not available yet\n");
+        }
+
+        // Load existing data from database
+        if (!Load()) {
+            LogPrintf("WARNING: AuctionManager::Init: Failed to load auction data\n");
+            // Continue anyway, database might be empty
+        }
+
+        m_initialized = true;
+        LogPrint(BCLog::REDDID, "AuctionManager initialized successfully\n");
+        return true;
+    } catch (const std::exception& e) {
+        LogPrintf("ERROR: AuctionManager::Init: Exception: %s\n", e.what());
+        return false;
+    }
+}
+
+bool AuctionManager::Start() {
+    if (!m_initialized) {
+        LogPrintf("ERROR: AuctionManager::Start: Not initialized\n");
+        return false;
+    }
+
+    if (m_running) {
+        LogPrint(BCLog::REDDID, "AuctionManager already running\n");
+        return true;
+    }
+
+    LogPrint(BCLog::REDDID, "Starting AuctionManager\n");
+
+    m_running = true;
+    return true;
+}
+
+void AuctionManager::Interrupt() {
+    if (!m_running) {
+        return;
+    }
+
+    LogPrint(BCLog::REDDID, "Interrupting AuctionManager manager\n");
+    m_running = false;
+}
+
+bool AuctionManager::Stop() {
+    if (!m_initialized) {
+        return true;
+    }
+
+    LogPrintf("Stopping AuctionManager\n");
+
+    // Mark as not running
+    m_running = false;
+
+    // Save current state
+    if (!Save()) {
+        LogPrintf("WARNING: AuctionManager::Stop: Failed to save auction data\n");
+    }
+
+    // Clear references
+    reddIDManager = nullptr;
+    reddidDB = nullptr;
+    reddidP2P = nullptr;
+    namespaceManager = nullptr;
+    chainstate = nullptr;
+
+    m_initialized = false;
+
+    LogPrint(BCLog::REDDID, "AuctionManager stopped\n");
+    return true;
+}
+
+bool AuctionManager::Load() {
+    LogPrint(BCLog::REDDID, "Loading auction data...\n");
 
     // Load auctions
     std::vector<uint256> auctionIds;
