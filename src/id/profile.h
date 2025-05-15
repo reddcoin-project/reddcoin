@@ -29,19 +29,32 @@ private:
     std::map<std::string, ReddIDReputation> reputations;
     std::map<std::string, std::vector<ReddIDConnection>> connections;
     std::map<std::string, std::map<std::string, std::string>> namespaceResolution;
-    ReddIDManager* reddIDManager; // Reference to the manager
-    ReddIDDB* reddidDB; // Pointer to the database
-    ReddIDP2PManager* reddidP2P; // Pointer to the P2P manager
-    
+
+    std::atomic<bool> m_initialized{false};
+    std::atomic<bool> m_running{false};
+
+    ReddIDManager* reddIDManager;  // Reference to the manager
+    ReddIDDB* reddidDB;  // Pointer to the database
+    ReddIDP2PManager* reddidP2P;  // Pointer to the P2P manager
+
     // Private helper methods
     bool ValidateProfile(const ReddIDProfile& profile);
     bool ValidateConnection(const ReddIDConnection& connection);
     uint256 CalculateProfileHash(const ReddIDProfile& profile);
     bool UpdateReputationScore(const std::string& reddId);
-    
+
 public:
     ProfileManager(ReddIDManager& manager);
     ~ProfileManager();
+
+    // Lifecycle methods
+    bool Init(ReddIDManager* manager);
+    bool Start();
+    void Interrupt();
+    bool Stop();
+    bool IsInitialized() const { return m_initialized; }
+    bool IsRunning() const { return m_running; }
+
 
     // Core profile operations
     bool CreateProfile(const ReddIDProfile& profile);
@@ -76,6 +89,7 @@ public:
     // Query methods
     bool GetProfile(const std::string& reddId, ReddIDProfile& result) const;
     bool GetReputation(const std::string& reddId, ReddIDReputation& result) const;
+    bool GetConnection(const std::string& fromReddId, const std::string& toReddId, ReddIDConnection& result) const;
     std::vector<ReddIDConnection> GetConnections(const std::string& reddId) const;
     std::string ResolveNamespace(const std::string& reddId, const std::string& namespaceId) const;
     std::string ResolveReddID(const std::string& userId, const std::string& namespaceId) const;
