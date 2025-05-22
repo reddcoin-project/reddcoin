@@ -568,15 +568,18 @@ bool AuctionManager::FinalizeAuction(const uint256& auctionId) {
         }
 
         // Announce finalization via P2P
-        if (reddidP2P) {
-            if (auction.name.empty()) {
-                // Namespace auction
-                reddidP2P->AnnounceNamespaceFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
-            } else {
-                // User ID auction
-                reddidP2P->AnnounceUserIDFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
-            }
-        }
+        // This needs reworkign,
+        // announce should be to announce a pending state chainge
+        // need to rely on the blockchain transaction
+//        if (reddidP2P) {
+//            if (auction.name.empty()) {
+//                // Namespace auction
+//                reddidP2P->AnnounceNamespaceFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
+//            } else {
+//                // User ID auction
+//                reddidP2P->AnnounceUserIDFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
+//            }
+//        }
 
         LogPrint(BCLog::REDDID, "Successfully finalized auction %s, winner: %s, amount: %s RDD\n",
                 auctionId.ToString(), winningBid.bidder.ToString(), FormatMoney(winningBid.bidAmount));

@@ -766,11 +766,11 @@ bool NamespaceManager::FinalizeNamespaceAuction(const uint256& auctionId) {
     reddidDB->WriteAuction(auctionId, auction);
 
     // Announce finalization via P2P
-    if (reddidP2P != nullptr) {
-        reddidP2P->AnnounceNamespaceFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
-    } else {
-        LogPrintf("Warning: P2P manager not available, auction will not be announced\n");
-    }
+//    if (reddidP2P != nullptr) {
+//        reddidP2P->AnnounceNamespaceFinalize(auctionId, winningBid.bidId, winningBid.bidAmount);
+//    } else {
+//        LogPrintf("Warning: P2P manager not available, auction will not be announced\n");
+//    }
 
     return true;
 }
