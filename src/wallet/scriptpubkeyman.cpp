@@ -424,12 +424,22 @@ void LegacyScriptPubKeyMan::UpgradeKeyMetadata()
 
 bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, bool force)
 {
+    WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Entry - %s, force=%s, CanGenerateKeys=%s, IsLocked=%s\n",
+                  WalletOptionsToString(walletoptions),
+                  force ? "true" : "false",
+                  CanGenerateKeys() ? "true" : "false",
+                  m_storage.IsLocked() ? "true" : "false");
+
     if ((CanGenerateKeys() && !force) || m_storage.IsLocked()) {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Early return - CanGenerateKeys=%s, force=%s, IsLocked=%s\n",
+                        CanGenerateKeys() ? "true" : "false", force ? "true" : "false", m_storage.IsLocked() ? "true" : "false");
+
         return false;
     }
 
     switch (walletoptions.walletType) {
     case walletType::bip32Wallet: {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Taking BIP32 path\n");
         SetHDSeed(GenerateNewSeed(walletoptions));
         break;
     }
@@ -440,6 +450,12 @@ bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, 
     if (!NewKeyPool()) {
         return false;
     }
+
+    WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration complete - IsHDEnabled=%s, IsBip39Enabled=%s, IsBip44Enabled=%s\n",
+                    IsHDEnabled() ? "true" : "false",
+                    IsBip39Enabled() ? "true" : "false",
+                    IsBip44Enabled() ? "true" : "false");
+
     return true;
 }
 
@@ -1238,10 +1254,14 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     const SecureString& pass0 = walletoptions.ssMnemonicPassphrase;
 
     // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\ntype: %d\n", __func__, seed0.c_str(), pass0.c_str(), walletoptions.walletType);
+    WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: Entry - %s\n", WalletOptionsToString(walletoptions));
 
     CHDChain newHdChain;
     if (walletoptions.walletType == walletType::bip44Wallet) {
+	WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: Setting BIP44 mode\n");
         newHdChain.SetBip44();
+    } else {
+	WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: NOT Setting BIP44 mode\n");
     }
     std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
 
@@ -1288,6 +1308,12 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     NotifyCanGetAddressesChanged();
     WalletBatch batch(m_storage.GetDatabase());
     m_storage.UnsetBlankWalletFlag(batch);
+
+    WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed complete - IsHDEnabled=%s, IsBip39Enabled=%s, IsBip44Enabled=%s, HDChain.IsBip44=%s\n",
+                    IsHDEnabled() ? "true" : "false",
+                    IsBip39Enabled() ? "true" : "false",
+                    IsBip44Enabled() ? "true" : "false",
+                    m_hd_chain.IsBip44() ? "true" : "false");
 
     return seed;
 }

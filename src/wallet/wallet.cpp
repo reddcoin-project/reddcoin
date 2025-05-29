@@ -700,6 +700,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) && !IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
             SetupDescriptorScriptPubKeyMans();
         } else if (auto spk_man = GetLegacyScriptPubKeyMan()) {
+            WalletLogPrintf("EncryptWallet: Before SetupGeneration - %s, IsHDEnabled=%s, IsBip39Enabled=%s, IsBip44Enabled=%s\n",
+                                WalletOptionsToString(walletoptions),
+                                spk_man->IsHDEnabled() ? "true" : "false",
+                                spk_man->IsBip39Enabled() ? "true" : "false",
+                                spk_man->IsBip44Enabled() ? "true" : "false");
             // if we are using HD, replace the HD seed with a new one if not using mnemonic
             if (spk_man->IsHDEnabled() && !spk_man->IsBip39Enabled()) {
                 if (!spk_man->SetupGeneration(walletoptions, true)) {
@@ -708,6 +713,13 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             }
         }
         Lock();
+
+        if (auto spk_man = GetLegacyScriptPubKeyMan()) {
+            WalletLogPrintf("EncryptWallet: Post-encryption final state - IsHDEnabled=%s, IsBip39Enabled=%s, IsBip44Enabled=%s\n",
+                            spk_man->IsHDEnabled() ? "true" : "false",
+                            spk_man->IsBip39Enabled() ? "true" : "false",
+                            spk_man->IsBip44Enabled() ? "true" : "false");
+        }
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
         // bits of the unencrypted private key in slack space in the database file.
@@ -2596,6 +2608,7 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
     // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
 
     // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed.c_str(), pass.c_str());
+    LogPrintf("CWallet::Create: Initial wallet setup - %s\n", WalletOptionsToString(walletoptions));
 
     int64_t nStart = GetTimeMillis();
     // TODO: Can't use std::make_shared because we need a custom deleter but
@@ -2658,6 +2671,13 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
                     }
                 }
             }
+        }
+
+        if (auto spk_man = walletInstance->GetLegacyScriptPubKeyMan()) {
+            LogPrintf("CWallet::Create: Initial creation final state - IsHDEnabled=%s, IsBip39Enabled=%s, IsBip44Enabled=%s\n",
+                      spk_man->IsHDEnabled() ? "true" : "false",
+                      spk_man->IsBip39Enabled() ? "true" : "false",
+                      spk_man->IsBip44Enabled() ? "true" : "false");
         }
 
         walletInstance->SetImporting(walletoptions.importing);
