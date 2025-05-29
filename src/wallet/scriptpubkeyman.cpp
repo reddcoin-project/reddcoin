@@ -443,8 +443,19 @@ bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, 
         SetHDSeed(GenerateNewSeed(walletoptions));
         break;
     }
-    default:
+    case walletType::bip39Wallet: {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Taking BIP39 path\n");
         GenerateNewBip39Seed(walletoptions);
+        break;
+    }
+    case walletType::bip44Wallet: {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Taking BIP44 path\n");
+        GenerateNewBip39Seed(walletoptions);
+        break;
+    }
+    default:
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Taking DEFAULT path - walletType=%d\n", walletoptions.walletType);
+        return false;
     }
 
     if (!NewKeyPool()) {
