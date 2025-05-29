@@ -11,6 +11,7 @@
 #include <fs.h>
 #include <streams.h>
 #include <support/allocators/secure.h>
+#include <tinyformat.h>
 
 #include <atomic>
 #include <memory>
@@ -225,6 +226,26 @@ struct WalletOptions {
     SecureString ssMnemonicPassphrase;
     SecureString ssMasterKey;
 };
+
+// helper function for debugging
+inline std::string WalletOptionsToString(const WalletOptions& opts) {
+    std::string walletTypeStr;
+    switch (opts.walletType) {
+        case walletType::bip32Wallet: walletTypeStr = "bip32Wallet"; break;
+        case walletType::bip39Wallet: walletTypeStr = "bip39Wallet"; break;
+        case walletType::bip44Wallet: walletTypeStr = "bip44Wallet"; break;
+        case walletType::blankWallet: walletTypeStr = "blankWallet"; break;
+        default: walletTypeStr = "UNKNOWN(" + std::to_string(opts.walletType) + ")"; break;
+    }
+
+    return strprintf("WalletOptions{type=%s, bits=%d, importing=%s, mnemonic_len=%d, passphrase_len=%d, masterkey_len=%d}",
+                    walletTypeStr,
+                    opts.bits,
+                    opts.importing ? "true" : "false",
+                    opts.ssMnemonic.size(),
+                    opts.ssMnemonicPassphrase.size(),
+                    opts.ssMasterKey.size());
+}
 
 enum class DatabaseStatus {
     SUCCESS,
