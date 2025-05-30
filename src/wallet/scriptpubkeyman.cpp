@@ -1270,7 +1270,7 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     CHDChain newHdChain;
     if (walletoptions.walletType == walletType::bip44Wallet) {
 	WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: Setting BIP44 mode\n");
-        newHdChain.SetBip44();
+        newHdChain.SetBip44(true);
     } else {
 	WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: NOT Setting BIP44 mode\n");
     }
