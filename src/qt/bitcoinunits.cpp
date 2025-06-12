@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2023 The Reddcoin Core developers
+// Copyright (c) 2014-2025 The Reddcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -48,7 +48,7 @@ QString BitcoinUnits::longName(int unit)
     case BTC: return QString("RDD");
     case mBTC: return QString("mRDD");
     case uBTC: return QString::fromUtf8("µRDD (bits)");
-    case SAT: return QString("Reddoshi (sat)");
+    case SAT: return QString("Reddoshi (rsh)");
     default: return QString("???");
     }
 }
@@ -58,7 +58,7 @@ QString BitcoinUnits::shortName(int unit)
     switch(unit)
     {
     case uBTC: return QString::fromUtf8("bits");
-    case SAT: return QString("sat");
+    case SAT: return QString("rsh");
     default: return longName(unit);
     }
 }
@@ -70,7 +70,7 @@ QString BitcoinUnits::description(int unit)
     case BTC: return QString("Reddcoins");
     case mBTC: return QString("Milli-Reddcoins (1 / 1" THIN_SP_UTF8 "000)");
     case uBTC: return QString("Micro-Reddcoins (bits) (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
-    case SAT: return QString("Satoshi (sat) (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+    case SAT: return QString("Reddoshi (rsh) (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
     default: return QString("???");
     }
 }
