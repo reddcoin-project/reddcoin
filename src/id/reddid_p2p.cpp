@@ -609,7 +609,7 @@ bool ReddIDP2PManager::ProcessAuctionBid(CNode* pfrom, const CAuctionBid& msg) {
         // If there are existing bids, check if this bid meets minimum increment
         if (auction.currentBid > 0) {
             // Get namespace info for minimum bid increment
-            double minIncrementPct = 0.05; // Default 5%
+            double minIncrementPct = 0.05;  // Default 5%
 
             if (namespaceManager) {
                 NamespaceInfo namespaceInfo;
@@ -845,7 +845,6 @@ bool ReddIDP2PManager::ProcessUserIDAuctionAnnounce(CNode* pfrom, const CUserIDA
         RelayMessage(MSG_USERID_AUCTION_ANNOUNCE, data, {pfrom->GetId()});
 
         return true;
-
     } catch (const std::exception& e) {
         LogPrint(BCLog::REDDID, "Error processing user ID auction announcement: %s\n", e.what());
         return false;
@@ -1228,7 +1227,6 @@ bool ReddIDP2PManager::ProcessReddIDReputationUpdate(CNode* pfrom, const CReddID
             msg.reputation.engagementScore < 0 || msg.reputation.engagementScore > 100 ||
             msg.reputation.verificationScore < 0 || msg.reputation.verificationScore > 100 ||
             msg.reputation.auctionScore < 0 || msg.reputation.auctionScore > 100) {
-
             LogPrint(BCLog::REDDID, "Invalid reputation score values for %s: overall=%.1f, longevity=%.1f, "
                     "transaction=%.1f, engagement=%.1f, verification=%.1f, auction=%.1f\n",
                     msg.reputation.reddId,
@@ -1323,7 +1321,7 @@ bool ReddIDP2PManager::AnnounceNamespaceBid(const BidInfo& bid) {
     return true;
 }
 
-//bool ReddIDP2PManager::AnnounceNamespaceFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
+// bool ReddIDP2PManager::AnnounceNamespaceFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
 //    if (!m_running) {
 //        return false;
 //    }
@@ -1342,7 +1340,7 @@ bool ReddIDP2PManager::AnnounceNamespaceBid(const BidInfo& bid) {
 //    RelayMessage(MSG_NAMESPACE_AUCTION_FINALIZE, data, {});
 //
 //    return true;
-//}
+// }
 
 bool ReddIDP2PManager::AnnounceNamespaceCancel(const uint256& auctionId) {
     if (!m_running) {
@@ -1452,9 +1450,9 @@ bool ReddIDP2PManager::RequestAllNamespaceConfigs(CNode* targetNode) {
                     sentAnyRequest = true;
                     LogPrint(BCLog::REDDID, "Requested namespace config for %s from node %d\n",
                             ns.id, pnode->GetId());
-                    return false; // Stop after first node
+                    return false;  // Stop after first node
                 }
-                return true; // Continue to next node
+                return true;  // Continue to next node
             });
         }
     }
@@ -1512,7 +1510,7 @@ bool ReddIDP2PManager::AnnounceUserIDBid(const BidInfo& bid) {
     return true;
 }
 
-//bool ReddIDP2PManager::AnnounceUserIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
+// bool ReddIDP2PManager::AnnounceUserIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice) {
 //    try {
 //        if (!m_running) {
 //            LogPrint(BCLog::REDDID, "Cannot announce UserID auction finalization: manager not running\n");
@@ -1595,7 +1593,7 @@ bool ReddIDP2PManager::AnnounceUserIDBid(const BidInfo& bid) {
 //        LogPrint(BCLog::REDDID, "Error announcing user ID auction finalization: %s\n", e.what());
 //        return false;
 //    }
-//}
+// }
 
 bool ReddIDP2PManager::AnnounceUserIDCancel(const uint256& auctionId) {
     if (!m_running) {
@@ -1880,8 +1878,8 @@ void ReddIDP2PManager::RelayMessage(const std::string& command, const CDataStrea
 
     // Only relay if we're advertising ReddID support
     if (!IsReddIDEnabled()) {
-	LogPrint(BCLog::REDDID, "Not relaying ReddID messages - service not enabled\n");
-	return;
+        LogPrint(BCLog::REDDID, "Not relaying ReddID messages - service not enabled\n");
+        return;
     }
 
     CNetMsgMaker msgMaker(PROTOCOL_VERSION);
@@ -1934,7 +1932,6 @@ void ReddIDP2PManager::RelayMessage(const std::string& command, const CDataStrea
 }
 
 bool ReddIDP2PManager::CheckMessageRate(CNode* pfrom, const std::string& strCommand) {
-
     LOCK(cs_message_rates);
 
     if (!pfrom) {
@@ -1960,16 +1957,13 @@ bool ReddIDP2PManager::CheckMessageRate(CNode* pfrom, const std::string& strComm
         strCommand == MSG_USERID_AUCTION_ANNOUNCE ||
         strCommand == MSG_REDDID_AUCTION_ANNOUNCE) {
         maxMessagesPerMinute = MAX_AUCTION_ANNOUNCES_PER_MINUTE;
-    }
-    else if (strCommand == MSG_NAMESPACE_AUCTION_BID ||
+    } else if (strCommand == MSG_NAMESPACE_AUCTION_BID ||
              strCommand == MSG_USERID_AUCTION_BID ||
              strCommand == MSG_REDDID_AUCTION_BID) {
         maxMessagesPerMinute = MAX_AUCTION_BIDS_PER_MINUTE;
-    }
-    else if (strCommand == MSG_REDDID_PROFILE_UPDATE) {
+    } else if (strCommand == MSG_REDDID_PROFILE_UPDATE) {
         maxMessagesPerMinute = MAX_PROFILE_UPDATES_PER_MINUTE;
-    }
-    else if (strCommand == MSG_REDDID_CONNECTION) {
+    } else if (strCommand == MSG_REDDID_CONNECTION) {
         maxMessagesPerMinute = MAX_CONNECTIONS_PER_MINUTE;
     }
 
@@ -1993,7 +1987,7 @@ bool ReddIDP2PManager::CheckMessageRate(CNode* pfrom, const std::string& strComm
 
 void ReddIDP2PManager::CleanupRateLimitData() {
     const int64_t now = GetTime();
-    const int64_t cutoff = now - (RATE_LIMIT_WINDOW_SECONDS * 5); // 5 windows old
+    const int64_t cutoff = now - (RATE_LIMIT_WINDOW_SECONDS * 5);  // 5 windows old
 
     for (auto it = m_messageRateLimits.begin(); it != m_messageRateLimits.end(); ) {
         bool anyRecent = false;

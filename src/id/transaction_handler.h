@@ -37,4 +37,4 @@ bool ParseReddIDScript(const CScript& script, unsigned char& opCode, std::vector
  */
 bool IsReddIDOpCode(unsigned char opCode);
 
-#endif // BITCOIN_ID_TRANSACTION_HANDLER_H
+#endif  // BITCOIN_ID_TRANSACTION_HANDLER_H

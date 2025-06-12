@@ -11,6 +11,8 @@
 #include <script/script.h>
 #include <script/standard.h>
 
+#include <vector>
+
 extern NodeContext* g_node_context;
 
 bool ProcessReddIDTransaction(const CTransaction& tx, int nHeight)
@@ -19,45 +21,43 @@ bool ProcessReddIDTransaction(const CTransaction& tx, int nHeight)
     if (tx.IsCoinBase()) {
         return true;
     }
-    
+
     bool processed = false;
-    
+
     // Use the ReddID manager from node context
     if (g_node_context && g_node_context->reddid) {
         processed = g_node_context->reddid->ProcessTransaction(tx, nHeight);
     }
-    
+
     return processed;
 }
 
-bool ParseReddIDScript(const CScript& script, unsigned char& opCode, std::vector<unsigned char>& data)
-{
+bool ParseReddIDScript(const CScript& script, unsigned char& opCode, std::vector<unsigned char>& data) {
     if (script.size() < 2 || script[0] != OP_RETURN) {
         return false;
     }
-    
+
     std::vector<unsigned char> vchData;
     CScript::const_iterator pc = script.begin() + 1;
     opcodetype opcodeRet;
-    
+
     if (!script.GetOp(pc, opcodeRet, vchData) || vchData.size() < 2) {
         return false;
     }
-    
+
     // Check for ReddID prefix ('R')
     if (vchData[0] != 'R') {
         return false;
     }
-    
+
     // Extract operation code and data
     opCode = vchData[1];
     data = std::vector<unsigned char>(vchData.begin() + 2, vchData.end());
-    
+
     return true;
 }
 
-bool IsReddIDOpCode(unsigned char opCode)
-{
+bool IsReddIDOpCode(unsigned char opCode) {
     return opCode == OP_NAMESPACE_AUCTION_CREATE ||
            opCode == OP_NAMESPACE_AUCTION_BID ||
            opCode == OP_NAMESPACE_AUCTION_FINALIZE ||

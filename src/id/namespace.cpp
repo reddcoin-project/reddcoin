@@ -86,7 +86,6 @@ bool NamespaceManager::Init(ReddIDManager* manager) {
         m_initialized = true;
         LogPrint(BCLog::REDDID, "Namespace manager initialized successfully\n");
         return true;
-
     } catch (const std::exception& e) {
         LogPrintf("ERROR: NamespaceManager::Init: Exception: %s\n", e.what());
         return false;
@@ -483,8 +482,8 @@ bool NamespaceManager::CreateNamespaceAuction(const std::string& namespaceId, co
                                             CAmount reservePrice, int durationDays, AuctionType type,
                                             uint256& auctionId) {
     if (!m_initialized || !m_running) {
-	LogPrintf("ERROR: NamespaceManager not initialized or not running\n");
-	return false;
+        LogPrintf("ERROR: NamespaceManager not initialized or not running\n");
+        return false;
     }
 
     // Validate namespace ID

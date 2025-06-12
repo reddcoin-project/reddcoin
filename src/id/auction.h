@@ -67,7 +67,7 @@ class AuctionManager {
 
     // Core auction operations
     bool CreateAuction(AuctionInfo& auction, uint256& auctionId);
-    bool PlaceBid(const uint256& auctionId, const CKeyID& bidder, CAmount bidAmount, 
+    bool PlaceBid(const uint256& auctionId, const CKeyID& bidder, CAmount bidAmount,
                 uint256& bidId, int64_t bidTime = 0);
     bool FinalizeAuction(const uint256& auctionId);
     bool CancelAuction(const uint256& auctionId, const CKeyID& creator);

@@ -417,7 +417,7 @@ bool ReddIDManager::ValidateUserID(const std::string& name, const std::string& n
     return true;
 }
 
-bool ReddIDManager::CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator, 
+bool ReddIDManager::CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator,
                                          CAmount reservePrice, int durationDays, AuctionType type,
                                          uint256& auctionId) {
     if (!m_initialized || !namespaceManager) {
@@ -458,7 +458,6 @@ bool ReddIDManager::CancelNamespaceAuction(const uint256& auctionId, const CKeyI
 }
 
 bool ReddIDManager::UpdateNamespaceConfig(const std::string& namespaceId, const NamespaceInfo& config, const CKeyID& owner) {
-
     if (!m_initialized || !namespaceManager) {
         LogPrintf("ERROR: ReddIDManager::UpdateNamespaceConfig: Manager not initialized\n");
         return false;
@@ -478,10 +477,9 @@ bool ReddIDManager::UpdateNamespaceConfig(const std::string& namespaceId, const 
     return namespaceManager->UpdateNamespace(config);
 }
 
-bool ReddIDManager::CreateUserIDAuction(const std::string& name, const std::string& namespaceId, 
+bool ReddIDManager::CreateUserIDAuction(const std::string& name, const std::string& namespaceId,
                                       const CKeyID& creator, CAmount reservePrice, int durationDays,
                                       AuctionType type, uint256& auctionId) {
-
     if (!m_initialized || !namespaceManager || !auctionManager) {
         LogPrintf("ERROR: ReddIDManager::CreateUserIDAuction: Manager not initialized\n");
         return false;
@@ -509,7 +507,7 @@ bool ReddIDManager::CreateUserIDAuction(const std::string& name, const std::stri
     }
 
     // Check if the duration is within namespace settings
-    if (durationDays < namespaceInfo.minAuctionDuration || 
+    if (durationDays < namespaceInfo.minAuctionDuration ||
         durationDays > namespaceInfo.maxAuctionDuration) {
         return false;
     }
@@ -525,7 +523,6 @@ bool ReddIDManager::CreateUserIDAuction(const std::string& name, const std::stri
 }
 
 bool ReddIDManager::BidOnUserIDAuction(const uint256& auctionId, const CKeyID& bidder, CAmount bidAmount) {
-
     if (!m_initialized || !auctionManager) {
       LogPrintf("ERROR: ReddIDManager::BidOnUserIDAuction: Manager not initialized\n");
       return false;
@@ -541,8 +538,7 @@ bool ReddIDManager::FinalizeUserIDAuction(const uint256& auctionId) {
 }
 
 bool ReddIDManager::CancelUserIDAuction(const uint256& auctionId, const CKeyID& creator) {
-
-   if (!m_initialized || !auctionManager) {
+    if (!m_initialized || !auctionManager) {
         LogPrintf("ERROR: ReddIDManager::CancelUserIDAuction: Manager not initialized\n");
         return false;
     }
@@ -559,9 +555,8 @@ bool ReddIDManager::CancelUserIDAuction(const uint256& auctionId, const CKeyID& 
     return auctionManager->CancelAuction(auctionId, creator);
 }
 
-bool ReddIDManager::TransferUserID(const std::string& name, const std::string& namespaceId, 
+bool ReddIDManager::TransferUserID(const std::string& name, const std::string& namespaceId,
                                  const CKeyID& from, const CKeyID& to) {
-
     UserIDInfo userID;
     if (!GetUserIDInfo(name, namespaceId, userID)) {
         return false;
@@ -623,9 +618,8 @@ bool ReddIDManager::UpdateProfile(const std::string& reddId, const ReddIDProfile
     return profileManager->UpdateProfile(profile);
 }
 
-bool ReddIDManager::CreateConnection(const std::string& fromReddId, const std::string& toReddId, 
+bool ReddIDManager::CreateConnection(const std::string& fromReddId, const std::string& toReddId,
                                    SocialConnectionType type, int visibility, const CKeyID& owner) {
-
     ReddIDProfile fromProfile;
     if (!profileManager->GetProfile(fromReddId, fromProfile)) {
         return false;

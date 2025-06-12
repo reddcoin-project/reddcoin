@@ -12,13 +12,16 @@
 #include <serialize.h>
 #include <uint256.h>
 
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 
 // Constants for P2P message handling
-static const size_t MAX_REDDID_MESSAGE_SIZE = 1 * 1024 * 1024; // 1 MB maximum message size
+static const size_t MAX_REDDID_MESSAGE_SIZE = 1 * 1024 * 1024;  // 1 MB maximum message size
 static const int DEFAULT_MAX_MESSAGES_PER_MINUTE = 20;
 static const int MAX_AUCTION_ANNOUNCES_PER_MINUTE = 10;
 static const int MAX_AUCTION_BIDS_PER_MINUTE = 20;
@@ -56,11 +59,11 @@ static const char* MSG_REDDID_REPUTATION_UPDATE = "ridrep";
  * Base class for all ReddID messages
  */
 class CReddIDMessageBase {
-public:
+ public:
     int64_t timestamp;
-    
+
     CReddIDMessageBase() : timestamp(0) {}
-    
+
     SERIALIZE_METHODS(CReddIDMessageBase, obj) {
         READWRITE(obj.timestamp);
     }
@@ -110,10 +113,10 @@ class CNamespaceAuctionAnnounce : public CReddIDMessageBase {
  * Namespace configuration message
  */
 class CNamespaceConfig : public CReddIDMessageBase {
-public:
+ public:
     NamespaceInfo config;
     std::vector<PricingTier> pricingTiers;
-    
+
     SERIALIZE_METHODS(CNamespaceConfig, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.config);
@@ -131,7 +134,7 @@ class CAuctionBid : public CReddIDMessageBase {
     CKeyID bidder;         // Add this field to include bidder information
     CAmount bidAmount;
     CAmount depositAmount;
-    
+
     SERIALIZE_METHODS(CAuctionBid, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.auctionId);
@@ -146,12 +149,12 @@ class CAuctionBid : public CReddIDMessageBase {
  * Auction finalization message
  */
 class CAuctionFinalize : public CReddIDMessageBase {
-public:
+ public:
     uint256 auctionId;
     uint256 winningBidId;
     CAmount finalPrice;
     CKeyID creator;       // Add creator field for ownership verification
-    
+
     SERIALIZE_METHODS(CAuctionFinalize, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.auctionId);
@@ -201,11 +204,11 @@ class CUserIDAuctionAnnounce : public CReddIDMessageBase {
  * ReddID profile update message
  */
 class CReddIDProfileUpdate : public CReddIDMessageBase {
-public:
+ public:
     std::string reddId;
     uint256 profileHash;
     ReddIDProfile profile;
-    
+
     SERIALIZE_METHODS(CReddIDProfileUpdate, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.reddId);
@@ -218,9 +221,9 @@ public:
  * ReddID profile request message
  */
 class CReddIDProfileRequest : public CReddIDMessageBase {
-public:
+ public:
     std::string reddId;
-    
+
     SERIALIZE_METHODS(CReddIDProfileRequest, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.reddId);
@@ -231,9 +234,9 @@ public:
  * ReddID connection message
  */
 class CReddIDConnection : public CReddIDMessageBase {
-public:
+ public:
     ReddIDConnection connection;
-    
+
     SERIALIZE_METHODS(CReddIDConnection, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.connection);
@@ -244,9 +247,9 @@ public:
  * ReddID reputation update message
  */
 class CReddIDReputationUpdate : public CReddIDMessageBase {
-public:
+ public:
     ReddIDReputation reputation;
-    
+
     SERIALIZE_METHODS(CReddIDReputationUpdate, obj) {
         READWRITEAS(CReddIDMessageBase, obj);
         READWRITE(obj.reputation);
@@ -257,13 +260,13 @@ public:
  * ReddID P2P Manager class with enhanced Bitcoin v22 integration
  */
 class ReddIDP2PManager {
-private:
+ private:
     std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_running{false};
 
-    ReddIDManager* reddIDManager; // Reference to parent ReddIDManager
-    NodeContext* node; // Pointer to the NodeContext
-    CConnman* connman; // Pointer to the connection manager
+    ReddIDManager* reddIDManager;  // Reference to parent ReddIDManager
+    NodeContext* node;  // Pointer to the NodeContext
+    CConnman* connman;  // Pointer to the connection manager
     NamespaceManager* namespaceManager;  // Pointer to the Namespace Manager
     ProfileManager* profileManager;      // Pointer to the Profile Manager
     AuctionManager* auctionManager;      // Pointer to the Auction Manager
@@ -295,7 +298,7 @@ private:
     bool ProcessReddIDProfileResponse(CNode* pfrom, const CReddIDProfileUpdate& msg);
     bool ProcessReddIDConnection(CNode* pfrom, const CReddIDConnection& msg);
     bool ProcessReddIDReputationUpdate(CNode* pfrom, const CReddIDReputationUpdate& msg);
-    
+
     bool CheckMessageRate(CNode* pfrom, const std::string& strCommand);
     void CleanupRateLimitData();
 
@@ -304,10 +307,10 @@ private:
         return pnode && (pnode->GetLocalServices() & NODE_REDDID);
     }
 
-public:
+ public:
     ReddIDP2PManager(NodeContext& nodeIn);
     ~ReddIDP2PManager();
-    
+
     // Initialize and lifecycle methods
     bool Init(ReddIDManager* manager);
     bool Start();
@@ -322,7 +325,7 @@ public:
     // Message handling methods
     void ProcessMessage(CNode& pfrom, const std::string& strCommand,
                           CDataStream& vRecv, int64_t nTimeReceived);
-    
+
     // Message announcement methods (sending)
     bool AnnounceNamespaceAuction(const AuctionInfo& auction);
     bool AnnounceNamespaceBid(const BidInfo& bid);
@@ -336,7 +339,7 @@ public:
     bool AnnounceUserIDBid(const BidInfo& bid);
 //    bool AnnounceUserIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice);
     bool AnnounceUserIDCancel(const uint256& auctionId);
-    
+
     bool AnnounceReddIDAuction(const AuctionInfo& auction);
     bool AnnounceReddIDBid(const BidInfo& bid);
     bool AnnounceReddIDFinalize(const uint256& auctionId, const uint256& winningBidId, CAmount finalPrice);
@@ -356,7 +359,7 @@ public:
     void OnNodeDisconnected(NodeId nodeId);
 
     // Message relay helper
-    void RelayMessage(const std::string& command, const CDataStream& data, 
+    void RelayMessage(const std::string& command, const CDataStream& data,
                      const std::vector<NodeId>& exceptNodes = {});
 
     /**
@@ -375,7 +378,7 @@ public:
      * Check if this node is advertising ReddID support
      * @return true if NODE_REDDID is set in local services
      */
-   bool IsReddIDEnabled() const;
+    bool IsReddIDEnabled() const;
 };
 
-#endif // BITCOIN_ID_REDDID_P2P_H
+#endif  // BITCOIN_ID_REDDID_P2P_H

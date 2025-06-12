@@ -37,8 +37,8 @@ static const int MAX_REDDID_LENGTH = 32;
 static const int MAX_NAMESPACE_LENGTH = 15;
 static const int MIN_REDDID_LENGTH = 3;
 static const int MIN_NAMESPACE_LENGTH = 1;
-static const CAmount REDDID_MIN_FEE = 5000 * COIN; // 5,000 RDD
-static const CAmount NAMESPACE_MIN_FEE = 10000 * COIN; // 10,000 RDD
+static const CAmount REDDID_MIN_FEE = 5000 * COIN;  // 5,000 RDD
+static const CAmount NAMESPACE_MIN_FEE = 10000 * COIN;  // 10,000 RDD
 
 /**
  * ReddID Operation Codes - These are used in OP_RETURN data to identify the operation
@@ -111,7 +111,7 @@ enum VerificationStatus : uint8_t {
  * Represents a namespace in the ReddID system (like ".redd")
  */
 class NamespaceInfo {
-public:
+ public:
     std::string id;                 // Namespace identifier (e.g., "redd")
     CKeyID owner;                   // Owner's key ID
     bool allowNumbers;              // Whether numbers are allowed in user IDs
@@ -131,7 +131,7 @@ public:
     uint256 configHash;             // Hash of this configuration
     int64_t lastUpdated;            // When configuration was last updated
     int64_t expiration;             // When namespace ownership expires
-    
+
     NamespaceInfo() :
         allowNumbers(false),
         allowHyphens(false),
@@ -166,17 +166,17 @@ public:
         READWRITE(obj.devPct);
         READWRITE(obj.minAuctionDuration);
         READWRITE(obj.maxAuctionDuration);
-        
+
         // Fix for double serialization - store as int with 2 decimal precision
         if (ser_action.ForRead()) {
             int32_t minBidIncrementInt;
             READWRITE(minBidIncrementInt);
             const_cast<NamespaceInfo&>(obj).minBidIncrement = minBidIncrementInt / 100.0;
         } else {
-            int32_t minBidIncrementInt = static_cast<int32_t>(obj.minBidIncrement * 100.0 + 0.5); // Round to nearest
+            int32_t minBidIncrementInt = static_cast<int32_t>(obj.minBidIncrement * 100.0 + 0.5);  // Round to nearest
             READWRITE(minBidIncrementInt);
         }
-        
+
         READWRITE(obj.configHash);
         READWRITE(obj.lastUpdated);
         READWRITE(obj.expiration);
@@ -187,13 +187,13 @@ public:
  * Pricing tier structure for namespace pricing
  */
 class PricingTier {
-public:
+ public:
     std::string namespaceId;      // Namespace identifier
     int minLength;                // Minimum length for this tier
     CAmount minPrice;             // Minimum price for names in this tier
 
     PricingTier() : minLength(0), minPrice(0) {}
-    
+
     SERIALIZE_METHODS(PricingTier, obj) {
         READWRITE(obj.namespaceId);
         READWRITE(obj.minLength);
@@ -205,7 +205,7 @@ public:
  * Represents a user ID within a namespace (like "alice.redd")
  */
 class UserIDInfo {
-public:
+ public:
     std::string name;              // Name portion of the ID
     std::string namespaceId;       // Namespace portion of the ID
     CKeyID owner;                  // Owner's key ID
@@ -214,7 +214,7 @@ public:
     int64_t lastTransaction;       // Timestamp of last transaction using this ID
     int transactionCount;          // Number of transactions using this ID
     uint256 metadataHash;          // Hash of additional metadata
-    
+
     UserIDInfo() :
         registrationTime(0),
         expirationTime(0),
@@ -241,7 +241,7 @@ public:
  * Represents auction information
  */
 class AuctionInfo {
-public:
+ public:
     uint256 auctionId;            // Unique identifier for the auction
     std::string name;             // Name portion of the ID being auctioned
     std::string namespaceId;      // Namespace portion of the ID
@@ -257,7 +257,7 @@ public:
     uint256 metadataHash;         // Hash of additional metadata
     int blockHeight;              // Block height when auction was created
     uint256 txid;                 // Transaction ID of the auction creation transaction
-    
+
     AuctionInfo() :
         startTime(0),
         endTime(0),
@@ -304,7 +304,7 @@ public:
  * Bid information for auctions
  */
 class BidInfo {
-public:
+ public:
     uint256 bidId;                // Unique identifier for the bid
     uint256 auctionId;            // Reference to the auction
     CKeyID bidder;                // Bidder's key ID
@@ -316,7 +316,7 @@ public:
     uint256 txid;                 // Transaction ID of the bid transaction
     bool isWinner;                // Whether this bid won the auction
     bool refunded;                // Whether the deposit was refunded
-    
+
     BidInfo() :
         bidAmount(0),
         depositAmount(0),
@@ -343,7 +343,7 @@ public:
  * ReddID profile information
  */
 class ReddIDProfile {
-public:
+ public:
     std::string reddId;            // The ReddID
     CKeyID owner;                  // Owner's key ID
     std::string displayName;       // User-selected display name
@@ -351,14 +351,14 @@ public:
     std::string bio;               // Short biography or description
     uint256 emailHash;             // Hash of verified email (optional)
     std::string socialData;        // JSON of linked social profiles
-    std::vector<unsigned char> messagingPubkey; // Public key for encrypted messaging
-    VerificationStatus verificationStatus; // Verification level
+    std::vector<unsigned char> messagingPubkey;  // Public key for encrypted messaging
+    VerificationStatus verificationStatus;  // Verification level
     int64_t creationTime;          // When the ReddID was created
     int64_t lastUpdated;           // When profile was last updated
     int64_t expirationTime;        // When the ReddID expires
     bool active;                   // Whether the ReddID is currently active
     uint8_t flags;                 // Bitfield of profile flags/settings
-    
+
     ReddIDProfile() :
         verificationStatus(VERIFICATION_NONE),
         creationTime(0),
@@ -399,16 +399,16 @@ public:
  * Social connection between ReddIDs
  */
 class ReddIDConnection {
-public:
+ public:
     std::string fromReddId;        // Source ReddID
     std::string toReddId;          // Target ReddID
-    SocialConnectionType connectionType; // Type of connection
+    SocialConnectionType connectionType;  // Type of connection
     int64_t creationTime;          // When connection was established
     int64_t lastInteraction;       // When last interaction occurred
     int visibility;                // Privacy setting (0=public, 1=friends, 2=private)
     std::string metadata;          // Additional connection metadata
     uint256 txid;                  // Transaction ID of the connection operation
-    
+
     ReddIDConnection() :
         connectionType(CONNECTION_FOLLOW),
         creationTime(0),
@@ -420,14 +420,14 @@ public:
         READWRITE(obj.toReddId);
 
         // For connection type enum
-	if (ser_action.ForRead()) {
-	    uint8_t type_val;
-	    READWRITE(type_val);
-	    const_cast<ReddIDConnection&>(obj).connectionType = static_cast<SocialConnectionType>(type_val);
-	} else {
-	    uint8_t type_val = static_cast<uint8_t>(obj.connectionType);
-	    READWRITE(type_val);
-	}
+        if (ser_action.ForRead()) {
+            uint8_t type_val;
+            READWRITE(type_val);
+            const_cast<ReddIDConnection&>(obj).connectionType = static_cast<SocialConnectionType>(type_val);
+        } else {
+            uint8_t type_val = static_cast<uint8_t>(obj.connectionType);
+            READWRITE(type_val);
+        }
 
         READWRITE(obj.creationTime);
         READWRITE(obj.lastInteraction);
@@ -441,7 +441,7 @@ public:
  * Reputation information for ReddIDs
  */
 class ReddIDReputation {
-public:
+ public:
     std::string reddId;            // The ReddID
     double overallScore;           // Aggregate reputation score (0-100)
     double longevityScore;         // Score component for account age
@@ -451,8 +451,8 @@ public:
     double auctionScore;           // Score component for auction behavior
     int64_t lastCalculated;        // When the score was last calculated
     uint256 calculationProof;      // Proof of calculation correctness
-    std::string calculatorSignatures; // JSON of node signatures validating the calculation
-    
+    std::string calculatorSignatures;  // JSON of node signatures validating the calculation
+
     ReddIDReputation() :
         overallScore(0),
         longevityScore(0),
@@ -464,19 +464,19 @@ public:
 
     SERIALIZE_METHODS(ReddIDReputation, obj) {
         READWRITE(obj.reddId);
-        
+
         // Fix for double serialization - store scores as int with 2 decimal precision
         if (ser_action.ForRead()) {
             int32_t overallScoreInt, longevityScoreInt, transactionScoreInt;
             int32_t engagementScoreInt, verificationScoreInt, auctionScoreInt;
-            
+
             READWRITE(overallScoreInt);
             READWRITE(longevityScoreInt);
             READWRITE(transactionScoreInt);
             READWRITE(engagementScoreInt);
             READWRITE(verificationScoreInt);
             READWRITE(auctionScoreInt);
-            
+
             auto& mutable_obj = const_cast<ReddIDReputation&>(obj);
             mutable_obj.overallScore = overallScoreInt / 100.0;
             mutable_obj.longevityScore = longevityScoreInt / 100.0;
@@ -491,7 +491,7 @@ public:
             int32_t engagementScoreInt = static_cast<int32_t>(obj.engagementScore * 100.0 + 0.5);
             int32_t verificationScoreInt = static_cast<int32_t>(obj.verificationScore * 100.0 + 0.5);
             int32_t auctionScoreInt = static_cast<int32_t>(obj.auctionScore * 100.0 + 0.5);
-            
+
             READWRITE(overallScoreInt);
             READWRITE(longevityScoreInt);
             READWRITE(transactionScoreInt);
@@ -499,7 +499,7 @@ public:
             READWRITE(verificationScoreInt);
             READWRITE(auctionScoreInt);
         }
-        
+
         READWRITE(obj.lastCalculated);
         READWRITE(obj.calculationProof);
         READWRITE(obj.calculatorSignatures);
@@ -509,13 +509,12 @@ public:
 /**
  * Main ReddID manager class
  */
-class ReddIDManager : public CValidationInterface
-{
-private:
+class ReddIDManager : public CValidationInterface {
+ private:
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_initialized{false};
     NodeContext* node;
-    
+
     CChainState* chainstate;  // Reference to the chain state
 
     // Component managers
@@ -525,10 +524,10 @@ private:
     std::unique_ptr<ProfileManager> profileManager;
     std::unique_ptr<ReddIDP2PManager> p2pManager;
 
-public:
+ public:
     ReddIDManager(NodeContext& nodeIn);
     ~ReddIDManager();
-    
+
     // Node lifecycle methods
     bool Init();
     bool Start();
@@ -536,7 +535,7 @@ public:
     bool Stop();
     bool IsRunning() const { return m_running; }
     bool IsInitialized() const { return m_initialized; }
-    
+
     // ValidationInterface overrides
     void TransactionAddedToMempool(const CTransactionRef& tx, uint64_t mempool_sequence) override;
     void BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
@@ -558,62 +557,62 @@ public:
     bool ValidateReddID(const std::string& reddId);
     bool ValidateNamespace(const std::string& namespaceId);
     bool ValidateUserID(const std::string& name, const std::string& namespaceId);
-    
+
     // Namespace operations
-    bool CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator, 
+    bool CreateNamespaceAuction(const std::string& namespaceId, const CKeyID& creator,
                               CAmount reservePrice, int durationDays, AuctionType type,
                               uint256& auctionId);
     bool BidOnNamespaceAuction(const uint256& auctionId, const CKeyID& bidder, CAmount bidAmount);
     bool FinalizeNamespaceAuction(const uint256& auctionId);
     bool CancelNamespaceAuction(const uint256& auctionId, const CKeyID& creator);
     bool UpdateNamespaceConfig(const std::string& namespaceId, const NamespaceInfo& config, const CKeyID& owner);
-    
+
     // User ID operations
-    bool CreateUserIDAuction(const std::string& name, const std::string& namespaceId, 
+    bool CreateUserIDAuction(const std::string& name, const std::string& namespaceId,
                            const CKeyID& creator, CAmount reservePrice, int durationDays,
                            AuctionType type, uint256& auctionId);
     bool BidOnUserIDAuction(const uint256& auctionId, const CKeyID& bidder, CAmount bidAmount);
     bool FinalizeUserIDAuction(const uint256& auctionId);
     bool CancelUserIDAuction(const uint256& auctionId, const CKeyID& creator);
-    bool TransferUserID(const std::string& name, const std::string& namespaceId, 
+    bool TransferUserID(const std::string& name, const std::string& namespaceId,
                        const CKeyID& from, const CKeyID& to);
     bool RenewUserID(const std::string& name, const std::string& namespaceId, const CKeyID& owner);
-    
+
     // ReddID profile operations
     bool UpdateProfile(const std::string& reddId, const ReddIDProfile& profile, const CKeyID& owner);
-    bool CreateConnection(const std::string& fromReddId, const std::string& toReddId, 
+    bool CreateConnection(const std::string& fromReddId, const std::string& toReddId,
                          SocialConnectionType type, int visibility, const CKeyID& owner);
     bool UpdateReputation(const std::string& reddId, const ReddIDReputation& reputation);
-    
+
     // Getters
     bool GetNamespaceInfo(const std::string& namespaceId, NamespaceInfo& result);
     bool GetUserIDInfo(const std::string& name, const std::string& namespaceId, UserIDInfo& result);
     bool GetAuctionInfo(const uint256& auctionId, AuctionInfo& result);
     bool GetProfile(const std::string& reddId, ReddIDProfile& result);
     bool GetReputation(const std::string& reddId, ReddIDReputation& result);
-    
+
     // Auction discovery
     std::vector<AuctionInfo> GetActiveNamespaceAuctions();
     std::vector<AuctionInfo> GetActiveUserIDAuctions(const std::string& namespaceId = "");
     std::vector<BidInfo> GetAuctionBids(const uint256& auctionId);
-    
+
     // Validation helper functions
     CAmount CalculateMinPriceForNamespace(const std::string& namespaceId);
     CAmount CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId);
     CAmount CalculateRenewalFee(const std::string& name, const std::string& namespaceId);
-    
+
     // OP_RETURN helpers
-    bool ParseReddIDOpReturn(const CScript& script, unsigned char& opCode, 
+    bool ParseReddIDOpReturn(const CScript& script, unsigned char& opCode,
                            std::vector<unsigned char>& data);
-    CScript CreateNamespaceAuctionOpReturn(const std::string& namespaceId, 
+    CScript CreateNamespaceAuctionOpReturn(const std::string& namespaceId,
                                          const uint256& auctionId);
     CScript CreateNamespaceBidOpReturn(const uint256& auctionId, CAmount bidAmount);
-    CScript CreateUserIDAuctionOpReturn(const std::string& name, 
+    CScript CreateUserIDAuctionOpReturn(const std::string& name,
                                       const std::string& namespaceId,
                                       const uint256& auctionId);
     CScript CreateUserIDBidOpReturn(const uint256& auctionId, CAmount bidAmount);
     CScript CreateProfileUpdateOpReturn(const std::string& reddId, const uint256& profileHash);
-    CScript CreateConnectionOpReturn(const std::string& fromReddId, 
+    CScript CreateConnectionOpReturn(const std::string& fromReddId,
                                    const std::string& toReddId,
                                    SocialConnectionType type);
 };
@@ -644,4 +643,4 @@ inline void Unserialize(Stream& s, BitcoinSerializeWrapper<T>& w) {
     w.value = static_cast<T>(e);
 }
 
-#endif // BITCOIN_ID_REDDID_H
+#endif  // BITCOIN_ID_REDDID_H

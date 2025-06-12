@@ -12,6 +12,7 @@
 #include <util/strencodings.h>
 #include <util/system.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,21 +46,21 @@ bool ReddIDDB::ExistsNamespace(const std::string& namespaceId) {
 
 bool ReddIDDB::ListNamespaces(std::vector<std::string>& namespaceIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "ns-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
             std::string namespaceId = key.substr(prefix.size());
             namespaceIds.push_back(namespaceId);
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -71,11 +72,11 @@ bool ReddIDDB::WritePricingTier(const PricingTier& tier) {
 
 bool ReddIDDB::ReadPricingTiers(const std::string& namespaceId, std::vector<PricingTier>& tiers) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "tier-" + namespaceId + "-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -84,10 +85,10 @@ bool ReddIDDB::ReadPricingTiers(const std::string& namespaceId, std::vector<Pric
                 tiers.push_back(tier);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -123,41 +124,41 @@ bool ReddIDDB::ExistsUserID(const std::string& name, const std::string& namespac
 
 bool ReddIDDB::ListUserIDs(const std::string& namespaceId, std::vector<std::string>& names) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "id-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
             std::string fullName = key.substr(prefix.size());
-            
+
             // Parse name and namespace
             size_t pos = fullName.find_last_of('.');
             if (pos != std::string::npos) {
                 std::string name = fullName.substr(0, pos);
                 std::string ns = fullName.substr(pos + 1);
-                
+
                 if (namespaceId.empty() || ns == namespaceId) {
                     names.push_back(name);
                 }
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 bool ReddIDDB::ListUserIDsByOwner(const CKeyID& owner, std::vector<UserIDInfo>& ids) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "id-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -166,10 +167,10 @@ bool ReddIDDB::ListUserIDsByOwner(const CKeyID& owner, std::vector<UserIDInfo>& 
                 ids.push_back(info);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -196,11 +197,11 @@ bool ReddIDDB::ExistsAuction(const uint256& auctionId) {
 
 bool ReddIDDB::ListAuctions(std::vector<uint256>& auctionIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "auc-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -209,20 +210,20 @@ bool ReddIDDB::ListAuctions(std::vector<uint256>& auctionIds) {
             auctionId.SetHex(auctionIdStr);
             auctionIds.push_back(auctionId);
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 bool ReddIDDB::ListAuctionsByState(AuctionState state, std::vector<uint256>& auctionIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "auc-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -231,20 +232,20 @@ bool ReddIDDB::ListAuctionsByState(AuctionState state, std::vector<uint256>& auc
                 auctionIds.push_back(info.auctionId);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 bool ReddIDDB::ListAuctionsByNamespace(const std::string& namespaceId, std::vector<uint256>& auctionIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "auc-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -253,10 +254,10 @@ bool ReddIDDB::ListAuctionsByNamespace(const std::string& namespaceId, std::vect
                 auctionIds.push_back(info.auctionId);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -283,11 +284,11 @@ bool ReddIDDB::ExistsBid(const uint256& bidId) {
 
 bool ReddIDDB::ListBids(const uint256& auctionId, std::vector<uint256>& bidIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "bid-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -296,20 +297,20 @@ bool ReddIDDB::ListBids(const uint256& auctionId, std::vector<uint256>& bidIds) 
                 bidIds.push_back(info.bidId);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 bool ReddIDDB::ListBidsByBidder(const CKeyID& bidder, std::vector<uint256>& bidIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "bid-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -318,10 +319,10 @@ bool ReddIDDB::ListBidsByBidder(const CKeyID& bidder, std::vector<uint256>& bidI
                 bidIds.push_back(info.bidId);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -330,10 +331,10 @@ bool ReddIDDB::UpdateBidStatus(const uint256& bidId, bool isWinner, bool refunde
     if (!ReadBid(bidId, info)) {
         return false;
     }
-    
+
     info.isWinner = isWinner;
     info.refunded = refunded;
-    
+
     return WriteBid(bidId, info);
 }
 
@@ -360,31 +361,31 @@ bool ReddIDDB::ExistsProfile(const std::string& reddId) {
 
 bool ReddIDDB::ListProfiles(std::vector<std::string>& reddIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "profile-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
             std::string reddId = key.substr(prefix.size());
             reddIds.push_back(reddId);
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 bool ReddIDDB::ListProfilesByOwner(const CKeyID& owner, std::vector<std::string>& reddIds) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "profile-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -394,10 +395,10 @@ bool ReddIDDB::ListProfilesByOwner(const CKeyID& owner, std::vector<std::string>
                 reddIds.push_back(reddId);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
@@ -440,13 +441,13 @@ bool ReddIDDB::GetReputationHistory(const std::string& reddId, std::vector<ReddI
 }
 
 // Connection database operations
-bool ReddIDDB::WriteConnection(const std::string& fromReddId, const std::string& toReddId, 
+bool ReddIDDB::WriteConnection(const std::string& fromReddId, const std::string& toReddId,
                               const ReddIDConnection& connection) {
     std::string key = std::string("conn-") + fromReddId + "-" + toReddId;
     return Write(key, connection);
 }
 
-bool ReddIDDB::ReadConnection(const std::string& fromReddId, const std::string& toReddId, 
+bool ReddIDDB::ReadConnection(const std::string& fromReddId, const std::string& toReddId,
                              ReddIDConnection& connection) {
     std::string key = std::string("conn-") + fromReddId + "-" + toReddId;
     return Read(key, connection);
@@ -464,11 +465,11 @@ bool ReddIDDB::ExistsConnection(const std::string& fromReddId, const std::string
 
 bool ReddIDDB::ListConnections(const std::string& reddId, std::vector<ReddIDConnection>& connections) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "conn-" + reddId + "-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
@@ -477,35 +478,35 @@ bool ReddIDDB::ListConnections(const std::string& reddId, std::vector<ReddIDConn
                 connections.push_back(connection);
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
 
 // Namespace resolution database operations
-bool ReddIDDB::WriteResolution(const std::string& reddId, const std::string& namespaceId, 
+bool ReddIDDB::WriteResolution(const std::string& reddId, const std::string& namespaceId,
                               const std::string& userId) {
     std::string key = std::string("res-reddid-") + reddId + "-" + namespaceId;
     bool result = Write(key, userId);
-    
+
     if (result) {
         // Write reverse lookup
         std::string reverseKey = std::string("res-userid-") + userId + "-" + namespaceId;
         result = Write(reverseKey, reddId);
     }
-    
+
     return result;
 }
 
-bool ReddIDDB::ReadResolution(const std::string& reddId, const std::string& namespaceId, 
+bool ReddIDDB::ReadResolution(const std::string& reddId, const std::string& namespaceId,
                              std::string& userId) {
     std::string key = std::string("res-reddid-") + reddId + "-" + namespaceId;
     return Read(key, userId);
 }
 
-bool ReddIDDB::ReadResolutionByUserID(const std::string& userId, const std::string& namespaceId, 
+bool ReddIDDB::ReadResolutionByUserID(const std::string& userId, const std::string& namespaceId,
                                     std::string& reddId) {
     std::string key = std::string("res-userid-") + userId + "-" + namespaceId;
     return Read(key, reddId);
@@ -519,33 +520,33 @@ bool ReddIDDB::EraseResolution(const std::string& reddId, const std::string& nam
         std::string reverseKey = std::string("res-userid-") + userId + "-" + namespaceId;
         Erase(reverseKey);
     }
-    
+
     // Erase forward lookup
     std::string key = std::string("res-reddid-") + reddId + "-" + namespaceId;
     return Erase(key);
 }
 
-bool ReddIDDB::ListResolutions(const std::string& reddId, 
+bool ReddIDDB::ListResolutions(const std::string& reddId,
                              std::map<std::string, std::string>& resolutions) {
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     std::string prefix = "res-reddid-" + reddId + "-";
-    
+
     pcursor->Seek(prefix);
-    
+
     while (pcursor->Valid()) {
         std::string key;
         if (pcursor->GetKey(key) && key.find(prefix) == 0) {
             std::string namespaceId = key.substr(prefix.size());
             std::string userId;
-            
+
             if (pcursor->GetValue(userId)) {
                 resolutions[namespaceId] = userId;
             }
         }
-        
+
         pcursor->Next();
     }
-    
+
     return true;
 }
