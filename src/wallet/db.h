@@ -235,7 +235,7 @@ inline std::string WalletOptionsToString(const WalletOptions& opts) {
         case walletType::bip39Wallet: walletTypeStr = "bip39Wallet"; break;
         case walletType::bip44Wallet: walletTypeStr = "bip44Wallet"; break;
         case walletType::blankWallet: walletTypeStr = "blankWallet"; break;
-        default: walletTypeStr = "UNKNOWN(" + std::to_string(opts.walletType) + ")"; break;
+        default: walletTypeStr = strprintf("UNKNOWN(%d)", opts.walletType); break;
     }
 
     return strprintf("WalletOptions{type=%s, bits=%d, importing=%s, mnemonic_len=%d, passphrase_len=%d, masterkey_len=%d}",
