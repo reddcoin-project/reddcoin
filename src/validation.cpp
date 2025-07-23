@@ -53,6 +53,7 @@
 #include <util/translation.h>
 #include <validationinterface.h>
 #include <warnings.h>
+#include <id/transaction_handler.h>
 
 #include <numeric>
 #include <optional>
@@ -2032,6 +2033,17 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
                     tx.GetHash().ToString(), state.ToString());
             }
             control.Add(vChecks);
+        }
+
+        // Process ReddID operations in this transaction
+        if (!fJustCheck) {
+            try {
+                ProcessReddIDTransaction(tx, pindex->nHeight);
+            } catch (const std::exception& e) {
+                LogPrint(BCLog::REDDID, "Warning: ProcessReddIDTransaction failed for tx %s: %s\n", 
+                         tx.GetHash().ToString(), e.what());
+                // Continue processing - ReddID operations are not consensus critical for block validation
+            }
         }
 
         CTxUndo undoDummy;
