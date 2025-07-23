@@ -66,7 +66,7 @@ bool ProfileManager::Init(ReddIDManager* manager) {
 
       // Load existing data from database
       if (!Load()) {
-          LogPrintf("WARNING: ProfileManager::Init: Failed to load proifile data\n");
+          LogPrintf("WARNING: ProfileManager::Init: Failed to load profile data\n");
           // Continue anyway, database might be empty
       }
 

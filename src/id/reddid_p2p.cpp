@@ -51,7 +51,7 @@ bool ReddIDP2PManager::Init(ReddIDManager* manager) {
         return false;
     }
 
-    LogPrint(BCLog::REDDID, "Initializing P2Pmanager manager\n");
+    LogPrint(BCLog::REDDID, "Initializing P2Pmanager\n");
 
     try {
         // Store the manager reference

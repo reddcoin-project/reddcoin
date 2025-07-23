@@ -145,7 +145,7 @@ bool ReddIDManager::Start() {
 
     if (!profileManager->Start()) {
         LogPrintf("Failed to start profile manager\n");
-       return false;
+        return false;
     }
 
     // Start P2P manager
