@@ -383,6 +383,40 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
     BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(tx), state) || !state.IsValid(), "Transaction with duplicate txins should be invalid.");
 }
 
+BOOST_AUTO_TEST_CASE(transaction_time_validation_tests) {
+    CMutableTransaction tx;
+    TxValidationState state;
+
+    // Test version 1 transaction with nTime=0 (should be valid - PoW era)
+    tx.nVersion = POW_TX_VERSION;  // Version 1
+    tx.nTime = 0;
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    tx.vin[0].prevout.hash = InsecureRand256();
+    tx.vin[0].prevout.n = 0;
+    tx.vout[0].nValue = 1000;
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
+
+    BOOST_CHECK_MESSAGE(CheckTransaction(CTransaction(tx), state) && state.IsValid(),
+                       "Version 1 transaction with nTime=0 should be valid (PoW era)");
+
+    // Test version 2 transaction with nTime=0 (should be invalid - PoS era)
+    tx.nVersion = 2;  // Version 2
+    tx.nTime = 0;
+    state = TxValidationState();  // Reset state
+
+    BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(tx), state) || !state.IsValid(),
+                       "Version 2 transaction with nTime=0 should be invalid");
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-time-zero");
+
+    // Test version 2 transaction with valid nTime (should be valid)
+    tx.nTime = GetTime();  // Current timestamp
+    state = TxValidationState();  // Reset state
+
+    BOOST_CHECK_MESSAGE(CheckTransaction(CTransaction(tx), state) && state.IsValid(),
+                       "Version 2 transaction with valid nTime should be valid");
+}
+
 BOOST_AUTO_TEST_CASE(test_Get)
 {
     FillableSigningProvider keystore;

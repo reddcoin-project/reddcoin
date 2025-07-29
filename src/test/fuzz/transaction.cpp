@@ -20,6 +20,7 @@
 #include <version.h>
 
 #include <cassert>
+#include <string>
 
 void initialize_transaction()
 {
@@ -65,6 +66,14 @@ FUZZ_TARGET_INIT(transaction, initialize_transaction)
         TxValidationState state_with_dupe_check;
         const bool res{CheckTransaction(tx, state_with_dupe_check)};
         Assert(res == state_with_dupe_check.IsValid());
+
+        // ReddCoin: Verify nTime validation for version 2+ transactions
+        if (tx.nVersion > POW_TX_VERSION && tx.nTime == 0) {
+            Assert(!res || !state_with_dupe_check.IsValid());
+            if (!state_with_dupe_check.IsValid()) {
+                Assert(state_with_dupe_check.GetRejectReason() == "bad-txns-time-zero");
+            }
+        }
     }
 
     const CFeeRate dust_relay_fee{DUST_RELAY_TX_FEE};
