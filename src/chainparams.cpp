@@ -579,13 +579,14 @@ public:
         vSeeds.emplace_back("dnsseed02.redd.ink");
         vSeeds.emplace_back("dnsseed03.redd.ink");
 
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,61);
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,189);
-        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
-        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
+        // Use same prefixes as testnet (matching Bitcoin's behavior)
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,111);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,196);
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239);
+        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
+        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
-        bech32_hrp = "rdd";
+        bech32_hrp = "trdd";
 
         // Reddcoin BIP44 cointype in testnet is '1'
         nExtCoinType = 1;
@@ -608,18 +609,30 @@ public:
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.nCoinbaseMaturity = 30;
+        consensus.nLastPowHeight = 89;  // Allow enough PoW blocks for TestChain100Setup
+        consensus.nCoinbaseMaturity = 60;  // Fast maturity for regtest, gives ~40 mature coinbases at height 100
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
         consensus.BIP66Height = 363725; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
         consensus.DonationHeight = 3382229; //
         consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
-        consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+
+        /* pow specific */
+        consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.posLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // Same as powLimit for easy testing
+        consensus.posReset = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // Same as powLimit for easy testing
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
-        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.fPowNoRetargeting = false;
+        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowNoRetargeting = true;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+
+        consensus.devScript = { CScript() << ParseHex("0256508ba57f39fa6bbe2290051ec100b6e4d49005776214192c3e5dbc2bc3276d") << OP_CHECKSIG };
+
+        /* pos specific */
+        consensus.nStakeMinAge = 10;    // 10 seconds (very fast for testing)
+        consensus.nStakeMaxAge = 45 * 24 * 60 * 60; // 45 days (same as mainnet)
+        consensus.nModifierInterval = 60; // 1 minute (vs 13 minutes on mainnet) for fast testing
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -639,19 +652,19 @@ public:
         consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000001533efd8d716a517fe2c5008");
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000b9d2ec5a352ecba0592946514a92f14319dc2b367fc72"); // 654683
 
-        pchMessageStart[0] = 0xfb;
-        pchMessageStart[1] = 0xc0;
-        pchMessageStart[2] = 0xb6;
-        pchMessageStart[3] = 0xdb;
-        nDefaultPort = 45444;
+        pchMessageStart[0] = 0xfa;
+        pchMessageStart[1] = 0xbf;
+        pchMessageStart[2] = 0xb5;
+        pchMessageStart[3] = 0xda;
+        nDefaultPort = 56444;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 1;
         m_assumed_chain_state_size = 0;
 
-        genesis = CreateGenesisBlock(1390280400, 1390280400, 222583475, 0x1e0ffff0, 1, 10000 * COIN);
+        genesis = CreateGenesisBlock(1642570147, 1642570147, 36529, 0x207fffff, 1, 10000 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("b868e0d95a3c3c0e0dadc67ee587aaf9dc8acbf99e3b4b3110fad4eb74c1decc"));
         assert(genesis.hashMerkleRoot == uint256S("b502bc1dc42b07092b9187e92f70e32f9a53247feae16d821bebffa916af79ff"));
+        assert(consensus.hashGenesisBlock == uint256S("e817774b5fd9808e7e03a557a43ec2a37f35ea4cf38550a7ce4f414531e28ef6"));
 
         vSeeds.emplace_back("seed.reddcoin.net");
         vSeeds.emplace_back("reddcoin.com");
@@ -659,19 +672,19 @@ public:
         vSeeds.emplace_back("dnsseed02.redd.ink");
         vSeeds.emplace_back("dnsseed03.redd.ink");
 
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,61);
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,122);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,189);
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
 
         bech32_hrp = "rcrt";
 
-        // Reddcoin BIP44 cointype in testnet is '1'
+        // Reddcoin BIP44 cointype in regtest is '1'
         nExtCoinType = 1;
 
         fDefaultConsistencyChecks = true;
-        fRequireStandard = true;
+        fRequireStandard = false;
         m_is_test_chain = true;
         m_is_mockable_chain = true;
 
