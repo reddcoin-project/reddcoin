@@ -3001,6 +3001,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
 
         const auto current_time = GetTime<std::chrono::microseconds>();
         uint256* best_block{nullptr};
+        CNodeState* node_state = State(pfrom.GetId());
 
         for (CInv& inv : vInv) {
             if (interruptMsgProc) return;
@@ -3008,7 +3009,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             // Ignore INVs that don't match wtxidrelay setting.
             // Note that orphan parent fetching always uses MSG_TX GETDATAs regardless of the wtxidrelay setting.
             // This is fine as no INV messages are involved in that process.
-            if (State(pfrom.GetId())->m_wtxid_relay) {
+            if (node_state->m_wtxid_relay) {
                 if (inv.IsMsgTx()) continue;
             } else {
                 if (inv.IsMsgWtx()) continue;
@@ -3057,14 +3058,13 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             // block to sync with as well, to sync quicker in the case where
             // our initial peer is unresponsive (but less bandwidth than we'd
             // use if we turned on sync with all peers).
-            CNodeState& state{*Assert(State(pfrom.GetId()))};
-            if (state.fSyncStarted || (!peer->m_inv_triggered_getheaders_before_sync && *best_block != m_last_block_inv_triggering_headers_sync)) {
+            if (node_state->fSyncStarted || (!peer->m_inv_triggered_getheaders_before_sync && *best_block != m_last_block_inv_triggering_headers_sync)) {
                 if (MaybeSendGetHeaders(pfrom, m_chainman.ActiveChain().GetLocator(pindexBestHeader), *peer)) {
                     LogPrint(BCLog::NET, "getheaders (%d) %s to peer=%d\n",
                             pindexBestHeader->nHeight, best_block->ToString(),
                             pfrom.GetId());
                 }
-                if (!state.fSyncStarted) {
+                if (!node_state->fSyncStarted) {
                     peer->m_inv_triggered_getheaders_before_sync = true;
                     // Update the last block hash that triggered a new headers
                     // sync, so that we don't turn on headers sync with more
