@@ -608,7 +608,8 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
 
             // Busy-wait for the network to come online so we don't waste time mining
             // on an obsolete chain. In regtest mode we expect to fly solo.
-            while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainman->ActiveChainstate().IsInitialBlockDownload()) {
+            bool isRegTest = Params().NetworkIDString() == CBaseChainParams::REGTEST;
+            while(connman == nullptr || (!isRegTest && (connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainman->ActiveChainstate().IsInitialBlockDownload()))) {
                 if (ShutdownRequested())
                     return;
                 LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainman->ActiveChain().Tip()->nHeight);
@@ -622,7 +623,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     return;
             }
 
-            while (GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.9996)
+            while (!isRegTest && GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.9996)
             {
                 if (ShutdownRequested())
                     return;
