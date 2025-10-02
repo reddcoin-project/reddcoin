@@ -123,6 +123,13 @@ struct TestChain100Setup : public RegTestingSetup {
     CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
                                  const CScript& scriptPubKey);
 
+    /**
+     * Create a new Proof-of-Stake block with coinstake and given transactions.
+     * Requires mature coins to stake from m_coinbase_txns.
+     */
+    CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
+                                     const CScript& scriptPubKey);
+
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);
 
