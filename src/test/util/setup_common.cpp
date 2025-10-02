@@ -9,6 +9,7 @@
 #include <banman.h>
 #include <chainparams.h>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <crypto/sha256.h>
@@ -213,7 +214,8 @@ TestChain100Setup::TestChain100Setup()
 {
     const Consensus::Params& params = Params().GetConsensus();
 
-    SetMockTime(1598887952);
+    // Set mock time to be after genesis block time
+    SetMockTime(Params().GenesisBlock().nTime + 1);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
@@ -223,9 +225,8 @@ TestChain100Setup::TestChain100Setup()
 
     {
         LOCK(::cs_main);
-        assert(
-            m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "e817774b5fd9808e7e03a557a43ec2a37f35ea4cf38550a7ce4f414531e28ef6");
+        assert(m_node.chainman->ActiveChain().Height() == params.GetCoinbaseMaturity());
+        assert(m_coinbase_txns.size() == params.GetCoinbaseMaturity());
     }
 }
 
@@ -250,12 +251,33 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
     for (const CMutableTransaction& tx : txns) {
         block.vtx.push_back(MakeTransactionRef(tx));
     }
+
+    // Set block time to be after previous block
+    {
+        LOCK(cs_main);
+        // Use mock time if available, otherwise increment from previous block
+        block.nTime = std::max(GetTime(), m_node.chainman->ActiveChain().Tip()->GetBlockTime() + 1);
+        // Also ensure it's after median time past
+        if (block.nTime <= m_node.chainman->ActiveChain().Tip()->GetMedianTimePast()) {
+            block.nTime = m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1;
+        }
+        // Update mock time so next call to GetTime() returns a later time
+        SetMockTime(block.nTime + 1);
+    }
+
+    // Regenerate merkle root and commitments after modifying block
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
 
     std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(block);
-    Assert(m_node.chainman)->ProcessNewBlock(chainparams, shared_pblock, true, nullptr);
+    bool processed = Assert(m_node.chainman)->ProcessNewBlock(chainparams, shared_pblock, true, nullptr);
+    if (!processed) {
+        std::cerr << "BLOCK REJECTED - Mining failed for block at height "
+                  << (m_node.chainman->ActiveChain().Height() + 1) << std::endl;
+    }
+    Assert(processed);
 
     return block;
 }
