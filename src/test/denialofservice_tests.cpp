@@ -144,7 +144,11 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    SetMockTime(GetTime() + 3 * chainparams.GetConsensus().nPowTargetSpacing + 1);
+    // Advance time past STALE_CHECK_INTERVAL (10 minutes) to trigger the next stale check
+    // For Reddcoin with 60s blocks, we need enough time for both:
+    // 1. The stale check interval to pass (600 seconds)
+    // 2. The tip to actually be stale (3 * 60 = 180 seconds)
+    SetMockTime(GetTime() + 3 * chainparams.GetConsensus().nPowTargetSpacing + 600 + 1);
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer
