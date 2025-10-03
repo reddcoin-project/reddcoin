@@ -12,7 +12,7 @@
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
 #include <util/bip32.h>
-#include <wallet/bip39.h>
+#include <util/bip39.h>
 
 #include <boost/test/unit_test.hpp>
 
