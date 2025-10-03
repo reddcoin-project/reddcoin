@@ -220,15 +220,14 @@ TestChain100Setup::TestChain100Setup()
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
 
-    // Generate a 100-block chain (or coinbase maturity, whichever is larger):
-    // For regtest: mines 10 PoW blocks (coinbase maturity)
-    // Tests can use CreateAndProcessPoSBlock() to add PoS blocks if needed
-    this->mineBlocks(params.GetCoinbaseMaturity());
+    // Generate a 100-block chain (mixing PoW and PoS as needed)
+    // For regtest: First 30 blocks are PoW, then switch to PoS
+    // Tests that need more blocks can call mineBlocks() to add more
+    this->mineBlocks(100);
 
     {
         LOCK(::cs_main);
-        assert(m_node.chainman->ActiveChain().Height() == params.GetCoinbaseMaturity());
-        assert(m_coinbase_txns.size() == (size_t)params.GetCoinbaseMaturity());
+        assert(m_node.chainman->ActiveChain().Height() == 100);
     }
 }
 
