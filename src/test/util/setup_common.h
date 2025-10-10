@@ -112,8 +112,9 @@ class CScript;
 
 /**
  * Testing fixture that pre-creates a 100-block REGTEST-mode block chain
+ * Enables txindex for PoS staking support
  */
-struct TestChain100Setup : public RegTestingSetup {
+struct TestChain100Setup : public TestingSetup {
     TestChain100Setup();
 
     /**
@@ -128,10 +129,14 @@ struct TestChain100Setup : public RegTestingSetup {
      * Requires mature coins to stake from m_coinbase_txns.
      */
     CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
-                                     const CScript& scriptPubKey);
+                                     const CScript& scriptPubKey,
+                                     CWallet* pwallet);
 
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);
+
+    //! Stake a series of PoS blocks using coinbaseKey
+    void stakeBlocks(int num_blocks);
 
     /**
      * Create a transaction and submit to the mempool.
