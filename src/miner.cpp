@@ -184,7 +184,12 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;
+        txCoinStake.nTime = GetAdjustedTime(); // Initialize to current time for stake search
         int64_t nSearchTime = txCoinStake.nTime; // search to current time
+        // Handle mock time reset (e.g. between tests) - if time went backwards, reset search time
+        if (nSearchTime < nLastCoinStakeSearchTime) {
+            nLastCoinStakeSearchTime = nSearchTime - 1;
+        }
         if (nSearchTime > nLastCoinStakeSearchTime)
         {
             if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus()))
