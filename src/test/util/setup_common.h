@@ -19,6 +19,7 @@
 #include <util/check.h>
 #include <util/string.h>
 #include <util/vector.h>
+#include <interfaces/handler.h>
 
 #include <type_traits>
 #include <vector>
@@ -161,6 +162,8 @@ struct TestChain100Setup : public TestingSetup {
 
     std::vector<CTransactionRef> m_coinbase_txns; // For convenience, coinbase transactions
     CKey coinbaseKey; // private/public key needed to spend coinbase transactions
+    std::shared_ptr<CWallet> m_wallet; // Staking wallet kept alive for PoS operations
+    std::unique_ptr<interfaces::Handler> m_wallet_notifications; // Keep wallet notifications active
 };
 
 /**
