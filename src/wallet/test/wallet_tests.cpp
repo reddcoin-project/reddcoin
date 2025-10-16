@@ -209,6 +209,14 @@ BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup)
     stakeBlocks(1);
     CBlockIndex* newTip = m_node.chainman->ActiveChain().Tip();
 
+    // Clean up m_wallet before creating test wallet to avoid notification conflicts
+    if (m_wallet) {
+        RemoveWallet(m_wallet, std::nullopt);
+        m_wallet_notifications.reset();
+        SyncWithValidationInterfaceQueue();
+        m_wallet.reset();
+    }
+
     // Prune the older block file.
     {
         LOCK(cs_main);
@@ -220,9 +228,13 @@ BOOST_FIXTURE_TEST_CASE(importmulti_rescan, TestChain100Setup)
     // before the missing block, and success for a key whose creation time is
     // after.
     {
+        // Set the global RPC wallet context to our test wallet for importmulti RPC
         std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateDummyWalletDatabase());
         wallet->SetupLegacyScriptPubKeyMan();
         WITH_LOCK(wallet->cs_wallet, wallet->SetLastBlockProcessed(newTip->nHeight, newTip->GetBlockHash()));
+
+        // Add wallet to global list for RPC access, but do NOT register for notifications
+        // This avoids deadlock with m_wallet which is already registered for notifications
         AddWallet(wallet);
         UniValue keys;
         keys.setArray();
