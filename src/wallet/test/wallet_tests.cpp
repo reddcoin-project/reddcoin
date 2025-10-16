@@ -959,44 +959,154 @@ BOOST_FIXTURE_TEST_CASE(CreateWalletWithoutChain, BasicTestingSetup)
 
 BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
 {
+    LogPrintf("ZapSelectTx: Test starting\n");
     gArgs.ForceSetArg("-unsafesqlitesync", "1");
-    auto wallet = TestLoadWallet(m_node.chain.get());
+
     CKey key;
     key.MakeNewKey(true);
-    AddKey(*wallet, key);
 
     std::string error;
 
-    // Create temporary staking wallet since we're at height 101+ (PoW ended at 89)
-    auto temp_staking_wallet = std::make_unique<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
+    // Create PROPERLY INITIALIZED temporary staking wallet since we're at height 101+ (PoW ended at 89)
+    LogPrintf("ZapSelectTx: Creating staking wallet\n");
+    auto temp_staking_wallet = std::make_shared<CWallet>(m_node.chain.get(), "temp_staking", CreateMockWalletDatabase());
+    {
+        LOCK2(temp_staking_wallet->cs_wallet, ::cs_main);
+        temp_staking_wallet->SetupLegacyScriptPubKeyMan();
+        temp_staking_wallet->SetLastBlockProcessed(
+            m_node.chainman->ActiveChain().Height(),
+            m_node.chainman->ActiveChain().Tip()->GetBlockHash()
+        );
+    }
     temp_staking_wallet->LoadWallet();
+    AddWallet(temp_staking_wallet);
+    LogPrintf("ZapSelectTx: Staking wallet created and added\n");
+
+    // Register for block notifications (CRITICAL for coinstake processing!)
+    auto temp_wallet_notifications = m_node.chain->handleNotifications(temp_staking_wallet);
+    LogPrintf("ZapSelectTx: Notifications registered\n");
+
     AddKey(*temp_staking_wallet, coinbaseKey);
+    LogPrintf("ZapSelectTx: Coinbase key added to staking wallet\n");
 
+    // Rescan blockchain to find coins for staking
+    LogPrintf("ZapSelectTx: Starting blockchain rescan\n");
+    {
+        WalletRescanReserver reserver(*temp_staking_wallet);
+        if (!reserver.reserve()) {
+            throw std::runtime_error("Failed to reserve wallet for rescan");
+        }
+        CWallet::ScanResult result = temp_staking_wallet->ScanForWalletTransactions(
+            m_node.chainman->ActiveChain().Genesis()->GetBlockHash(),
+            0, {}, reserver, false
+        );
+        if (result.status == CWallet::ScanResult::FAILURE) {
+            throw std::runtime_error("Wallet rescan failed");
+        }
+    }
+    LogPrintf("ZapSelectTx: Rescan completed\n");
+
+    // Wait for wallet to be fully synced with the chain
+    LogPrintf("ZapSelectTx: Waiting for wallet sync\n");
+    temp_staking_wallet->BlockUntilSyncedToCurrentChain();
+    LogPrintf("ZapSelectTx: Wallet synced\n");
+
+    // Advance 1 minute for first block
+    SetMockTime(GetTime() + 60);
+
+    LogPrintf("ZapSelectTx: Creating first PoS block\n");
     m_coinbase_txns.push_back(CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet.get()).vtx[0]);
-    auto block_tx = TestSimpleSpend(*m_coinbase_txns[0], 0, coinbaseKey, GetScriptForRawPubKey(key.GetPubKey()));
+    LogPrintf("ZapSelectTx: First PoS block created\n");
+
+    // Advance 1 minute for second block
+    SetMockTime(GetTime() + 60);
+
+    LogPrintf("ZapSelectTx: Creating block_tx\n");
+    auto block_tx = TestSimpleSpend(*m_coinbase_txns[40], 0, coinbaseKey, GetScriptForRawPubKey(key.GetPubKey()));
+    LogPrintf("ZapSelectTx: block_tx created\n");
+
+    LogPrintf("ZapSelectTx: Creating second PoS block with block_tx\n");
     CreateAndProcessPoSBlock({block_tx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet.get());
+    LogPrintf("ZapSelectTx: Second PoS block created\n");
 
+    LogPrintf("ZapSelectTx: Syncing with validation queue\n");
     SyncWithValidationInterfaceQueue();
+    LogPrintf("ZapSelectTx: Sync complete\n");
 
+    // NOW create the test wallet AFTER blocks are created
+    LogPrintf("ZapSelectTx: Creating test wallet\n");
+    auto wallet = TestLoadWallet(m_node.chain.get());
+    LogPrintf("ZapSelectTx: Test wallet loaded\n");
+
+    // Add both keys
+    AddKey(*wallet, key);
+    AddKey(*wallet, coinbaseKey);
+    LogPrintf("ZapSelectTx: Keys added to test wallet\n");
+
+    // Rescan to find the transactions
+    LogPrintf("ZapSelectTx: Rescanning test wallet\n");
+    {
+        WalletRescanReserver reserver(*wallet);
+        if (!reserver.reserve()) {
+            throw std::runtime_error("Failed to reserve test wallet for rescan");
+        }
+        CWallet::ScanResult result = wallet->ScanForWalletTransactions(
+            m_node.chainman->ActiveChain().Genesis()->GetBlockHash(),
+            0, {}, reserver, false
+        );
+        if (result.status == CWallet::ScanResult::FAILURE) {
+            throw std::runtime_error("Test wallet rescan failed");
+        }
+    }
+    LogPrintf("ZapSelectTx: Test wallet rescan complete\n");
+
+    wallet->BlockUntilSyncedToCurrentChain();
+    LogPrintf("ZapSelectTx: Test wallet synced\n");
+
+    LogPrintf("ZapSelectTx: Running test checks\n");
     {
         auto block_hash = block_tx.GetHash();
-        auto prev_hash = m_coinbase_txns[0]->GetHash();
+        auto prev_hash = m_coinbase_txns[40]->GetHash();
 
         LOCK(wallet->cs_wallet);
+        LogPrintf("ZapSelectTx: Checking HasWalletSpend\n");
         BOOST_CHECK(wallet->HasWalletSpend(prev_hash));
+        LogPrintf("ZapSelectTx: Checking mapWallet count\n");
         BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 1u);
 
+        LogPrintf("ZapSelectTx: Calling ZapSelectTx\n");
         std::vector<uint256> vHashIn{ block_hash }, vHashOut;
         BOOST_CHECK_EQUAL(wallet->ZapSelectTx(vHashIn, vHashOut), DBErrors::LOAD_OK);
+        LogPrintf("ZapSelectTx: ZapSelectTx completed\n");
 
+        LogPrintf("ZapSelectTx: Verifying zap results\n");
         BOOST_CHECK(!wallet->HasWalletSpend(prev_hash));
         BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 0u);
+        LogPrintf("ZapSelectTx: Verification complete\n");
     }
 
-    // Clean up temporary staking wallet
-    temp_staking_wallet.reset();
+    // Clean up wallets - order matters to avoid deadlocks!
+    LogPrintf("ZapSelectTx: Starting cleanup\n");
+    // 1. Remove staking wallet from global list and reset its notification handler
+    LogPrintf("ZapSelectTx: Removing staking wallet\n");
+    RemoveWallet(temp_staking_wallet, std::nullopt);
+    temp_wallet_notifications.reset();
+    LogPrintf("ZapSelectTx: Staking wallet removed\n");
 
+    // 2. Sync with validation queue (staking wallet unregistered, safe to sync)
+    LogPrintf("ZapSelectTx: Syncing validation queue for cleanup\n");
+    SyncWithValidationInterfaceQueue();
+    LogPrintf("ZapSelectTx: Sync complete\n");
+
+    // 3. Destroy the staking wallet object
+    LogPrintf("ZapSelectTx: Destroying staking wallet\n");
+    temp_staking_wallet.reset();
+    LogPrintf("ZapSelectTx: Staking wallet destroyed\n");
+
+    // 4. Finally unload the test wallet
+    LogPrintf("ZapSelectTx: Unloading test wallet\n");
     TestUnloadWallet(std::move(wallet));
+    LogPrintf("ZapSelectTx: Test complete\n");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
