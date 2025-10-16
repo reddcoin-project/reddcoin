@@ -332,7 +332,8 @@ void TestChain100Setup::stakeBlocks(int num_blocks)
         CBlock b;
         try {
             b = CreateAndProcessPoSBlock(noTxns, scriptPubKey, m_wallet.get());
-            // Note: PoS blocks have coinstake, not coinbase, so we don't add to m_coinbase_txns
+            // Add coinstake (PoS block's primary transaction) to m_coinbase_txns for test compatibility
+            m_coinbase_txns.push_back(b.vtx[1]);
 
             // CRITICAL: Ensure wallet receives and processes block notifications before creating next block
             // 1. Sync validation interface queue to process all pending notifications
