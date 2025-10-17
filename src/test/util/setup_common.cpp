@@ -403,31 +403,18 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
     const CChainParams& chainparams = Params();
     const Consensus::Params& consensusParams = chainparams.GetConsensus();
 
-    // Following the exact pattern from commit 321da280 (RPC generatetoaddress for PoS)
-
     // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
     CBlockIndex* pindexPrev = m_node.chainman->ActiveChain().Tip();
 
-    // Create ReserveDestination from wallet (matching RPC generateblocks)
-    OutputType output_type = pwallet->m_default_address_type;
-    ReserveDestination reservedest(pwallet, output_type);
-    CTxDestination dest;
-    std::string strError;
-
-    {
-        LOCK(pwallet->cs_wallet);
-        if (!reservedest.GetReservedDestination(dest, true, strError)) {
-            throw std::runtime_error("GetReservedDestination failed: " + strError);
-        }
-    }
-
-    CScript posScriptPubKey = GetScriptForDestination(dest);
+    // Use the provided scriptPubKey for coinstake rewards (typically coinbaseKey)
+    // This ensures test wallets can find transactions paying to their imported keys
+    // The wallet can still sign because the key corresponding to scriptPubKey is in the wallet
     bool fPoSCancel = false;
     std::unique_ptr<CBlockTemplate> pblocktemplate;
 
     {
         LOCK(pwallet->cs_wallet);
-        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(posScriptPubKey, pwallet, &fPoSCancel);
+        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
     }
 
     if (!pblocktemplate.get()) {
@@ -475,9 +462,6 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
     if (!accepted) {
         throw std::runtime_error("ProcessNewBlock failed, block not accepted");
     }
-
-    // Keep the destination (address was used successfully)
-    reservedest.KeepDestination();
 
     // Update wallet's last block processed
     {
