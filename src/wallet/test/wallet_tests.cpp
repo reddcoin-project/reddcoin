@@ -292,6 +292,14 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup)
     // Mine 1 more block at KEY_TIME (height 103)
     stakeBlocks(1);
 
+    // Clean up m_wallet before creating test wallets to avoid notification conflicts
+    if (m_wallet) {
+        RemoveWallet(m_wallet, std::nullopt);
+        m_wallet_notifications.reset();
+        SyncWithValidationInterfaceQueue();
+        m_wallet.reset();
+    }
+
     std::string backup_file = (gArgs.GetDataDirNet() / "wallet.backup").string();
 
     // Import key into wallet and call dumpwallet to create backup file.
