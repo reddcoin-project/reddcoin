@@ -3588,8 +3588,11 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     bool accepted_header = m_blockman.AcceptBlockHeader(block, state, m_params, &pindex);
     CheckBlockIndex();
 
-    if (!accepted_header)
+    if (!accepted_header) {
+        LogPrintf("AcceptBlock: header not accepted for block %s, reason: %s\n",
+                 block.GetHash().ToString(), state.ToString());
         return false;
+    }
 
     // We should only accept blocks that can be connected to a prev block with validated PoS
     if (pindex->pprev && !pindex->pprev->IsValid(BLOCK_VALID_TRANSACTIONS)) {

@@ -14,6 +14,10 @@
 #include <validation.h>
 #include <validationinterface.h>
 #include <node/transaction.h>
+#include <coins.h>
+#include <chainparams.h>
+#include <index/disktxpos.h>
+#include <logging.h>
 
 #include <future>
 
@@ -194,4 +198,107 @@ CTransactionRef GetTransaction(const uint256& txhash)
     }
 
     return nullptr;
+}
+
+bool GetTransaction(CChainState* active_chainstate, const COutPoint& prevout,
+                    CTransactionRef& txOut, CBlockHeader& blockHeader, unsigned int& nTxOffset)
+{
+    // During reindex, skip txindex as it may contain stale data
+    // Always use UTXO fallback during reindex to ensure correct validation
+    const bool fSkipTxIndex = fReindex.load();
+
+    // Try txindex first if available and not reindexing (fast path)
+    if (g_txindex && !fSkipTxIndex) {
+        CDiskTxPos postx;
+        if (g_txindex->FindTxPosition(prevout.hash, postx)) {
+            CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+            if (!file.IsNull()) {
+                try {
+                    file >> blockHeader;
+                    fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+                    file >> txOut;
+                    nTxOffset = postx.nTxOffset;
+                    return true;
+                } catch (const std::exception& e) {
+                    // Fall through to UTXO lookup
+                }
+            }
+        }
+    }
+
+    // Fallback: use UTXO set + block reading (works during reindex without txindex)
+    if (!active_chainstate) {
+        LogPrint(BCLog::POS, "%s: no active chainstate available\n", __func__);
+        return false;
+    }
+
+    LOCK(cs_main);
+
+    // Get the coin from UTXO set
+    const Coin& coin = active_chainstate->CoinsTip().AccessCoin(prevout);
+    if (coin.IsSpent()) {
+        LogPrint(BCLog::POS, "%s: prevout %s already spent\n", __func__, prevout.ToString());
+        return false;
+    }
+
+    // Get the block index at the height where the coin was created
+    CBlockIndex* pindex = active_chainstate->m_chain[coin.nHeight];
+    if (!pindex) {
+        LogPrint(BCLog::POS, "%s: block at height %d not found in chain\n", __func__, coin.nHeight);
+        return false;
+    }
+
+    // Read block header and transaction directly from disk (same as txindex does)
+    // This ensures we get the exact same serialized data that txindex would provide
+    CAutoFile file(OpenBlockFile(pindex->GetBlockPos(), true), SER_DISK, CLIENT_VERSION);
+    if (file.IsNull()) {
+        return error("%s: failed to open block file for %s", __func__, prevout.hash.ToString());
+    }
+
+    try {
+        file >> blockHeader;  // Read header directly from disk
+    } catch (const std::exception& e) {
+        return error("%s: failed to read block header: %s", __func__, e.what());
+    }
+
+    // Now we need to read the full block to find our transaction and calculate offset
+    CBlock block;
+    if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
+        LogPrint(BCLog::POS, "%s: failed to read block %s from disk\n", __func__, pindex->GetBlockHash().ToString());
+        return false;
+    }
+
+    // Find the transaction in the block and calculate its offset
+    // The offset must match exactly what txindex stores: offset from after block header to the transaction
+    // Offset = CompactSize(vtx.size()) + sum of sizes of all transactions before target
+
+    // Start with CompactSize of transaction count
+    CDataStream ssSize(SER_DISK, CLIENT_VERSION);
+    WriteCompactSize(ssSize, block.vtx.size());
+    unsigned int currentOffset = ssSize.size();
+
+    for (size_t i = 0; i < block.vtx.size(); i++) {
+        if (block.vtx[i]->GetHash() == prevout.hash) {
+            nTxOffset = currentOffset;
+
+            // Read transaction from file using calculated offset (same as txindex does)
+            // Seek to the transaction offset from current position (after header)
+            if (fseek(file.Get(), nTxOffset, SEEK_CUR) != 0) {
+                return error("%s: failed to seek to offset %u for tx %s", __func__, nTxOffset, prevout.hash.ToString());
+            }
+
+            try {
+                file >> txOut;  // Read transaction directly from file
+            } catch (const std::exception& e) {
+                return error("%s: failed to read transaction from file: %s", __func__, e.what());
+            }
+
+            return true;
+        }
+
+        // Add this transaction's size to offset for next iteration
+        currentOffset += ::GetSerializeSize(*block.vtx[i], CLIENT_VERSION);
+    }
+
+    return error("%s: transaction %s not found in block %s", __func__, prevout.hash.ToString(), pindex->GetBlockHash().ToString());
 }

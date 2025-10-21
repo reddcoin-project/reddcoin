@@ -212,7 +212,9 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             // Search nSearchInterval seconds back up to nMaxStakeSearchInterval
             uint256 hashProofOfStake = uint256();
             COutPoint prevoutStake = pcoin.outpoint;
-            bool foundStake = CheckStakeKernelHash(chainstate, nBits, header, prevoutStake.n, tx, prevoutStake, txNew.nTime - n, hashProofOfStake);
+            // When creating a new stake block, use current chain tip as parent
+            CBlockIndex* pindexPrev = chainstate->m_chain.Tip();
+            bool foundStake = CheckStakeKernelHash(chainstate, pindexPrev, nBits, header, prevoutStake.n, tx, prevoutStake, txNew.nTime - n, hashProofOfStake);
             if (foundStake)
             {
                 // Found a kernel

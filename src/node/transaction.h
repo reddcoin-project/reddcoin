@@ -12,6 +12,7 @@
 #include <util/error.h>
 
 class CBlockIndex;
+class CBlockHeader;
 class CTxMemPool;
 struct NodeContext;
 namespace Consensus {
@@ -75,4 +76,18 @@ CTransactionRef GetTransaction(const uint256& txhash, uint256& hashBlock);
  * @returns                    The tx if found, otherwise nullptr
  */
 CTransactionRef GetTransaction(const uint256& txhash);
+
+/**
+ * Return transaction with a given tx hash for proof-of-stake validation.
+ * Tries txindex first (fast), falls back to UTXO lookup + block reading (works during reindex).
+ *
+ * @param[in]  active_chainstate The active chainstate
+ * @param[in]  prevout         The outpoint referencing the transaction
+ * @param[out] txOut           The transaction if found
+ * @param[out] blockHeader     The block header containing the transaction
+ * @param[out] nTxOffset       Offset of transaction within its block (for stake kernel hash)
+ * @returns                    true if transaction was found and all outputs populated
+ */
+bool GetTransaction(class CChainState* active_chainstate, const COutPoint& prevout,
+                    CTransactionRef& txOut, CBlockHeader& blockHeader, unsigned int& nTxOffset);
 #endif // BITCOIN_NODE_TRANSACTION_H
