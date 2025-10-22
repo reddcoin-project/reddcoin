@@ -51,6 +51,72 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_reject_coinbase, TestChain100Setup)
     BOOST_CHECK(result.m_state.GetResult() == TxValidationResult::TX_CONSENSUS);
 }
 
+/**
+ * Ensure that the mempool rejects version 2+ transactions with nTime=0.
+ */
+BOOST_FIXTURE_TEST_CASE(tx_mempool_reject_zero_time, TestChain100Setup)
+{
+    CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+    CMutableTransaction tx;
+
+    tx.nVersion = 2;  // PoS transaction
+    tx.nTime = 0;  // Invalid timestamp
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    tx.vin[0].prevout.hash = InsecureRand256();
+    tx.vin[0].prevout.n = 0;
+    tx.vin[0].scriptSig = CScript() << std::vector<unsigned char>(65, 0);
+    tx.vout[0].nValue = 1 * CENT;
+    tx.vout[0].scriptPubKey = scriptPubKey;
+
+    LOCK(cs_main);
+
+    unsigned int initialPoolSize = m_node.mempool->size();
+    const MempoolAcceptResult result = AcceptToMemoryPool(m_node.chainman->ActiveChainstate(),
+                                                         *m_node.mempool,
+                                                         MakeTransactionRef(tx),
+                                                         false /* bypass_limits */);
+
+    BOOST_CHECK(result.m_result_type == MempoolAcceptResult::ResultType::INVALID);
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), initialPoolSize);
+    BOOST_CHECK(result.m_state.IsInvalid());
+    BOOST_CHECK_EQUAL(result.m_state.GetRejectReason(), "bad-txns-time-zero");
+    BOOST_CHECK(result.m_state.GetResult() == TxValidationResult::TX_CONSENSUS);
+}
+
+/**
+ * Ensure that the mempool accepts version 1 transactions with nTime=0 (PoW era).
+ */
+BOOST_FIXTURE_TEST_CASE(tx_mempool_accept_v1_zero_time, TestChain100Setup)
+{
+    CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+    CMutableTransaction tx;
+
+    tx.nVersion = POW_TX_VERSION;  // Version 1 - PoW transaction
+    tx.nTime = 0;  // Valid for version 1
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    tx.vin[0].prevout.hash = m_coinbase_txns[0]->GetHash();
+    tx.vin[0].prevout.n = 0;
+    tx.vin[0].scriptSig = CScript() << std::vector<unsigned char>(65, 0);
+    tx.vout[0].nValue = 1 * CENT;
+    tx.vout[0].scriptPubKey = scriptPubKey;
+
+    LOCK(cs_main);
+
+    unsigned int initialPoolSize = m_node.mempool->size();
+    const MempoolAcceptResult result = AcceptToMemoryPool(m_node.chainman->ActiveChainstate(),
+                                                         *m_node.mempool,
+                                                         MakeTransactionRef(tx),
+                                                         true /* bypass_limits */);
+
+    // Note: This test may fail due to other validation issues (signatures, etc.)
+    // but it should NOT fail due to nTime=0 for version 1 transactions
+    if (result.m_result_type == MempoolAcceptResult::ResultType::INVALID) {
+        BOOST_CHECK_NE(result.m_state.GetRejectReason(), "bad-txns-time-zero");
+    }
+}
+
 // Create placeholder transactions that have no meaning.
 inline CTransactionRef create_placeholder_tx(size_t num_inputs, size_t num_outputs)
 {

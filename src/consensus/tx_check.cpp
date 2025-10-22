@@ -54,5 +54,10 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
                 return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-prevout-null");
     }
 
+    // ReddCoin: Validate transaction timestamp for PoS transactions
+    if (tx.nVersion > POW_TX_VERSION && tx.nTime == 0) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-time-zero");
+    }
+
     return true;
 }
