@@ -125,9 +125,12 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
 
     CChainParams chainparams(Params());
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(UintToArith256(block.GetHash()), block.nBits, chainparams.GetConsensus()) && !ShutdownRequested()) {
-        ++block.nNonce;
-        --max_tries;
+    // Only validate POW for PoW blocks - PoS blocks use different validation
+    if (block.IsProofOfWork()) {
+        while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(UintToArith256(block.GetPoWHash()), block.nBits, chainparams.GetConsensus()) && !ShutdownRequested()) {
+            ++block.nNonce;
+            --max_tries;
+        }
     }
     if (max_tries == 0 || ShutdownRequested()) {
         return false;
