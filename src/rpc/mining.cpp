@@ -304,7 +304,19 @@ static RPCHelpMan setstaking()
                 } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
                     result.pushKV("error", "Blank wallet flag set.");
                 } else {
-                    pwallet->SetEnableStaking(request.params[0].getBool());
+                    bool enable = request.params[0].getBool();
+                    pwallet->SetEnableStaking(enable);
+
+                    // Notify CStakeman to start/stop staking thread for this wallet
+                    NodeContext& node = EnsureAnyNodeContext(request.context);
+                    if (node.stakeman) {
+                        if (enable) {
+                            node.stakeman->StakeWalletAdd(pwallet->GetName());
+                        } else {
+                            node.stakeman->StakeWalletRemove(pwallet->GetName());
+                        }
+                    }
+
                     if (!request.params[1].isNull()) {
                         interfaces::Chain& chain = pwallet->chain();
                         std::string name = pwallet->GetName();
