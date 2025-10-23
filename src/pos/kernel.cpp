@@ -6,6 +6,7 @@
 #include <pos/kernel.h>
 
 #include <chainparams.h>
+#include <coins.h>
 #include <consensus/validation.h>
 #include <hash.h>
 #include <node/blockstorage.h>
@@ -294,18 +295,28 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
         it = it->pprev;
     }
     std::reverse(tmpChain.begin(), tmpChain.end());
+
     const CBlockIndex* pindex = pindexFrom;
+    size_t tmpChainIndex = 0;
 
     // loop to find the stake modifier later by a selection interval
     while (nStakeModifierTime < pindexFrom->GetBlockTime() + nStakeModifierSelectionInterval) {
-        if (!active_chainstate->m_chain.Next(pindex)) { // reached best block; may happen if node is behind on block chain or receive out of order
+        const CBlockIndex* pindexNext = active_chainstate->m_chain.Next(pindex);
+
+        // If active chain ends, use tmpChain for blocks being validated during reindex
+        if (!pindexNext && tmpChainIndex < tmpChain.size()) {
+            pindexNext = tmpChain[tmpChainIndex++];
+        }
+
+        if (!pindexNext) { // reached best block; may happen if node is behind on block chain or receive out of order
             if (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()) {
                 return error("%s(): reached best block %s at height %d from block at height %d.", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight, pindexFrom->nHeight);
             } else {
                 return false;
             }
         }
-        pindex = active_chainstate->m_chain.Next(pindex);
+
+        pindex = pindexNext;
         if (pindex->GeneratedStakeModifier()) {
             nStakeModifierHeight = pindex->nHeight;
             nStakeModifierTime = pindex->GetBlockTime();
@@ -337,12 +348,21 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
 //   quantities so as to generate blocks faster, degrading the system back into
 //   a proof-of-work situation.
 //
-bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
+bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPrev, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
 {
     const Consensus::Params& params = Params().GetConsensus();
     unsigned int nTimeBlockFrom = blockFrom.nTime;
     unsigned int nTimeTxPrev = txPrev->nTime;
-    CBlockIndex* pindexPrev = active_chainstate->m_chain.Tip()->pprev;
+
+    // Note: pindexPrev parameter is the block being validated, but for stake modifier
+    // calculation we need to use the chain tip's parent (grandparent of block being validated)
+    // This matches the original behavior
+    if (!pindexPrev) {
+        pindexPrev = active_chainstate->m_chain.Tip()->pprev;
+    } else {
+        // Use pprev of the block being validated (which is the parent's parent)
+        pindexPrev = pindexPrev->pprev;
+    }
 
     // deal with missing timestamps in PoW blocks
     if (!nTimeTxPrev)
@@ -414,20 +434,18 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx->vin[0];
 
-    uint256 blockHash;
-    CTransactionRef txPrev = GetTransaction(txin.prevout.hash, blockHash);
-    if (!txPrev)
-        return error("%s() : tx %s not found", __func__, txin.prevout.hash.ToString());
+    CTransactionRef txPrev;
+    CBlockHeader blockHeader;
+    unsigned int nTxOffset = 0;
 
-    LOCK(cs_main);
-    const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(blockHash);
-    if (!pindex)
-          return error("%s() : block %s not found in index", __func__, blockHash.ToString());
+    // Get stake transaction - tries txindex first, falls back to UTXO lookup
+    if (!GetTransaction(active_chainstate, txin.prevout, txPrev, blockHeader, nTxOffset)) {
+        return error("%s() : failed to get stake transaction for %s", __func__, txin.prevout.hash.ToString());
+    }
 
-    CBlockHeader header = pindex->GetBlockHeader();
-
-    // Calculate stakehash
-    if (!CheckStakeKernelHash(active_chainstate, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
+    // Calculate stakehash - pass pindexPrev for correct stake modifier calculation
+    // Note: nTxPrevOffset parameter is the OUTPUT INDEX, not the file offset!
+    if (!CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, blockHeader, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
         return error("%s() : in CheckStakeKernelHash()", __func__);
     }
 
@@ -455,39 +473,46 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
     if (tx.IsCoinBase())
         return 0;
 
+    LOCK(cs_main);
+
     for (const CTxIn& txin : tx.vin) {
-        // First try finding the previous transaction in database
-        CTransactionRef txPrevious;
-        uint256 hashTxPrev = txin.prevout.hash;
-        uint256 hashBlock = uint256();
-        txPrevious = GetTransaction(nullptr, nullptr, hashTxPrev, params, hashBlock);
-        if (!txPrevious)
-            continue; // previous transaction not in main chain
-        CMutableTransaction txPrev(*txPrevious);
-        // Read block header
-        CBlock block;
-        LOCK(cs_main);
-        if (!active_chainstate->m_blockman.LookupBlockIndex(hashBlock))
-            return 0; // unable to read block of previous transaction
-        if (!ReadBlockFromDisk(block, active_chainstate->m_blockman.LookupBlockIndex(hashBlock), params))
-            return 0; // unable to read block of previous transaction
-        if (block.nTime + params.nStakeMinAge > tx.nTime)
-            continue; // only count coins meeting min age requirement
+        // Get coin from UTXO set (faster and works during reindex)
+        const Coin& coin = active_chainstate->CoinsTip().AccessCoin(txin.prevout);
+        if (coin.IsSpent()) {
+            continue; // coin already spent or not in UTXO set
+        }
 
-        // deal with missing timestamps in PoW blocks
-        if (txPrev.nTime == 0)
-            txPrev.nTime = block.nTime;
+        // Get block time from block index
+        CBlockIndex* pindex = active_chainstate->m_chain[coin.nHeight];
+        if (!pindex) {
+            continue; // block not in main chain
+        }
 
-        if (tx.nTime < txPrev.nTime)
+        uint32_t nTimeBlockFrom = pindex->GetBlockTime();
+        uint32_t nTimeTxPrev = coin.nTime;
+
+        // Deal with missing timestamps in PoW blocks
+        if (nTimeTxPrev == 0) {
+            nTimeTxPrev = nTimeBlockFrom;
+        }
+
+        // Check minimum age requirement
+        if (nTimeBlockFrom + params.nStakeMinAge > tx.nTime) {
+            continue; // coin doesn't meet minimum age requirement
+        }
+
+        // Check for timestamp violation
+        if (tx.nTime < nTimeTxPrev) {
             return 0; // Transaction timestamp violation
+        }
 
-        int64_t nValueIn = txPrev.vout[txin.prevout.n].nValue;
-        int64_t nTimeWeight = GetCoinAgeWeight(txPrev.nTime, tx.nTime, params);
+        int64_t nValueIn = coin.out.nValue;
+        int64_t nTimeWeight = GetCoinAgeWeight(nTimeTxPrev, tx.nTime, params);
         bnCentSecond += arith_uint256(nValueIn) * nTimeWeight / CENT;
 
         if (gArgs.GetBoolArg("-printcoinage", DEFAULT_PRINTCOINAGE)) {
-            LogPrint(BCLog::POS, "%s - coin age nValueIn=%s nTime=%d, txPrev.nTime=%d, nTimeWeight=%s bnCentSecond=%s\n",
-                                 __func__,  nValueIn, tx.nTime, txPrev.nTime, nTimeWeight, bnCentSecond.ToString());
+            LogPrint(BCLog::POS, "%s - coin age nValueIn=%s nTime=%d, nTimeTxPrev=%d, nTimeWeight=%s bnCentSecond=%s\n",
+                                 __func__, nValueIn, tx.nTime, nTimeTxPrev, nTimeWeight, bnCentSecond.ToString());
         }
     }
 
