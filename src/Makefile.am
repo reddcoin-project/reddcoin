@@ -277,20 +277,20 @@ BITCOIN_CORE_H = \
   util/translation.h \
   util/ui_change_type.h \
   util/url.h \
+  util/bip39.h \
+  util/lang/bip39_chinese_simplified.h \
+  util/lang/bip39_chinese_traditional.h \
+  util/lang/bip39_english.h \
+  util/lang/bip39_french.h \
+  util/lang/bip39_italian.h \
+  util/lang/bip39_japanese.h \
+  util/lang/bip39_korean.h \
+  util/lang/bip39_spanish.h \
   util/vector.h \
   validation.h \
   validationinterface.h \
   versionbits.h \
   wallet/bdb.h \
-  wallet/bip39.h \
-  wallet/bip39_chinese_simplified.h \
-  wallet/bip39_chinese_traditional.h \
-  wallet/bip39_english.h \
-  wallet/bip39_french.h \
-  wallet/bip39_italian.h \
-  wallet/bip39_japanese.h \
-  wallet/bip39_korean.h \
-  wallet/bip39_spanish.h \
   wallet/coincontrol.h \
   wallet/coinselection.h \
   wallet/context.h \
@@ -424,7 +424,6 @@ endif
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(SQLITE_CFLAGS)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_wallet_a_SOURCES = \
-  wallet/bip39.cpp \
   wallet/coincontrol.cpp \
   wallet/context.cpp \
   wallet/crypter.cpp \
@@ -619,6 +618,7 @@ libbitcoin_util_a_SOURCES = \
   threadinterrupt.cpp \
   util/asmap.cpp \
   util/bip32.cpp \
+  util/bip39.cpp \
   util/bytevectorhash.cpp \
   util/error.cpp \
   util/fees.cpp \

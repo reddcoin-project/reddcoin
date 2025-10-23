@@ -12,7 +12,7 @@
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
 #include <key.h>
-#include <wallet/bip39.h>
+#include <util/bip39.h>
 
 #include <stdint.h>
 #include <string>

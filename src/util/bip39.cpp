@@ -27,15 +27,15 @@
 #include <crypto/pkcs5_pbkdf2_hmac_sha512.h>
 #include <crypto/sha256.h>
 #include <random.h>
-#include <wallet/bip39.h>
-#include <wallet/bip39_chinese_simplified.h>
-#include <wallet/bip39_chinese_traditional.h>
-#include <wallet/bip39_english.h>
-#include <wallet/bip39_french.h>
-#include <wallet/bip39_italian.h>
-#include <wallet/bip39_japanese.h>
-#include <wallet/bip39_korean.h>
-#include <wallet/bip39_spanish.h>
+#include <util/bip39.h>
+#include <util/lang/bip39_chinese_simplified.h>
+#include <util/lang/bip39_chinese_traditional.h>
+#include <util/lang/bip39_english.h>
+#include <util/lang/bip39_french.h>
+#include <util/lang/bip39_italian.h>
+#include <util/lang/bip39_japanese.h>
+#include <util/lang/bip39_korean.h>
+#include <util/lang/bip39_spanish.h>
 
 SecureString CMnemonic::Generate(int strength, int languageSelected)
 {
