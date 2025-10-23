@@ -239,6 +239,13 @@ TestChain100Setup::TestChain100Setup()
     // This provides backward compatibility and PoS verification for all tests
     this->mineBlocks(89);   // PoW blocks 1-89 (with nCoinbaseMaturity=60, many coins are mature)
 
+    {
+        LOCK(::cs_main);
+        assert(
+            m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
+            "71a098da745050f2121daa61a4607afa6497f264dfc85abc64ab1cafc3218f2e");
+    }
+
     // Wait for txindex to sync all PoW blocks before generating PoS blocks
     // This is critical - PoS staking needs txindex to look up previous transactions
     g_txindex->BlockUntilSyncedToCurrentChain();
