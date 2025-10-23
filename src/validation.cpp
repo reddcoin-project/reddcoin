@@ -3144,6 +3144,20 @@ void CChainState::ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pi
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
+    // Check proof of work matches claimed amount
+    if (block.GetBlockTime() > CHECK_POW_FROM_NTIME) {
+        if (fCheckPOW && block.IsProofOfWork()) {
+            if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams)) {
+                return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+            }
+        }
+    }
+
+    // Check timestamp
+    if (block.GetBlockTime() > FutureDrift(GetAdjustedTime())) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "time-too-new", "block timestamp too far in the future");
+    }
+
     return true;
 }
 
