@@ -694,8 +694,10 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 LogPrintf("Staker thread [%d]: proof-of-stake block found %s\n", thread_id, pblock->GetHash().ToString());
                 ProcessBlockFound(pblock, chainman, &chainman->ActiveChainstate(), Params());
                 reservedest.KeepDestination();
-                // Rest for ~3 minutes after successful block to preserve close quick
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
+                // Rest after successful block to preserve resources
+                // Use shorter interval for regtest (10 second) vs mainnet/testnet (60 seconds)
+                int nStakeInterval = Params().NetworkIDString() == CBaseChainParams::REGTEST ? 10 : 60;
+                if (!connman->interruptNet.sleep_for(std::chrono::seconds(nStakeInterval + GetRand(4))))
                     return;
             }
 
