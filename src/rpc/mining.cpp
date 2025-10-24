@@ -17,8 +17,10 @@
 #include <miner.h>
 #include <net.h>
 #include <node/context.h>
+#include <outputtype.h>
 #include <policy/fees.h>
 #include <pos/kernel.h>
+#include <pos/signer.h>
 #include <pos/stake.h>
 #include <pow.h>
 #include <rpc/blockchain.h>
@@ -42,6 +44,7 @@
 #include <validationinterface.h>
 #include <warnings.h>
 #include <wallet/rpcwallet.h>
+#include <wallet/wallet.h>
 
 #include <memory>
 #include <stdint.h>
@@ -148,10 +151,11 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries)
+static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, CWallet* pwallet = nullptr)
 {
     int nHeightEnd = 0;
     int nHeight = 0;
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
     {   // Don't keep cs_main locked
         LOCK(cs_main);
@@ -162,19 +166,87 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
     UniValue blockHashes(UniValue::VARR);
     while (nHeight < nHeightEnd && !ShutdownRequested())
     {
-        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(coinbase_script));
-        if (!pblocktemplate.get())
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
-        CBlock *pblock = &pblocktemplate->block;
+        // Check if we need PoS blocks (after nLastPowHeight)
+        bool needPoS = (nHeight >= consensusParams.nLastPowHeight);
 
-        uint256 block_hash;
-        if (!GenerateBlock(chainman, *pblock, nMaxTries, nExtraNonce, block_hash)) {
-            break;
-        }
+        std::unique_ptr<CBlockTemplate> pblocktemplate;
+        std::unique_ptr<ReserveDestination> reservedest;  // Declare outside so we can call KeepDestination later
+        CBlockIndex* pindexPrev = nullptr;
 
-        if (!block_hash.IsNull()) {
-            ++nHeight;
-            blockHashes.push_back(block_hash.GetHex());
+        if (needPoS && pwallet) {
+            // Create PoS block with wallet - follow miner.cpp PoSMiner() process exactly
+            // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
+            pindexPrev = chainman.ActiveChain().Tip();
+
+            OutputType output_type = pwallet->m_default_address_type;
+            reservedest = std::make_unique<ReserveDestination>(pwallet, output_type);
+            CTxDestination dest;
+            std::string strError;
+
+            {
+                LOCK(pwallet->cs_wallet);
+                if (!reservedest->GetReservedDestination(dest, true, strError)) {
+                    throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, strError);
+                }
+            }
+
+            CScript scriptPubKey = GetScriptForDestination(dest);
+            bool fPoSCancel = false;
+            {
+                LOCK(pwallet->cs_wallet);
+                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+            }
+
+            if (!pblocktemplate.get()) {
+                if (fPoSCancel) {
+                    throw JSONRPCError(RPC_MISC_ERROR, strprintf("Could not create PoS block at height %d: no valid coinstake found (wallet may need more age)", nHeight + 1));
+                }
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new PoS block");
+            }
+
+            CBlock *pblock = &pblocktemplate->block;
+
+            // Increment extra nonce (no lock needed, following miner.cpp line 679)
+            IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+
+            // Sign the PoS block
+            if (pblock->IsProofOfStake()) {
+                LOCK(pwallet->cs_wallet);
+                if (!SignBlock(*pblock, *pwallet)) {
+                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to sign PoS block");
+                }
+            }
+
+            // Process the PoS block
+            std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
+            if (!chainman.ProcessNewBlock(Params(), shared_pblock, true, nullptr)) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+            }
+
+            uint256 block_hash = pblock->GetHash();
+            if (!block_hash.IsNull()) {
+                reservedest->KeepDestination();
+                ++nHeight;
+                blockHashes.push_back(block_hash.GetHex());
+            }
+        } else {
+            // Create PoW block
+            pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(coinbase_script);
+            if (!pblocktemplate.get())
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
+
+            CBlock *pblock = &pblocktemplate->block;
+
+            // For PoW blocks, use the regular GenerateBlock function
+            uint256 block_hash;
+            if (!GenerateBlock(chainman, *pblock, nMaxTries, nExtraNonce, block_hash)) {
+                break;
+            }
+
+            if (!block_hash.IsNull()) {
+                ++nHeight;
+                blockHashes.push_back(block_hash.GetHex());
+            }
         }
     }
     return blockHashes;
@@ -411,7 +483,8 @@ static RPCHelpMan generate()
 static RPCHelpMan generatetoaddress()
 {
     return RPCHelpMan{"generatetoaddress",
-                "\nMine blocks immediately to a specified address (before the RPC call returns)\n",
+                "\nMine blocks immediately to a specified address (before the RPC call returns)\n"
+                "Note: For regtest after nLastPowHeight, this requires a loaded wallet for PoS block generation.\n",
                 {
                     {"nblocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated immediately."},
                     {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated reddcoin to."},
@@ -444,7 +517,14 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
+    CWallet* pwallet = nullptr;
+    std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (wallet) {
+        pwallet = wallet.get();
+    }
+
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
 },
     };
 }
