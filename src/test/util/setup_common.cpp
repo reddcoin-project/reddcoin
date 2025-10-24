@@ -9,16 +9,20 @@
 #include <banman.h>
 #include <chainparams.h>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <crypto/sha256.h>
+#include <index/txindex.h>
 #include <init.h>
 #include <interfaces/chain.h>
 #include <miner.h>
 #include <net.h>
 #include <net_processing.h>
 #include <noui.h>
+#include <outputtype.h>
 #include <policy/fees.h>
+#include <pos/signer.h>
 #include <pow.h>
 #include <rpc/blockchain.h>
 #include <rpc/register.h>
@@ -37,6 +41,9 @@
 #include <util/vector.h>
 #include <validation.h>
 #include <validationinterface.h>
+#include <wallet/coincontrol.h>
+#include <wallet/wallet.h>
+#include <wallet/walletdb.h>
 #include <walletinitinterface.h>
 
 #include <functional>
@@ -210,34 +217,156 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 }
 
 TestChain100Setup::TestChain100Setup()
+    : TestingSetup(CBaseChainParams::REGTEST, {"-txindex=1"})
 {
     const Consensus::Params& params = Params().GetConsensus();
 
-    SetMockTime(1598887952);
+    // Set mock time to be after genesis block time
+    SetMockTime(Params().GenesisBlock().nTime + 1);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
 
-    // Generate a 100-block chain:
-    this->mineBlocks(params.GetCoinbaseMaturity());
+    // Initialize txindex for PoS staking
+    // PoS CreateCoinStake requires transaction index to look up previous transactions
+    g_txindex = std::make_unique<TxIndex>(1 << 20, true, false);
+    if (!g_txindex->Start(m_node.chainman->ActiveChainstate())) {
+        throw std::runtime_error("Failed to start txindex");
+    }
+
+    // Generate a chain with PoW blocks up to nLastPowHeight, then PoS blocks
+    // regtest has nLastPowHeight = 89, so we mine blocks 1-89 (genesis is block 0)
+    // This provides backward compatibility and PoS verification for all tests
+    this->mineBlocks(89);   // PoW blocks 1-89 (with nCoinbaseMaturity=60, many coins are mature)
 
     {
         LOCK(::cs_main);
         assert(
             m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "571d80a9967ae599cec0448b0b0ba1cfb606f584d8069bd7166b86854ba7a191");
+            "71a098da745050f2121daa61a4607afa6497f264dfc85abc64ab1cafc3218f2e");
+    }
+
+    // Wait for txindex to sync all PoW blocks before generating PoS blocks
+    // This is critical - PoS staking needs txindex to look up previous transactions
+    g_txindex->BlockUntilSyncedToCurrentChain();
+
+    // Advance time significantly to ensure coins have sufficient stake age
+    // In regtest, nStakeMinAge = 10 seconds, but we add extra time for safety
+    SetMockTime(GetTime() + 600);  // Add 10 minutes of extra age
+
+    this->stakeBlocks(11);  // PoS blocks 90-100 inclusive (11 blocks)
+
+    {
+        LOCK(::cs_main);
+        int actual_height = m_node.chainman->ActiveChain().Height();
+        if (actual_height != 100) {
+            std::cerr << "ERROR: Expected height 100, but got " << actual_height << std::endl;
+        }
+        assert(actual_height == 100);
     }
 }
 
 void TestChain100Setup::mineBlocks(int num_blocks)
 {
     CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
     for (int i = 0; i < num_blocks; i++) {
         std::vector<CMutableTransaction> noTxns;
         CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
-        SetMockTime(GetTime() + 1);
         m_coinbase_txns.push_back(b.vtx[0]);
+        // Increment mock time by 60 seconds per block to provide enough time span
+        // for stake modifier calculations (which need to look ahead by modifier selection interval)
+        SetMockTime(GetTime() + 60);
     }
+}
+
+void TestChain100Setup::stakeBlocks(int num_blocks)
+{
+    CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
+    // Create wallet for PoS block generation (reuse if already exists)
+    if (!m_wallet) {
+        m_wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
+        {
+            LOCK2(m_wallet->cs_wallet, ::cs_main);
+            m_wallet->SetupLegacyScriptPubKeyMan();
+            m_wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        m_wallet->LoadWallet();
+        AddWallet(m_wallet);
+
+        // Register wallet for block notifications (CRITICAL for coinstake processing!)
+        // Keep the handler alive as a member variable so notifications continue
+        m_wallet_notifications = m_node.chain->handleNotifications(m_wallet);
+
+        // Add coinbaseKey to wallet
+        {
+            LOCK(m_wallet->cs_wallet);
+            if (!m_wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey())) {
+                RemoveWallet(m_wallet, std::nullopt);
+                m_wallet.reset();
+                throw std::runtime_error("Failed to add coinbaseKey to wallet");
+            }
+        }
+
+        // Rescan blockchain to find coins (only on first call when wallet is created)
+        {
+            WalletRescanReserver reserver(*m_wallet);
+            if (!reserver.reserve()) {
+                RemoveWallet(m_wallet, std::nullopt);
+                m_wallet.reset();
+                throw std::runtime_error("Failed to reserve wallet for rescan");
+            }
+            CWallet::ScanResult result = m_wallet->ScanForWalletTransactions(
+                m_node.chainman->ActiveChain().Genesis()->GetBlockHash(),
+                0, {}, reserver, false
+            );
+            if (result.status == CWallet::ScanResult::FAILURE) {
+                RemoveWallet(m_wallet, std::nullopt);
+                m_wallet.reset();
+                throw std::runtime_error("Wallet rescan failed");
+            }
+        }
+    }
+
+    // Wait for wallet to be fully synced with the chain
+    // This ensures the wallet's UTXO set matches the chainstate's UTXO set
+    m_wallet->BlockUntilSyncedToCurrentChain();
+
+    // Generate PoS blocks
+    for (int i = 0; i < num_blocks; i++) {
+        std::vector<CMutableTransaction> noTxns;
+        CBlock b;
+        try {
+            b = CreateAndProcessPoSBlock(noTxns, scriptPubKey, m_wallet.get());
+            // Add coinstake (PoS block's primary transaction) to m_coinbase_txns for test compatibility
+            m_coinbase_txns.push_back(b.vtx[1]);
+
+            // CRITICAL: Ensure wallet receives and processes block notifications before creating next block
+            // 1. Sync validation interface queue to process all pending notifications
+            SyncWithValidationInterfaceQueue();
+            // 2. Wait for wallet to sync to the current chain tip
+            m_wallet->BlockUntilSyncedToCurrentChain();
+            // 3. Force wallet to re-evaluate all transactions and update spent status
+            {
+                LOCK(m_wallet->cs_wallet);
+                m_wallet->ReacceptWalletTransactions();
+            }
+            // 4. Extra sync to ensure wallet has fully processed the coinstake transaction
+            SyncWithValidationInterfaceQueue();
+            m_wallet->BlockUntilSyncedToCurrentChain();
+        } catch (const std::runtime_error& e) {
+            std::cerr << "ERROR generating PoS block " << i << " at height "
+                      << (m_node.chainman->ActiveChain().Height() + 1) << ": " << e.what() << std::endl;
+            RemoveWallet(m_wallet, std::nullopt);
+            m_wallet.reset();
+            throw;
+        }
+        // Increment mock time by 60 seconds to maintain consistency with PoW blocks
+        SetMockTime(GetTime() + 60);
+    }
+
+    // Keep wallet alive for subsequent PoS operations - it will be cleaned up in destructor
 }
 
 CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
@@ -250,14 +379,104 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
     for (const CMutableTransaction& tx : txns) {
         block.vtx.push_back(MakeTransactionRef(tx));
     }
+
+    // Set block time to be after previous block
+    {
+        LOCK(cs_main);
+        // Use mock time if available, otherwise increment from previous block
+        block.nTime = std::max(GetTime(), m_node.chainman->ActiveChain().Tip()->GetBlockTime() + 1);
+        // Also ensure it's after median time past
+        if (block.nTime <= m_node.chainman->ActiveChain().Tip()->GetMedianTimePast()) {
+            block.nTime = m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1;
+        }
+        // Update mock time so next call to GetTime() returns a later time
+        SetMockTime(block.nTime + 1);
+    }
+
+    // Regenerate merkle root and commitments after modifying block
+    block.hashMerkleRoot = BlockMerkleRoot(block);
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
 
     std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(block);
     Assert(m_node.chainman)->ProcessNewBlock(chainparams, shared_pblock, true, nullptr);
 
     return block;
+}
+
+CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, CWallet* pwallet)
+{
+    const CChainParams& chainparams = Params();
+    const Consensus::Params& consensusParams = chainparams.GetConsensus();
+
+    // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
+    CBlockIndex* pindexPrev = m_node.chainman->ActiveChain().Tip();
+
+    // Use the provided scriptPubKey for coinstake rewards (typically coinbaseKey)
+    // This ensures test wallets can find transactions paying to their imported keys
+    // The wallet can still sign because the key corresponding to scriptPubKey is in the wallet
+    bool fPoSCancel = false;
+    std::unique_ptr<CBlockTemplate> pblocktemplate;
+
+    {
+        LOCK(pwallet->cs_wallet);
+        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+    }
+
+    if (!pblocktemplate.get()) {
+        if (fPoSCancel) {
+            throw std::runtime_error("Could not create PoS block: no valid coinstake found (wallet may need more age)");
+        }
+        throw std::runtime_error("Couldn't create new PoS block");
+    }
+
+    CBlock *pblock = &pblocktemplate->block;
+
+    // Increment extra nonce (no lock needed, following miner.cpp line 679)
+    unsigned int nExtraNonce = 0;
+    IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+
+    // Add additional transactions if provided
+    for (const CMutableTransaction& tx : txns) {
+        pblock->vtx.push_back(MakeTransactionRef(tx));
+    }
+
+    // If we added transactions, regenerate merkle root
+    if (!txns.empty()) {
+        pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
+        RegenerateCommitments(*pblock, *Assert(m_node.chainman));
+    }
+
+    // Sign the PoS block (critical step!)
+    if (pblock->IsProofOfStake()) {
+        LOCK(pwallet->cs_wallet);
+        if (!SignBlock(*pblock, *pwallet)) {
+            throw std::runtime_error("Failed to sign PoS block");
+        }
+    }
+
+    // Process the PoS block
+    std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
+    bool accepted = m_node.chainman->ProcessNewBlock(chainparams, shared_pblock, true, nullptr);
+
+    // Check if block was actually added to the chain
+    int new_height = m_node.chainman->ActiveChain().Height();
+    if (accepted && new_height == pindexPrev->nHeight) {
+        throw std::runtime_error("Block accepted but failed to connect to active chain");
+    }
+
+    if (!accepted) {
+        throw std::runtime_error("ProcessNewBlock failed, block not accepted");
+    }
+
+    // Update wallet's last block processed
+    {
+        LOCK2(pwallet->cs_wallet, ::cs_main);
+        pwallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+
+    return *pblock;
 }
 
 
@@ -312,6 +531,17 @@ CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(CTransactio
 
 TestChain100Setup::~TestChain100Setup()
 {
+    // Clean up wallet if it exists
+    if (m_wallet) {
+        RemoveWallet(m_wallet, std::nullopt);
+        m_wallet.reset();
+    }
+
+    // Stop and clean up txindex
+    if (g_txindex) {
+        g_txindex->Stop();
+        g_txindex.reset();
+    }
     gArgs.ForceSetArg("-segwitheight", "0");
 }
 

@@ -19,6 +19,7 @@
 #include <util/check.h>
 #include <util/string.h>
 #include <util/vector.h>
+#include <interfaces/handler.h>
 
 #include <type_traits>
 #include <vector>
@@ -112,8 +113,9 @@ class CScript;
 
 /**
  * Testing fixture that pre-creates a 100-block REGTEST-mode block chain
+ * Enables txindex for PoS staking support
  */
-struct TestChain100Setup : public RegTestingSetup {
+struct TestChain100Setup : public TestingSetup {
     TestChain100Setup();
 
     /**
@@ -123,8 +125,19 @@ struct TestChain100Setup : public RegTestingSetup {
     CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
                                  const CScript& scriptPubKey);
 
+    /**
+     * Create a new Proof-of-Stake block with coinstake and given transactions.
+     * Requires mature coins to stake from m_coinbase_txns.
+     */
+    CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
+                                     const CScript& scriptPubKey,
+                                     CWallet* pwallet);
+
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);
+
+    //! Stake a series of PoS blocks using coinbaseKey
+    void stakeBlocks(int num_blocks);
 
     /**
      * Create a transaction and submit to the mempool.
@@ -149,6 +162,8 @@ struct TestChain100Setup : public RegTestingSetup {
 
     std::vector<CTransactionRef> m_coinbase_txns; // For convenience, coinbase transactions
     CKey coinbaseKey; // private/public key needed to spend coinbase transactions
+    std::shared_ptr<CWallet> m_wallet; // Staking wallet kept alive for PoS operations
+    std::unique_ptr<interfaces::Handler> m_wallet_notifications; // Keep wallet notifications active
 };
 
 /**
