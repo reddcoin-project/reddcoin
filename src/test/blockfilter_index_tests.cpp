@@ -18,8 +18,26 @@
 
 BOOST_AUTO_TEST_SUITE(blockfilter_index_tests)
 
-struct BuildChainTestingSetup : public TestChain100Setup {
+// TODO: Add PoS block support to this test
+// Currently uses TestingSetup with shorter chain to stay within PoW range (nLastPowHeight = 89)
+// Future enhancement: Implement PoS block creation in CreateBlock() to test blockfilter
+// indexing with both PoW and PoS blocks, similar to TestChain100Setup
+struct BuildChainTestingSetup : public TestingSetup {
+    BuildChainTestingSetup() : TestingSetup(CBaseChainParams::REGTEST)
+    {
+        // Create a short chain of 50 PoW blocks, well within the limit
+        coinbaseKey.MakeNewKey(true);
+        CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
+        for (int i = 0; i < 50; i++) {
+            std::vector<CMutableTransaction> noTxns;
+            CreateAndProcessBlock(noTxns, scriptPubKey);
+        }
+    }
+
+    CKey coinbaseKey;
     CBlock CreateBlock(const CBlockIndex* prev, const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey);
+    CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey);
     bool BuildChain(const CBlockIndex* pindex, const CScript& coinbase_script_pub_key, size_t length, std::vector<std::shared_ptr<CBlock>>& chain);
 };
 
@@ -57,6 +75,34 @@ static bool CheckFilterLookups(BlockFilterIndex& filter_index, const CBlockIndex
     return true;
 }
 
+CBlock BuildChainTestingSetup::CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
+{
+    const CChainParams& chainparams = Params();
+    CTxMemPool empty_pool;
+    CBlock block = BlockAssembler(m_node.chainman->ActiveChainstate(), empty_pool, chainparams).CreateNewBlock(scriptPubKey)->block;
+
+    // Replace mempool-selected txns with just coinbase plus passed-in txns:
+    block.vtx.resize(1);
+    for (const CMutableTransaction& tx : txns) {
+        block.vtx.push_back(MakeTransactionRef(tx));
+    }
+
+    // IncrementExtraNonce creates a valid coinbase and merkleRoot
+    {
+        LOCK(cs_main);
+        unsigned int extraNonce = 0;
+        IncrementExtraNonce(&block, m_node.chainman->ActiveChain().Tip(), extraNonce);
+    }
+
+    // Use Scrypt PoW for Reddcoin
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
+
+    auto shared_pblock = std::make_shared<CBlock>(block);
+    Assert(m_node.chainman)->ProcessNewBlock(chainparams, shared_pblock, true, nullptr);
+
+    return block;
+}
+
 CBlock BuildChainTestingSetup::CreateBlock(const CBlockIndex* prev,
     const std::vector<CMutableTransaction>& txns,
     const CScript& scriptPubKey)
@@ -65,7 +111,7 @@ CBlock BuildChainTestingSetup::CreateBlock(const CBlockIndex* prev,
     std::unique_ptr<CBlockTemplate> pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(scriptPubKey);
     CBlock& block = pblocktemplate->block;
     block.hashPrevBlock = prev->GetBlockHash();
-    block.nTime = prev->nTime + 1;
+    block.nTime = prev->GetMedianTimePast() + 1;
 
     // Replace mempool-selected txns with just coinbase plus passed-in txns:
     block.vtx.resize(1);
@@ -87,11 +133,20 @@ bool BuildChainTestingSetup::BuildChain(const CBlockIndex* pindex,
     std::vector<std::shared_ptr<CBlock>>& chain)
 {
     std::vector<CMutableTransaction> no_txns;
+    const CChainParams& chainparams = Params();
 
     chain.resize(length);
-    for (auto& block : chain) {
-        block = std::make_shared<CBlock>(CreateBlock(pindex, no_txns, coinbase_script_pub_key));
-        CBlockHeader header = block->GetBlockHeader();
+    for (size_t i = 0; i < length; i++) {
+        chain[i] = std::make_shared<CBlock>(CreateBlock(pindex, no_txns, coinbase_script_pub_key));
+        // Ensure unique timestamps for each block in the chain
+        if (i > 0 && chain[i]->nTime <= chain[i-1]->nTime) {
+            chain[i]->nTime = chain[i-1]->nTime + 1;
+            // Recalculate PoW with new timestamp
+            while (!CheckProofOfWork(chain[i]->GetPoWHash(), chain[i]->nBits, chainparams.GetConsensus())) {
+                ++chain[i]->nNonce;
+            }
+        }
+        CBlockHeader header = chain[i]->GetBlockHeader();
 
         BlockValidationState state;
         if (!Assert(m_node.chainman)->ProcessNewBlockHeaders({header}, state, Params(), &pindex)) {
