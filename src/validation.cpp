@@ -3249,8 +3249,9 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (fCheckPOW && fCheckMerkleRoot)
         block.fChecked = true;
 
-    // reddcoin: check block signature
-    if (block.IsProofOfStake() && !CheckBlockSignature(block)) {
+    // reddcoin: check block signature (only if signature is present)
+    // During block creation, PoS blocks don't have signatures yet (signed later in staking thread)
+    if (block.IsProofOfStake() && !block.vchBlockSig.empty() && !CheckBlockSignature(block)) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sign", "bad block signature");
     }
 
