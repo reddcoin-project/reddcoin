@@ -9,6 +9,7 @@
 #include <consensus/tx_verify.h>
 #include <miner.h>
 #include <policy/policy.h>
+#include <pow.h>
 #include <script/standard.h>
 #include <txmempool.h>
 #include <uint256.h>
@@ -223,12 +224,22 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     static_assert(std::size(blockinfo) == 110, "Should have 110 blocks to import");
     int baseheight = 0;
     std::vector<CTransactionRef> txFirst;
+
+    // Set mock time to avoid "time-too-old" errors when building on old genesis block
+    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
+
     for (const auto& bi : blockinfo) {
+        // Create a new block template for each block
+        BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
         CBlock *pblock = &pblocktemplate->block; // pointer for convenience
         {
             LOCK(cs_main);
             pblock->nVersion = 1;
             pblock->nTime = m_node.chainman->ActiveChain().Tip()->GetMedianTimePast()+1;
+
+            // Get the difficulty bits for this block (required for proper validation)
+            pblock->nBits = GetNextWorkRequired(m_node.chainman->ActiveChain().Tip(), pblock, chainparams.GetConsensus());
+
             CMutableTransaction txCoinbase(*pblock->vtx[0]);
             txCoinbase.nVersion = 1;
             txCoinbase.vin[0].scriptSig = CScript();
@@ -236,6 +247,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             txCoinbase.vin[0].scriptSig.push_back(m_node.chainman->ActiveChain().Height());
             txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
             txCoinbase.vout[0].scriptPubKey = CScript();
+            // Set correct coinbase reward based on block height (required for validation)
+            int nHeight = m_node.chainman->ActiveChain().Height() + 1;
+            txCoinbase.vout[0].nValue = GetBlockSubsidy(nHeight, chainparams.GetConsensus());
             pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
             if (txFirst.size() == 0)
                 baseheight = m_node.chainman->ActiveChain().Height();
@@ -244,9 +258,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
             pblock->nNonce = bi.nonce;
         }
+        // Advance mock time to ensure next block has a later timestamp
+        SetMockTime(pblock->nTime + 1);
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
         BOOST_CHECK(Assert(m_node.chainman)->ProcessNewBlock(chainparams, shared_pblock, true, nullptr));
-        pblock->hashPrevBlock = pblock->GetHash();
     }
 
     LOCK(cs_main);
