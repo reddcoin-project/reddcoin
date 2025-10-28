@@ -270,7 +270,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // Just to make sure we can still make simple blocks
     BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
 
-    const CAmount BLOCKSUBSIDY = 50*COIN;
+    // Use actual Reddcoin block subsidy for current height
+    const CAmount BLOCKSUBSIDY = GetBlockSubsidy(m_node.chainman->ActiveChain().Height() + 1, chainparams.GetConsensus());
     const CAmount LOWFEE = CENT;
     const CAmount HIGHFEE = COIN;
     const CAmount HIGHERFEE = 4*COIN;
