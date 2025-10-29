@@ -135,8 +135,9 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     }
 
     const auto out110 = *ExpectedAssumeutxo(110, *params);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "1ebbf5850204c0bdb15bf030f47c7fe91d45c44c712697e4509ba67adb01c618");
-    BOOST_CHECK_EQUAL(out110.nChainTx, 110U);
+    // Reddcoin: Updated for PoS - UTXO set hash and nChainTx include PoS blocks
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "17456f9ccafe445335f3688b426df85e5a0ea7c8a8bbf5fb724fa1cc8da4efc3");
+    BOOST_CHECK_EQUAL(out110.nChainTx, 132U);  // genesis + 89 PoW + 21 PoS (2 tx each)
 
     const auto out210 = *ExpectedAssumeutxo(200, *params);
     BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), "51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62");
