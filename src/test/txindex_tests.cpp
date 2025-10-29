@@ -8,6 +8,8 @@
 #include <test/util/setup_common.h>
 #include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
+#include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -54,11 +56,30 @@ BOOST_FIXTURE_TEST_CASE(txindex_initial_sync, TestChain100Setup)
     }
 
     // Check that new transactions in new blocks make it into the index.
+    // Note: TestChain100Setup creates blocks up to height 100, with PoW ending at block 89
+    // So we must use PoS blocks for additional blocks
     for (int i = 0; i < 10; i++) {
         CScript coinbase_script_pub_key = GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()));
         std::vector<CMutableTransaction> no_txns;
-        const CBlock& block = CreateAndProcessBlock(no_txns, coinbase_script_pub_key);
-        const CTransaction& txn = *block.vtx[0];
+        const CBlock& block = CreateAndProcessPoSBlock(no_txns, coinbase_script_pub_key, m_wallet.get());
+
+        // CRITICAL: Ensure wallet receives and processes block notifications before creating next block
+        // 1. Sync validation interface queue to process all pending notifications
+        SyncWithValidationInterfaceQueue();
+        // 2. Wait for wallet to sync to the current chain tip
+        m_wallet->BlockUntilSyncedToCurrentChain();
+        // 3. Force wallet to re-evaluate all transactions and update spent status
+        {
+            LOCK(m_wallet->cs_wallet);
+            m_wallet->ReacceptWalletTransactions();
+        }
+        // 4. Extra sync to ensure wallet has fully processed the coinstake transaction
+        SyncWithValidationInterfaceQueue();
+        m_wallet->BlockUntilSyncedToCurrentChain();
+
+        // PoS blocks have coinstake as vtx[1]
+        BOOST_REQUIRE(block.vtx.size() >= 2);
+        const CTransaction& txn = *block.vtx[1];
 
         BOOST_CHECK(txindex.BlockUntilSyncedToCurrentChain());
         if (!txindex.FindTx(txn.GetHash(), block_hash, tx_disk)) {
@@ -66,6 +87,9 @@ BOOST_FIXTURE_TEST_CASE(txindex_initial_sync, TestChain100Setup)
         } else if (tx_disk->GetHash() != txn.GetHash()) {
             BOOST_ERROR("Read incorrect tx");
         }
+
+        // Increment mock time by 60 seconds to allow coins to gain stake age for next block
+        SetMockTime(GetTime() + 60);
     }
 
     // shutdown sequence (c.f. Shutdown() in init.cpp)
