@@ -137,11 +137,14 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
 bool CheckProofOfWork(arith_uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {
+    bool fNegative;
+    bool fOverflow;
     arith_uint256 bnTarget;
-    bnTarget.SetCompact(nBits);
+
+    bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
 
     // Check range
-    if (bnTarget <= 0 || bnTarget > UintToArith256(params.powLimit))
+    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
         return error("CheckProofOfWork() : nBits below minimum work");
 
     // Check proof of work matches claimed amount
