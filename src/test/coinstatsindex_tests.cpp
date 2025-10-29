@@ -55,7 +55,8 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
 
     const CScript script_pub_key{CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG};
     std::vector<CMutableTransaction> noTxns;
-    CreateAndProcessBlock(noTxns, script_pub_key);
+    // Use PoS block since we're past PoW end (100 blocks)
+    CreateAndProcessPoSBlock(noTxns, script_pub_key, m_wallet.get());
 
     // Let the CoinStatsIndex to catch up again.
     BOOST_CHECK(coin_stats_index.BlockUntilSyncedToCurrentChain());
