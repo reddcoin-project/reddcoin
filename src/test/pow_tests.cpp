@@ -11,52 +11,63 @@
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
 
-/* Test calculation of next difficulty target with no constraints applying */
-BOOST_AUTO_TEST_CASE(get_next_work)
+/* Test CalculateNextWorkRequired stub returns 0 */
+// NOTE: Reddcoin uses Kimoto Gravity Well, not Bitcoin's CalculateNextWorkRequired
+// CalculateNextWorkRequired() is a stub that returns 0 in Reddcoin
+BOOST_AUTO_TEST_CASE(calculate_next_work_stub)
 {
     const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
-    int64_t nLastRetargetTime = 1261130161; // Block #30240
     CBlockIndex pindexLast;
-    pindexLast.nHeight = 32255;
-    pindexLast.nTime = 1262152739;  // Block #32255
-    pindexLast.nBits = 0x1d00ffff;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), 0x1d00d86aU);
+    pindexLast.nHeight = 1000;
+    pindexLast.nTime = 1391411877;
+    pindexLast.nBits = 0x1c05f176;
+    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, 0, chainParams->GetConsensus()), 0U);
 }
 
-/* Test the constraint on the upper bound for next work */
+/* Test GetNextWorkRequired with actual Reddcoin mainnet blocks */
+// Kimoto Gravity Well difficulty adjustment
+BOOST_AUTO_TEST_CASE(get_next_work_kgw)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
+
+    // Build a simple chain to test KGW
+    // Using actual mainnet block data: height 1000, time 1391411877, bits 0x1c05f176
+    CBlockIndex pindexLast;
+    pindexLast.nHeight = 1000;
+    pindexLast.nTime = 1391411877;
+    pindexLast.nBits = 0x1c05f176;
+    pindexLast.pprev = nullptr;
+
+    // Test that GetNextWorkRequired returns a valid difficulty
+    CBlockHeader blockHeader;
+    blockHeader.nTime = pindexLast.nTime + 60; // 1 minute later
+    unsigned int nBits = GetNextWorkRequired(&pindexLast, &blockHeader, chainParams->GetConsensus());
+
+    // Verify it's within powLimit
+    arith_uint256 bnTarget;
+    bnTarget.SetCompact(nBits);
+    BOOST_CHECK(bnTarget <= UintToArith256(chainParams->GetConsensus().powLimit));
+    BOOST_CHECK(bnTarget > 0);
+}
+
+/* Test GetNextWorkRequired returns powLimit for very early blocks */
 BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
 {
     const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
-    int64_t nLastRetargetTime = 1231006505; // Block #0
-    CBlockIndex pindexLast;
-    pindexLast.nHeight = 2015;
-    pindexLast.nTime = 1233061996;  // Block #2015
-    pindexLast.nBits = 0x1d00ffff;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), 0x1d00ffffU);
-}
 
-/* Test the constraint on the lower bound for actual time taken */
-BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual)
-{
-    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
-    int64_t nLastRetargetTime = 1279008237; // Block #66528
+    // Very early block should return powLimit
     CBlockIndex pindexLast;
-    pindexLast.nHeight = 68543;
-    pindexLast.nTime = 1279297671;  // Block #68543
-    pindexLast.nBits = 0x1c05a3f4;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), 0x1c0168fdU);
-}
+    pindexLast.nHeight = 5;
+    pindexLast.nTime = 1390280460; // shortly after genesis
+    pindexLast.nBits = 0x1e0ffff0;
+    pindexLast.pprev = nullptr;
 
-/* Test the constraint on the upper bound for actual time taken */
-BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
-{
-    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
-    int64_t nLastRetargetTime = 1263163443; // NOTE: Not an actual block time
-    CBlockIndex pindexLast;
-    pindexLast.nHeight = 46367;
-    pindexLast.nTime = 1269211443;  // Block #46367
-    pindexLast.nBits = 0x1c387f6f;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), 0x1d00e1fdU);
+    CBlockHeader blockHeader;
+    blockHeader.nTime = pindexLast.nTime + 60;
+    unsigned int nBits = GetNextWorkRequired(&pindexLast, &blockHeader, chainParams->GetConsensus());
+
+    // Should return powLimit for blocks with height < PastBlocksMin
+    BOOST_CHECK_EQUAL(nBits, UintToArith256(chainParams->GetConsensus().powLimit).GetCompact());
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_negative_target)
