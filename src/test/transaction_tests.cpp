@@ -42,6 +42,58 @@ typedef std::vector<unsigned char> valtype;
 // In script_tests.cpp
 UniValue read_json(const std::string& jsondata);
 
+// Helper to deserialize Bitcoin test transactions that don't have nTime
+CMutableTransaction DeserializeBitcoinTestTx(const std::vector<unsigned char>& data)
+{
+    CMutableTransaction tx;
+    CDataStream ss(data, SER_NETWORK, PROTOCOL_VERSION);
+
+    // Deserialize manually for Bitcoin compatibility
+    ss >> tx.nVersion;
+
+    unsigned char flags = 0;
+    tx.vin.clear();
+    tx.vout.clear();
+
+    // Try to read the vin. In case the dummy is there, this will be read as an empty vector.
+    ss >> tx.vin;
+    if (tx.vin.size() == 0) {
+        // We read a dummy or an empty vin.
+        ss >> flags;
+        if (flags != 0) {
+            ss >> tx.vin;
+            ss >> tx.vout;
+        }
+    } else {
+        // We read a non-empty vin. Assume a normal vout follows.
+        ss >> tx.vout;
+    }
+
+    if (flags & 1) {
+        // The witness flag is present
+        flags ^= 1;
+        for (size_t i = 0; i < tx.vin.size(); i++) {
+            ss >> tx.vin[i].scriptWitness.stack;
+        }
+    }
+
+    if (flags) {
+        throw std::ios_base::failure("Unknown transaction optional data");
+    }
+
+    ss >> tx.nLockTime;
+
+    // Bitcoin test transactions don't have nTime even for version > 1
+    // For Reddcoin version >= 2, nTime must be non-zero (consensus rule)
+    if (tx.nVersion >= 2) {
+        tx.nTime = 1; // Minimum valid nTime
+    } else {
+        tx.nTime = 0;
+    }
+
+    return tx;
+}
+
 static std::map<std::string, unsigned int> mapFlagNames = {
     {std::string("P2SH"), (unsigned int)SCRIPT_VERIFY_P2SH},
     {std::string("STRICTENC"), (unsigned int)SCRIPT_VERIFY_STRICTENC},
@@ -234,8 +286,9 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             }
 
             std::string transaction = test[1].get_str();
-            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION);
-            CTransaction tx(deserialize, stream);
+            // Use custom deserializer for Bitcoin test transactions (no nTime)
+            CMutableTransaction mtx = DeserializeBitcoinTestTx(ParseHex(transaction));
+            CTransaction tx(mtx);
 
             TxValidationState state;
             BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
@@ -322,8 +375,9 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             }
 
             std::string transaction = test[1].get_str();
-            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION );
-            CTransaction tx(deserialize, stream);
+            // Use custom deserializer for Bitcoin test transactions (no nTime)
+            CMutableTransaction mtx = DeserializeBitcoinTestTx(ParseHex(transaction));
+            CTransaction tx(mtx);
 
             TxValidationState state;
             if (!CheckTransaction(tx, state) || state.IsInvalid()) {
@@ -961,18 +1015,20 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Check tx-size (non-standard if transaction weight is > MAX_STANDARD_TX_WEIGHT)
     t.vin.clear();
-    t.vin.resize(2438); // size per input (empty scriptSig): 41 bytes
+    t.vin.resize(2437); // size per input (empty scriptSig): 41 bytes (Reddcoin: adjusted for nTime)
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(19, 0); // output size: 30 bytes
-    // tx header:                12 bytes =>     48 vbytes
-    // 2438 inputs: 2438*41 = 99958 bytes => 399832 vbytes
+    // Reddcoin: tx header includes nTime (4 bytes) for version >= 2
+    // tx header:                16 bytes =>     64 vbytes (version + nTime + locktime + marker+flag + counts)
+    // 2437 inputs: 2437*41 = 99917 bytes => 399668 vbytes
     //    1 output:              30 bytes =>    120 vbytes
     //                      ===============================
-    //                                total: 400000 vbytes
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400000);
+    //                                total: 399852 vbytes
+    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 399852);
     BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
 
-    // increase output size by one byte, so we end up with 400004 vbytes
-    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(20, 0); // output size: 31 bytes
+    // increase output size to push over MAX_STANDARD_TX_WEIGHT (400000)
+    // need to add 149 vbytes = 38 bytes (must be > 400000, not ==); 19 + 38 = 57 bytes
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(57, 0); // 399852 + 38*4 = 400004
     BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400004);
     reason.clear();
     BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
