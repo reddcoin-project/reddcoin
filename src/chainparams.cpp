@@ -713,14 +713,17 @@ public:
             }
         };
 
+        // Reddcoin: Updated for PoS blocks (blocks 90-110 include coinstake transactions)
+        // nChainTx = 132 (includes genesis + 89 PoW blocks + 21 PoS blocks with 2 tx each)
+        // UTXO set hash computed with HASH_SERIALIZED (not block hash)
         m_assumeutxo_data = MapAssumeutxo{
             {
                 110,
-                {AssumeutxoHash{uint256S("0x1ebbf5850204c0bdb15bf030f47c7fe91d45c44c712697e4509ba67adb01c618")}, 110},
+                {AssumeutxoHash{uint256S("17456f9ccafe445335f3688b426df85e5a0ea7c8a8bbf5fb724fa1cc8da4efc3")}, 132},
             },
             {
                 200,
-                {AssumeutxoHash{uint256S("0x51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62")}, 200},
+                {AssumeutxoHash{uint256S("51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62")}, 200},
             },
         };
 
