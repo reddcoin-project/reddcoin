@@ -77,9 +77,19 @@ uint256 static SignatureHashOld(CScript scriptCode, const CTransaction& txTo, un
         txTmp.vin.resize(1);
     }
 
-    // Serialize and hash
+    // Serialize and hash - manually serialize to exclude nTime
     CHashWriter ss(SER_GETHASH, SERIALIZE_TRANSACTION_NO_WITNESS);
-    ss << txTmp << nHashType;
+    // Version
+    ss << txTmp.nVersion;
+    // Inputs
+    ss << txTmp.vin;
+    // Outputs
+    ss << txTmp.vout;
+    // Locktime
+    ss << txTmp.nLockTime;
+    // NOTE: nTime is deliberately excluded - not part of signature hash
+    // Sighash type
+    ss << nHashType;
     return ss.GetHash();
 }
 
@@ -96,6 +106,12 @@ void static RandomTransaction(CMutableTransaction &tx, bool fSingle) {
     tx.vin.clear();
     tx.vout.clear();
     tx.nLockTime = (InsecureRandBool()) ? InsecureRand32() : 0;
+    // Set nTime - if nVersion > POW_TX_VERSION, nTime cannot be 0 (consensus rule)
+    if (tx.nVersion > POW_TX_VERSION) {
+        tx.nTime = InsecureRandRange(0xFFFFFFFE) + 1; // 1 to 0xFFFFFFFF
+    } else {
+        tx.nTime = (InsecureRandBool()) ? InsecureRand32() : 0;
+    }
     int ins = (InsecureRandBits(2)) + 1;
     int outs = fSingle ? ins : (InsecureRandBits(2)) + 1;
     for (int in = 0; in < ins; in++) {
