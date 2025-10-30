@@ -14,6 +14,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+extern bool fRequireStandard;
 
 BOOST_AUTO_TEST_SUITE(txvalidation_tests)
 
@@ -121,6 +122,8 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_accept_v1_zero_time, TestChain100Setup)
 inline CTransactionRef create_placeholder_tx(size_t num_inputs, size_t num_outputs)
 {
     CMutableTransaction mtx = CMutableTransaction();
+    mtx.nVersion = 2;
+    mtx.nTime = 1;  // Reddcoin: version 2+ requires non-zero nTime
     mtx.vin.resize(num_inputs);
     mtx.vout.resize(num_outputs);
     auto random_script = CScript() << ToByteVector(InsecureRand256()) << ToByteVector(InsecureRand256());
@@ -198,7 +201,15 @@ BOOST_FIXTURE_TEST_CASE(package_tests, TestChain100Setup)
     BOOST_CHECK_EQUAL(result_too_large.m_state.GetRejectReason(), "package-too-large");
 
     // A single, giant transaction submitted through ProcessNewPackage fails on single tx policy.
-    CTransactionRef giant_ptx = create_placeholder_tx(999, 999);
+    // Reddcoin: Need more inputs/outputs than Bitcoin due to nTime field overhead
+    // With 2200 inputs/outputs, tx size ~400420 vbytes > MAX_STANDARD_TX_WEIGHT (400000)
+
+    // Enable standard checks for this test (regtest has fRequireStandard=false by default)
+    bool prev_require_standard = fRequireStandard;
+    fRequireStandard = true;
+
+    CTransactionRef giant_ptx = create_placeholder_tx(2200, 2200);
+    BOOST_CHECK(GetVirtualTransactionSize(*giant_ptx) > MAX_STANDARD_TX_WEIGHT);
     BOOST_CHECK(GetVirtualTransactionSize(*giant_ptx) > MAX_PACKAGE_SIZE * 1000);
     auto result_single_large = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, {giant_ptx}, /* test_accept */ true);
     BOOST_CHECK(result_single_large.m_state.IsInvalid());
@@ -207,6 +218,9 @@ BOOST_FIXTURE_TEST_CASE(package_tests, TestChain100Setup)
     auto it_giant_tx = result_single_large.m_tx_results.find(giant_ptx->GetWitnessHash());
     BOOST_CHECK(it_giant_tx != result_single_large.m_tx_results.end());
     BOOST_CHECK_EQUAL(it_giant_tx->second.m_state.GetRejectReason(), "tx-size");
+
+    // Restore previous fRequireStandard setting
+    fRequireStandard = prev_require_standard;
 
     // Check that mempool size hasn't changed.
     BOOST_CHECK_EQUAL(m_node.mempool->size(), initialPoolSize);
