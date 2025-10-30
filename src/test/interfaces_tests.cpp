@@ -101,10 +101,10 @@ BOOST_AUTO_TEST_CASE(findCommonAncestor)
         m_node.chainman->ActiveChainstate().InvalidateBlock(state, active.Tip());
     }
     BOOST_CHECK_EQUAL(active.Height(), orig_tip->nHeight - 10);
-    coinbaseKey.MakeNewKey(true);
-    for (int i = 0; i < 20; ++i) {
-        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-    }
+    // Advance time to ensure coins have sufficient age for staking
+    //SetMockTime(GetTime() + 60 * 60 * 24);  // Add 24 hours
+    // Use stakeBlocks since we're past PoW end (100 blocks)
+    stakeBlocks(20);
     BOOST_CHECK_EQUAL(active.Height(), orig_tip->nHeight + 10);
     uint256 fork_hash;
     int fork_height;
