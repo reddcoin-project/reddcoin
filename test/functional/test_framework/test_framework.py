@@ -718,7 +718,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     cache_node_dir,
                     chain=self.chain,
                     extra_conf=["bind=127.0.0.1"],
-                    extra_args=['-disablewallet'],
+                    extra_args=[],  # Removed -disablewallet for ReddCoin PoS support
                     rpchost=None,
                     timewait=self.rpc_timeout,
                     timeout_factor=self.options.timeout_factor,
@@ -733,6 +733,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
             # Wait for RPC connections to be ready
             cache_node.wait_for_rpc_connection()
+
+            # Create a wallet for PoS block generation in ReddCoin
+            cache_node.createwallet(wallet_name=self.default_wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
 
             # Set a time in the past, so that blocks don't end up in the future
             cache_node.setmocktime(cache_node.getblockheader(cache_node.getbestblockhash())['time'])
