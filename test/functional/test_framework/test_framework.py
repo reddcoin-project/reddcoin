@@ -421,20 +421,25 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if wallet_name is not False:
             n = self.nodes[i]
             if wallet_name is not None:
-                # For PoS: use legacy wallet to support importprivkey for staking
-                n.createwallet(wallet_name=wallet_name, descriptors=False, load_on_startup=True)
+                # For PoS: prefer legacy wallet to support importprivkey for staking
+                # But respect test preference if explicitly set via options.descriptors
+                use_descriptors = self.options.descriptors if hasattr(self, 'options') else False
+                n.createwallet(wallet_name=wallet_name, descriptors=use_descriptors, load_on_startup=True)
 
-            # Import the deterministic key for this node
-            n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
+            # Import the deterministic key for this node (only works with legacy wallets)
+            if wallet_name is not None and not self.options.descriptors:
+                n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
 
             # For PoS: Import the keys used to generate the cache blocks
             # These keys have aged coins that can be used for staking
-            from .test_node import TestNode
-            for key_pair in TestNode.PRIV_KEYS[:3]:
-                try:
-                    n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
-                except JSONRPCException:
-                    pass  # Key might already be imported or duplicate
+            # Only works with legacy wallets
+            if not self.options.descriptors:
+                from .test_node import TestNode
+                for key_pair in TestNode.PRIV_KEYS[:3]:
+                    try:
+                        n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
+                    except JSONRPCException:
+                        pass  # Key might already be imported or duplicate
 
             # For PoS: Set mock time well beyond tip time to give imported coins sufficient age
             # The cache blocks were generated with 60s spacing, but we need to ensure
