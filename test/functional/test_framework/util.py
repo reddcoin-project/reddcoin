@@ -452,6 +452,32 @@ def set_node_times(nodes, t):
         node.setmocktime(t)
 
 
+def advance_time_for_pos(nodes, seconds=60):
+    """Advance mock time on all nodes to age coins for PoS staking.
+
+    ReddCoin regtest nStakeMinAge = 10 seconds.
+    Default advances by 60 seconds to ensure sufficient coinage.
+
+    Args:
+        nodes: List of TestNode instances or single TestNode
+        seconds: Number of seconds to advance (default 60)
+
+    Returns:
+        New timestamp after advancement
+    """
+    if not isinstance(nodes, list):
+        nodes = [nodes]
+
+    # Get current time from first node
+    current_time = nodes[0].getblockheader(nodes[0].getbestblockhash())['time']
+    new_time = current_time + seconds
+
+    # Set new time on all nodes
+    set_node_times(nodes, new_time)
+
+    return new_time
+
+
 # Transaction/Block functions
 #############################
 
