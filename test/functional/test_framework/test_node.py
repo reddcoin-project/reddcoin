@@ -299,7 +299,23 @@ class TestNode():
 
     def generate(self, nblocks, maxtries=1000000):
         self.log.debug("TestNode.generate() dispatches `generate` call to `generatetoaddress`")
-        return self.generatetoaddress(nblocks=nblocks, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+        # For PoS: Advance time before generating blocks to ensure sufficient coinage
+        # ReddCoin regtest nStakeMinAge = 10 seconds
+        POS_BLOCK_SPACING = 60  # 60 seconds between blocks for coinage
+
+        blocks = []
+        for i in range(nblocks):
+            # Advance mock time before each block
+            try:
+                current_time = self.getblockheader(self.getbestblockhash())['time']
+                self.setmocktime(current_time + POS_BLOCK_SPACING)
+            except Exception:
+                pass  # If mocktime isn't set or fails, continue anyway
+
+            block = self.generatetoaddress(nblocks=1, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+            blocks.extend(block)
+
+        return blocks
 
     def get_wallet_rpc(self, wallet_name):
         if self.use_cli:
