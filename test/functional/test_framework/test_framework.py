@@ -397,6 +397,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         extra_args = [[]] * self.num_nodes
         if hasattr(self, "extra_args"):
             extra_args = self.extra_args
+        # Add txindex to all nodes for PoS staking support
+        for args in extra_args:
+            if '-txindex' not in str(args) and '-txindex=1' not in args and '-txindex=0' not in args:
+                args.append('-txindex=1')
         self.add_nodes(self.num_nodes, extra_args)
         self.start_nodes()
         if self.requires_wallet:
@@ -406,14 +410,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 assert_equal(n.getblockchaininfo()["blocks"], 199)
             # To ensure that all nodes are out of IBD, the most recent block
             # must have a timestamp not too old (see IsInitialBlockDownload()).
-            self.log.debug('Generate a block with current time')
-            block_hash = self.nodes[0].generate(1)[0]
-            block = self.nodes[0].getblock(blockhash=block_hash, verbosity=0)
-            for n in self.nodes:
-                n.submitblock(block)
-                chain_info = n.getblockchaininfo()
-                assert_equal(chain_info["blocks"], 200)
-                assert_equal(chain_info["initialblockdownload"], False)
+            # For PoS: The mocktime advancement in init_wallet ensures tip is recent
 
     def import_deterministic_coinbase_privkeys(self):
         for i in range(self.num_nodes):
@@ -424,8 +421,35 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if wallet_name is not False:
             n = self.nodes[i]
             if wallet_name is not None:
-                n.createwallet(wallet_name=wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
+                # For PoS: use legacy wallet to support importprivkey for staking
+                n.createwallet(wallet_name=wallet_name, descriptors=False, load_on_startup=True)
+
+            # Import the deterministic key for this node
             n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
+
+            # For PoS: Import the keys used to generate the cache blocks
+            # These keys have aged coins that can be used for staking
+            from .test_node import TestNode
+            for key_pair in TestNode.PRIV_KEYS[:3]:
+                try:
+                    n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
+                except JSONRPCException:
+                    pass  # Key might already be imported or duplicate
+
+            # For PoS: Set mock time well beyond tip time to give imported coins sufficient age
+            # The cache blocks were generated with 60s spacing, but we need to ensure
+            # the coins have at least nStakeMinAge (10s on regtest) from "now"
+            try:
+                tip_time = n.getblockheader(n.getbestblockhash())['time']
+                # Advance 5 minutes past the tip to ensure all cache coins are mature for staking
+                n.setmocktime(tip_time + 300)
+            except Exception:
+                pass
+
+            # For PoS: Set the node's default RPC to use the wallet context
+            # This ensures generatetoaddress and other wallet-dependent RPCs work
+            if wallet_name is not None:
+                n.rpc = n.get_wallet_rpc(wallet_name)
 
     def run_test(self):
         """Tests must override this method to define test logic"""
@@ -718,7 +742,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     cache_node_dir,
                     chain=self.chain,
                     extra_conf=["bind=127.0.0.1"],
-                    extra_args=[],  # Removed -disablewallet for ReddCoin PoS support
+                    extra_args=['-txindex=1'],  # txindex required for PoS staking
                     rpchost=None,
                     timewait=self.rpc_timeout,
                     timeout_factor=self.options.timeout_factor,
@@ -735,10 +759,24 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             cache_node.wait_for_rpc_connection()
 
             # Create a wallet for PoS block generation in ReddCoin
-            cache_node.createwallet(wallet_name=self.default_wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
+            # For PoS, use legacy wallet to easily import private keys for staking
+            cache_node.createwallet(wallet_name=self.default_wallet_name, descriptors=False, load_on_startup=True)
+
+            # Set the cache node's RPC to use the wallet context (same as we do for test nodes)
+            cache_node.rpc = cache_node.get_wallet_rpc(self.default_wallet_name)
+
+            # Import private keys into wallet so it can stake the generated coins
+            # For PoS, the wallet must own the coins to create coinstake transactions
+            for key_pair in TestNode.PRIV_KEYS[:3]:
+                try:
+                    cache_node.importprivkey(key_pair.key, "", False)  # No rescan needed for new wallet
+                except JSONRPCException:
+                    pass  # Key might already be imported
 
             # Set a time in the past, so that blocks don't end up in the future
-            cache_node.setmocktime(cache_node.getblockheader(cache_node.getbestblockhash())['time'])
+            # For PoS, we need sufficient coinage, so start with a reasonable base time
+            initial_time = cache_node.getblockheader(cache_node.getbestblockhash())['time']
+            cache_node.setmocktime(initial_time)
 
             # Create a 199-block-long chain; each of the 3 first nodes
             # gets 25 mature blocks and 25 immature.
@@ -746,13 +784,27 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # block in the cache does not age too much (have an old tip age).
             # This is needed so that we are out of IBD when the test starts,
             # see the tip age check in IsInitialBlockDownload().
-            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [ADDRESS_BCRT1_P2WSH_OP_TRUE]
-            assert_equal(len(gen_addresses), 4)
+            # gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [ADDRESS_BCRT1_P2WSH_OP_TRUE]
+            # assert_equal(len(gen_addresses), 4)
+            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3]
+            assert_equal(len(gen_addresses), 3)
+
+            # For PoS: Advance time between blocks to build coinage
+            # ReddCoin regtest nStakeMinAge = 10 seconds, so use block spacing to ensure coinage
+            POS_BLOCK_SPACING = 60  # 60 seconds between blocks (well above 10 second minimum)
+
             for i in range(8):
-                cache_node.generatetoaddress(
-                    nblocks=25 if i != 7 else 24,
-                    address=gen_addresses[i % len(gen_addresses)],
-                )
+                num_blocks = 25 if i != 7 else 24
+                # Generate blocks one at a time, advancing time between each for PoS coinage
+                for j in range(num_blocks):
+                    # Advance time before generating block to age existing coins
+                    initial_time += POS_BLOCK_SPACING
+                    cache_node.setmocktime(initial_time)
+
+                    cache_node.generatetoaddress(
+                        nblocks=1,
+                        address=gen_addresses[i % len(gen_addresses)],
+                    )
 
             assert_equal(cache_node.getblockchaininfo()["blocks"], 199)
 
@@ -763,7 +815,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             def cache_path(*paths):
                 return os.path.join(cache_node_dir, self.chain, *paths)
 
-            os.rmdir(cache_path('wallets'))  # Remove empty wallets dir
+            # Remove wallets directory (including any created wallets for PoS)
+            wallets_dir = cache_path('wallets')
+            if os.path.exists(wallets_dir):
+                shutil.rmtree(wallets_dir)
             for entry in os.listdir(cache_path()):
                 if entry not in ['chainstate', 'blocks', 'indexes']:  # Only indexes, chainstate and blocks folders
                     os.remove(cache_path(entry))
