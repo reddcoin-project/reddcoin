@@ -231,7 +231,10 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 CScript scriptPubKeyOut;
                 scriptPubKeyKernel = pcoin.txout.scriptPubKey;
                 TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
-                if (whichType != TxoutType::PUBKEY && whichType != TxoutType::PUBKEYHASH && whichType != TxoutType::WITNESS_V0_KEYHASH) {
+                if (whichType != TxoutType::PUBKEY &&
+                    whichType != TxoutType::PUBKEYHASH &&
+                    whichType != TxoutType::WITNESS_V0_KEYHASH &&
+                    whichType != TxoutType::WITNESS_V1_TAPROOT) {
                     LogPrintf("CreateCoinStake : no support for kernel type=%s\n", GetTxnOutputType(whichType));
                     break;
                 }
@@ -244,6 +247,13 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                         break;
                     }
                     scriptPubKeyOut << ToByteVector(key.GetPubKey()) << OP_CHECKSIG;
+                }
+                else if (whichType == TxoutType::WITNESS_V1_TAPROOT)
+                {
+                    // Taproot: preserve the taproot output for key-path spending
+                    // If wallet has the key for key-path, it will sign successfully
+                    // Script-path spending (if requiring coordination) will fail naturally
+                    scriptPubKeyOut = scriptPubKeyKernel;
                 }
                 else
                     scriptPubKeyOut = scriptPubKeyKernel;
