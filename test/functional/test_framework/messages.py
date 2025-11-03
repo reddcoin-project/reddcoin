@@ -503,15 +503,21 @@ class CTxWitness:
 
 class CTransaction:
     __slots__ = ("hash", "nLockTime", "nVersion", "sha256", "vin", "vout",
-                 "wit")
+                 "wit", "nTime")
 
     def __init__(self, tx=None):
         if tx is None:
-            self.nVersion = 1
+            # Reddcoin: Default to nVersion=2 (CTransaction::CURRENT_VERSION)
+            # This matches ReddCoin's standard transaction version
+            self.nVersion = 2
             self.vin = []
             self.vout = []
             self.wit = CTxWitness()
             self.nLockTime = 0
+            # Reddcoin: nTime field (only serialized if nVersion > 1)
+            # MUST be non-zero for nVersion > 1, so default to current time
+            import time
+            self.nTime = int(time.time())
             self.sha256 = None
             self.hash = None
         else:
@@ -519,6 +525,7 @@ class CTransaction:
             self.vin = copy.deepcopy(tx.vin)
             self.vout = copy.deepcopy(tx.vout)
             self.nLockTime = tx.nLockTime
+            self.nTime = tx.nTime if hasattr(tx, 'nTime') else 0  # Reddcoin: nTime field
             self.sha256 = tx.sha256
             self.hash = tx.hash
             self.wit = copy.deepcopy(tx.wit)
@@ -542,6 +549,11 @@ class CTransaction:
         else:
             self.wit = CTxWitness()
         self.nLockTime = struct.unpack("<I", f.read(4))[0]
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            self.nTime = struct.unpack("<I", f.read(4))[0]
+        else:
+            self.nTime = 0
         self.sha256 = None
         self.hash = None
 
@@ -551,6 +563,9 @@ class CTransaction:
         r += ser_vector(self.vin)
         r += ser_vector(self.vout)
         r += struct.pack("<I", self.nLockTime)
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            r += struct.pack("<I", self.nTime)
         return r
 
     # Only serialize with witness when explicitly called for
@@ -574,6 +589,9 @@ class CTransaction:
                     self.wit.vtxinwit.append(CTxInWitness())
             r += self.wit.serialize()
         r += struct.pack("<I", self.nLockTime)
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            r += struct.pack("<I", self.nTime)
         return r
 
     # Regular serialization is with witness -- must explicitly
