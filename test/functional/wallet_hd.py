@@ -25,6 +25,13 @@ class WalletHDTest(BitcoinTestFramework):
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
+    def import_deterministic_coinbase_privkeys(self):
+        # Import coinbase key for node0
+        self.init_wallet(0)
+        # Create wallet for node1 but don't import node0's coinbase key
+        # Node1 should only have coins explicitly sent to it
+        self.nodes[1].createwallet(wallet_name=self.default_wallet_name, descriptors=False, load_on_startup=True)
+
     def run_test(self):
         # Make sure we use hd, keep masterkeyid
         hd_fingerprint = self.nodes[1].getaddressinfo(self.nodes[1].getnewaddress())['hdmasterfingerprint']
