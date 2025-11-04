@@ -267,8 +267,8 @@ public:
                 {3148039, uint256S("0x1fe291200fa247d2ea1e1a33a0788734a646a033ada28b1a31fb1ce9805e4497")},
                 {3188359, uint256S("0x3a69bba8b252a461d0e76333cc50fec19a8fcfd4ad5bb7a8ce9c0e8ef7284b94")},
                 {3228679, uint256S("0x20b15eac55ba0cef31977e540d9034a0fdba574a3cb02c0f02b64ee947216eac")},
-                {3268999, uint256S("0x02bcaeebf00136b943cdd30832147e1f36f063cb6f71df52b6d0e55b5c633b5f")}, 
-                {3309319, uint256S("0x68ff1ef71586f083ab77090f60e52bc8bd121734baadf8b5c6afbada869649ae")}, 
+                {3268999, uint256S("0x02bcaeebf00136b943cdd30832147e1f36f063cb6f71df52b6d0e55b5c633b5f")},
+                {3309319, uint256S("0x68ff1ef71586f083ab77090f60e52bc8bd121734baadf8b5c6afbada869649ae")},
                 {3349639, uint256S("0x2b5b24ff88d25596ea3d357c1ccc33a45422685e9352c64a5c7ec68be4b03630")},
                 {3389959, uint256S("0x1f3a1e378d8f92f65e31f7f11623f9e35363d86a03ebdd24c30f86198e29154c")},
                 {3430279, uint256S("0xac0ed9835030142d092c54f097c01568425e69185ee516b0f634c8f5047cabe3")},
@@ -616,23 +616,35 @@ public:
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
-        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowNoRetargeting = true;
+        consensus.nRuleChangeActivationThreshold = 108; // 75% of 144 for faster regtest
+        consensus.nMinerConfirmationWindow = 144; // Faster confirmation window for testing
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].min_activation_height = 0; // No activation delay
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].bit = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0;
+        // CSV (BIP68/112/113) - Set to activate via BIP9 signaling during PoS phase
+        // With window=144, activation occurs at height 432 (3 periods) if 75% signal
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].min_activation_height = 0; // No minimum activation height
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 3;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].min_activation_height = 0; // No minimum activation height
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 709632; // Approximately November 12th, 2021
 
@@ -648,16 +660,15 @@ public:
         m_assumed_blockchain_size = 1;
         m_assumed_chain_state_size = 0;
 
-        genesis = CreateGenesisBlock(1390280400, 1390280400, 222583475, 0x1e0ffff0, 1, 10000 * COIN);
+        UpdateActivationParametersFromArgs(args);
+
+        genesis = CreateGenesisBlock(1642570147, 1642570147, 36529, 0x207fffff, 1, 10000 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256S("b868e0d95a3c3c0e0dadc67ee587aaf9dc8acbf99e3b4b3110fad4eb74c1decc"));
         assert(genesis.hashMerkleRoot == uint256S("b502bc1dc42b07092b9187e92f70e32f9a53247feae16d821bebffa916af79ff"));
 
-        vSeeds.emplace_back("seed.reddcoin.net");
-        vSeeds.emplace_back("reddcoin.com");
-        vSeeds.emplace_back("dnsseed01.redd.ink");
-        vSeeds.emplace_back("dnsseed02.redd.ink");
-        vSeeds.emplace_back("dnsseed03.redd.ink");
+        vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
+        vSeeds.clear();      //!< Regtest mode doesn't have any DNS seeds.
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,61);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
