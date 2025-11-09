@@ -193,6 +193,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                 coinbaseTx.vout[0].SetEmpty();
                 coinbaseTx.nTime = txCoinStake.nTime;
                 pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
+                // Add placeholder entries for coinstake fee and sigops (updated later)
+                pblocktemplate->vTxFees.push_back(0);
+                pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
                 *pfPoSCancel = false;
             }
         };
@@ -274,6 +277,11 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
     pblock->nNonce         = 0;
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
+
+    // For PoS blocks, also update coinstake sigops
+    if (pblock->IsProofOfStake()) {
+        pblocktemplate->vTxSigOpsCost[1] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[1]);
+    }
 
     BlockValidationState state;
     if (pwallet && !pblock->IsProofOfStake() && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev, false, false)) {
