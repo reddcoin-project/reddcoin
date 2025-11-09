@@ -157,6 +157,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     LOCK2(cs_main, pwallet->cs_wallet);
     txNew.vin.clear();
     txNew.vout.clear();
+    txNew.nVersion = POSV_TX_VERSION;   // Self-contained invariant: CreateCoinStake produces a v2 tx
 
     // Mark coin stake transaction
     CScript scriptEmpty;
