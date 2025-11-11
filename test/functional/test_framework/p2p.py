@@ -79,10 +79,10 @@ from test_framework.util import (
 logger = logging.getLogger("TestFramework.p2p")
 
 # The minimum P2P version that this test framework supports
-MIN_P2P_VERSION_SUPPORTED = 60001
+MIN_P2P_VERSION_SUPPORTED = 80016
 # The P2P version that this test framework implements and sends in its `version` message
 # Version 70016 supports wtxid relay
-P2P_VERSION = 70016
+P2P_VERSION = 80016
 # The services that this test framework offers in its `version` message
 P2P_SERVICES = NODE_NETWORK | NODE_WITNESS
 # The P2P user agent string that this test framework sends in its `version` message
