@@ -32,6 +32,7 @@ from test_framework.script_util import (
     script_to_p2sh_script,
 )
 from test_framework.util import (
+    advance_time_for_pos,
     assert_equal,
     assert_raises_rpc_error,
 )
@@ -41,7 +42,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            '-txindex','-permitbaremultisig=0',
+            '-txindex','-permitbaremultisig=0','-acceptnonstdtxn=false',
         ]] * self.num_nodes
         self.supports_cli = False
 
@@ -59,8 +60,31 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
     def run_test(self):
         node = self.nodes[0]
 
-        self.log.info('Start with empty mempool, and 200 blocks')
+        self.log.info('Start with empty mempool, and 199 blocks')
         self.mempool_size = 0
+        assert_equal(node.getblockcount(), 199)
+
+        # Generate 1 PoS block to reach 200 blocks
+        # Follow the pattern from feature_bip68_sequence_pos.py
+        from test_framework.test_node import TestNode as TN
+        test_address = TN.PRIV_KEYS[0].address
+
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            try:
+                node.generatetoaddress(1, test_address)
+                advance_time_for_pos(node, seconds=60)
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e):
+                    if attempt < max_attempts - 1:
+                        advance_time_for_pos(node, seconds=60)
+                else:
+                    raise
+        else:
+            raise AssertionError(f"Failed to generate PoS block after {max_attempts} attempts")
+
+        self.log.info('Continue with empty mempool, and add 1 block to increase to 200 blocks')
         assert_equal(node.getblockcount(), 200)
         assert_equal(node.getmempoolinfo()['size'], self.mempool_size)
         coins = node.listunspent()
@@ -86,7 +110,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         )
 
         self.log.info('A transaction not in the mempool')
-        fee = Decimal('0.000007')
+        fee = Decimal('0.001000')
         raw_tx_0 = node.signrawtransactionwithwallet(node.createrawtransaction(
             inputs=[{"txid": txid_in_block, "vout": 0, "sequence": BIP125_SEQUENCE_NUMBER}],  # RBF is used later
             outputs=[{node.getnewaddress(): Decimal('0.3') - fee}],
@@ -268,7 +292,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
 
         self.log.info('Some nonstandard transactions')
         tx = tx_from_hex(raw_tx_reference)
-        tx.nVersion = 3  # A version currently non-standard
+        tx.nVersion = 4  # A version currently non-standard
         self.check_mempool_result(
             result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'version'}],
             rawtxs=[tx.serialize().hex()],
@@ -334,6 +358,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
 
         self.log.info('A transaction that is locked by BIP68 sequence logic')
         tx = tx_from_hex(raw_tx_reference)
+        tx.nVersion = 3 # BIP68 version
         tx.vin[0].nSequence = 2  # We could include it in the second block mined from now, but not the very next one
         # Can skip re-signing the tx because of early rejection
         self.check_mempool_result(
