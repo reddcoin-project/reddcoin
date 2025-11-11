@@ -38,6 +38,9 @@ class MempoolWtxidTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         node = self.nodes[0]
 
