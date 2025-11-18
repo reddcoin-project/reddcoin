@@ -17,7 +17,7 @@ from .util import assert_equal, hex_str_to_bytes
 ADDRESS_BCRT1_UNSPENDABLE = 'rcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqajapww'
 ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR = 'addr(rcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqajapww)#t8l69m5s'
 # Coins sent to this address can be spent with a witness stack of just OP_TRUE
-ADDRESS_BCRT1_P2WSH_OP_TRUE = 'rcrt1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsqkg5x0k'
+ADDRESS_BCRT1_P2WSH_OP_TRUE = 'rcrt1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsq45g2l6'
 
 
 class AddressType(enum.Enum):
