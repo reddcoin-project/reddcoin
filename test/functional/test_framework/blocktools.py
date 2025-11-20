@@ -10,11 +10,13 @@ import time
 import unittest
 
 from .address import (
+    base58_to_byte,
     key_to_p2sh_p2wpkh,
     key_to_p2wpkh,
     script_to_p2sh_p2wsh,
     script_to_p2wsh,
 )
+from .key import ECKey
 from .messages import (
     CBlock,
     COIN,
@@ -25,6 +27,7 @@ from .messages import (
     CTxOut,
     hash256,
     hex_str_to_bytes,
+    POW_BLOCK_VERSION,
     ser_uint256,
     tx_from_hex,
     uint256_from_str,
@@ -33,6 +36,7 @@ from .script import (
     CScript,
     CScriptNum,
     CScriptOp,
+    OP_0,
     OP_1,
     OP_CHECKMULTISIG,
     OP_CHECKSIG,
@@ -62,7 +66,17 @@ NORMAL_GBT_REQUEST_PARAMS = {"rules": ["segwit"]}
 
 
 def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl=None, txlist=None):
-    """Create a block (with regtest difficulty)."""
+    """Create a block (with regtest difficulty).
+
+    For PoS blocks (version > 2), the expected structure is:
+      - vtx[0]: Coinbase (minimal, just height in scriptSig, empty vout[0])
+      - vtx[1]: Coinstake (from template's 'transactions' array)
+      - vtx[2+]: Other transactions
+
+    When using getblocktemplate for PoS blocks:
+      - The template includes coinstake in transactions[0]
+      - We detect this and create an empty coinbase
+    """
     block = CBlock()
     if tmpl is None:
         tmpl = {}
@@ -73,9 +87,46 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
         block.nBits = struct.unpack('>I', a2b_hex(tmpl['bits']))[0]
     else:
         block.nBits = 0x207fffff  # difficulty retargeting is disabled in REGTEST chainparams
+
+    # Detect if this is a PoS block by checking block version
+    # PoS blocks have version > POW_BLOCK_VERSION (2)
+    is_pos_block = block.nVersion > POW_BLOCK_VERSION
+
+    # For PoS blocks, verify the template contains a coinstake
+    if is_pos_block and tmpl:
+        if 'transactions' not in tmpl or len(tmpl['transactions']) == 0:
+            raise ValueError(f"PoS block (version {block.nVersion}) requires coinstake transaction in template")
+
+        # Deserialize first transaction to verify it's a coinstake
+        first_tx = tx_from_hex(tmpl['transactions'][0]['data'])
+        # IsCoinStake: vin.size() > 0 && !vin[0].prevout.IsNull() && vout.size() >= 2 && vout[0].IsEmpty()
+        is_coinstake = (len(first_tx.vin) > 0 and
+                       first_tx.vin[0].prevout.hash != 0 and
+                       len(first_tx.vout) >= 2 and
+                       first_tx.vout[0].nValue == 0)
+        if not is_coinstake:
+            raise ValueError(f"PoS block (version {block.nVersion}) requires valid coinstake as first transaction")
+
+    # Create or use provided coinbase
     if coinbase is None:
-        coinbase = create_coinbase(height=tmpl['height'])
+        if is_pos_block:
+            # PoS block: create empty coinbase (matching miner.cpp:200)
+            coinbase = create_coinbase(height=tmpl.get('height', 0), outputScriptPubKey=CScript())
+        else:
+            # PoW block: create normal coinbase
+            coinbase = create_coinbase(height=tmpl.get('height', 0))
     block.vtx.append(coinbase)
+
+    # For PoS blocks, add transactions from template (which includes coinstake as first tx)
+    # The template's 'transactions' array has all non-coinbase transactions,
+    # including the coinstake (which becomes vtx[1])
+    if tmpl and 'transactions' in tmpl:
+        for tx_data in tmpl['transactions']:
+            # Deserialize transaction from hex
+            tx = tx_from_hex(tx_data['data'])
+            block.vtx.append(tx)
+
+    # Add any additional transactions from txlist
     if txlist:
         for tx in txlist:
             if not hasattr(tx, 'calc_sha256'):
@@ -110,40 +161,162 @@ def add_witness_commitment(block, nonce=0):
     block.rehash()
 
 
+def sign_block(block, wif_privkey):
+    """Sign a PoS block with the given private key (in WIF format).
+
+    ReddCoin PoS blocks (version > POW_BLOCK_VERSION) must be signed by the
+    private key corresponding to the public key in the coinbase/coinstake output.
+
+    For PoS blocks (version > 2):
+      - Block signing key comes from vtx[1]->vout[1] (coinstake second output)
+      - The coinstake structure is:
+        * vtx[0] = coinbase (minimal, just block subsidy)
+        * vtx[1] = coinstake transaction with:
+          - vin[0]: staked UTXO
+          - vout[0]: empty marker (0 value)
+          - vout[1]: staking output (contains pubkey for signing)
+          - vout[2+]: stake rewards
+
+    For PoW blocks (version <= 2):
+      - Block signing key comes from vtx[0]->vout[0] (coinbase output)
+
+    This function:
+    1. Verifies the block has the expected structure
+    2. Converts the WIF private key to an ECKey object
+    3. Verifies the key matches the pubkey in the block (optional but recommended)
+    4. Signs the block hash with ECDSA
+    5. Stores the DER-encoded signature in block.vchBlockSig
+    """
+    if block.nVersion <= POW_BLOCK_VERSION:
+        # PoW blocks don't need signatures
+        return
+
+    # Verify PoS block structure
+    if len(block.vtx) < 2:
+        raise ValueError(f"PoS block must have at least 2 transactions (coinbase + coinstake), found {len(block.vtx)}")
+
+    # Check coinstake has the expected outputs
+    coinstake = block.vtx[1]
+    if len(coinstake.vout) < 2:
+        raise ValueError(f"Coinstake must have at least 2 outputs, found {len(coinstake.vout)}")
+
+    # Decode WIF private key
+    privkey_bytes, version = base58_to_byte(wif_privkey)
+    # Remove compression flag if present (last byte = 0x01 for compressed keys)
+    compressed = False
+    if len(privkey_bytes) == 33 and privkey_bytes[-1] == 1:
+        compressed = True
+        privkey_bytes = privkey_bytes[:-1]
+
+    # Create ECKey and set the private key
+    key = ECKey()
+    key.set(privkey_bytes, compressed)
+
+    # Get the pubkey from our private key
+    our_pubkey = key.get_pubkey()
+    our_pubkey_bytes = our_pubkey.get_bytes()
+
+    # Extract the scriptPubKey from coinstake output[1]
+    # It should be a P2PK script: <pubkey> OP_CHECKSIG
+    script_pubkey = coinstake.vout[1].scriptPubKey
+
+    # Verify the script is P2PK format (pubkey + OP_CHECKSIG)
+    if len(script_pubkey) > 0:
+        # For P2PK: script is [<len><pubkey><OP_CHECKSIG>]
+        # The pubkey should match our key's pubkey
+        # Note: This is a basic check; a full implementation would parse the script properly
+        if our_pubkey_bytes not in bytes(script_pubkey):
+            # Warning: Key might not match the block's pubkey
+            # For testing, we'll proceed anyway, but this could cause verification to fail
+            import sys
+            print(f"WARNING: Signing key pubkey might not match block's coinstake output", file=sys.stderr)
+
+    # Calculate block hash
+    block.rehash()
+    block_hash = ser_uint256(block.sha256)
+
+    # Sign the block hash with ECDSA (DER-encoded signature)
+    signature = key.sign_ecdsa(block_hash)
+
+    # Store signature in block
+    block.vchBlockSig = signature
+
+
 def script_BIP34_coinbase_height(height):
+    """Create coinbase scriptSig for ReddCoin: <height> OP_0
+
+    ReddCoin uses OP_0 as the second element (not OP_1 like Bitcoin).
+    See src/miner.cpp:242: coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
+    """
     if height <= 16:
         res = CScriptOp.encode_op_n(height)
-        # Append dummy to increase scriptSig size above 2 (see bad-cb-length consensus rule)
-        return CScript([res, OP_1])
-    return CScript([CScriptNum(height)])
+        # Use OP_0 to match ReddCoin's miner.cpp
+        return CScript([res, OP_0])
+    return CScript([CScriptNum(height), OP_0])
 
 
-def create_coinbase(height, pubkey=None, extra_output_script=None, fees=0, nValue=50):
-    """Create a coinbase transaction.
+def create_coinbase(height, pubkey=None, extra_output_script=None, fees=0, nValue=50, *, outputScriptPubKey=None):
+    """Create a coinbase transaction for ReddCoin.
 
-    If pubkey is passed in, the coinbase output will be a P2PK output;
-    otherwise an anyone-can-spend output.
+    ReddCoin coinbase structure (from miner.cpp):
+    - vin[0].scriptSig: <height> OP_0
+    - vout[0]: For PoS blocks, this is EMPTY (0 value, empty script)
+               For PoW blocks, contains block reward
 
-    If extra_output_script is given, make a 0-value output to that
-    script. This is useful to pad block weight/sigops as needed. """
+    Args:
+        height: Block height for scriptSig
+        pubkey: If provided, create P2PK output (PoW only)
+        extra_output_script: Additional output for witness commitment
+        fees: Transaction fees to include in output value
+        nValue: Base reward value (default 50, will be halved)
+        outputScriptPubKey: Explicit scriptPubKey for vout[0].
+                           If CScript(), creates empty output (for PoS).
+                           If None, creates OP_TRUE or P2PK output (for PoW).
+
+    For PoS blocks from getblocktemplate, use:
+        create_coinbase(height, outputScriptPubKey=CScript())
+    This creates an empty vout[0] matching miner.cpp:200
+    """
     coinbase = CTransaction()
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff), script_BIP34_coinbase_height(height), 0xffffffff))
+
     coinbaseoutput = CTxOut()
-    coinbaseoutput.nValue = nValue * COIN
-    if nValue == 50:
-        halvings = int(height / 150)  # regtest
-        coinbaseoutput.nValue >>= halvings
-        coinbaseoutput.nValue += fees
-    if pubkey is not None:
-        coinbaseoutput.scriptPubKey = CScript([pubkey, OP_CHECKSIG])
+
+    # Check if we should create an empty output (for PoS blocks)
+    if outputScriptPubKey is not None:
+        # Explicit scriptPubKey provided
+        if len(outputScriptPubKey) == 0:
+            # Empty script = PoS block, set empty output
+            coinbaseoutput.nValue = 0
+            coinbaseoutput.scriptPubKey = CScript()
+        else:
+            # Custom scriptPubKey
+            coinbaseoutput.nValue = nValue * COIN
+            if nValue == 50:
+                halvings = int(height / 150)  # regtest
+                coinbaseoutput.nValue >>= halvings
+                coinbaseoutput.nValue += fees
+            coinbaseoutput.scriptPubKey = outputScriptPubKey
     else:
-        coinbaseoutput.scriptPubKey = CScript([OP_TRUE])
+        # Default PoW behavior
+        coinbaseoutput.nValue = nValue * COIN
+        if nValue == 50:
+            halvings = int(height / 150)  # regtest
+            coinbaseoutput.nValue >>= halvings
+            coinbaseoutput.nValue += fees
+        if pubkey is not None:
+            coinbaseoutput.scriptPubKey = CScript([pubkey, OP_CHECKSIG])
+        else:
+            coinbaseoutput.scriptPubKey = CScript([OP_TRUE])
+
     coinbase.vout = [coinbaseoutput]
+
     if extra_output_script is not None:
         coinbaseoutput2 = CTxOut()
         coinbaseoutput2.nValue = 0
         coinbaseoutput2.scriptPubKey = extra_output_script
         coinbase.vout.append(coinbaseoutput2)
+
     coinbase.calc_sha256()
     return coinbase
 
