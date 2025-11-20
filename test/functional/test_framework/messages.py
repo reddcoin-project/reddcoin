@@ -836,12 +836,13 @@ class PrefilledTransaction:
 
 # This is what we send on the wire, in a cmpctblock message.
 class P2PHeaderAndShortIDs:
-    __slots__ = ("header", "nonce", "prefilled_txn", "prefilled_txn_length",
+    __slots__ = ("header", "nonce", "vchBlockSig", "prefilled_txn", "prefilled_txn_length",
                  "shortids", "shortids_length")
 
     def __init__(self):
         self.header = CBlockHeader()
         self.nonce = 0
+        self.vchBlockSig = b""
         self.shortids_length = 0
         self.shortids = []
         self.prefilled_txn_length = 0
@@ -850,6 +851,8 @@ class P2PHeaderAndShortIDs:
     def deserialize(self, f):
         self.header.deserialize(f)
         self.nonce = struct.unpack("<Q", f.read(8))[0]
+        # ReddCoin: PoS blocks include vchBlockSig after nonce
+        self.vchBlockSig = deser_string(f)
         self.shortids_length = deser_compact_size(f)
         for _ in range(self.shortids_length):
             # shortids are defined to be 6 bytes in the spec, so append
@@ -863,6 +866,8 @@ class P2PHeaderAndShortIDs:
         r = b""
         r += self.header.serialize()
         r += struct.pack("<Q", self.nonce)
+        # ReddCoin: PoS blocks include vchBlockSig after nonce
+        r += ser_string(self.vchBlockSig)
         r += ser_compact_size(self.shortids_length)
         for x in self.shortids:
             # We only want the first 6 bytes
