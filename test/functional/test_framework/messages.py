@@ -772,9 +772,12 @@ class CBlock(CBlockHeader):
 
     def is_valid(self):
         self.calc_sha256()
-        target = uint256_from_compact(self.nBits)
-        if self.sha256 > target:
-            return False
+        # PoS blocks (version > POW_BLOCK_VERSION) don't use hash difficulty
+        # They are validated by block signature instead
+        if self.nVersion <= POW_BLOCK_VERSION:
+            target = uint256_from_compact(self.nBits)
+            if self.sha256 > target:
+                return False
         for tx in self.vtx:
             if not tx.is_valid():
                 return False
@@ -784,6 +787,10 @@ class CBlock(CBlockHeader):
 
     def solve(self):
         self.rehash()
+        # PoS blocks (version > POW_BLOCK_VERSION) don't use nonce-based mining
+        # They are validated by block signature, so nonce stays at 0
+        if self.nVersion > POW_BLOCK_VERSION:
+            return
         target = uint256_from_compact(self.nBits)
         while self.sha256 > target:
             self.nNonce += 1
