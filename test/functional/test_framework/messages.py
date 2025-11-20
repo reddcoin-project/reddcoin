@@ -40,6 +40,9 @@ MAX_BLOOM_HASH_FUNCS = 50
 COIN = 100000000  # 1 btc in satoshis
 MAX_MONEY = 92233720368 * COIN
 
+# ReddCoin: Block version constants
+POW_BLOCK_VERSION = 2  # Blocks with version > 2 are PoS and require block signature
+
 BIP125_SEQUENCE_NUMBER = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 
 MAX_PROTOCOL_MESSAGE_LENGTH = 4000000  # Maximum length of incoming protocol messages
@@ -712,15 +715,19 @@ BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
 assert_equal(BLOCK_HEADER_SIZE, 80)
 
 class CBlock(CBlockHeader):
-    __slots__ = ("vtx",)
+    __slots__ = ("vtx", "vchBlockSig")
 
     def __init__(self, header=None):
         super().__init__(header)
         self.vtx = []
+        self.vchBlockSig = b""
 
     def deserialize(self, f):
         super().deserialize(f)
         self.vtx = deser_vector(f, CTransaction)
+        # PoS blocks (version > POW_BLOCK_VERSION) have a block signature
+        if self.nVersion > POW_BLOCK_VERSION:
+            self.vchBlockSig = deser_string(f)
 
     def serialize(self, with_witness=True):
         r = b""
@@ -729,6 +736,9 @@ class CBlock(CBlockHeader):
             r += ser_vector(self.vtx, "serialize_with_witness")
         else:
             r += ser_vector(self.vtx, "serialize_without_witness")
+        # PoS blocks (version > POW_BLOCK_VERSION) have a block signature
+        if self.nVersion > POW_BLOCK_VERSION:
+            r += ser_string(self.vchBlockSig)
         return r
 
     # Calculate the merkle root given a vector of transaction hashes
@@ -780,9 +790,10 @@ class CBlock(CBlockHeader):
             self.rehash()
 
     def __repr__(self):
-        return "CBlock(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x vtx=%s)" \
+        sig_info = f" vchBlockSig={self.vchBlockSig.hex()}" if self.vchBlockSig else ""
+        return "CBlock(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x vtx=%s%s)" \
             % (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot,
-               time.ctime(self.nTime), self.nBits, self.nNonce, repr(self.vtx))
+               time.ctime(self.nTime), self.nBits, self.nNonce, repr(self.vtx), sig_info)
 
 
 class PrefilledTransaction:
