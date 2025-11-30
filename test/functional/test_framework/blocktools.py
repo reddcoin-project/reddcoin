@@ -126,6 +126,15 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
             tx = tx_from_hex(tx_data['data'])
             block.vtx.append(tx)
 
+        # ReddCoin: For PoS blocks, ensure block timestamp matches coinstake timestamp
+        # PoS validation requires: block.nTime == coinstake.nTime
+        # The coinstake timestamp is authoritative (part of PoS proof), so sync block to it
+        if is_pos_block and len(block.vtx) >= 2:
+            coinstake = block.vtx[1]
+            if hasattr(coinstake, 'nTime') and coinstake.nTime != block.nTime:
+                # Update block timestamp to match coinstake (cannot modify coinstake - it's signed)
+                block.nTime = coinstake.nTime
+
     # Add any additional transactions from txlist
     if txlist:
         for tx in txlist:
