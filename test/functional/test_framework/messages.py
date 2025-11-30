@@ -899,11 +899,12 @@ def calculate_shortid(k0, k1, tx_hash):
 # This version gets rid of the array lengths, and reinterprets the differential
 # encoding into indices that can be used for lookup.
 class HeaderAndShortIDs:
-    __slots__ = ("header", "nonce", "prefilled_txn", "shortids", "use_witness")
+    __slots__ = ("header", "nonce", "vchBlockSig", "prefilled_txn", "shortids", "use_witness")
 
     def __init__(self, p2pheaders_and_shortids = None):
         self.header = CBlockHeader()
         self.nonce = 0
+        self.vchBlockSig = b""  # ReddCoin: PoS block signature
         self.shortids = []
         self.prefilled_txn = []
         self.use_witness = False
@@ -911,6 +912,7 @@ class HeaderAndShortIDs:
         if p2pheaders_and_shortids is not None:
             self.header = p2pheaders_and_shortids.header
             self.nonce = p2pheaders_and_shortids.nonce
+            self.vchBlockSig = p2pheaders_and_shortids.vchBlockSig  # ReddCoin: copy block signature
             self.shortids = p2pheaders_and_shortids.shortids
             last_index = -1
             for x in p2pheaders_and_shortids.prefilled_txn:
@@ -924,6 +926,7 @@ class HeaderAndShortIDs:
             ret = P2PHeaderAndShortIDs()
         ret.header = self.header
         ret.nonce = self.nonce
+        ret.vchBlockSig = self.vchBlockSig  # ReddCoin: copy block signature
         ret.shortids_length = len(self.shortids)
         ret.shortids = self.shortids
         ret.prefilled_txn_length = len(self.prefilled_txn)
@@ -948,6 +951,8 @@ class HeaderAndShortIDs:
             prefill_list = [0]
         self.header = CBlockHeader(block)
         self.nonce = nonce
+        # ReddCoin: copy block signature for PoS blocks
+        self.vchBlockSig = getattr(block, 'vchBlockSig', b"")
         self.prefilled_txn = [ PrefilledTransaction(i, block.vtx[i]) for i in prefill_list ]
         self.shortids = []
         self.use_witness = use_witness
