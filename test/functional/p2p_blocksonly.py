@@ -10,7 +10,7 @@ from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.messages import msg_tx
 from test_framework.p2p import P2PInterface, P2PTxInvStore
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, advance_time_for_pos
 from test_framework.wallet import MiniWallet
 
 
@@ -19,6 +19,9 @@ class P2PBlocksOnly(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.extra_args = [["-blocksonly"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         self.miniwallet = MiniWallet(self.nodes[0])
@@ -39,6 +42,9 @@ class P2PBlocksOnly(BitcoinTestFramework):
         self.log.info('Check that txs from rpc are not rejected and relayed to other peers')
         tx_relay_peer = self.nodes[0].add_p2p_connection(P2PInterface())
         assert_equal(self.nodes[0].getpeerinfo()[0]['relaytxes'], True)
+
+        # Advance mocktime to expire the trickle timer (INBOUND_INVENTORY_BROADCAST_INTERVAL = 5s)
+        advance_time_for_pos(self.nodes[0], seconds=10)
 
         assert_equal(self.nodes[0].testmempoolaccept([tx_hex])[0]['allowed'], True)
         with self.nodes[0].assert_debug_log(['received getdata for: wtx {} peer=1'.format(wtxid)]):
@@ -73,7 +79,7 @@ class P2PBlocksOnly(BitcoinTestFramework):
         self.log.info("Relay-permission peer's transaction is accepted and relayed")
 
         self.nodes[0].disconnect_p2ps()
-        self.nodes[0].generate(1)
+        self.generate(1)
 
     def blocks_relay_conn_tests(self):
         self.log.info('Tests with node in normal mode with block-relay-only connections')
