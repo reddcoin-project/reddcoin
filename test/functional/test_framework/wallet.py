@@ -142,10 +142,11 @@ class MiniWallet:
         """Create and return a tx with the specified fee_rate. Fee may be exact or at most one satoshi higher than needed."""
         self._utxos = sorted(self._utxos, key=lambda k: k['value'])
         utxo_to_spend = utxo_to_spend or self._utxos.pop()  # Pick the largest utxo (if none provided) and hope it covers the fee
+        # Reddcoin: +4 bytes for nTime field when nVersion > 1 (Bitcoin values are 96/168)
         if self._priv_key is None:
-            vsize = Decimal(96)  # anyone-can-spend
+            vsize = Decimal(100)  # anyone-can-spend
         else:
-            vsize = Decimal(168)  # P2PK (73 bytes scriptSig + 35 bytes scriptPubKey + 60 bytes other)
+            vsize = Decimal(172)  # P2PK (73 bytes scriptSig + 35 bytes scriptPubKey + 64 bytes other)
         send_value = satoshi_round(utxo_to_spend['value'] - fee_rate * (vsize / 1000))
         fee = utxo_to_spend['value'] - send_value
         assert send_value > 0
