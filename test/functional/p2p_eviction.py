@@ -16,9 +16,11 @@ Therefore, this test is limited to the remaining protection criteria.
 import time
 
 from test_framework.blocktools import (
+    add_witness_commitment,
     COINBASE_MATURITY,
     create_block,
-    create_coinbase,
+    NORMAL_GBT_REQUEST_PARAMS,
+    sign_block,
 )
 from test_framework.messages import (
     msg_pong,
@@ -27,7 +29,7 @@ from test_framework.messages import (
 )
 from test_framework.p2p import P2PDataStore, P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, advance_time_for_pos
 
 
 class SlowP2PDataStore(P2PDataStore):
@@ -49,22 +51,67 @@ class P2PEvict(BitcoinTestFramework):
         # 4 by netgroup, 4 that sent us blocks, 4 that sent us transactions and 8 via lowest ping time
         self.extra_args = [['-maxconnections=32']]
 
+    def build_block_on_tip(self, node, segwit=False, txlist=None):
+        """Build a block on the current tip with optional transactions.
+
+        Args:
+            node: The node to build the block for
+            segwit: If True, add witness commitment
+            txlist: Optional list of transactions to include in the block
+        """
+        # ReddCoin PoS: Add retry logic for intermittent staking failures
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                block = create_block(tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=txlist)
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < max_attempts - 1:
+                    # Advance time and try again
+                    advance_time_for_pos(self.nodes, seconds=120)
+                    continue
+                raise
+        if segwit:
+            add_witness_commitment(block)
+        block.hashMerkleRoot = block.calc_merkle_root()
+        block.rehash()
+        block.solve()
+
+        # ReddCoin: Extract the correct signing key from the coinstake
+        # getblocktemplate creates a coinstake using one of the wallet's keys
+        coinstake = block.vtx[1]
+        coinstake_hex = coinstake.serialize().hex()
+        decoded_tx = node.decoderawtransaction(coinstake_hex)
+
+        try:
+            coinstake_addresses = decoded_tx['vout'][1]['scriptPubKey'].get('addresses', [])
+            if coinstake_addresses:
+                signing_key = node.dumpprivkey(coinstake_addresses[0])
+            else:
+                signing_key = node.get_deterministic_priv_key().key
+        except:
+            signing_key = node.get_deterministic_priv_key().key
+
+        sign_block(block, signing_key)
+        return block
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         protected_peers = set()  # peers that we expect to be protected from eviction
         current_peer = -1
         node = self.nodes[0]
-        node.generatetoaddress(COINBASE_MATURITY + 1, node.get_deterministic_priv_key().address)
+        advance_time_for_pos(self.nodes[0], seconds=0)
+        self.generate(COINBASE_MATURITY + 1)
 
         self.log.info("Create 4 peers and protect them from eviction by sending us a block")
         for _ in range(4):
             block_peer = node.add_p2p_connection(SlowP2PDataStore())
             current_peer += 1
             block_peer.sync_with_ping()
-            best_block = node.getbestblockhash()
-            tip = int(best_block, 16)
-            best_block_time = node.getblock(best_block)['time']
-            block = create_block(tip, create_coinbase(node.getblockcount() + 1), best_block_time + 1)
-            block.solve()
+            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing
+            block = self.build_block_on_tip(node)
             block_peer.send_blocks_and_test([block], node, success=True)
             protected_peers.add(current_peer)
 
