@@ -134,6 +134,7 @@ class TestNode():
 
         self.p2ps = []
         self.timeout_factor = timeout_factor
+        self.mocktime = 0  # Track current mocktime for sync_time()
 
     AddressKeyPair = collections.namedtuple('AddressKeyPair', ['address', 'key'])
     PRIV_KEYS = [
@@ -306,9 +307,12 @@ class TestNode():
         blocks = []
         for i in range(nblocks):
             # Advance mock time before each block
+            # Use max of current mocktime and block time to avoid resetting advanced time
             try:
-                current_time = self.getblockheader(self.getbestblockhash())['time']
-                self.setmocktime(current_time + POS_BLOCK_SPACING)
+                block_time = self.getblockheader(self.getbestblockhash())['time']
+                new_time = max(self.mocktime, block_time) + POS_BLOCK_SPACING
+                self.setmocktime(new_time)
+                self.mocktime = new_time  # Track for sync_time()
             except Exception:
                 pass  # If mocktime isn't set or fails, continue anyway
 

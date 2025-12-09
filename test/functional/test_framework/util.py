@@ -450,6 +450,7 @@ def softfork_active(node, key):
 def set_node_times(nodes, t):
     for node in nodes:
         node.setmocktime(t)
+        node.mocktime = t  # Track for sync_time()
 
 
 def advance_time_for_pos(nodes, seconds=60):
@@ -468,8 +469,12 @@ def advance_time_for_pos(nodes, seconds=60):
     if not isinstance(nodes, list):
         nodes = [nodes]
 
-    # Get current time from first node
-    current_time = nodes[0].getblockheader(nodes[0].getbestblockhash())['time']
+    # Get current time - use tracked mocktime if set, otherwise block header time
+    # This allows multiple calls to advance_time_for_pos without generating blocks
+    if hasattr(nodes[0], 'mocktime') and nodes[0].mocktime:
+        current_time = nodes[0].mocktime
+    else:
+        current_time = nodes[0].getblockheader(nodes[0].getbestblockhash())['time']
     new_time = current_time + seconds
 
     # Set new time on all nodes
