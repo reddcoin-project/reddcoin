@@ -694,6 +694,57 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self.sync_blocks(nodes)
         self.sync_mempools(nodes)
 
+    def generate(self, nblocks, node=None, sync_every=10, max_tries=10):
+        """
+        Generate blocks while keeping all nodes' mocktime synchronized.
+
+        Generates blocks one at a time on the specified node, syncing mocktime
+        across all nodes every sync_every blocks. This prevents time drift
+        between nodes during long block generation sequences.
+
+        Includes retry logic for PoS: if "no valid coinstake found" error occurs,
+        advances time and retries up to max_tries times per block.
+
+        Args:
+            nblocks: Number of blocks to generate
+            node: Node to generate on (default: self.nodes[0])
+            sync_every: Sync time across all nodes every N blocks (default: 10)
+            max_tries: Max retry attempts per block on coinstake failure (default: 10)
+
+        Returns:
+            List of generated block hashes
+        """
+        if node is None:
+            node = self.nodes[0]
+
+        blocks = []
+        for i in range(nblocks):
+            # Retry logic for PoS coinstake failures
+            for attempt in range(max_tries):
+                try:
+                    block = node.generate(1)
+                    blocks.extend(block)
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e):
+                        if attempt < max_tries - 1:
+                            # Advance time and retry
+                            set_node_times(self.nodes, node.mocktime + 60)
+                        else:
+                            raise
+                    else:
+                        raise
+
+            # Sync time across all nodes periodically
+            if (i + 1) % sync_every == 0:
+                self.sync_time()
+
+        # Final sync after all blocks generated
+        if nblocks % sync_every != 0:
+            self.sync_time()
+
+        return blocks
+
     def wait_until(self, test_function, timeout=60):
         return wait_until_helper(test_function, timeout=timeout, timeout_factor=self.options.timeout_factor)
 
