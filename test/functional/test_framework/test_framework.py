@@ -32,6 +32,7 @@ from .util import (
     get_datadir_path,
     initialize_datadir,
     p2p_port,
+    set_node_times,
     wait_until_helper,
 )
 
@@ -690,7 +691,35 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             "".join("\n  {!r}".format(m) for m in pool),
         ))
 
+    def sync_time(self, nodes=None):
+        """
+        Synchronize mocktime across all nodes by setting all to the maximum time.
+
+        Reads the tracked mocktime from each node and sets all nodes to the
+        maximum time found. This prevents P2P disconnections caused by time
+        drift between nodes when using mocktime.
+
+        ReddCoin PoS requires synchronized time across nodes because:
+        - Block timestamps must be within acceptable range
+        - Coin age calculations depend on consistent time
+        - P2P connections can timeout if mocktime differs significantly
+
+        Note: mocktime is tracked in node.mocktime by generate() and set_node_times().
+        """
+        rpc_connections = nodes or self.nodes
+        if len(rpc_connections) <= 1:
+            return
+
+        # Get tracked mocktime from each node
+        times = [node.mocktime for node in rpc_connections]
+
+        # Only sync if at least one node has mocktime set
+        max_time = max(times)
+        if max_time > 0:
+            set_node_times(rpc_connections, max_time)
+
     def sync_all(self, nodes=None):
+        self.sync_time(nodes)
         self.sync_blocks(nodes)
         self.sync_mempools(nodes)
 
