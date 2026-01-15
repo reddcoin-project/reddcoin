@@ -18,9 +18,13 @@ from test_framework.p2p import (
     p2p_lock,
 )
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, advance_time_for_pos
 import random
 import time
+
+
+# ReddCoin regtest port (Bitcoin uses 8333)
+REDDCOIN_REGTEST_PORT = 45444
 
 
 class AddrReceiver(P2PInterface):
@@ -39,8 +43,9 @@ class AddrReceiver(P2PInterface):
                 # relay_tests checks the content of the addr messages match
                 # expectations based on the message creation in setup_addr_msg
                 assert_equal(addr.nServices, 9)
-                if not 8333 <= addr.port < 8343:
-                    raise AssertionError("Invalid addr.port of {} (8333-8342 expected)".format(addr.port))
+                if not REDDCOIN_REGTEST_PORT <= addr.port < REDDCOIN_REGTEST_PORT + 10:
+                    raise AssertionError("Invalid addr.port of {} ({}-{} expected)".format(
+                        addr.port, REDDCOIN_REGTEST_PORT, REDDCOIN_REGTEST_PORT + 9))
                 assert addr.ip.startswith('123.123.123.')
 
     def on_getaddr(self, message):
@@ -72,7 +77,14 @@ class AddrTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [["-whitelist=addr@127.0.0.1"]]
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
+        # ReddCoin: Initialize mocktime based on cache block time for PoS compatibility
+        self.mocktime = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time'] + 600
+        self.nodes[0].setmocktime(self.mocktime)
+
         self.oversized_addr_test()
         self.relay_tests()
         self.getaddr_tests()
@@ -86,7 +98,7 @@ class AddrTest(BitcoinTestFramework):
             addr.time = self.mocktime + i
             addr.nServices = NODE_NETWORK | NODE_WITNESS
             addr.ip = f"123.123.123.{self.counter % 256}"
-            addr.port = 8333 + i
+            addr.port = REDDCOIN_REGTEST_PORT + i
             addrs.append(addr)
             self.counter += 1
 
@@ -101,7 +113,7 @@ class AddrTest(BitcoinTestFramework):
             addr.time = self.mocktime + i
             addr.nServices = NODE_NETWORK | NODE_WITNESS
             addr.ip = f"{random.randrange(128,169)}.{random.randrange(1,255)}.{random.randrange(1,255)}.{random.randrange(1,255)}"
-            addr.port = 8333
+            addr.port = REDDCOIN_REGTEST_PORT
             addrs.append(addr)
         msg = msg_addr()
         msg.addrs = addrs
@@ -205,7 +217,7 @@ class AddrTest(BitcoinTestFramework):
             first_octet = i >> 8
             second_octet = i % 256
             a = f"{first_octet}.{second_octet}.1.1"
-            self.nodes[0].addpeeraddress(a, 8333)
+            self.nodes[0].addpeeraddress(a, REDDCOIN_REGTEST_PORT)
 
         full_outbound_peer.send_and_ping(msg_getaddr())
         block_relay_peer.send_and_ping(msg_getaddr())
@@ -224,7 +236,9 @@ class AddrTest(BitcoinTestFramework):
     def blocksonly_mode_tests(self):
         self.log.info('Test addr relay in -blocksonly mode')
         self.restart_node(0, ["-blocksonly", "-whitelist=addr@127.0.0.1"])
-        self.mocktime = int(time.time())
+        # ReddCoin: Sync mocktime after restart to prevent P2P timeout issues
+        self.mocktime = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time'] + 600
+        self.nodes[0].setmocktime(self.mocktime)
 
         self.log.info('Check that we send getaddr messages')
         full_outbound_peer = self.nodes[0].add_outbound_p2p_connection(AddrReceiver(), p2p_idx=0, connection_type="outbound-full-relay")
@@ -257,9 +271,9 @@ class AddrTest(BitcoinTestFramework):
             assert_equal(addrs_rate_limited, max(0, total_addrs - peer.tokens))
 
     def rate_limit_tests(self):
-
-        self.mocktime = int(time.time())
         self.restart_node(0, [])
+        # ReddCoin: Sync mocktime after restart based on cache block time
+        self.mocktime = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time'] + 600
         self.nodes[0].setmocktime(self.mocktime)
 
         for contype, no_relay in [("outbound-full-relay", False), ("block-relay-only", True), ("inbound", False)]:
