@@ -34,7 +34,9 @@ class PingPongTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [['-peertimeout=3']]
+        # -whitelist: bypass trickle delays for P2P test reliability
+        # -peertimeout=3: required for ping timeout test at end
+        self.extra_args = [['-whitelist=127.0.0.1', '-peertimeout=3']]
 
     def check_peer_info(self, *, pingtime, minping, pingwait):
         stats = self.nodes[0].getpeerinfo()[0]
@@ -109,7 +111,8 @@ class PingPongTest(BitcoinTestFramework):
         assert 'ping' not in no_pong_node.last_message
         self.nodes[0].ping()
         no_pong_node.wait_until(lambda: 'ping' in no_pong_node.last_message)
-        with self.nodes[0].assert_debug_log(['ping timeout: 1201.000000s']):
+        # ReddCoin uses "socket sending timeout" format instead of "ping timeout"
+        with self.nodes[0].assert_debug_log(['socket sending timeout: 1201s']):
             self.mock_forward(20 * 60 + 1)
             time.sleep(4)  # peertimeout + 1
 
