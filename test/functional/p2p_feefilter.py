@@ -72,16 +72,33 @@ class FeeFilterTest(BitcoinTestFramework):
         self.test_feefilter_blocksonly()
 
     def test_feefilter_forcerelay(self):
+        # Initialize mocktime from cache block time BEFORE any restarts
+        # This ensures self.nodes[i].mocktime is set for use in restart arguments
+        cache_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        for node in self.nodes:
+            node.setmocktime(cache_time)
+            node.mocktime = cache_time
+
         self.log.info('Check that peers without forcerelay permission (default) get a feefilter message')
         self.nodes[0].add_p2p_connection(FeefilterConn()).assert_feefilter_received(True)
 
         self.log.info('Check that peers with forcerelay permission do not get a feefilter message')
-        self.restart_node(0, extra_args=['-whitelist=forcerelay@127.0.0.1'])
+        # Disconnect inter-node connection before restart to prevent feefilter issues
+        self.disconnect_nodes(0, 1)
+        # Pass mocktime as startup arg to prevent incorrect feefilter calculation
+        mocktime_arg = [f'-mocktime={self.nodes[0].mocktime}']
+        self.restart_node(0, extra_args=['-whitelist=forcerelay@127.0.0.1'] + mocktime_arg)
+        if self.nodes[1].mocktime:
+            self.nodes[0].mocktime = self.nodes[1].mocktime
         self.nodes[0].add_p2p_connection(FeefilterConn()).assert_feefilter_received(False)
 
         # Restart to disconnect peers and load default extra_args
-        self.restart_node(0)
-        self.connect_nodes(1, 0)
+        self.restart_node(0, extra_args=self.extra_args[0] + mocktime_arg)
+        if self.nodes[1].mocktime:
+            self.nodes[0].mocktime = self.nodes[1].mocktime
+        # Connect node0 to node1 so node1 sees node0 as inbound (whitelisted)
+        # This allows node1 to relay transactions to node0 without trickle delay
+        self.connect_nodes(0, 1)
 
     def test_feefilter(self):
         node1 = self.nodes[1]
@@ -98,11 +115,12 @@ class FeeFilterTest(BitcoinTestFramework):
 
         # ReddCoin: DEFAULT_MIN_RELAY_TX_FEE = 100000 sat/kB (0.001 RDD/kB)
         # Fee rates must be above minimum relay fee to be accepted
-        # ReddCoin: Advance mocktime by 5s after each tx batch to trigger trickle timer
-        # (outbound trickle interval is 2s, so 5s is sufficient)
+        # ReddCoin: Advance mocktime by 10s after each tx batch to ensure trickle relay fires
+        # (Poisson-distributed trickle has 2s average for outbound, but can be longer)
         self.log.info("Test txs paying 0.002 RDD/kB are received by test connection")
         txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.002'), from_node=node1)['wtxid'] for _ in range(3)]
-        advance_time_for_pos(self.nodes, seconds=5)
+        advance_time_for_pos(self.nodes, seconds=10)
+        self.sync_mempools()  # ensure node0 has received txs from node1
         conn.wait_for_invs_to_match(txids)
         conn.clear_invs()
 
@@ -111,13 +129,14 @@ class FeeFilterTest(BitcoinTestFramework):
 
         self.log.info("Test txs paying 0.0015 RDD/kB are received by test connection (at filter)")
         txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.0015'), from_node=node1)['wtxid'] for _ in range(3)]
-        advance_time_for_pos(self.nodes, seconds=5)
+        advance_time_for_pos(self.nodes, seconds=10)
+        self.sync_mempools()  # ensure node0 has received txs from node1
         conn.wait_for_invs_to_match(txids)
         conn.clear_invs()
 
         self.log.info("Test txs paying 0.00125 RDD/kB are no longer received by test connection (below filter)")
         low_fee_txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.00125'), from_node=node1)['wtxid'] for _ in range(3)]
-        advance_time_for_pos(self.nodes, seconds=5)
+        advance_time_for_pos(self.nodes, seconds=10)  # Longer time to ensure trickle relay fires
         self.sync_mempools()  # must be sure node 0 has received all txs
 
         # Send one transaction from node0 that should be received, so that we
@@ -128,7 +147,7 @@ class FeeFilterTest(BitcoinTestFramework):
         # is eligible for relay, the prior transactions from node1 are eligible
         # as well.
         txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.003'), from_node=node0)['wtxid'] for _ in range(1)]
-        advance_time_for_pos(self.nodes, seconds=5)
+        advance_time_for_pos(self.nodes, seconds=10)
         conn.wait_for_invs_to_match(txids)
         conn.clear_invs()
         self.sync_mempools()  # must be sure node 1 has received all txs
@@ -136,7 +155,8 @@ class FeeFilterTest(BitcoinTestFramework):
         self.log.info("Remove fee filter and check txs are received again")
         conn.send_and_ping(msg_feefilter(0))
         txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.002'), from_node=node1)['wtxid'] for _ in range(3)]
-        advance_time_for_pos(self.nodes, seconds=5)
+        advance_time_for_pos(self.nodes, seconds=10)
+        self.sync_mempools()  # ensure node0 has received txs from node1 before checking test connection
         conn.wait_for_invs_to_match(txids)
         conn.clear_invs()
 
