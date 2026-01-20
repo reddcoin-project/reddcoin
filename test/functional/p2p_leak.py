@@ -147,6 +147,7 @@ class P2PLeakTest(BitcoinTestFramework):
         # so peer timeout checks still work (they compare nTimeConnected in real time vs mocktime)
         current_mocktime = int(time.time()) + 600
         self.nodes[0].setmocktime(current_mocktime)
+        self.nodes[0].mocktime = current_mocktime  # Track for generate()'s internal mocktime handling
         for attempt in range(10):
             try:
                 self.nodes[0].generate(nblocks=1)
@@ -178,6 +179,13 @@ class P2PLeakTest(BitcoinTestFramework):
         assert not no_version_idle_peer.is_connected
         assert not no_verack_idle_peer.is_connected
         assert not pre_wtxidrelay_peer.is_connected
+
+        # ReddCoin: Sync mocktime back to real time before new connections
+        # Otherwise new peers immediately timeout (nTimeConnected uses real time,
+        # but timeout checks use mocktime which is far ahead)
+        real_time = int(time.time())
+        self.nodes[0].setmocktime(real_time)
+        self.nodes[0].mocktime = real_time
 
         self.log.info('Check that the version message does not leak the local address of the node')
         p2p_version_store = self.nodes[0].add_p2p_connection(P2PVersionStore())
