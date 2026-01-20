@@ -10,10 +10,8 @@ and that it responds to getdata requests for blocks correctly:
     - disconnect peers who request blocks older than that."""
 from test_framework.messages import CInv, MSG_BLOCK, msg_getdata, msg_verack, NODE_NETWORK_LIMITED, NODE_WITNESS
 from test_framework.p2p import P2PInterface
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import (
-    assert_equal,
-)
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
+from test_framework.util import assert_equal
 
 
 class P2PIgnoreInv(P2PInterface):
@@ -36,6 +34,11 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 3
         self.extra_args = [['-prune=550', '-addrmantest'], [], []]
+
+    def skip_test_if_missing_module(self):
+        # ReddCoin: Prune mode (-prune=550) is incompatible with -txindex
+        # which is required for PoS staking. This test cannot be adapted.
+        raise SkipTest("Prune mode incompatible with ReddCoin PoS (requires -txindex)")
 
     def disconnect_all(self):
         self.disconnect_nodes(0, 1)
