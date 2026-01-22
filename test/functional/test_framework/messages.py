@@ -571,6 +571,21 @@ class CTransaction:
             r += struct.pack("<I", self.nTime)
         return r
 
+    def serialize_for_legacy_sighash(self):
+        """Serialize for legacy (pre-BIP143) signature hash.
+
+        ReddCoin: The legacy signature hash does NOT include nTime.
+        This matches CTransactionSignatureSerializer::Serialize() in C++
+        which only serializes: nVersion, vin, vout, nLockTime.
+        """
+        r = b""
+        r += struct.pack("<i", self.nVersion)
+        r += ser_vector(self.vin)
+        r += ser_vector(self.vout)
+        r += struct.pack("<I", self.nLockTime)
+        # Note: nTime is intentionally NOT included for legacy sighash
+        return r
+
     # Only serialize with witness when explicitly called for
     def serialize_with_witness(self):
         flags = 0
