@@ -290,7 +290,8 @@ static RPCHelpMan generatetodescriptor()
 {
     return RPCHelpMan{
         "generatetodescriptor",
-        "\nMine blocks immediately to a specified descriptor (before the RPC call returns)\n",
+        "\nMine blocks immediately to a specified descriptor (before the RPC call returns)\n"
+        "Note: For regtest after nLastPowHeight, this requires a loaded wallet for PoS block generation.\n",
         {
             {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated immediately."},
             {"descriptor", RPCArg::Type::STR, RPCArg::Optional::NO, "The descriptor to send the newly generated reddcoin to."},
@@ -319,7 +320,14 @@ static RPCHelpMan generatetodescriptor()
     const CTxMemPool& mempool = EnsureMemPool(node);
     ChainstateManager& chainman = EnsureChainman(node);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
+    CWallet* pwallet = nullptr;
+    std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (wallet) {
+        pwallet = wallet.get();
+    }
+
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
 },
     };
 }
