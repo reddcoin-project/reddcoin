@@ -105,6 +105,22 @@ class MiniWallet:
 
     def generate(self, num_blocks):
         """Generate blocks with coinbase outputs to the internal address, and append the outputs to the internal list"""
+        # ReddCoin: Check if we're in PoS phase (nLastPowHeight = 89 for regtest)
+        current_height = self._test_node.getblockcount()
+        regtest_last_pow_height = 89
+
+        if current_height >= regtest_last_pow_height:
+            # PoS phase: use node.generate() then send UTXOs to MiniWallet's address
+            blocks = self._test_node.generate(num_blocks)
+            if self._address:
+                # Send coins to MiniWallet's address for each block requested
+                for _ in range(num_blocks):
+                    txid = self._test_node.sendtoaddress(self._address, 1)
+                    tx = self._test_node.getrawtransaction(txid, True)
+                    self.scan_tx(tx)
+            return blocks
+
+        # PoW phase: generatetodescriptor works as expected
         blocks = self._test_node.generatetodescriptor(num_blocks, f'raw({self._scriptPubKey.hex()})')
         for b in blocks:
             cb_tx = self._test_node.getblock(blockhash=b, verbosity=2)['tx'][0]
