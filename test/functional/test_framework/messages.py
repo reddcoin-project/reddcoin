@@ -32,6 +32,23 @@ import time
 from test_framework.siphash import siphash256
 from test_framework.util import hex_str_to_bytes, assert_equal
 
+# Try to import scrypt for ReddCoin PoW mining (similar to Litecoin's litecoin_scrypt)
+# If not available, solve() will fall back to SHA256 (which will fail validation)
+try:
+    import scrypt as scrypt_module
+    SCRYPT_AVAILABLE = True
+except ImportError:
+    SCRYPT_AVAILABLE = False
+
+
+def scrypt_hash(data):
+    """Compute scrypt hash for ReddCoin PoW (N=1024, r=1, p=1, buflen=32)."""
+    if SCRYPT_AVAILABLE:
+        return scrypt_module.hash(data, data, N=1024, r=1, p=1, buflen=32)
+    else:
+        # Fallback to SHA256 (will fail validation but useful for testing serialization)
+        return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+
 MAX_LOCATOR_SZ = 101
 MAX_BLOCK_BASE_SIZE = 1000000
 MAX_BLOOM_FILTER_SIZE = 36000
@@ -657,8 +674,9 @@ class CTransaction:
 
 
 class CBlockHeader:
+    # ReddCoin: Added scrypt256 for PoW validation (like Litecoin's litecoin_scrypt)
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256")
+                 "nTime", "nVersion", "sha256", "scrypt256")
 
     def __init__(self, header=None):
         if header is None:
@@ -672,6 +690,7 @@ class CBlockHeader:
             self.nNonce = header.nNonce
             self.sha256 = header.sha256
             self.hash = header.hash
+            self.scrypt256 = getattr(header, 'scrypt256', None)
             self.calc_sha256()
 
     def set_null(self):
@@ -683,6 +702,7 @@ class CBlockHeader:
         self.nNonce = 0
         self.sha256 = None
         self.hash = None
+        self.scrypt256 = None
 
     def deserialize(self, f):
         self.nVersion = struct.unpack("<i", f.read(4))[0]
@@ -693,6 +713,7 @@ class CBlockHeader:
         self.nNonce = struct.unpack("<I", f.read(4))[0]
         self.sha256 = None
         self.hash = None
+        self.scrypt256 = None
 
     def serialize(self):
         r = b""
@@ -715,6 +736,8 @@ class CBlockHeader:
             r += struct.pack("<I", self.nNonce)
             self.sha256 = uint256_from_str(hash256(r))
             self.hash = encode(hash256(r)[::-1], 'hex_codec').decode('ascii')
+            # ReddCoin: Also compute scrypt256 for PoW validation (like Litecoin)
+            self.scrypt256 = uint256_from_str(scrypt_hash(r))
 
     def rehash(self):
         self.sha256 = None
@@ -801,13 +824,19 @@ class CBlock(CBlockHeader):
         return True
 
     def solve(self):
+        """Mine a valid nonce for PoW blocks using scrypt (ReddCoin, like Litecoin).
+
+        For PoS blocks (nVersion > POW_BLOCK_VERSION), does nothing as they use
+        block signatures instead of PoW.
+        """
         self.rehash()
         # PoS blocks (version > POW_BLOCK_VERSION) don't use nonce-based mining
         # They are validated by block signature, so nonce stays at 0
         if self.nVersion > POW_BLOCK_VERSION:
             return
         target = uint256_from_compact(self.nBits)
-        while self.sha256 > target:
+        # ReddCoin: Use scrypt256 for PoW validation (computed in calc_sha256 like Litecoin)
+        while self.scrypt256 > target:
             self.nNonce += 1
             self.rehash()
 
