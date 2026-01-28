@@ -27,6 +27,11 @@ std::string getnewaddress(CWallet& w)
 void importaddress(CWallet& wallet, const std::string& address)
 {
     auto spk_man = wallet.GetLegacyScriptPubKeyMan();
+    // Descriptor wallets don't support legacy importaddress
+    if (!spk_man) {
+        assert(false && "importaddress not supported for descriptor wallets");
+        return;
+    }
     LOCK2(wallet.cs_wallet, spk_man->cs_KeyStore);
     const auto dest = DecodeDestination(address);
     assert(IsValidDestination(dest));
