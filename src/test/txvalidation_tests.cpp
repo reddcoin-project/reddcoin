@@ -143,11 +143,22 @@ BOOST_FIXTURE_TEST_CASE(package_tests, TestChain100Setup)
     LOCK(cs_main);
     unsigned int initialPoolSize = m_node.mempool->size();
 
+    // Find an unspent coinbase output (many get spent during PoS staking)
+    CTransactionRef unspent_coinbase;
+    CCoinsViewCache& utxo_view = m_node.chainman->ActiveChainstate().CoinsTip();
+    for (const auto& tx : m_coinbase_txns) {
+        if (utxo_view.HaveCoin(COutPoint(tx->GetHash(), 0))) {
+            unspent_coinbase = tx;
+            break;
+        }
+    }
+    BOOST_REQUIRE_MESSAGE(unspent_coinbase, "No unspent coinbase found for test");
+
     // Parent and Child Package
     CKey parent_key;
     parent_key.MakeNewKey(true);
     CScript parent_locking_script = GetScriptForDestination(PKHash(parent_key.GetPubKey()));
-    auto mtx_parent = CreateValidMempoolTransaction(/* input_transaction */ m_coinbase_txns[0], /* vout */ 0,
+    auto mtx_parent = CreateValidMempoolTransaction(/* input_transaction */ unspent_coinbase, /* vout */ 0,
                                                     /* input_height */ 0, /* input_signing_key */ coinbaseKey,
                                                     /* output_destination */ parent_locking_script,
                                                     /* output_amount */ CAmount(49 * COIN), /* submit */ false);
