@@ -57,7 +57,8 @@ MAX_BLOCK_SIGOPS_WEIGHT = MAX_BLOCK_SIGOPS * WITNESS_SCALE_FACTOR
 TIME_GENESIS_BLOCK = 1296688602
 
 # Coinbase transaction outputs can only be spent after this number of new blocks (network rule)
-COINBASE_MATURITY = 100
+# ReddCoin regtest uses nCoinbaseMaturity = 60 (see src/chainparams.cpp)
+COINBASE_MATURITY = 60
 
 # From BIP141
 WITNESS_COMMITMENT_HEADER = b"\xaa\x21\xa9\xed"
