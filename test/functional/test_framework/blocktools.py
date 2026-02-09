@@ -89,24 +89,16 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
     else:
         block.nBits = 0x207fffff  # difficulty retargeting is disabled in REGTEST chainparams
 
-    # Detect if this is a PoS block by checking block version
-    # PoS blocks have version > POW_BLOCK_VERSION (2)
-    is_pos_block = block.nVersion > POW_BLOCK_VERSION
-
-    # For PoS blocks, verify the template contains a coinstake
-    if is_pos_block and tmpl:
-        if 'transactions' not in tmpl or len(tmpl['transactions']) == 0:
-            raise ValueError(f"PoS block (version {block.nVersion}) requires coinstake transaction in template")
-
-        # Deserialize first transaction to verify it's a coinstake
+    # Detect PoS by checking if template contains a coinstake transaction
+    # (not by version, since BIP9 version bits can make version > 2 for PoW blocks)
+    is_pos_block = False
+    if tmpl and 'transactions' in tmpl and len(tmpl['transactions']) > 0:
         first_tx = tx_from_hex(tmpl['transactions'][0]['data'])
-        # IsCoinStake: vin.size() > 0 && !vin[0].prevout.IsNull() && vout.size() >= 2 && vout[0].IsEmpty()
-        is_coinstake = (len(first_tx.vin) > 0 and
+        # IsCoinStake check: has inputs, first input not null, 2+ outputs, first output empty
+        is_pos_block = (len(first_tx.vin) > 0 and
                        first_tx.vin[0].prevout.hash != 0 and
                        len(first_tx.vout) >= 2 and
                        first_tx.vout[0].nValue == 0)
-        if not is_coinstake:
-            raise ValueError(f"PoS block (version {block.nVersion}) requires valid coinstake as first transaction")
 
     # Create or use provided coinbase
     if coinbase is None:
