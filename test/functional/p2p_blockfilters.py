@@ -59,21 +59,25 @@ class CompactFiltersTest(BitcoinTestFramework):
         peer_1 = self.nodes[1].add_p2p_connection(FiltersClient())
 
         # Nodes 0 & 1 share the same first 999 blocks in the chain.
-        # Mine 89 PoW blocks on node0
-        self.log.info("Mining 89 PoW blocks on node0...")
-        self.generate(89)
+        # First generate enough blocks to have many mature coins
+        self.log.info("Mining initial blocks on node0...")
+        self.generate(300)
 
-        # Fund node1 with staking UTXOs using its deterministic address
+        # Fund node1 with UTXOs for staking 1001 blocks independently
         self.log.info("Funding node1 with staking UTXOs...")
         node1_addr = self.nodes[1].get_deterministic_priv_key().address
+        for _ in range(50):
+            self.nodes[0].sendtoaddress(node1_addr, 5000)
 
-        # Send multiple UTXOs to node1 for successful staking
-        for _ in range(10):
-            self.nodes[0].sendtoaddress(node1_addr, 10000000)
+        # Generate blocks to mature node1's UTXOs and add more funding
+        self.log.info("Mining more blocks and adding more UTXOs...")
+        self.generate(200)  # 300 + 200 = 500
+        for _ in range(50):
+            self.nodes[0].sendtoaddress(node1_addr, 5000)
 
-        # Now node0 can stake - continue to 999
+        # Continue to 999
         self.log.info("Node0 continue generate to reach block 999...")
-        self.generate(910)  # 89 + 910 = 999
+        self.generate(499)  # 500 + 499 = 999
         self.sync_blocks(timeout=600)
 
         # Stale blocks by disconnecting nodes 0 & 1, mining, then reconnecting
