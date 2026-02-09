@@ -56,6 +56,8 @@ MAX_BLOOM_HASH_FUNCS = 50
 
 COIN = 100000000  # 1 btc in satoshis
 MAX_MONEY = 92233720368 * COIN
+COINBASE_REWARD = 545000000  # ReddCoin regtest premine block subsidy (blocks 1-10) in coins
+NORMAL_BLOCK_REWARD = 300000  # ReddCoin regtest normal block subsidy (blocks 11+) in coins
 
 # ReddCoin: Block version constants
 POW_BLOCK_VERSION = 2  # Blocks with version > 2 are PoS and require block signature
