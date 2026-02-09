@@ -298,7 +298,7 @@ class TestNode():
             time.sleep(1.0 / poll_per_s)
         self._raise_assertion_error("Unable to retrieve cookie credentials after {}s".format(self.rpc_timeout))
 
-    def generate(self, nblocks, maxtries=1000000):
+    def generate(self, nblocks, maxtries=1000000, pos_retry_attempts=10):
         self.log.debug("TestNode.generate() dispatches `generate` call to `generatetoaddress`")
         # For PoS: Advance time before generating blocks to ensure sufficient coinage
         # ReddCoin regtest nStakeMinAge = 10 seconds
@@ -316,8 +316,23 @@ class TestNode():
             except Exception:
                 pass  # If mocktime isn't set or fails, continue anyway
 
-            block = self.generatetoaddress(nblocks=1, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
-            blocks.extend(block)
+            # PoS retry logic - retry with time advancement on staking failures
+            for attempt in range(pos_retry_attempts):
+                try:
+                    block = self.generatetoaddress(nblocks=1, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+                    blocks.extend(block)
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e) and attempt < pos_retry_attempts - 1:
+                        # Advance time to increase staking probability
+                        try:
+                            new_time = self.mocktime + POS_BLOCK_SPACING
+                            self.setmocktime(new_time)
+                            self.mocktime = new_time
+                        except Exception:
+                            pass
+                    else:
+                        raise
 
         return blocks
 
