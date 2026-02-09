@@ -433,8 +433,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
             # For PoS: Import the keys used to generate the cache blocks
             # These keys have aged coins that can be used for staking
-            # Only works with legacy wallets
-            if not self.options.descriptors:
+            # Only works with legacy wallets and only needed when using the cache
+            if not self.options.descriptors and not self.setup_clean_chain:
                 from .test_node import TestNode
                 for key_pair in TestNode.PRIV_KEYS[:3]:
                     try:
