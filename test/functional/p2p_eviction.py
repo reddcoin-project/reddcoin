@@ -77,22 +77,25 @@ class P2PEvict(BitcoinTestFramework):
         block.rehash()
         block.solve()
 
-        # ReddCoin: Extract the correct signing key from the coinstake
-        # getblocktemplate creates a coinstake using one of the wallet's keys
-        coinstake = block.vtx[1]
-        coinstake_hex = coinstake.serialize().hex()
-        decoded_tx = node.decoderawtransaction(coinstake_hex)
+        # ReddCoin: Sign PoS blocks (blocks with coinstake in vtx[1])
+        # PoW blocks (vtx only has coinbase) don't need signing
+        if len(block.vtx) >= 2:
+            # Extract the correct signing key from the coinstake
+            # getblocktemplate creates a coinstake using one of the wallet's keys
+            coinstake = block.vtx[1]
+            coinstake_hex = coinstake.serialize().hex()
+            decoded_tx = node.decoderawtransaction(coinstake_hex)
 
-        try:
-            coinstake_addresses = decoded_tx['vout'][1]['scriptPubKey'].get('addresses', [])
-            if coinstake_addresses:
-                signing_key = node.dumpprivkey(coinstake_addresses[0])
-            else:
+            try:
+                coinstake_addresses = decoded_tx['vout'][1]['scriptPubKey'].get('addresses', [])
+                if coinstake_addresses:
+                    signing_key = node.dumpprivkey(coinstake_addresses[0])
+                else:
+                    signing_key = node.get_deterministic_priv_key().key
+            except:
                 signing_key = node.get_deterministic_priv_key().key
-        except:
-            signing_key = node.get_deterministic_priv_key().key
 
-        sign_block(block, signing_key)
+            sign_block(block, signing_key)
         return block
 
     def skip_test_if_missing_module(self):
