@@ -71,6 +71,17 @@ static bool GetLastStakeModifier(const CBlockIndex* pindex, uint64_t& nStakeModi
     while (pindex && pindex->pprev && !pindex->GeneratedStakeModifier())
         pindex = pindex->pprev;
     if (!pindex->GeneratedStakeModifier()) {
+        // Backward-compatible fix: when no generated modifier exists below
+        // pindex, return zero for both the modifier and its time.  Using
+        // pindex->nStakeModifier / GetBlockTime() here causes v4.22.10 to
+        // diverge from v4.22.9 after ~40 PoS blocks because the two
+        // versions then compute different stake modifiers from genesis.
+        // Returning zero matches v4.22.9's behavior (which has no such
+        // fallback) and preserves consensus compatibility while still
+        // producing deterministic reindex results.  See
+        // docs/feature_compat_pos_blocks.md for the divergence analysis.
+        nStakeModifier = 0;
+        nModifierTime = 0;
         return true;
     }
     nStakeModifier = pindex->nStakeModifier;
