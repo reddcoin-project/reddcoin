@@ -427,18 +427,46 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 use_descriptors = self.options.descriptors if hasattr(self, 'options') else False
                 n.createwallet(wallet_name=wallet_name, descriptors=use_descriptors, load_on_startup=True)
 
-            # Import the deterministic key for this node (only works with legacy wallets)
-            if wallet_name is not None and not self.options.descriptors:
-                n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
+            # Import the deterministic key for this node
+            if wallet_name is not None:
+                key_pair = n.get_deterministic_priv_key()
+
+                if self.options.descriptors:
+                    # For descriptor wallets, import the key as a descriptor
+                    # pkh() creates a P2PKH descriptor (standard address type)
+                    # Note: getdescriptorinfo converts the private key to a public key in the
+                    # returned descriptor, but we need to keep the private key for import.
+                    # So we use the checksum from getdescriptorinfo but keep the original descriptor.
+                    desc = f"pkh({key_pair.key})"
+                    desc_info = n.getdescriptorinfo(desc)
+                    desc_with_checksum = f"{desc}#{desc_info['checksum']}"
+
+                    n.importdescriptors([{
+                        "desc": desc_with_checksum,
+                        "timestamp": "now",
+                        "label": "coinbase"
+                    }])
+                else:
+                    # Legacy wallet: use importprivkey
+                    n.importprivkey(privkey=key_pair.key, label='coinbase')
 
             # For PoS: Import the keys used to generate the cache blocks
             # These keys have aged coins that can be used for staking
-            # Only works with legacy wallets and only needed when using the cache
-            if not self.options.descriptors and not self.setup_clean_chain:
+            # Only needed when using the cache
+            if not self.setup_clean_chain:
                 from .test_node import TestNode
                 for key_pair in TestNode.PRIV_KEYS[:3]:
                     try:
-                        n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
+                        if self.options.descriptors:
+                            desc = f"pkh({key_pair.key})"
+                            desc_info = n.getdescriptorinfo(desc)
+                            desc_with_checksum = f"{desc}#{desc_info['checksum']}"
+                            n.importdescriptors([{
+                                "desc": desc_with_checksum,
+                                "timestamp": "now",
+                            }])
+                        else:
+                            n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
                     except JSONRPCException:
                         pass  # Key might already be imported or duplicate
 
