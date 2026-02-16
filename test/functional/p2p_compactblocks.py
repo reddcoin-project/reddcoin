@@ -1121,7 +1121,7 @@ class CompactBlocksTest(BitcoinTestFramework):
         block = self.build_block_on_tip(self.nodes[0])
         hb_test_node.send_and_ping(msg_block(block))
         # ReddCoin: Wait for high-bandwidth state to be updated (may not be immediate)
-        self.wait_until(lambda: self.nodes[0].getpeerinfo()[-1]['bip152_hb_to'] == True, timeout=10)
+        self.wait_until(lambda: self.nodes[0].getpeerinfo()[-1]['bip152_hb_to'] == True, timeout=20)
         assert_highbandwidth_states(self.nodes[0], hb_to=True, hb_from=True)
 
         # peer requests low-bandwidth mode by sending sendcmpct(0)

@@ -1237,8 +1237,14 @@ class SegWitTest(BitcoinTestFramework):
         test_witness_block(self.nodes[0], self.test_node, block, accepted=False)
 
         # Now resize the second transaction to make the block fit.
+        # ReddCoin: Use b'b' padding instead of b'a' to ensure the witness
+        # data is always different from the too-big block. Without this, the
+        # ECDSA signature length adjustment loop could restore witness[0] to
+        # the same length as the too-big block, and since b'a' * N is
+        # identical, the witness hash, merkle root, and block hash would
+        # collide, causing the node to reject the block as "duplicate".
         cur_length = len(block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0])
-        block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'a' * (cur_length - 1)
+        block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'b' * (cur_length - 1)
         block.vtx[0].vout.pop()
         add_witness_commitment(block)
         self.solve_and_sign(block)  # ReddCoin: re-sign after modification
@@ -1248,9 +1254,9 @@ class SegWitTest(BitcoinTestFramework):
         while vsize != MAX_BLOCK_BASE_SIZE:
             cur_length = len(block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0])
             if vsize > MAX_BLOCK_BASE_SIZE:
-                block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'a' * (cur_length - 1)
+                block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'b' * (cur_length - 1)
             else:
-                block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'a' * (cur_length + 1)
+                block.vtx[-1].wit.vtxinwit[0].scriptWitness.stack[0] = b'b' * (cur_length + 1)
             block.vtx[0].vout.pop()
             add_witness_commitment(block)
             self.solve_and_sign(block)

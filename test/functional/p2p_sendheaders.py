@@ -256,12 +256,15 @@ class SendHeadersTest(BitcoinTestFramework):
         to-be-reorged-out blocks are mined, so that we don't break later tests.
         return the list of block hashes newly mined.
 
-        ReddCoin PoS adaptation: In PoS, chainwork is variable per block based
-        on coin age and stake kernel, so length+1 blocks may not have more work
-        than length blocks. We keep mining until node1's chain has more work."""
+        ReddCoin PoS adaptation: We pre-load all replacement blocks into
+        node0 via submitblock, then use invalidateblock + reconsiderblock
+        to trigger a controlled batch chain switch. Before reconsiderblock,
+        we reset pindexBestHeaderSent via getheaders to prevent the node
+        from skipping re-announcement of blocks it already sent headers
+        for during the submitblock chain switch. Requires the threshold-
+        based early-break fix in validation.cpp ActivateBestChainStep."""
 
-        # make sure all invalidated blocks are node0's
-        # ReddCoin: Generate blocks one at a time with retry logic for PoS
+        # Node0 mines 'length' blocks - these will be reorged out
         for _ in range(length):
             self.generate_pos_block(self.nodes[0], 1)
         self.sync_blocks(self.nodes, wait=0.5)
@@ -269,28 +272,72 @@ class SendHeadersTest(BitcoinTestFramework):
             x.wait_for_block_announcement(int(self.nodes[0].getbestblockhash(), 16))
             x.clear_block_announcements()
 
-        # Record node0's chainwork before we invalidate on node1
-        node0_chainwork = int(self.nodes[0].getblockchaininfo()['chainwork'], 16)
+        # Record the fork point (first block to invalidate)
+        tip_height = self.nodes[0].getblockcount()
+        hash_to_invalidate = self.nodes[0].getblockhash(tip_height - (length - 1))
+        fork_height = tip_height - length
+        original_tip = self.nodes[0].getbestblockhash()
 
-        tip_height = self.nodes[1].getblockcount()
-        hash_to_invalidate = self.nodes[1].getblockhash(tip_height - (length - 1))
+        # Disconnect nodes to prevent automatic block relay during mining
+        self.disconnect_nodes(1, 0)
+
+        # Node1 invalidates node0's blocks and mines replacement chain (length+1 blocks)
         self.nodes[1].invalidateblock(hash_to_invalidate)
-
-        # ReddCoin: Keep mining until node1 has more chainwork than node0
-        # This ensures the reorg will actually happen via P2P
         all_hashes = []
-        # Generate at least length+1 blocks
         for _ in range(length + 1):
             all_hashes.append(self.generate_pos_block(self.nodes[1], 1)[0])
 
-        # Keep mining if we still don't have more work
-        max_extra = 10
-        for _ in range(max_extra):
-            node1_chainwork = int(self.nodes[1].getblockchaininfo()['chainwork'], 16)
-            if node1_chainwork > node0_chainwork:
-                break
-            all_hashes.append(self.generate_pos_block(self.nodes[1], 1)[0])
+        # Submit all replacement blocks to node0 (pre-load as candidates).
+        # The chain may or may not switch during submission depending on
+        # relative chainwork - we handle both cases below.
+        self.log.debug(f"mine_reorg({length}): fork_height={fork_height}, replacement={length + 1}")
+        for i, block_hash in enumerate(all_hashes):
+            block_hex = self.nodes[1].getblock(block_hash, 0)
+            result = self.nodes[0].submitblock(block_hex)
+            self.log.debug(f"  submitblock[{i}]: {block_hash[:16]}... result={result}")
 
+        # Force a clean chain switch where ALL replacement blocks are
+        # connected in a single batch. Strategy:
+        # 1. Invalidate replacement chain (marks as invalid)
+        # 2. Invalidate original chain (tip goes to fork point, both invalid)
+        # 3. Flush pending P2P messages, clear announcements
+        # 4. Reset pindexBestHeaderSent via getheaders (critical: the
+        #    submitblock chain switch may have sent headers to test_node,
+        #    setting pindexBestHeaderSent to the replacement tip. Without
+        #    resetting, reconsiderblock's announcement would be skipped
+        #    because the node thinks the peer already knows those blocks.)
+        # 5. Clear again, then reconsider replacement chain for batch switch
+
+        # Step 1: Invalidate replacement chain
+        self.nodes[0].invalidateblock(all_hashes[0])
+
+        # Step 2: Invalidate original chain -> tip goes to fork point
+        self.nodes[0].invalidateblock(hash_to_invalidate)
+
+        # Step 3: Flush all pending messages from the invalidateblock
+        # operations, then clear announcements
+        for x in self.nodes[0].p2ps:
+            x.sync_with_ping()
+        for x in self.nodes[0].p2ps:
+            x.clear_block_announcements()
+
+        # Step 4: Reset pindexBestHeaderSent by sending getheaders with
+        # locator at the fork point. The node responds with empty headers
+        # (tip is at fork point), resetting pindexBestHeaderSent to
+        # fork_point instead of the stale replacement tip.
+        fork_point_hash = int(self.nodes[0].getblockhash(fork_height), 16)
+        for x in self.nodes[0].p2ps:
+            x.send_get_headers(locator=[fork_point_hash], hashstop=0)
+            x.sync_with_ping()
+
+        # Step 5: Clear any headers response from getheaders, then
+        # reconsider replacement chain -> batch chain switch.
+        for x in self.nodes[0].p2ps:
+            x.clear_block_announcements()
+        self.nodes[0].reconsiderblock(all_hashes[0])
+
+        # Reconnect nodes and verify they converge
+        self.connect_nodes(1, 0)
         self.sync_blocks(self.nodes, wait=0.5)
         return [int(x, 16) for x in all_hashes]
 
