@@ -450,25 +450,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     # Legacy wallet: use importprivkey
                     n.importprivkey(privkey=key_pair.key, label='coinbase')
 
-            # For PoS: Import the keys used to generate the cache blocks
-            # These keys have aged coins that can be used for staking
-            # Only needed when using the cache
-            if not self.setup_clean_chain:
-                from .test_node import TestNode
-                for key_pair in TestNode.PRIV_KEYS[:3]:
-                    try:
-                        if self.options.descriptors:
-                            desc = f"pkh({key_pair.key})"
-                            desc_info = n.getdescriptorinfo(desc)
-                            desc_with_checksum = f"{desc}#{desc_info['checksum']}"
-                            n.importdescriptors([{
-                                "desc": desc_with_checksum,
-                                "timestamp": "now",
-                            }])
-                        else:
-                            n.importprivkey(key_pair.key, "", True)  # Import WITH rescan to find UTXOs
-                    except JSONRPCException:
-                        pass  # Key might already be imported or duplicate
+            # NOTE: Each node now only has its own key (PRIV_KEYS[node_index])
+            # The cache was generated with all block rewards going to PRIV_KEYS[0]
+            # and funding transactions sent to PRIV_KEYS[1..3] for other nodes.
+            # This avoids key sharing issues where multiple nodes see the same coins.
 
             # For PoS: Set mock time well beyond tip time to give imported coins sufficient age
             # The cache blocks were generated with 60s spacing, but we need to ensure
@@ -855,7 +840,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     cache_node_dir,
                     chain=self.chain,
                     extra_conf=["bind=127.0.0.1"],
-                    extra_args=['-txindex=1'],  # txindex required for PoS staking
+                    extra_args=['-txindex=1', '-limitancestorcount=1000', '-limitdescendantcount=1000'],  # txindex for PoS, raised chain limits for funding
                     rpchost=None,
                     timewait=self.rpc_timeout,
                     timeout_factor=self.options.timeout_factor,
@@ -878,46 +863,94 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # Set the cache node's RPC to use the wallet context (same as we do for test nodes)
             cache_node.rpc = cache_node.get_wallet_rpc(self.default_wallet_name)
 
-            # Import private keys into wallet so it can stake the generated coins
-            # For PoS, the wallet must own the coins to create coinstake transactions
-            for key_pair in TestNode.PRIV_KEYS[:3]:
-                try:
-                    cache_node.importprivkey(key_pair.key, "", False)  # No rescan needed for new wallet
-                except JSONRPCException:
-                    pass  # Key might already be imported
+            # Import only node 0's key - this node will accumulate all block rewards
+            # Then fund other nodes with explicit transactions to avoid key sharing
+            cache_node.importprivkey(TestNode.PRIV_KEYS[0].key, "", False)
 
             # Set a time in the past, so that blocks don't end up in the future
             # For PoS, we need sufficient coinage, so start with a reasonable base time
             initial_time = cache_node.getblockheader(cache_node.getbestblockhash())['time']
             cache_node.setmocktime(initial_time)
 
-            # Create a 199-block-long chain; each of the 3 first nodes
-            # gets 25 mature blocks and 25 immature.
-            # The 4th address gets 25 mature and only 24 immature blocks so that the very last
-            # block in the cache does not age too much (have an old tip age).
-            # This is needed so that we are out of IBD when the test starts,
-            # see the tip age check in IsInitialBlockDownload().
-            # gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [ADDRESS_BCRT1_P2WSH_OP_TRUE]
-            # assert_equal(len(gen_addresses), 4)
-            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3]
-            assert_equal(len(gen_addresses), 3)
+            # Generate all blocks to node 0's address only - this avoids key sharing issues
+            # where multiple nodes see the same coinbase rewards.
+            # Other nodes will be funded via explicit transactions.
+            gen_address = TestNode.PRIV_KEYS[0].address
 
             # For PoS: Advance time between blocks to build coinage
             # ReddCoin regtest nStakeMinAge = 10 seconds, so use block spacing to ensure coinage
             POS_BLOCK_SPACING = 60  # 60 seconds between blocks (well above 10 second minimum)
 
-            for i in range(8):
-                num_blocks = 25 if i != 7 else 24
-                # Generate blocks one at a time, advancing time between each for PoS coinage
-                for j in range(num_blocks):
-                    # Advance time before generating block to age existing coins
+            # Helper: generate one block with PoS retry logic
+            def _generate_one_block():
+                nonlocal initial_time
+                for attempt in range(10):
                     initial_time += POS_BLOCK_SPACING
                     cache_node.setmocktime(initial_time)
+                    try:
+                        cache_node.generatetoaddress(1, gen_address)
+                        return
+                    except JSONRPCException as e:
+                        if "no valid coinstake found" in str(e) and attempt < 9:
+                            continue
+                        raise
 
-                    cache_node.generatetoaddress(
-                        nblocks=1,
-                        address=gen_addresses[i % len(gen_addresses)],
-                    )
+            # Phase 1: Generate 90 blocks (89 PoW + 1 PoS)
+            # nLastPowHeight=89 on regtest, so block 90 is the first PoS block.
+            # All rewards go to PRIV_KEYS[0]. At block 90, blocks 1-30 are mature.
+            PHASE1_BLOCKS = 90
+            for i in range(PHASE1_BLOCKS):
+                _generate_one_block()
+
+            # Phase 2: Fund nodes 1, 2, 3 from a single mature coinbase UTXO
+            # Chain multiple transactions off the same coinbase's change output,
+            # so only 1 coinbase is consumed, preserving ~29 for continued staking.
+            # Each node gets NUM_FUNDING_TXS UTXOs of ~FUND_AMOUNT RDD each.
+            # Funding at block 90 gives 108+ confirmations by block 199
+            # (well over COINBASE_MATURITY=60), so funded UTXOs are staking-ready.
+            FUND_AMOUNT = 2500000
+            NUM_FUNDING_TXS = 70  # Each node gets this many UTXOs for staking
+
+            utxos = cache_node.listunspent(60)
+            utxos.sort(key=lambda x: x['amount'], reverse=True)
+
+            prev_txid = utxos[0]['txid']
+            prev_vout = utxos[0]['vout']
+            prev_amount = utxos[0]['amount']
+
+            for _ in range(NUM_FUNDING_TXS):
+                change = prev_amount - FUND_AMOUNT * 3 - 1
+
+                inputs = [{"txid": prev_txid, "vout": prev_vout}]
+                outputs = {
+                    TestNode.PRIV_KEYS[1].address: FUND_AMOUNT,
+                    TestNode.PRIV_KEYS[2].address: FUND_AMOUNT,
+                    TestNode.PRIV_KEYS[3].address: FUND_AMOUNT,
+                    gen_address: change,
+                }
+
+                raw_tx = cache_node.createrawtransaction(inputs, outputs)
+                signed_tx = cache_node.signrawtransactionwithwallet(raw_tx)
+                assert signed_tx['complete']
+                txid = cache_node.sendrawtransaction(signed_tx['hex'], 0)  # maxfeerate=0
+
+                # Find the change output to use as input for the next tx
+                decoded = cache_node.decoderawtransaction(signed_tx['hex'])
+                for vout_info in decoded['vout']:
+                    spk = vout_info['scriptPubKey']
+                    vout_addr = spk.get('address', '')
+                    if not vout_addr and 'addresses' in spk:
+                        vout_addr = spk['addresses'][0]
+                    if vout_addr == gen_address:
+                        prev_txid = txid
+                        prev_vout = vout_info['n']
+                        prev_amount = vout_info['value']
+                        break
+
+            # Phase 3: Generate remaining 109 PoS blocks to confirm and mature funding
+            PHASE3_BLOCKS = 199 - PHASE1_BLOCKS
+            for i in range(PHASE3_BLOCKS):
+                _generate_one_block()
 
             assert_equal(cache_node.getblockchaininfo()["blocks"], 199)
 
