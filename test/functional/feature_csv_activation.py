@@ -11,7 +11,7 @@ BIP 113 - MedianTimePast semantics for nLockTime
 
 ReddCoin adaptation:
 - PoS blocks after height 89 require valid coinstake (use node.generate / getblocktemplate)
-- BIP68 enforced for nVersion >= 3 (not >= 2); BIP112 OP_CSV still uses >= 2
+- BIP68 and BIP112 enforced for nVersion >= 3 (not >= 2 as in Bitcoin)
 - MiniWallet funded via fundrawtransaction (PoS coinbase reward is 0)
 - Block time comes from coinstake nTime; BIP113 MTP read from getblockheader
 - PoS blocks have coinbase + coinstake + regular txs (tx count +2 not +1)
@@ -347,7 +347,8 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.log.info("Height = {}, CSV not yet active (will activate for block {}, not {})".format(self.tipheight, CSV_ACTIVATION_HEIGHT, CSV_ACTIVATION_HEIGHT - 1))
         assert not softfork_active(node, 'csv')
 
-        # Test both version 1 and version 2 (3 for BIP68) transactions for all tests
+        # Test version 1, version 2, and version 3 transactions
+        # ReddCoin: v2 = PoS-aware (nTime field), v3 = activates BIP68/BIP112 sequence locks
         # BIP113 test transaction will be modified before each use to put in appropriate block time
         bip113tx_v1 = self.create_self_transfer_from_utxo(bip113input)
         bip113tx_v1.vin[0].nSequence = 0xFFFFFFFE
@@ -355,6 +356,9 @@ class BIP68_112_113Test(BitcoinTestFramework):
         bip113tx_v2 = self.create_self_transfer_from_utxo(bip113input)
         bip113tx_v2.vin[0].nSequence = 0xFFFFFFFE
         bip113tx_v2.nVersion = 2
+        bip113tx_v3 = self.create_self_transfer_from_utxo(bip113input)
+        bip113tx_v3.vin[0].nSequence = 0xFFFFFFFE
+        bip113tx_v3.nVersion = 3
 
         # For BIP68 test all 16 relative sequence locktimes
         bip68txs_v1 = self.create_bip68txs(bip68inputs, 1)
@@ -429,6 +433,15 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.send_blocks([self.create_test_block(success_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
+        self.log.info("Test version 3 txs")
+        # BIP113 with nVersion=3 (ReddCoin standard tx version) should also pass pre-activation
+        # BIP68/BIP112 v3 already tested above (v2 vars use nVersion=3)
+        tip_mtp = node.getblockheader(node.getbestblockhash())['mediantime']
+        bip113tx_v3.nLockTime = tip_mtp
+        self.miniwallet.sign_tx(bip113tx_v3)
+        self.send_blocks([self.create_test_block([bip113tx_v3])])
+        self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
+
         # 1 more block so the fork should now be active for the next block
         assert not softfork_active(node, 'csv')
         self.generate_blocks(1)
@@ -445,7 +458,10 @@ class BIP68_112_113Test(BitcoinTestFramework):
         bip113tx_v2.nLockTime = tip_mtp
         self.miniwallet.sign_tx(bip113tx_v2)
         bip113tx_v2.rehash()
-        for bip113tx in [bip113tx_v1, bip113tx_v2]:
+        bip113tx_v3.nLockTime = tip_mtp
+        self.miniwallet.sign_tx(bip113tx_v3)
+        bip113tx_v3.rehash()
+        for bip113tx in [bip113tx_v1, bip113tx_v2, bip113tx_v3]:
             self.send_blocks([self.create_test_block([bip113tx])], success=False, reject_reason='bad-txns-nonfinal')
 
         # BIP 113 tests should now pass if the locktime is < MTP
@@ -456,7 +472,10 @@ class BIP68_112_113Test(BitcoinTestFramework):
         bip113tx_v2.nLockTime = tip_mtp - 1
         self.miniwallet.sign_tx(bip113tx_v2)
         bip113tx_v2.rehash()
-        for bip113tx in [bip113tx_v1, bip113tx_v2]:
+        bip113tx_v3.nLockTime = tip_mtp - 1
+        self.miniwallet.sign_tx(bip113tx_v3)
+        bip113tx_v3.rehash()
+        for bip113tx in [bip113tx_v1, bip113tx_v2, bip113tx_v3]:
             self.send_blocks([self.create_test_block([bip113tx])])
             self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
