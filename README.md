@@ -9,15 +9,14 @@ https://download.reddcoin.com or https://github.com/reddcoin-project/reddcoin
 Further information about ReddCoin Core is available in the [doc folder](/doc).
 
 What is ReddCoin?
-----------------
 
-ReddCoin is an experimental digital currency that enables instant payments to
-anyone, anywhere in the world. ReddCoin uses peer-to-peer technology to operate
-with no central authority: managing transactions and issuing money are carried
-out collectively by the network. ReddCoin Core is the name of open source
-software which enables the use of this currency.
+ReddCoin (RDD) is a decentralized blockchain network launched in 2014 and designed for social payments, tipping, and micro-transactions.
 
-For more information read the original Bitcoin whitepaper or the ReddCoin ReddPaper (https://redd.love).
+The network operates using a Proof-of-Stake-Velocity (PoSV v2) consensus mechanism and enables low-cost peer-to-peer digital value transfer without centralized control.
+
+ReddCoin Core is the open-source software implementation that maintains the network and allows users to participate in transaction validation and staking.
+
+For more information, refer to the ReddCoin ReddPaper and documentation available at https://reddcoin.com and https://redd.love.
 
 License
 -------
