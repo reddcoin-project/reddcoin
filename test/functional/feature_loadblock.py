@@ -27,9 +27,13 @@ class LoadblockTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.supports_cli = False
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
+        num_blocks = 100  # Generate 100 blocks to cover both PoW and PoS
         self.nodes[1].setnetworkactive(state=False)
-        self.nodes[0].generate(COINBASE_MATURITY)
+        self.nodes[0].generate(num_blocks)
 
         # Parsing the url of our node to get settings for config file
         data_dir = self.nodes[0].datadir
@@ -51,7 +55,7 @@ class LoadblockTest(BitcoinTestFramework):
             cfg.write("port={}\n".format(node_url.port))
             cfg.write("host={}\n".format(node_url.hostname))
             cfg.write("output_file={}\n".format(bootstrap_file))
-            cfg.write("max_height=100\n")
+            cfg.write("max_height={}\n".format(num_blocks))
             cfg.write("netmagic=fabfb5da\n")
             cfg.write("input={}\n".format(blocks_dir))
             cfg.write("genesis={}\n".format(genesis_block))
@@ -73,9 +77,9 @@ class LoadblockTest(BitcoinTestFramework):
 
         self.log.info("Restart second, unsynced node with bootstrap file")
         self.restart_node(1, extra_args=["-loadblock=" + bootstrap_file])
-        assert_equal(self.nodes[1].getblockcount(), 100)  # start_node is blocking on all block files being imported
+        assert_equal(self.nodes[1].getblockcount(), num_blocks)  # start_node is blocking on all block files being imported
 
-        assert_equal(self.nodes[1].getblockchaininfo()['blocks'], 100)
+        assert_equal(self.nodes[1].getblockchaininfo()['blocks'], num_blocks)
         assert_equal(self.nodes[0].getbestblockhash(), self.nodes[1].getbestblockhash())
 
 
