@@ -54,7 +54,7 @@ MAX_BLOCK_SIGOPS = 20000
 MAX_BLOCK_SIGOPS_WEIGHT = MAX_BLOCK_SIGOPS * WITNESS_SCALE_FACTOR
 
 # Genesis block time (regtest)
-TIME_GENESIS_BLOCK = 1296688602
+TIME_GENESIS_BLOCK = 1642570147  # ReddCoin regtest genesis time
 
 # Coinbase transaction outputs can only be spent after this number of new blocks (network rule)
 # ReddCoin regtest uses nCoinbaseMaturity = 60 (see src/chainparams.cpp)
