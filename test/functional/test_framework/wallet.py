@@ -168,6 +168,10 @@ class MiniWallet:
         assert send_value > 0
 
         tx = CTransaction()
+        # Use the node's tip time for nTime so tx can be included in PoS blocks
+        # (CTransaction defaults to time.time() which is real time, not mocktime)
+        tip_time = from_node.getblockheader(from_node.getbestblockhash())['time']
+        tx.nTime = tip_time
         tx.vin = [CTxIn(COutPoint(int(utxo_to_spend['txid'], 16), utxo_to_spend['vout']), nSequence=sequence)]
         tx.vout = [CTxOut(int(send_value * COIN), self._scriptPubKey)]
         tx.nLockTime = locktime
