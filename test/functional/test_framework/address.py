@@ -15,7 +15,7 @@ from .segwit_addr import encode_segwit_address
 from .util import assert_equal, hex_str_to_bytes
 
 ADDRESS_BCRT1_UNSPENDABLE = 'rcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5tftuu'
-ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR = 'addr(rcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5tftuu)#juyqfpfp'
+ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR = 'addr(rcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5tftuu)#08mzrm02'
 # Coins sent to this address can be spent with a witness stack of just OP_TRUE
 ADDRESS_BCRT1_P2WSH_OP_TRUE = 'rcrt1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsq45g2l6'
 
@@ -82,7 +82,7 @@ def keyhash_to_p2pkh(hash, main=False):
 
 def scripthash_to_p2sh(hash, main=False):
     assert len(hash) == 20
-    version = 5 if main else 196
+    version = 5  # Reddcoin: both mainnet and regtest use version 5
     return byte_to_base58(hash, version)
 
 def key_to_p2pkh(key, main=False):
