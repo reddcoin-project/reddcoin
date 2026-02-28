@@ -465,7 +465,7 @@ bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx)
 // guaranteed to be in main chain by sync-checkpoint. This rule is
 // introduced to help nodes establish a consistent view of the coin
 // age (trust score) of competing branches.
-uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& params)
+uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& params, CCoinsViewCache* coins_view)
 {
     arith_uint256 bnCentSecond = 0; // coin age in the unit of cent-seconds
     uint64_t nCoinAge = 0;
@@ -475,9 +475,14 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
 
     LOCK(cs_main);
 
+    // Use provided coins view if available, otherwise fall back to CoinsTip().
+    // During VerifyDB level 4 reconnection, CoinsTip() still reflects the
+    // original chain state, while the provided view has the disconnected state.
+    CCoinsViewCache& coins_ref = coins_view ? *coins_view : active_chainstate->CoinsTip();
+
     for (const CTxIn& txin : tx.vin) {
         // Get coin from UTXO set (faster and works during reindex)
-        const Coin& coin = active_chainstate->CoinsTip().AccessCoin(txin.prevout);
+        const Coin& coin = coins_ref.AccessCoin(txin.prevout);
         if (coin.IsSpent()) {
             continue; // coin already spent or not in UTXO set
         }

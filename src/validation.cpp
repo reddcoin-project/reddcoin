@@ -1946,6 +1946,15 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
 
     CBlockUndo blockundo;
 
+    // PoSV: Compute coinstake coin age BEFORE the transaction processing loop,
+    // because UpdateCoins() will spend the coinstake inputs in the view.
+    // GetCoinAge reads from the view to find unspent coins, so it must run
+    // while the inputs are still unspent.
+    uint64_t nCoinAge = 0;
+    if (block.IsProofOfStake()) {
+        nCoinAge = GetCoinAge(this, *block.vtx[1], m_params.GetConsensus(), &view);
+    }
+
     // Precomputed transaction data pointers must not be invalidated
     // until after `control` has run the script checks (potentially
     // in multiple threads). Preallocate the vector size so a new allocation
@@ -2055,8 +2064,9 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     }
     else if (block.IsProofOfStake())
     {
-        // PoSV: coinstake tx earns reward instead of paying fee
-        uint64_t nCoinAge = GetCoinAge(this, *block.vtx[1], m_params.GetConsensus());
+        // PoSV: coinstake tx earns reward instead of paying fee.
+        // nCoinAge was computed before the transaction processing loop (above)
+        // while the coinstake inputs were still unspent in the view.
         if (!nCoinAge)
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-posv-coinage");
 
