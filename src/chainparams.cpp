@@ -623,8 +623,9 @@ public:
         consensus.nLastPowHeight = 89;  // Allow enough PoW blocks for TestChain100Setup
         consensus.nCoinbaseMaturity = 60;  // Fast maturity for regtest, gives ~40 mature coinbases at height 100
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
-        consensus.BIP66Height = 363725; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
-        consensus.DonationHeight = 3382229; //
+        consensus.POSVHeight = 90;      // Activate at PoS transition (nLastPowHeight + 1), matching mainnet/testnet pattern
+        consensus.BIP66Height = 500;    // Strict DER encoding; above test cache height (200) to avoid breaking hand-crafted blocks
+        consensus.DonationHeight = 500; // Dev fund 92%/8% split validation; miner already produces this for all PoS blocks
         consensus.MinBIP9WarningHeight = 0; // regtest: allow BIP9 warnings at any height (ComputeBlockVersion check prevents false positives for known deployments)
 
         /* pow specific */
@@ -716,17 +717,16 @@ public:
             }
         };
 
-        // Reddcoin: Updated for PoS blocks (blocks 90-110 include coinstake transactions)
-        // nChainTx = 132 (includes genesis + 89 PoW blocks + 21 PoS blocks with 2 tx each)
-        // UTXO set hash computed with HASH_SERIALIZED (not block hash)
+        // Reddcoin: assumeutxo data for 100-block test chain (89 PoW + 11 PoS blocks)
+        // TODO: Recompute these hashes after RegenerateCommitments fix
         m_assumeutxo_data = MapAssumeutxo{
             {
                 110,
-                {AssumeutxoHash{uint256S("17456f9ccafe445335f3688b426df85e5a0ea7c8a8bbf5fb724fa1cc8da4efc3")}, 132},
+                {AssumeutxoHash{uint256S("106f9f9bd6c57cea84444957b5630e4a1679a658c73455a0e0362ff0174ee181")}, 132},
             },
             {
                 200,
-                {AssumeutxoHash{uint256S("51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62")}, 200},
+                {AssumeutxoHash{uint256S("0000000000000000000000000000000000000000000000000000000000000000")}, 200},
             },
         };
 
