@@ -462,12 +462,15 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 tip_time = n.getblockheader(n.getbestblockhash())['time']
                 # Advance 5 minutes past the tip to ensure all cache coins are mature for staking
                 n.setmocktime(tip_time + 300)
+                n.mocktime = tip_time + 300
             except Exception:
                 pass
 
             # For PoS: Set the node's default RPC to use the wallet context
             # This ensures generatetoaddress and other wallet-dependent RPCs work
             if wallet_name is not None:
+                if '_base_rpc' not in n.__dict__:
+                    n._base_rpc = n.rpc
                 n.rpc = n.get_wallet_rpc(wallet_name)
 
     def run_test(self):

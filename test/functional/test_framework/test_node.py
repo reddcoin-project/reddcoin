@@ -341,8 +341,9 @@ class TestNode():
             return RPCOverloadWrapper(self.cli("-rpcwallet={}".format(wallet_name)), True, self.descriptors)
         else:
             assert self.rpc_connected and self.rpc, self._node_msg("RPC not connected")
+            base_rpc = self.__dict__.get('_base_rpc', self.rpc)
             wallet_path = "wallet/{}".format(urllib.parse.quote(wallet_name))
-            return RPCOverloadWrapper(self.rpc / wallet_path, descriptors=self.descriptors)
+            return RPCOverloadWrapper(base_rpc / wallet_path, descriptors=self.descriptors)
 
     def version_is_at_least(self, ver):
         return self.version is None or self.version >= ver
