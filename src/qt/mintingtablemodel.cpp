@@ -70,6 +70,9 @@ public:
      */
     QList<KernelRecord> cachedWallet;
 
+    /** True when initial wallet data has been loaded */
+    bool m_loaded = false;
+
     /* Query entire wallet anew from core.
      */
     void refreshWallet()
@@ -92,6 +95,7 @@ public:
                     }
                 }
         }
+        m_loaded = true;
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
@@ -303,7 +307,12 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
 {
     columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("Coin Day") << tr("Stake Probability");
 
-    priv->refreshWallet();
+    // Defer initial wallet load if we're in IBD — refreshWallet() acquires
+    // LOCK(cs_wallet) which would block the GUI thread during sync.
+    // The updateAge timer will trigger the load once IBD completes.
+    if (!walletModel->node().isInitialBlockDownload()) {
+        priv->refreshWallet();
+    }
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MintingTableModel::updateAge);
@@ -321,6 +330,12 @@ MintingTableModel::~MintingTableModel()
 
 void MintingTableModel::updateTransaction(const QString &hash, int status)
 {
+    // Skip per-transaction minting updates during IBD. Staking data is not
+    // meaningful until fully synced, and the hard LOCK(cs_wallet) calls in
+    // updateWallet() would block the GUI thread while blockConnected()
+    // holds the lock on the scheduler thread.
+    if (walletModel->node().isInitialBlockDownload()) return;
+
     uint256 updated;
     updated.SetHex(hash.toStdString());
 
@@ -333,6 +348,13 @@ void MintingTableModel::updateTransaction(const QString &hash, int status)
 
 void MintingTableModel::updateAge()
 {
+    // If initial load was deferred during IBD, trigger it once IBD completes
+    if (!priv->m_loaded && !walletModel->node().isInitialBlockDownload()) {
+        priv->refreshWallet();
+    }
+
+    if (priv->size() == 0) return;
+
     Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, Age));
     Q_EMIT dataChanged(index(0, CoinDay), index(priv->size()-1, CoinDay));
     Q_EMIT dataChanged(index(0, MintProbability), index(priv->size()-1, MintProbability));
