@@ -1765,6 +1765,9 @@ void CWallet::ReacceptWalletTransactions()
         return;
     std::map<int64_t, CWalletTx*> mapSorted;
 
+    // Check if we're still in initial block download
+    const bool fIBD = chain().isInitialBlockDownload();
+
     // Sort pending wallet transactions based on their initial wallet insertion order
     for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
         const uint256& wtxid = item.first;
@@ -1775,8 +1778,13 @@ void CWallet::ReacceptWalletTransactions()
 
         if (nDepth == 0 && !wtx.isAbandoned()) {
             if (wtx.IsCoinBase() || wtx.IsCoinStake()) {
-                LogPrintf("Abandoning wtx %s\n", wtx.GetHash().ToString());
-                AbandonTransaction(wtxid);
+                // During IBD, skip abandoning coinbase/coinstake transactions.
+                // They may be confirmed in blocks we haven't processed yet.
+                // blockConnected() will properly handle them as sync progresses.
+                if (!fIBD) {
+                    LogPrintf("Abandoning wtx %s\n", wtx.GetHash().ToString());
+                    AbandonTransaction(wtxid);
+                }
             } else
                 mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
         }
