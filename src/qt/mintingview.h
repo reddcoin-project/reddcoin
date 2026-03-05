@@ -40,8 +40,8 @@ private:
     WalletModel *model{nullptr};
     MintingFilterProxy *mintingProxyModel{nullptr};
     QTableView *mintingView{nullptr};
-    QComboBox *mintingCombo;
-    QMenu *contextMenu;
+    QComboBox *mintingCombo{nullptr};
+    QMenu *contextMenu{nullptr};
 
     const PlatformStyle* m_platform_style;
 

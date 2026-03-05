@@ -111,7 +111,7 @@ public:
         {
             // Find transaction in wallet
             auto wtx = walletModel->wallet().getWalletTx(hash);
-            bool inWallet = wtx.tx ? true : false;
+            bool inWallet = wtx.tx != nullptr;
 
             // Find bounds of this transaction in model
             QList<KernelRecord>::iterator lower = std::lower_bound(
@@ -214,12 +214,6 @@ public:
                                    && (rec.nValue == cachedRec.nValue)
                                    && (rec.idx == cachedRec.idx))
                                 {
-                                    if(i>=cachedWallet.size())
-                                    {
-                                	qWarning() << "MintingTablePriv::updateWallet: Warning: cachedWallet is smaller than expected, remove item " + QString::number(i) +
-                                	    " not in size " + QString::number(cachedWallet.size());
-                                        break;
-                                    }
                                     parent->beginRemoveRows(QModelIndex(), i, i);
                                     cachedWallet.removeAt(i);
                                     parent->endRemoveRows();
@@ -248,16 +242,8 @@ public:
         }
         else
         {
-            return 0;
+            return nullptr;
         }
-    }
-
-    QString describe(TransactionRecord *rec)
-    {
-        {
-            return TransactionDesc::toHTML(walletModel->node(), walletModel->wallet(), rec, BitcoinUnits::BTC);  
-        }
-        return QString("");
     }
 
 };
@@ -304,8 +290,7 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
         QAbstractTableModel(parent),
         walletModel(parent),
         mintingInterval(60),
-        priv(new MintingTablePriv(walletModel, this)),
-        cachedNumBlocks(0)
+        priv(new MintingTablePriv(walletModel, this))
 {
     columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("Coin Day") << tr("Stake Probability");
 
