@@ -92,11 +92,7 @@ MintingView::MintingView(const PlatformStyle* platformStyle, QWidget* parent)
     vlayout->setSpacing(0);
     int width = view->verticalScrollBar()->sizeHint().width();
     // Cover scroll bar width with spacing
-#ifdef Q_WS_MAC
-    hlayout->addSpacing(width+2);
-#else
     hlayout->addSpacing(width);
-#endif
     // Always show scroll bar
     view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     view->setTabKeyNavigation(false);
@@ -139,21 +135,12 @@ void MintingView::setModel(WalletModel *model)
 
         mintingView->horizontalHeader()->resizeSection(
                 MintingTableModel::Address, 300);
-#if QT_VERSION < 0x050000
-        mintingView->horizontalHeader()->setResizeMode(
-                MintingTableModel::TxHash, QHeaderView::Stretch);
-        mintingView->horizontalHeader()->resizeSection(
-                MintingTableModel::Age, QHeaderView::ResizeToContents);
-        mintingView->horizontalHeader()->resizeSection(
-                MintingTableModel::Balance, ResizeToContents);
-#else
         mintingView->horizontalHeader()->setSectionResizeMode(
                 MintingTableModel::TxHash, QHeaderView::Stretch);
         mintingView->horizontalHeader()->setSectionResizeMode(
                 MintingTableModel::Age, QHeaderView::ResizeToContents);
         mintingView->horizontalHeader()->setSectionResizeMode(
                 MintingTableModel::Balance, QHeaderView::ResizeToContents);
-#endif
         mintingView->horizontalHeader()->resizeSection(
                 MintingTableModel::CoinDay,100);
         mintingView->horizontalHeader()->resizeSection(
@@ -186,15 +173,6 @@ void MintingView::chooseMintingInterval(int idx)
     }
     model->getMintingTableModel()->setMintingInterval(interval);
     mintingProxyModel->invalidate();
-}
-
-void MintingView::changeEvent(QEvent* e)
-{
-    if (e->type() == QEvent::PaletteChange) {
-
-    }
-
-    QWidget::changeEvent(e);
 }
 
 void MintingView::exportClicked()

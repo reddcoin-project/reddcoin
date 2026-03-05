@@ -36,9 +36,6 @@ public:
         Minting90days
     };
 
-protected:
-    void changeEvent(QEvent* e) override;
-
 private:
     WalletModel *model{nullptr};
     MintingFilterProxy *mintingProxyModel{nullptr};
