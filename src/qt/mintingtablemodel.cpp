@@ -25,6 +25,8 @@
 #include <QDebug>
 #include <QTimer>
 
+#include <algorithm>
+
 // Amount column is right-aligned it contains numbers
 static int column_alignments[] = {
         Qt::AlignLeft|Qt::AlignVCenter,
@@ -112,9 +114,9 @@ public:
             bool inWallet = wtx.tx ? true : false;
 
             // Find bounds of this transaction in model
-            QList<KernelRecord>::iterator lower = qLowerBound(
+            QList<KernelRecord>::iterator lower = std::lower_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            QList<KernelRecord>::iterator upper = qUpperBound(
+            QList<KernelRecord>::iterator upper = std::upper_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
             int lowerIndex = (lower - cachedWallet.begin());
             int upperIndex = (upper - cachedWallet.begin());
