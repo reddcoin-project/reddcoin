@@ -52,8 +52,8 @@ private:
     QStringList columns;
     int mintingInterval;
     MintingTablePriv *priv;
-    MintingFilterProxy *mintingProxyModel;
-    int cachedNumBlocks;
+    MintingFilterProxy *mintingProxyModel{nullptr};
+    double m_cached_difficulty{0};
 
     QString lookupAddress(const std::string &address, bool tooltip) const;
 

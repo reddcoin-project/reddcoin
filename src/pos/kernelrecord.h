@@ -51,6 +51,7 @@ public:
     int64_t getCoinAgeWeight(int nTimeOffset = 0) const;
     double getProbToMintStake(double difficulty, int timeOffset = 0) const;
     double getProbToMintWithinNMinutes(double difficulty, int minutes);
+    void invalidateCache() { prevDifficulty = 0; }
 protected:
     int prevMinutes;
     double prevDifficulty;

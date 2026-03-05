@@ -25,6 +25,8 @@
 #include <QDebug>
 #include <QTimer>
 
+#include <algorithm>
+
 // Amount column is right-aligned it contains numbers
 static int column_alignments[] = {
         Qt::AlignLeft|Qt::AlignVCenter,
@@ -52,6 +54,25 @@ struct TxLessThan
     }
 };
 
+// Queue notification for batching during wallet rescans
+struct TransactionNotification2
+{
+    TransactionNotification2() {}
+    TransactionNotification2(uint256 _hash, ChangeType _status):
+        hash(_hash), status(_status) {}
+
+    void invoke(QObject *ttm) const
+    {
+        QString strHash = QString::fromStdString(hash.GetHex());
+        QMetaObject::invokeMethod(ttm, "updateTransaction", Qt::QueuedConnection,
+                                  Q_ARG(QString, strHash),
+                                  Q_ARG(int, status));
+    }
+private:
+    uint256 hash;
+    ChangeType status;
+};
+
 // Private implementation
 class MintingTablePriv
 {
@@ -69,6 +90,34 @@ public:
      * this is sorted by sha256.
      */
     QList<KernelRecord> cachedWallet;
+
+    /** True when initial wallet data has been loaded */
+    bool m_loaded = false;
+
+    /** True while a rescan is in progress */
+    bool m_loading = false;
+
+    /** Queued notifications during load/rescan */
+    std::vector<TransactionNotification2> vQueueNotifications;
+
+    void NotifyTransactionChanged(const uint256& hash, ChangeType status)
+    {
+        TransactionNotification2 notification(hash, status);
+        if (!m_loaded || m_loading) {
+            vQueueNotifications.push_back(notification);
+            return;
+        }
+        notification.invoke(parent);
+    }
+
+    void DispatchNotifications()
+    {
+        if (!m_loaded || m_loading) return;
+        for (const auto& notification : vQueueNotifications) {
+            notification.invoke(parent);
+        }
+        vQueueNotifications.clear();
+    }
 
     /* Query entire wallet anew from core.
      */
@@ -92,6 +141,8 @@ public:
                     }
                 }
         }
+        m_loaded = true;
+        vQueueNotifications.clear();
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
@@ -105,12 +156,12 @@ public:
         {
             // Find transaction in wallet
             auto wtx = walletModel->wallet().getWalletTx(hash);
-            bool inWallet = wtx.tx ? true : false;
+            bool inWallet = wtx.tx != nullptr;
 
             // Find bounds of this transaction in model
-            QList<KernelRecord>::iterator lower = qLowerBound(
+            QList<KernelRecord>::iterator lower = std::lower_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            QList<KernelRecord>::iterator upper = qUpperBound(
+            QList<KernelRecord>::iterator upper = std::upper_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
             int lowerIndex = (lower - cachedWallet.begin());
             int upperIndex = (upper - cachedWallet.begin());
@@ -208,12 +259,6 @@ public:
                                    && (rec.nValue == cachedRec.nValue)
                                    && (rec.idx == cachedRec.idx))
                                 {
-                                    if(i>=cachedWallet.size())
-                                    {
-                                	qWarning() << "MintingTablePriv::updateWallet: Warning: cachedWallet is smaller than expected, remove item " + QString::number(i) +
-                                	    " not in size " + QString::number(cachedWallet.size());
-                                        break;
-                                    }
                                     parent->beginRemoveRows(QModelIndex(), i, i);
                                     cachedWallet.removeAt(i);
                                     parent->endRemoveRows();
@@ -225,6 +270,13 @@ public:
                 }
                 break;
             }
+        }
+    }
+
+    void invalidateCaches()
+    {
+        for (auto& rec : cachedWallet) {
+            rec.invalidateCache();
         }
     }
 
@@ -242,85 +294,58 @@ public:
         }
         else
         {
-            return 0;
+            return nullptr;
         }
     }
 
-    QString describe(TransactionRecord *rec)
-    {
-        {
-            return TransactionDesc::toHTML(walletModel->node(), walletModel->wallet(), rec, BitcoinUnits::BTC);  
-        }
-        return QString("");
-    }
-
 };
-
-struct TransactionNotification2
-{
-public:
-    TransactionNotification2() {}
-    TransactionNotification2(uint256 _hash, ChangeType _status):
-        hash(_hash), status(_status) {}
-
-    void invoke(QObject *ttm)
-    {
-        QString strHash = QString::fromStdString(hash.GetHex());
-        QMetaObject::invokeMethod(ttm, "updateTransaction", Qt::QueuedConnection,
-                                  Q_ARG(QString, strHash),
-                                  Q_ARG(int, status));
-    }
-private:
-    uint256 hash;
-    ChangeType status;
-};
-
-static bool fQueueNotifications = false;
-static std::vector< TransactionNotification2 > vQueueNotifications;
-
-static void NotifyTransactionChanged(MintingTableModel *ttm, const uint256 &hash, ChangeType status)
-{
-    // Find transaction in wallet
-    // Determine whether to show transaction or not (determine this here so that no relocking is needed in GUI thread)
-   // bool showTransaction = TransactionRecord::showTransaction();
-
-    TransactionNotification2 notification(hash, status);
-
-    if (fQueueNotifications)
-    {
-        vQueueNotifications.push_back(notification);
-        return;
-    }
-    notification.invoke(ttm);
-}
 
 MintingTableModel::MintingTableModel(WalletModel *parent) :
         QAbstractTableModel(parent),
         walletModel(parent),
         mintingInterval(60),
-        priv(new MintingTablePriv(walletModel, this)),
-        cachedNumBlocks(0)
+        priv(new MintingTablePriv(walletModel, this))
 {
     columns << tr("Transaction") <<  tr("Address") << tr("Age") << tr("Balance") << tr("Coin Day") << tr("Stake Probability");
 
-    priv->refreshWallet();
+    // Defer initial wallet load if we're in IBD — refreshWallet() acquires
+    // LOCK(cs_wallet) which would block the GUI thread during sync.
+    // The updateAge timer will trigger the load once IBD completes.
+    if (!walletModel->node().isInitialBlockDownload()) {
+        priv->refreshWallet();
+        m_cached_difficulty = walletModel->node().getDifficulty();
+    }
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MintingTableModel::updateAge);
-    timer->start(MODEL_UPDATE_DELAY);
+    timer->start(MINTING_UPDATE_DELAY);
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &MintingTableModel::updateDisplayUnit);
-    m_handler_transaction_changed = walletModel->wallet().handleTransactionChanged(std::bind(NotifyTransactionChanged, this, std::placeholders::_1, std::placeholders::_2));
+    m_handler_transaction_changed = walletModel->wallet().handleTransactionChanged(
+        std::bind(&MintingTablePriv::NotifyTransactionChanged, priv,
+                  std::placeholders::_1, std::placeholders::_2));
+    m_handler_show_progress = walletModel->wallet().handleShowProgress(
+        [this](const std::string&, int progress) {
+            priv->m_loading = progress < 100;
+            priv->DispatchNotifications();
+        });
 }
 
 MintingTableModel::~MintingTableModel()
 {
     m_handler_transaction_changed->disconnect();
+    m_handler_show_progress->disconnect();
     delete priv;
 }
 
 void MintingTableModel::updateTransaction(const QString &hash, int status)
 {
+    // Skip per-transaction minting updates during IBD. Staking data is not
+    // meaningful until fully synced, and the hard LOCK(cs_wallet) calls in
+    // updateWallet() would block the GUI thread while blockConnected()
+    // holds the lock on the scheduler thread.
+    if (walletModel->node().isInitialBlockDownload()) return;
+
     uint256 updated;
     updated.SetHex(hash.toStdString());
 
@@ -333,9 +358,21 @@ void MintingTableModel::updateTransaction(const QString &hash, int status)
 
 void MintingTableModel::updateAge()
 {
-    Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, Age));
-    Q_EMIT dataChanged(index(0, CoinDay), index(priv->size()-1, CoinDay));
-    Q_EMIT dataChanged(index(0, MintProbability), index(priv->size()-1, MintProbability));
+    // If initial load was deferred during IBD, trigger it once IBD completes
+    if (!priv->m_loaded && !walletModel->node().isInitialBlockDownload()) {
+        priv->refreshWallet();
+    }
+
+    if (priv->size() == 0) return;
+
+    // Cache difficulty once per update cycle instead of per-row in getDayToMint(),
+    // eliminating 2N LOCK(cs_main) acquisitions per tick.
+    m_cached_difficulty = walletModel->node().getDifficulty();
+
+    // Force probability recalculation with fresh difficulty
+    priv->invalidateCaches();
+
+    Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, MintProbability));
 }
 
 void MintingTableModel::setMintingProxyModel(MintingFilterProxy *mintingProxy)
@@ -473,11 +510,8 @@ QString MintingTableModel::lookupAddress(const std::string &address, bool toolti
 
 double MintingTableModel::getDayToMint(KernelRecord *wtx) const
 {
-    // const CBlockIndex *p = GetLastBlockIndex(::ChainActive().Tip(), true);
-    double difficulty = walletModel->node().getDifficulty(); //p->GetBlockDifficulty();
     int nIntervalMins = mintingInterval / 60;
-
-    double prob = wtx->getProbToMintWithinNMinutes(difficulty, nIntervalMins);
+    double prob = wtx->getProbToMintWithinNMinutes(m_cached_difficulty, nIntervalMins);
     prob = prob * 100;
     return prob;
 }
