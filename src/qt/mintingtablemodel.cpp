@@ -54,6 +54,25 @@ struct TxLessThan
     }
 };
 
+// Queue notification for batching during wallet rescans
+struct TransactionNotification2
+{
+    TransactionNotification2() {}
+    TransactionNotification2(uint256 _hash, ChangeType _status):
+        hash(_hash), status(_status) {}
+
+    void invoke(QObject *ttm) const
+    {
+        QString strHash = QString::fromStdString(hash.GetHex());
+        QMetaObject::invokeMethod(ttm, "updateTransaction", Qt::QueuedConnection,
+                                  Q_ARG(QString, strHash),
+                                  Q_ARG(int, status));
+    }
+private:
+    uint256 hash;
+    ChangeType status;
+};
+
 // Private implementation
 class MintingTablePriv
 {
@@ -74,6 +93,31 @@ public:
 
     /** True when initial wallet data has been loaded */
     bool m_loaded = false;
+
+    /** True while a rescan is in progress */
+    bool m_loading = false;
+
+    /** Queued notifications during load/rescan */
+    std::vector<TransactionNotification2> vQueueNotifications;
+
+    void NotifyTransactionChanged(const uint256& hash, ChangeType status)
+    {
+        TransactionNotification2 notification(hash, status);
+        if (!m_loaded || m_loading) {
+            vQueueNotifications.push_back(notification);
+            return;
+        }
+        notification.invoke(parent);
+    }
+
+    void DispatchNotifications()
+    {
+        if (!m_loaded || m_loading) return;
+        for (const auto& notification : vQueueNotifications) {
+            notification.invoke(parent);
+        }
+        vQueueNotifications.clear();
+    }
 
     /* Query entire wallet anew from core.
      */
@@ -98,6 +142,7 @@ public:
                 }
         }
         m_loaded = true;
+        vQueueNotifications.clear();
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
@@ -248,44 +293,6 @@ public:
 
 };
 
-struct TransactionNotification2
-{
-public:
-    TransactionNotification2() {}
-    TransactionNotification2(uint256 _hash, ChangeType _status):
-        hash(_hash), status(_status) {}
-
-    void invoke(QObject *ttm)
-    {
-        QString strHash = QString::fromStdString(hash.GetHex());
-        QMetaObject::invokeMethod(ttm, "updateTransaction", Qt::QueuedConnection,
-                                  Q_ARG(QString, strHash),
-                                  Q_ARG(int, status));
-    }
-private:
-    uint256 hash;
-    ChangeType status;
-};
-
-static bool fQueueNotifications = false;
-static std::vector< TransactionNotification2 > vQueueNotifications;
-
-static void NotifyTransactionChanged(MintingTableModel *ttm, const uint256 &hash, ChangeType status)
-{
-    // Find transaction in wallet
-    // Determine whether to show transaction or not (determine this here so that no relocking is needed in GUI thread)
-   // bool showTransaction = TransactionRecord::showTransaction();
-
-    TransactionNotification2 notification(hash, status);
-
-    if (fQueueNotifications)
-    {
-        vQueueNotifications.push_back(notification);
-        return;
-    }
-    notification.invoke(ttm);
-}
-
 MintingTableModel::MintingTableModel(WalletModel *parent) :
         QAbstractTableModel(parent),
         walletModel(parent),
@@ -306,12 +313,20 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
     timer->start(MODEL_UPDATE_DELAY);
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &MintingTableModel::updateDisplayUnit);
-    m_handler_transaction_changed = walletModel->wallet().handleTransactionChanged(std::bind(NotifyTransactionChanged, this, std::placeholders::_1, std::placeholders::_2));
+    m_handler_transaction_changed = walletModel->wallet().handleTransactionChanged(
+        std::bind(&MintingTablePriv::NotifyTransactionChanged, priv,
+                  std::placeholders::_1, std::placeholders::_2));
+    m_handler_show_progress = walletModel->wallet().handleShowProgress(
+        [this](const std::string&, int progress) {
+            priv->m_loading = progress < 100;
+            priv->DispatchNotifications();
+        });
 }
 
 MintingTableModel::~MintingTableModel()
 {
     m_handler_transaction_changed->disconnect();
+    m_handler_show_progress->disconnect();
     delete priv;
 }
 
