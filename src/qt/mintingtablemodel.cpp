@@ -273,6 +273,13 @@ public:
         }
     }
 
+    void invalidateCaches()
+    {
+        for (auto& rec : cachedWallet) {
+            rec.invalidateCache();
+        }
+    }
+
     int size()
     {
         return cachedWallet.size();
@@ -306,11 +313,12 @@ MintingTableModel::MintingTableModel(WalletModel *parent) :
     // The updateAge timer will trigger the load once IBD completes.
     if (!walletModel->node().isInitialBlockDownload()) {
         priv->refreshWallet();
+        m_cached_difficulty = walletModel->node().getDifficulty();
     }
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MintingTableModel::updateAge);
-    timer->start(MODEL_UPDATE_DELAY);
+    timer->start(MINTING_UPDATE_DELAY);
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &MintingTableModel::updateDisplayUnit);
     m_handler_transaction_changed = walletModel->wallet().handleTransactionChanged(
@@ -357,9 +365,14 @@ void MintingTableModel::updateAge()
 
     if (priv->size() == 0) return;
 
-    Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, Age));
-    Q_EMIT dataChanged(index(0, CoinDay), index(priv->size()-1, CoinDay));
-    Q_EMIT dataChanged(index(0, MintProbability), index(priv->size()-1, MintProbability));
+    // Cache difficulty once per update cycle instead of per-row in getDayToMint(),
+    // eliminating 2N LOCK(cs_main) acquisitions per tick.
+    m_cached_difficulty = walletModel->node().getDifficulty();
+
+    // Force probability recalculation with fresh difficulty
+    priv->invalidateCaches();
+
+    Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, MintProbability));
 }
 
 void MintingTableModel::setMintingProxyModel(MintingFilterProxy *mintingProxy)
@@ -497,11 +510,8 @@ QString MintingTableModel::lookupAddress(const std::string &address, bool toolti
 
 double MintingTableModel::getDayToMint(KernelRecord *wtx) const
 {
-    // const CBlockIndex *p = GetLastBlockIndex(::ChainActive().Tip(), true);
-    double difficulty = walletModel->node().getDifficulty(); //p->GetBlockDifficulty();
     int nIntervalMins = mintingInterval / 60;
-
-    double prob = wtx->getProbToMintWithinNMinutes(difficulty, nIntervalMins);
+    double prob = wtx->getProbToMintWithinNMinutes(m_cached_difficulty, nIntervalMins);
     prob = prob * 100;
     return prob;
 }
