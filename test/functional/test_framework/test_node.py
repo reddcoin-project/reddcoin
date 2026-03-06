@@ -398,6 +398,8 @@ class TestNode():
         self.process = None
         self.rpc_connected = False
         self.rpc = None
+        if '_base_rpc' in self.__dict__:
+            del self._base_rpc
         self.log.debug("Node stopped")
         return True
 

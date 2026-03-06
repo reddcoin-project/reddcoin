@@ -469,8 +469,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # For PoS: Set the node's default RPC to use the wallet context
             # This ensures generatetoaddress and other wallet-dependent RPCs work
             if wallet_name is not None:
-                if '_base_rpc' not in n.__dict__:
-                    n._base_rpc = n.rpc
+                n._base_rpc = n.rpc
                 n.rpc = n.get_wallet_rpc(wallet_name)
 
     def run_test(self):
