@@ -135,6 +135,7 @@ class TestNode():
         self.p2ps = []
         self.timeout_factor = timeout_factor
         self.mocktime = 0  # Track current mocktime for sync_time()
+        self.time_sync_callback = None  # Callback to sync time across nodes during generate()
 
     AddressKeyPair = collections.namedtuple('AddressKeyPair', ['address', 'key'])
     PRIV_KEYS = [
@@ -303,6 +304,7 @@ class TestNode():
         # For PoS: Advance time before generating blocks to ensure sufficient coinage
         # ReddCoin regtest nStakeMinAge = 10 seconds
         POS_BLOCK_SPACING = 60  # 60 seconds between blocks for coinage
+        POS_RETRY_SPACING = 300  # Larger advance for PoS retry to widen search window
 
         blocks = []
         for i in range(nblocks):
@@ -324,15 +326,20 @@ class TestNode():
                     break
                 except Exception as e:
                     if "no valid coinstake found" in str(e) and attempt < pos_retry_attempts - 1:
-                        # Advance time to increase staking probability
+                        # Advance time aggressively to widen PoS search window
                         try:
-                            new_time = self.mocktime + POS_BLOCK_SPACING
+                            new_time = self.mocktime + POS_RETRY_SPACING
                             self.setmocktime(new_time)
                             self.mocktime = new_time
                         except Exception:
                             pass
                     else:
                         raise
+
+            # Sync time across all nodes after every block to prevent mocktime
+            # drift that breaks P2P relay between nodes
+            if self.time_sync_callback:
+                self.time_sync_callback()
 
         return blocks
 

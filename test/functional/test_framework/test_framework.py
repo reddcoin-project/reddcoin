@@ -404,6 +404,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 args.append('-txindex=1')
         self.add_nodes(self.num_nodes, extra_args)
         self.start_nodes()
+        # Set time sync callback so node.generate() keeps other nodes' mocktime
+        # in sync, preventing blocks from exceeding MAX_FUTURE_BLOCK_TIME
+        if self.num_nodes > 1:
+            for n in self.nodes:
+                n.time_sync_callback = self.sync_time
         if self.requires_wallet:
             self.import_deterministic_coinbase_privkeys()
         if not self.setup_clean_chain:
