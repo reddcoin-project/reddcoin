@@ -167,7 +167,10 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
 
     // reddcoin: if coinstake available add coinstake tx
-    static int64_t nLastCoinStakeSearchTime = GetAdjustedTime();  // only initialized at startup
+    // Subtract 61s so the first call has a non-zero search interval.
+    // Without this, nSearchTime == nLastCoinStakeSearchTime on first call,
+    // causing CreateCoinStake to skip all coins (search loop count = 0).
+    static int64_t nLastCoinStakeSearchTime = GetAdjustedTime() - 61;
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;

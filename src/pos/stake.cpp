@@ -165,12 +165,9 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     txNew.vout.push_back(CTxOut(0, scriptEmpty));
 
     // Choose coins to use
-    CAmount nBalance = pwallet->GetBalance().m_mine_trusted;
     CAmount nReserveBalance = 0;
     if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
         return error("CreateCoinStake : invalid reserve balance amount");
-    if (nBalance <= nReserveBalance)
-        return false;
     std::set<CInputCoin> setCoins;
     std::vector<CTransactionRef> vwtxPrev;
     CAmount nValueIn = 0;
@@ -178,7 +175,16 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     CCoinControl temp;
     CoinSelectionParams coin_selection_params;
     pwallet->AvailableCoins(vAvailableCoins, &temp);
-    if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
+    // For staking, use all available coins directly — SelectCoins applies
+    // confirmation filters that reject recently-received coins, but staking
+    // only needs any single UTXO with sufficient age to find a valid kernel.
+    CAmount nAvailable = 0;
+    for (const auto& coin : vAvailableCoins) {
+        setCoins.insert(coin.GetInputCoin());
+        nAvailable += coin.GetInputCoin().txout.nValue;
+    }
+    nValueIn = nAvailable;
+    if (nAvailable <= nReserveBalance)
         return false;
     if (setCoins.empty())
         return false;
@@ -257,7 +263,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         if (fKernelFound)
             break; // if kernel is found stop searching
     }
-    if (nCredit == 0 || nCredit > nBalance - nReserveBalance)
+    if (nCredit == 0 || nCredit > nAvailable - nReserveBalance)
         return false;
     for (const auto& pcoin : setCoins)
     {
@@ -290,7 +296,7 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             if (nCredit > nCombineThreshold)
                 break;
             // Stop adding inputs if reached reserve limit
-            if (nCredit + pcoin.txout.nValue > nBalance - nReserveBalance)
+            if (nCredit + pcoin.txout.nValue > nAvailable - nReserveBalance)
                 break;
             // Do not add additional significant input
             if (pcoin.txout.nValue > nCombineThreshold)
