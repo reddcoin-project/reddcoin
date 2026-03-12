@@ -38,6 +38,7 @@ class AbandonConflictTest(BitcoinTestFramework):
         self.nodes[0].generate(COINBASE_MATURITY)
         self.sync_blocks()
         balance = self.nodes[0].getbalance()
+        immature_baseline = self.nodes[0].getbalances()['mine']['immature']
         txA = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), Decimal("10"))
         txB = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), Decimal("10"))
         txC = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), Decimal("10"))
@@ -51,7 +52,13 @@ class AbandonConflictTest(BitcoinTestFramework):
 
         self.sync_blocks()
         newbalance = self.nodes[0].getbalance()
-        assert balance - newbalance < Decimal("0.01")  # no more than fees lost (ReddCoin has higher fees)
+        new_immature = self.nodes[0].getbalances()['mine']['immature']
+        # In PoS, generate() consumes a UTXO for staking, shifting funds from
+        # trusted to immature. Check total (trusted + immature) to verify only
+        # fees were lost — the coinstake shift doesn't lose funds, just moves them.
+        total_before = balance + immature_baseline
+        total_after = newbalance + new_immature
+        assert total_before - total_after < Decimal("0.01")
         balance = newbalance
 
         # Disconnect nodes so node0's transactions don't get into node1's mempool
