@@ -909,50 +909,61 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             for i in range(PHASE1_BLOCKS):
                 _generate_one_block()
 
-            # Phase 2: Fund nodes 1, 2, 3 from a single mature coinbase UTXO
-            # Chain multiple transactions off the same coinbase's change output,
-            # so only 1 coinbase is consumed, preserving ~29 for continued staking.
+            # Phase 2: Fund nodes 1-5 from mature coinbase UTXOs
+            # Chain multiple transactions off a coinbase's change output,
+            # so only 1 coinbase is consumed per funding pass.
             # Each node gets NUM_FUNDING_TXS UTXOs of ~FUND_AMOUNT RDD each.
             # Funding at block 90 gives 108+ confirmations by block 199
             # (well over COINBASE_MATURITY=60), so funded UTXOs are staking-ready.
+            #
+            # Nodes 1-3 are funded from utxos[0] (premine block, ~545M RDD).
+            # Nodes 4-5 are funded from utxos[1] (another premine block).
+            # This ensures tests with 6+ nodes (e.g., wallet_address_types.py)
+            # have funded nodes for both block generation and transactions.
             FUND_AMOUNT = 2500000
             NUM_FUNDING_TXS = 70  # Each node gets this many UTXOs for staking
 
             utxos = cache_node.listunspent(60)
             utxos.sort(key=lambda x: x['amount'], reverse=True)
 
-            prev_txid = utxos[0]['txid']
-            prev_vout = utxos[0]['vout']
-            prev_amount = utxos[0]['amount']
+            def _fund_nodes(source_utxo, node_keys):
+                """Fund multiple nodes from a single source UTXO via chained txs."""
+                prev_txid = source_utxo['txid']
+                prev_vout = source_utxo['vout']
+                prev_amount = source_utxo['amount']
+                num_nodes = len(node_keys)
 
-            for _ in range(NUM_FUNDING_TXS):
-                change = prev_amount - FUND_AMOUNT * 3 - 1
+                for _ in range(NUM_FUNDING_TXS):
+                    change = prev_amount - FUND_AMOUNT * num_nodes - 1
 
-                inputs = [{"txid": prev_txid, "vout": prev_vout}]
-                outputs = {
-                    TestNode.PRIV_KEYS[1].address: FUND_AMOUNT,
-                    TestNode.PRIV_KEYS[2].address: FUND_AMOUNT,
-                    TestNode.PRIV_KEYS[3].address: FUND_AMOUNT,
-                    gen_address: change,
-                }
+                    inputs = [{"txid": prev_txid, "vout": prev_vout}]
+                    outputs = {}
+                    for key_idx in node_keys:
+                        outputs[TestNode.PRIV_KEYS[key_idx].address] = FUND_AMOUNT
+                    outputs[gen_address] = change
 
-                raw_tx = cache_node.createrawtransaction(inputs, outputs)
-                signed_tx = cache_node.signrawtransactionwithwallet(raw_tx)
-                assert signed_tx['complete']
-                txid = cache_node.sendrawtransaction(signed_tx['hex'], 0)  # maxfeerate=0
+                    raw_tx = cache_node.createrawtransaction(inputs, outputs)
+                    signed_tx = cache_node.signrawtransactionwithwallet(raw_tx)
+                    assert signed_tx['complete']
+                    txid = cache_node.sendrawtransaction(signed_tx['hex'], 0)
 
-                # Find the change output to use as input for the next tx
-                decoded = cache_node.decoderawtransaction(signed_tx['hex'])
-                for vout_info in decoded['vout']:
-                    spk = vout_info['scriptPubKey']
-                    vout_addr = spk.get('address', '')
-                    if not vout_addr and 'addresses' in spk:
-                        vout_addr = spk['addresses'][0]
-                    if vout_addr == gen_address:
-                        prev_txid = txid
-                        prev_vout = vout_info['n']
-                        prev_amount = vout_info['value']
-                        break
+                    # Find the change output to use as input for the next tx
+                    decoded = cache_node.decoderawtransaction(signed_tx['hex'])
+                    for vout_info in decoded['vout']:
+                        spk = vout_info['scriptPubKey']
+                        vout_addr = spk.get('address', '')
+                        if not vout_addr and 'addresses' in spk:
+                            vout_addr = spk['addresses'][0]
+                        if vout_addr == gen_address:
+                            prev_txid = txid
+                            prev_vout = vout_info['n']
+                            prev_amount = vout_info['value']
+                            break
+
+            # Fund nodes 1-3 from first premine UTXO (~545M, needs ~525M)
+            _fund_nodes(utxos[0], [1, 2, 3])
+            # Fund nodes 4-5 from second premine UTXO (~545M, needs ~350M)
+            _fund_nodes(utxos[1], [4, 5])
 
             # Phase 3: Generate remaining 109 PoS blocks to confirm and mature funding
             PHASE3_BLOCKS = 199 - PHASE1_BLOCKS
