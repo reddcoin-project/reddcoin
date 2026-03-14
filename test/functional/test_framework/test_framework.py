@@ -691,7 +691,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def sync_mempools(self, nodes=None, wait=1, timeout=60, flush_scheduler=True):
         """
         Wait until everybody has the same transactions in their memory
-        pools
+        pools.
+
+        When mocktime is set, advances it by 5 seconds each poll iteration
+        so that outbound trickle relay Poisson timers can fire. Without this,
+        frozen mocktime prevents inv messages from being sent to outbound peers.
         """
         rpc_connections = nodes or self.nodes
         timeout = int(timeout * self.options.timeout_factor)
@@ -705,6 +709,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 return
             # Check that each peer has at least one connection
             assert (all([len(x.getpeerinfo()) for x in rpc_connections]))
+            # Advance mocktime so outbound trickle relay timers can fire
+            if hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
+                for node in rpc_connections:
+                    node.mocktime += 5
+                    node.setmocktime(node.mocktime)
             time.sleep(wait)
         raise AssertionError("Mempool sync timed out after {}s:{}".format(
             timeout,
