@@ -89,17 +89,7 @@ class WalletBackupTest(BitcoinTestFramework):
 
         # Have the miner (node3) mine a block.
         # Must sync mempools before mining.
-        # Advance mocktime repeatedly so outbound trickle relay Poisson
-        # timers can fire (mocktime-aware GetTime() freezes relay otherwise)
-        for _ in range(6):
-            advance_time_for_pos(self.nodes, seconds=5)
-            try:
-                self.sync_mempools(wait=0.5, timeout=5)
-                break
-            except AssertionError:
-                continue
-        else:
-            self.sync_mempools(wait=1, timeout=30)
+        self.sync_mempools()
         self.nodes[3].generate(1)
         self.sync_blocks()
 
