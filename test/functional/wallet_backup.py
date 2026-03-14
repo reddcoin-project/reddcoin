@@ -8,8 +8,8 @@ Test case is:
 4 nodes. 1 2 and 3 send transactions between each other,
 fourth node is a miner.
 1 2 3 each mine a block to start, then
-Miner creates 100 blocks so 1 2 3 each have 50 mature
-coins to spend.
+Miner creates COINBASE_MATURITY blocks so 1 2 3 each have
+one mature premine reward (545M RDD) to spend.
 Then 5 iterations of 1/2/3 sending coins amongst
 themselves to get transactions in the wallets,
 and the miner mining one block.
@@ -17,11 +17,11 @@ and the miner mining one block.
 Wallets are backed up using dumpwallet/backupwallet.
 Then 5 more iterations of transactions and mining a block.
 
-Miner then generates 101 more blocks, so any
-transaction fees paid mature.
+Miner then generates COINBASE_MATURITY+1 more blocks,
+so any transaction fees paid mature.
 
 Sanity check:
-  Sum(1,2,3,4 balances) == 114*50
+  Total PoW subsidies match expected supply curve.
 
 1/2/3 are shutdown, and their wallets erased.
 Then restore using wallet.dat backup. And
@@ -36,8 +36,10 @@ from random import randint
 import shutil
 
 from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.messages import COINBASE_REWARD
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    advance_time_for_pos,
     assert_equal,
     assert_raises_rpc_error,
 )
@@ -50,10 +52,10 @@ class WalletBackupTest(BitcoinTestFramework):
         # nodes 1, 2,3 are spenders, let's give them a keypool=100
         # whitelist all peers to speed up tx relay / mempool sync
         self.extra_args = [
-            ["-whitelist=noban@127.0.0.1", "-keypool=100"],
-            ["-whitelist=noban@127.0.0.1", "-keypool=100"],
-            ["-whitelist=noban@127.0.0.1", "-keypool=100"],
-            ["-whitelist=noban@127.0.0.1"],
+            ["-whitelist=127.0.0.1", "-keypool=100"],
+            ["-whitelist=127.0.0.1", "-keypool=100"],
+            ["-whitelist=127.0.0.1", "-keypool=100"],
+            ["-whitelist=127.0.0.1"],
         ]
         self.rpc_timeout = 120
 
@@ -87,7 +89,17 @@ class WalletBackupTest(BitcoinTestFramework):
 
         # Have the miner (node3) mine a block.
         # Must sync mempools before mining.
-        self.sync_mempools()
+        # Advance mocktime repeatedly so outbound trickle relay Poisson
+        # timers can fire (mocktime-aware GetTime() freezes relay otherwise)
+        for _ in range(6):
+            advance_time_for_pos(self.nodes, seconds=5)
+            try:
+                self.sync_mempools(wait=0.5, timeout=5)
+                break
+            except AssertionError:
+                continue
+        else:
+            self.sync_mempools(wait=1, timeout=30)
         self.nodes[3].generate(1)
         self.sync_blocks()
 
@@ -127,9 +139,9 @@ class WalletBackupTest(BitcoinTestFramework):
         self.nodes[3].generate(COINBASE_MATURITY)
         self.sync_blocks()
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        assert_equal(self.nodes[2].getbalance(), 50)
+        assert_equal(self.nodes[0].getbalance(), COINBASE_REWARD)
+        assert_equal(self.nodes[1].getbalance(), COINBASE_REWARD)
+        assert_equal(self.nodes[2].getbalance(), COINBASE_REWARD)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -152,7 +164,8 @@ class WalletBackupTest(BitcoinTestFramework):
         for _ in range(5):
             self.do_one_round()
 
-        # Generate 101 more blocks, so any fees paid mature
+        # Generate COINBASE_MATURITY+1 more blocks, so any fees paid mature
+        advance_time_for_pos(self.nodes, seconds=60)
         self.nodes[3].generate(COINBASE_MATURITY + 1)
         self.sync_all()
 
@@ -162,9 +175,27 @@ class WalletBackupTest(BitcoinTestFramework):
         balance3 = self.nodes[3].getbalance()
         total = balance0 + balance1 + balance2 + balance3
 
-        # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 5700.
-        assert_equal(total, 5700)
+        # Compute expected PoW supply: blocks 1-10 are premine (545M each),
+        # blocks 11-89 are regular PoW (300K each). PoS blocks (90+) add
+        # tiny coin-age rewards. Verify total balances (trusted + immature)
+        # match expected PoW supply within a small tolerance for PoS rewards.
+        height = self.nodes[3].getblockcount()
+        expected_pow = Decimal(0)
+        for h in range(1, min(height, 89) + 1):
+            if h < 11:
+                expected_pow += COINBASE_REWARD
+            else:
+                expected_pow += Decimal('300000')
+
+        total_all = Decimal(0)
+        for node in self.nodes:
+            bal = node.getbalances()['mine']
+            total_all += bal['trusted'] + bal['immature']
+
+        # total_all = PoW subsidies + PoS rewards (tiny, coin-age-based)
+        assert total_all >= expected_pow
+        assert total_all < expected_pow * Decimal('1.001')
+        assert total > 0
 
         ##
         # Test restoring spender wallets from backups
