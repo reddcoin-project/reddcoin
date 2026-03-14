@@ -736,6 +736,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         Note: mocktime is tracked in node.mocktime by generate() and set_node_times().
         """
         rpc_connections = nodes or self.nodes
+        # Filter out stopped nodes that don't have RPC connections
+        rpc_connections = [n for n in rpc_connections if n.running and n.rpc_connected]
         if len(rpc_connections) <= 1:
             return
 
