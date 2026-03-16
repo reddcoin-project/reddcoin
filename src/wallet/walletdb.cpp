@@ -65,7 +65,7 @@ const std::string WATCHS{"watchs"};
 // CHDChain
 //
 
-bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed)
+bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed, int bits, int language)
 {
         SecureString ssMnemonicTmp = ssMnemonic;
 
@@ -75,7 +75,7 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
 
         // empty mnemonic i.e. "generate a new one"
         if (ssMnemonic.empty()) {
-                ssMnemonicTmp = CMnemonic::Generate(256);
+                ssMnemonicTmp = CMnemonic::Generate(bits, language);
         }
 
         // LogPrintf("mnemonic: %s\n", ssMnemonicTmp.c_str());

@@ -221,6 +221,7 @@ enum walletType {
 struct WalletOptions {
     int walletType = 0;  // bip32Wallet
     int bits = 256;
+    int language = 0;    // DEFAULT_LANG = english
     bool importing = false;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
@@ -238,9 +239,10 @@ inline std::string WalletOptionsToString(const WalletOptions& opts) {
         default: walletTypeStr = strprintf("UNKNOWN(%d)", opts.walletType); break;
     }
 
-    return strprintf("WalletOptions{type=%s, bits=%d, importing=%s, mnemonic_len=%d, passphrase_len=%d, masterkey_len=%d}",
+    return strprintf("WalletOptions{type=%s, bits=%d, language=%d, importing=%s, mnemonic_len=%d, passphrase_len=%d, masterkey_len=%d}",
                     walletTypeStr,
                     opts.bits,
+                    opts.language,
                     opts.importing ? "true" : "false",
                     opts.ssMnemonic.size(),
                     opts.ssMnemonicPassphrase.size(),

@@ -1274,38 +1274,9 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     } else {
 	WalletLogPrintf("LegacyScriptPubKeyMan::GenerateNewBip39Seed: NOT Setting BIP44 mode\n");
     }
-    std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
-
-
-    if(IsHex(strSeed)) { // that means gArgs.IsArgSet("-hdseed") == true
-		std::vector<unsigned char> vchSeed = ParseHex(strSeed);
-
-		SecureVector svchSeed(vchSeed.begin(), vchSeed.end());
-		CPubKey seed(vchSeed.begin(), vchSeed.end());
-
-		newHdChain.vchSeed = svchSeed;
-		newHdChain.seed_id = seed.GetID();
-		// TODO OMARI how to verify the seed
-
-		AddHDChain(newHdChain);
-
-		return seed;
-	}
-
-    if (gArgs.IsArgSet("-hdseed") && !IsHex(strSeed))
-       LogPrintf("%s: -- Incorrect seed, generating random one instead\n", __func__);
-
-    // NOTE: empty mnemonic means "generate a new one for me"
-    std::string strMnemonic = gArgs.GetArg("-mnemonic", "");
-    // NOTE: default mnemonic passphrase is an empty string
-    std::string strMnemonicPassphrase = gArgs.GetArg("-mnemonicpassphrase", "");
-
-    SecureString vchMnemonic(strMnemonic.begin(), strMnemonic.end());
-    SecureString vchMnemonicPassphrase(strMnemonicPassphrase.begin(), strMnemonicPassphrase.end());
 
     SecureVector& vchSeed = newHdChain.vchSeed;
-//if (!newHdChain.SetMnemonic(vchMnemonic, vchMnemonicPassphrase, vchSeed))
-    if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed))
+    if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed, walletoptions.bits, walletoptions.language))
 	    throw std::runtime_error(std::string(__func__) + ": SetMnemonic failed");
 
     CPubKey seed(vchSeed.begin(), vchSeed.end());
@@ -1830,6 +1801,16 @@ isminetype DescriptorScriptPubKeyMan::IsMine(const CScript& script) const
     if (m_map_script_pub_keys.count(script) > 0) {
         return ISMINE_SPENDABLE;
     }
+    // P2PK fallback: coinstake transactions produce P2PK outputs (<pubkey> OP_CHECKSIG)
+    // but pkh() descriptors only cache P2PKH scripts. Check if the script is P2PK
+    // and the pubkey belongs to this descriptor.
+    std::vector<std::vector<unsigned char>> vSolutions;
+    if (Solver(script, vSolutions) == TxoutType::PUBKEY) {
+        CPubKey pubkey(vSolutions[0]);
+        if (pubkey.IsValid() && m_map_pubkeys.count(pubkey) > 0) {
+            return ISMINE_SPENDABLE;
+        }
+    }
     return ISMINE_NO;
 }
 
@@ -1991,8 +1972,28 @@ void DescriptorScriptPubKeyMan::MarkUnusedAddresses(const CScript& script)
 {
     LOCK(cs_desc_man);
     if (IsMine(script)) {
-        int32_t index = m_map_script_pub_keys[script];
-        if (index >= m_wallet_descriptor.next_index) {
+        int32_t index = -1;
+        // Use find() instead of operator[] to avoid inserting P2PK scripts
+        // with a default index of 0 into m_map_script_pub_keys.
+        auto it = m_map_script_pub_keys.find(script);
+        if (it != m_map_script_pub_keys.end()) {
+            index = it->second;
+        } else {
+            // P2PK fallback: coinstake outputs are P2PK but pkh() descriptors
+            // only cache P2PKH scripts. Look up the pubkey in m_map_pubkeys
+            // to find the correct descriptor index.
+            std::vector<std::vector<unsigned char>> vSolutions;
+            if (Solver(script, vSolutions) == TxoutType::PUBKEY) {
+                CPubKey pubkey(vSolutions[0]);
+                if (pubkey.IsValid()) {
+                    auto pk_it = m_map_pubkeys.find(pubkey);
+                    if (pk_it != m_map_pubkeys.end()) {
+                        index = pk_it->second;
+                    }
+                }
+            }
+        }
+        if (index >= 0 && index >= m_wallet_descriptor.next_index) {
             WalletLogPrintf("%s: Detected a used keypool item at index %d, mark all keypool items up to this item as used\n", __func__, index);
             m_wallet_descriptor.next_index = index + 1;
         }
@@ -2163,12 +2164,25 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
 
     // Find the index of the script
     auto it = m_map_script_pub_keys.find(script);
-    if (it == m_map_script_pub_keys.end()) {
-        return nullptr;
+    if (it != m_map_script_pub_keys.end()) {
+        return GetSigningProvider(it->second, include_private);
     }
-    int32_t index = it->second;
 
-    return GetSigningProvider(index, include_private);
+    // P2PK fallback: coinstake transactions produce P2PK outputs (<pubkey> OP_CHECKSIG)
+    // but pkh() descriptors only cache P2PKH scripts. Extract the pubkey from P2PK
+    // and look it up in m_map_pubkeys to get the descriptor index.
+    std::vector<std::vector<unsigned char>> vSolutions;
+    if (Solver(script, vSolutions) == TxoutType::PUBKEY) {
+        CPubKey pubkey(vSolutions[0]);
+        if (pubkey.IsValid()) {
+            auto pk_it = m_map_pubkeys.find(pubkey);
+            if (pk_it != m_map_pubkeys.end()) {
+                return GetSigningProvider(pk_it->second, include_private);
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvider(const CPubKey& pubkey) const
@@ -2211,6 +2225,15 @@ std::unique_ptr<SigningProvider> DescriptorScriptPubKeyMan::GetSolvingProvider(c
 bool DescriptorScriptPubKeyMan::CanProvide(const CScript& script, SignatureData& sigdata)
 {
     return IsMine(script);
+}
+
+bool DescriptorScriptPubKeyMan::GetKey(const CScript& script, const CKeyID& keyid, CKey& key) const
+{
+    std::unique_ptr<FlatSigningProvider> provider = GetSigningProvider(script, true);
+    if (!provider) {
+        return false;
+    }
+    return provider->GetKey(keyid, key);
 }
 
 bool DescriptorScriptPubKeyMan::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint, Coin>& coins, int sighash, std::map<int, std::string>& input_errors) const
