@@ -726,10 +726,39 @@ class RPCOverloadWrapper():
     def __truediv__(self, relative_uri):
         return self.rpc / relative_uri
 
-    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase='', avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None):
+    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase='', avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None, wallet_type=None, mnemonic=None, mnemonic_passphrase=None, language=None, entropy_bits=None):
         if descriptors is None:
             descriptors = self.descriptors
-        return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
+        bip39_args = [wallet_type, mnemonic, mnemonic_passphrase, language, entropy_bits]
+        has_bip39 = any(a is not None for a in bip39_args)
+        if not has_bip39:
+            # Original positional call for backward compatibility
+            return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
+        # Use named args to avoid CLI "null" string issues with sparse optional params
+        params = {'wallet_name': wallet_name, 'descriptors': descriptors}
+        if disable_private_keys is not None:
+            params['disable_private_keys'] = disable_private_keys
+        if blank is not None:
+            params['blank'] = blank
+        if passphrase != '':
+            params['passphrase'] = passphrase
+        if avoid_reuse is not None:
+            params['avoid_reuse'] = avoid_reuse
+        if load_on_startup is not None:
+            params['load_on_startup'] = load_on_startup
+        if external_signer is not None:
+            params['external_signer'] = external_signer
+        if wallet_type is not None:
+            params['wallet_type'] = wallet_type
+        if mnemonic is not None:
+            params['mnemonic'] = mnemonic
+        if mnemonic_passphrase is not None:
+            params['mnemonic_passphrase'] = mnemonic_passphrase
+        if language is not None:
+            params['language'] = language
+        if entropy_bits is not None:
+            params['entropy_bits'] = entropy_bits
+        return self.__getattr__('createwallet')(**params)
 
     def importprivkey(self, privkey, label=None, rescan=None):
         wallet_info = self.getwalletinfo()
