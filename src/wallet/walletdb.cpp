@@ -142,8 +142,14 @@ void CHDChain::SetSeedFromSeedId()
 {
     // try to get the seed
     CKey seed;
-    if (!pwallet || !pwallet->GetLegacyScriptPubKeyMan()->GetKey(seed_id, seed))
-	throw std::runtime_error(std::string(__func__) + ": seed not found");
+    if (!pwallet || !pwallet->GetLegacyScriptPubKeyMan()->GetKey(seed_id, seed)) {
+        // Seed unavailable — wallet is likely locked (encrypted BIP32 wallet).
+        // Leave vchSeed empty; it is not needed while locked. TopUp() will
+        // populate it once the wallet is unlocked via walletpassphrase.
+        // seed_id is already set from deserialization, so IsHDEnabled() works.
+        LogPrintf("%s: seed not available (wallet locked), deferring\n", __func__);
+        return;
+    }
 
     vchSeed = SecureVector(seed.begin(), seed.end());
 }
