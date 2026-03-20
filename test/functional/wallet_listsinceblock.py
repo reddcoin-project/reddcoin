@@ -301,11 +301,17 @@ class ListSinceBlockTest(BitcoinTestFramework):
 
         signedtx = signedtxres['hex']
 
+        # Lock the UTXO on nodes[2] so coinstake doesn't consume it during generate
+        self.nodes[2].lockunspent(False, [utxo_dicts[0]])
+
         # send from nodes[1]; this will end up in aa1
         txid1 = self.nodes[1].sendrawtransaction(signedtx)
 
         # generate bb1-bb2 on right side
         self.nodes[2].generate(2)
+
+        # Unlock the UTXO so sendrawtransaction can broadcast it
+        self.nodes[2].lockunspent(True, [utxo_dicts[0]])
 
         # send from nodes[2]; this will end up in bb3
         txid2 = self.nodes[2].sendrawtransaction(signedtx)
