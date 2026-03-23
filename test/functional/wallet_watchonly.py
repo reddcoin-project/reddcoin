@@ -5,9 +5,9 @@
 """Test createwallet watchonly arguments.
 """
 
-from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    advance_time_for_pos,
     assert_equal,
     assert_raises_rpc_error
 )
@@ -19,29 +19,57 @@ class CreateWalletWatchonlyTest(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+        # importpubkey is legacy-wallet only; descriptor wallets use importdescriptors
+        self.skip_if_no_bdb()
+
+    def gen_block(self):
+        """Generate one PoS block via the framework wallet.
+
+        Routes generatetoaddress through the wallet RPC so --usecli works
+        when multiple wallets are loaded (bare-node CLI can't pick a wallet).
+        Handles PoS time advancement and retry logic.
+        """
+        node = self.nodes[0]
+        fw = node.get_wallet_rpc(self.default_wallet_name)
+        addr = node.get_deterministic_priv_key().address
+        advance_time_for_pos(node, seconds=60)
+        for attempt in range(10):
+            try:
+                return fw.generatetoaddress(1, addr)
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < 9:
+                    advance_time_for_pos(node, seconds=300)
+                else:
+                    raise
 
     def run_test(self):
         node = self.nodes[0]
 
-        self.nodes[0].createwallet(wallet_name='default')
+        # The framework's default wallet has cache coins for staking/funding.
+        fw_wallet = node.get_wallet_rpc(self.default_wallet_name)
+
+        self.nodes[0].createwallet(wallet_name='default', descriptors=False)
         def_wallet = node.get_wallet_rpc('default')
 
         a1 = def_wallet.getnewaddress()
         wo_change = def_wallet.getnewaddress()
         wo_addr = def_wallet.getnewaddress()
 
-        self.nodes[0].createwallet(wallet_name='wo', disable_private_keys=True)
+        self.nodes[0].createwallet(wallet_name='wo', disable_private_keys=True, descriptors=False)
         wo_wallet = node.get_wallet_rpc('wo')
 
         wo_wallet.importpubkey(pubkey=def_wallet.getaddressinfo(wo_addr)['pubkey'])
         wo_wallet.importpubkey(pubkey=def_wallet.getaddressinfo(wo_change)['pubkey'])
 
-        # generate some btc for testing
-        node.generatetoaddress(COINBASE_MATURITY + 1, a1)
+        # Fund the default wallet from the framework wallet (which has cache coins).
+        # In PoS, generatetoaddress doesn't pay to the target address — rewards go
+        # to the staking UTXO owner. So we fund explicitly via sendtoaddress.
+        fw_wallet.sendtoaddress(a1, 100)
+        self.gen_block()
 
-        # send 1 btc to our watch-only address
+        # send 1 rdd to our watch-only address
         txid = def_wallet.sendtoaddress(wo_addr, 1)
-        self.nodes[0].generate(1)
+        self.gen_block()
 
         # getbalance
         self.log.info('include_watchonly should default to true for watch-only wallets')
