@@ -35,12 +35,16 @@ bool SignBlock(CBlock& block, const CWallet& keystore)
                 break;
             }
         } else if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
-            // For descriptor wallets with P2PK coinstake outputs:
-            // The original script was P2PKH but was converted to P2PK for staking.
-            // We need to construct a P2PKH script to query the descriptor wallet,
-            // since that's what it tracks internally.
+            // The coinstake output is P2PK, but the descriptor wallet indexes keys
+            // by the original script type. Try P2PKH first, then P2WPKH, since
+            // the staking UTXO could have been either address type.
             CScript p2pkh_script = GetScriptForDestination(PKHash(keyid));
             if (desc->GetKey(p2pkh_script, keyid, key)) {
+                found_key = true;
+                break;
+            }
+            CScript p2wpkh_script = GetScriptForDestination(WitnessV0KeyHash(keyid));
+            if (desc->GetKey(p2wpkh_script, keyid, key)) {
                 found_key = true;
                 break;
             }
