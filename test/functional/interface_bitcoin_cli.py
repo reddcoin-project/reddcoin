@@ -17,11 +17,8 @@ from test_framework.util import (
 )
 import time
 
-# The block reward of coinbaseoutput.nValue (50) BTC/block matures after
-# COINBASE_MATURITY (100) blocks. Therefore, after mining 101 blocks we expect
-# node 0 to have a balance of (BLOCKS - COINBASE_MATURITY) * 50 BTC/block.
+# Mine COINBASE_MATURITY + 1 blocks so that the first coinbase output matures.
 BLOCKS = COINBASE_MATURITY + 1
-BALANCE = (BLOCKS - 100) * 50
 
 JSON_PARSING_ERROR = 'error: Error parsing JSON: foo'
 BLOCKS_VALUE_OF_ZERO = 'error: the first argument (number of blocks to generate, default: 1) must be an integer value greater than zero'
@@ -91,7 +88,8 @@ class TestBitcoinCli(BitcoinTestFramework):
 
         if self.is_wallet_compiled():
             self.log.info("Test -getinfo and bitcoin-cli getwalletinfo return expected wallet info")
-            assert_equal(cli_get_info['balance'], BALANCE)
+            balance = self.nodes[0].getbalance()
+            assert_equal(cli_get_info['balance'], balance)
             assert 'balances' not in cli_get_info.keys()
             wallet_info = self.nodes[0].getwalletinfo()
             assert_equal(cli_get_info['keypoolsize'], wallet_info['keypoolsize'])
@@ -102,7 +100,6 @@ class TestBitcoinCli(BitcoinTestFramework):
 
             # Setup to test -getinfo, -generate, and -rpcwallet= with multiple wallets.
             wallets = [self.default_wallet_name, 'Encrypted', 'secret']
-            amounts = [BALANCE + Decimal('9.999928'), Decimal(9), Decimal(31)]
             self.nodes[0].createwallet(wallet_name=wallets[1])
             self.nodes[0].createwallet(wallet_name=wallets[2])
             w1 = self.nodes[0].get_wallet_rpc(wallets[0])
@@ -112,11 +109,12 @@ class TestBitcoinCli(BitcoinTestFramework):
             rpcwallet3 = '-rpcwallet={}'.format(wallets[2])
             w1.walletpassphrase(password, self.rpc_timeout)
             w2.encryptwallet(password)
-            w1.sendtoaddress(w2.getnewaddress(), amounts[1])
-            w1.sendtoaddress(w3.getnewaddress(), amounts[2])
+            w1.sendtoaddress(w2.getnewaddress(), 9)
+            w1.sendtoaddress(w3.getnewaddress(), 31)
 
-            # Mine a block to confirm; adds a block reward (50 BTC) to the default wallet.
+            # Mine a block to confirm; adds a block reward to the default wallet.
             self.nodes[0].generate(1)
+            amounts = [w1.getbalance(), w2.getbalance(), w3.getbalance()]
 
             self.log.info("Test -getinfo with multiple wallets and -rpcwallet returns specified wallet balance")
             for i in range(len(wallets)):
@@ -143,7 +141,7 @@ class TestBitcoinCli(BitcoinTestFramework):
             assert_equal(cli_get_info['balances'], {k: v for k, v in zip(wallets[1:], amounts[1:])})
 
             self.log.info("Test -getinfo after unloading all wallets except a non-default one returns its balance")
-            self.nodes[0].unloadwallet(wallets[2])
+            w3.unloadwallet(wallets[2])
             assert_equal(self.nodes[0].listwallets(), [wallets[1]])
             cli_get_info = self.nodes[0].cli('-getinfo').send_cli()
             assert 'balances' not in cli_get_info.keys()
