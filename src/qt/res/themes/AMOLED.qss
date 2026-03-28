@@ -574,3 +574,150 @@ QScrollBar::down-arrow:vertical {
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
   	background: none;
 }
+
+/* ── Table & Header ─────────────────────────────────────────────────────── */
+QTableView {
+	background-color: #000000;
+	color: #a9b7c6;
+	gridline-color: rgb(58, 58, 58);
+	border: 1px solid rgb(58, 58, 58);
+	selection-background-color: #f39c12;
+	selection-color: #000000;
+	alternate-background-color: #0d0d0d;
+}
+QTableView::item {
+	border: none;
+	padding: 2px 4px;
+	color: #a9b7c6;
+}
+QTableView::item:selected {
+	background-color: #f39c12;
+	color: #000000;
+}
+QTableView::item:hover {
+	background-color: #1a0a00;
+	color: #FFFFFF;
+}
+QHeaderView {
+	background-color: #000000;
+	color: #a9b7c6;
+	border: none;
+}
+QHeaderView::section {
+	background-color: #0d0d0d;
+	color: #a9b7c6;
+	border: none;
+	border-right: 1px solid rgb(58, 58, 58);
+	border-bottom: 1px solid rgb(58, 58, 58);
+	padding: 4px 6px;
+}
+QHeaderView::section:hover {
+	background-color: #1a0a00;
+	color: #FFFFFF;
+	border-bottom: 2px solid #e67e22;
+}
+QHeaderView::section:first {
+	border-left: none;
+}
+
+/* ── Tree Widget ─────────────────────────────────────────────────────────── */
+QTreeWidget {
+	background-color: #000000;
+	color: #a9b7c6;
+	border: 1px solid rgb(58, 58, 58);
+	selection-background-color: #f39c12;
+	selection-color: #000000;
+	alternate-background-color: #0d0d0d;
+}
+QTreeWidget::item {
+	padding: 2px 4px;
+	color: #a9b7c6;
+}
+QTreeWidget::item:selected {
+	background-color: #f39c12;
+	color: #000000;
+}
+QTreeWidget::item:hover {
+	background-color: #1a0a00;
+	color: #FFFFFF;
+}
+
+/* ── List View ───────────────────────────────────────────────────────────── */
+QListView {
+	background-color: #000000;
+	color: #a9b7c6;
+	border: 1px solid rgb(58, 58, 58);
+	selection-background-color: #f39c12;
+	selection-color: #000000;
+	alternate-background-color: #0d0d0d;
+}
+QListView::item {
+	padding: 3px 6px;
+	color: #a9b7c6;
+	border: none;
+}
+QListView::item:selected {
+	background-color: #f39c12;
+	color: #000000;
+}
+QListView::item:hover {
+	background-color: #1a0a00;
+	color: #FFFFFF;
+}
+
+/* ── Tool Bar ────────────────────────────────────────────────────────────── */
+QToolBar {
+	background-color: #000000;
+	border-bottom: 1px solid rgb(58, 58, 58);
+	spacing: 4px;
+	padding: 2px;
+}
+QToolBar::separator {
+	width: 1px;
+	background: rgb(58, 58, 58);
+	margin: 4px 2px;
+}
+
+/* ── Group Box ───────────────────────────────────────────────────────────── */
+QGroupBox {
+	border: 1px solid rgb(58, 58, 58);
+	border-radius: 4px;
+	margin-top: 8px;
+	padding-top: 8px;
+	color: #a9b7c6;
+}
+QGroupBox::title {
+	subcontrol-origin: margin;
+	subcontrol-position: top left;
+	padding: 0 4px;
+	color: #e67e22;
+	background-color: #000000;
+}
+
+/* ── Frame ───────────────────────────────────────────────────────────────── */
+QFrame {
+	border: none;
+	background-color: transparent;
+}
+QFrame[frameShape="1"],
+QFrame[frameShape="2"],
+QFrame[frameShape="3"],
+QFrame[frameShape="4"],
+QFrame[frameShape="5"],
+QFrame[frameShape="6"] {
+	border: 1px solid rgb(58, 58, 58);
+}
+
+/* ── Splitter ────────────────────────────────────────────────────────────── */
+QSplitter::handle {
+	background-color: rgb(58, 58, 58);
+}
+QSplitter::handle:horizontal {
+	width: 2px;
+}
+QSplitter::handle:vertical {
+	height: 2px;
+}
+QSplitter::handle:hover {
+	background-color: #e67e22;
+}

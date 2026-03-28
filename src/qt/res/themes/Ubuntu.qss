@@ -494,3 +494,166 @@ QTimeEdit, QToolBox, QToolBox::tab, QToolBox::tab:selected {
 	color:rgb(81,72,65);
 	background-color: #ffffff;
 }
+
+/* ── QTableView ─────────────────────────────────────────── */
+QTableView {
+	background-color: rgb(255,255,255);
+	alternate-background-color: rgb(250,243,238);
+	color: rgb(17,17,17);
+	gridline-color: rgb(180,180,180);
+	border-width: 1px;
+	border-style: solid;
+	border-color: rgb(180,180,180);
+	selection-background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	selection-color: rgb(255,255,255);
+}
+QTableView::item {
+	padding: 2px 4px;
+	border: none;
+	color: rgb(17,17,17);
+}
+QTableView::item:selected {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	color: rgb(255,255,255);
+}
+QTableView::item:hover {
+	background-color: rgba(246,134,86,55);
+	color: rgb(17,17,17);
+}
+
+/* ── QHeaderView ─────────────────────────────────────────── */
+QHeaderView {
+	background-color: rgb(240,240,240);
+	color: rgb(17,17,17);
+	border: none;
+}
+QHeaderView::section {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(221,218,217,255), stop:1 rgba(240,239,238,255));
+	color: rgb(81,72,65);
+	padding: 4px 6px;
+	border-style: solid;
+	border-width: 0px 1px 1px 0px;
+	border-color: rgb(180,180,180);
+	font-weight: bold;
+}
+QHeaderView::section:hover {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,200), stop:1 rgba(246,134,86,200));
+	color: rgb(255,255,255);
+}
+QHeaderView::section:checked {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	color: rgb(255,255,255);
+}
+
+/* ── QTreeWidget ─────────────────────────────────────────── */
+QTreeWidget {
+	background-color: rgb(255,255,255);
+	alternate-background-color: rgb(250,243,238);
+	color: rgb(17,17,17);
+	border-width: 1px;
+	border-style: solid;
+	border-color: rgb(180,180,180);
+	selection-background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	selection-color: rgb(255,255,255);
+}
+QTreeWidget::item {
+	padding: 2px 4px;
+	color: rgb(17,17,17);
+}
+QTreeWidget::item:selected {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	color: rgb(255,255,255);
+}
+QTreeWidget::item:hover {
+	background-color: rgba(246,134,86,55);
+	color: rgb(17,17,17);
+}
+QTreeWidget::branch:selected {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+}
+
+/* ── QListView ───────────────────────────────────────────── */
+QListView {
+	background-color: rgb(255,255,255);
+	alternate-background-color: rgb(250,243,238);
+	color: rgb(17,17,17);
+	border-width: 1px;
+	border-style: solid;
+	border-color: rgb(180,180,180);
+	selection-background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	selection-color: rgb(255,255,255);
+}
+QListView::item {
+	padding: 3px 6px;
+	color: rgb(17,17,17);
+	border: none;
+}
+QListView::item:selected {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+	color: rgb(255,255,255);
+}
+QListView::item:hover {
+	background-color: rgba(246,134,86,55);
+	color: rgb(17,17,17);
+}
+
+/* ── QToolBar ────────────────────────────────────────────── */
+QToolBar {
+	background-color: rgb(240,240,240);
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+	border-bottom-color: rgb(180,180,180);
+	spacing: 3px;
+	padding: 2px;
+}
+QToolBar::separator {
+	background-color: rgb(180,180,180);
+	width: 1px;
+	margin: 4px 2px;
+}
+
+/* ── QGroupBox ───────────────────────────────────────────── */
+QGroupBox {
+	color: rgb(17,17,17);
+	border-width: 1px;
+	border-style: solid;
+	border-color: rgb(180,180,180);
+	border-radius: 6px;
+	margin-top: 1.4em;
+	padding-top: 0.5em;
+}
+QGroupBox::title {
+	subcontrol-origin: margin;
+	subcontrol-position: top left;
+	padding: 0 4px;
+	left: 8px;
+	color: rgb(236,116,64);
+	font-weight: bold;
+}
+
+/* ── QFrame ──────────────────────────────────────────────── */
+QFrame {
+	border-width: 1px;
+	border-style: solid;
+	border-color: rgb(180,180,180);
+}
+QFrame[frameShape="0"] {
+	border: none;
+}
+
+/* ── QSplitter ───────────────────────────────────────────── */
+QSplitter::handle {
+	background-color: rgb(180,180,180);
+}
+QSplitter::handle:horizontal {
+	width: 4px;
+}
+QSplitter::handle:vertical {
+	height: 4px;
+}
+QSplitter::handle:hover {
+	background-color: qlineargradient(spread:pad, x1:0.5, y1:1, x2:0.5, y2:0, stop:0 rgba(225,108,54,255), stop:1 rgba(246,134,86,255));
+}
+QSplitter::handle:pressed {
+	background-color: rgb(236,116,64);
+}
