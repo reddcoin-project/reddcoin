@@ -70,6 +70,7 @@
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrlQuery>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -1546,8 +1547,6 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
     labelWalletHDStatusIcon->setThemedPixmap(privkeyDisabled ? QStringLiteral(":/icons/eye") : icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     labelWalletHDStatusIcon->setToolTip(privkeyDisabled ? tr("Private key <b>disabled</b>") : hdEnabled > 0 ? tr("HD key generation is <b>enabled</b>") : tr("HD key generation is <b>disabled</b>"));
     labelWalletHDStatusIcon->show();
-    // eventually disable the QLabel to set its opacity to 50%
-    labelWalletHDStatusIcon->setEnabled(hdEnabled > 0);
 }
 
 void BitcoinGUI::setWalletLocked(bool wallet_locked)
@@ -1837,17 +1836,63 @@ void BitcoinGUI::showModalOverlay()
 
 void BitcoinGUI::updateTheme(const QString& themeName)
 {
+    if (!m_currentStyleName.isEmpty()) return; // QSS theme controls palette
     platformStyle->SetTheme(themeName);
+    updateStatusBarIconColor();
 }
 
 void BitcoinGUI::updateStyle(const QString& styleName)
 {
+    m_currentStyleName = styleName;
+    if (styleName.isEmpty()) {
+        this->setStyleSheet("");
+        return;
+    }
     QFile styleFile(":/themes/" + styleName);
     if (!styleFile.open(QFile::ReadOnly)) {
         return;
     }
     QString styleSheet = QLatin1String(styleFile.readAll());
     this->setStyleSheet(styleSheet);
+
+    // Auto-set palette to match QSS theme tone
+    static const QStringList darkThemes = {"AMOLED", "ConsoleStyle", "ManjaroMix", "MaterialDark"};
+    if (darkThemes.contains(styleName)) {
+        platformStyle->SetTheme("dark");
+    } else {
+        platformStyle->SetTheme("light");
+    }
+    updateStatusBarIconColor();
+}
+
+void BitcoinGUI::updateStatusBarIconColor()
+{
+    QColor iconColor = platformStyle->SingleColor();
+    QString color = iconColor.name();
+
+    // Re-colorize unit display text (scoped to QLabel only, not child QMenu)
+    if (unitDisplayControl) unitDisplayControl->setStyleSheet(QString("QLabel { color: %1; }").arg(color));
+
+    // Re-colorize toolbar icons
+    if (appToolBar) {
+        QAction* tabActions[] = {overviewAction, sendCoinsAction, receiveCoinsAction, historyAction, mintingAction};
+        const char* tabIcons[] = {":/icons/overview", ":/icons/send", ":/icons/receiving_addresses", ":/icons/history", ":/icons/staking"};
+        for (int i = 0; i < 5; ++i) {
+            tabActions[i]->setIcon(platformStyle->SingleColorIcon(QString(tabIcons[i])));
+        }
+    }
+    if (imageLogo) imageLogo->setPixmap(createLogo());
+
+    // Re-colorize status bar themed icons via PaletteChange event
+    QEvent paletteChange(QEvent::PaletteChange);
+    QWidget* statusBarWidgets[] = {
+        labelWalletHDStatusIcon, labelWalletEncryptionIcon,
+        walletstakingStatusControl, nodestakingStatusControl,
+        labelProxyIcon, connectionsControl, labelBlocksIcon
+    };
+    for (QWidget* w : statusBarWidgets) {
+        if (w) QApplication::sendEvent(w, &paletteChange);
+    }
 }
 
 static bool ThreadSafeMessageBox(BitcoinGUI* gui, const bilingual_str& message, const std::string& caption, unsigned int style)

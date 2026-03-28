@@ -382,6 +382,10 @@ public Q_SLOTS:
     void updateStyle(const QString &styleName);
 
     void updateTheme(const QString &themeName);
+
+private:
+    QString m_currentStyleName;
+    void updateStatusBarIconColor();
 };
 
 class UnitDisplayStatusBarControl : public QLabel

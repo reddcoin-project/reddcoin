@@ -828,6 +828,7 @@ void ThemedLabel::changeEvent(QEvent* e)
 
 void ThemedLabel::updateThemedPixmap()
 {
+    if (m_image_filename.isEmpty()) return;
     setPixmap(m_platform_style->SingleColorIcon(m_image_filename).pixmap(m_pixmap_width, m_pixmap_height));
 }
 
