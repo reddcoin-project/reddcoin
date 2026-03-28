@@ -98,4 +98,13 @@
     <qresource prefix="/fonts">
         <file alias="monospace">res/fonts/RobotoMono-Bold.ttf</file>
     </qresource>
+    <qresource prefix="/themes">
+        <file alias="AMOLED">res/themes/AMOLED.qss</file>
+        <file alias="Aqua">res/themes/Aqua.qss</file>
+        <file alias="ConsoleStyle">res/themes/ConsoleStyle.qss</file>
+        <file alias="MacOS">res/themes/MacOS.qss</file>
+        <file alias="ManjaroMix">res/themes/ManjaroMix.qss</file>
+        <file alias="MaterialDark">res/themes/MaterialDark.qss</file>
+        <file alias="Ubuntu">res/themes/Ubuntu.qss</file>
+    </qresource>
 </RCC>
