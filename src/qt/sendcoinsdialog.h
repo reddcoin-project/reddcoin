@@ -47,6 +47,9 @@ public:
     void pasteEntry(const SendCoinsRecipient &rv);
     bool handlePaymentRequest(const SendCoinsRecipient &recipient);
 
+protected:
+    void changeEvent(QEvent* e) override;
+
 public Q_SLOTS:
     void clear();
     void reject() override;

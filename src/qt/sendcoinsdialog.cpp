@@ -1080,3 +1080,14 @@ void SendConfirmationDialog::updateYesButton()
         yesButton->setText(confirmButtonText);
     }
 }
+
+void SendCoinsDialog::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange) {
+        ui->addButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/add")));
+        ui->clearButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/remove")));
+        ui->sendButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/send")));
+    }
+
+    QDialog::changeEvent(e);
+}

@@ -56,12 +56,13 @@ protected:
     }
 };
 
-AddressBookPage::AddressBookPage(const PlatformStyle *platformStyle, Mode _mode, Tabs _tab, QWidget *parent) :
+AddressBookPage::AddressBookPage(const PlatformStyle *_platformStyle, Mode _mode, Tabs _tab, QWidget *parent) :
     QDialog(parent, GUIUtil::dialog_flags),
     ui(new Ui::AddressBookPage),
     model(nullptr),
     mode(_mode),
-    tab(_tab)
+    tab(_tab),
+    platformStyle(_platformStyle)
 {
     ui->setupUi(this);
 
@@ -323,4 +324,16 @@ void AddressBookPage::selectNewAddress(const QModelIndex &parent, int begin, int
         ui->tableView->selectRow(idx.row());
         newAddressToSelect.clear();
     }
+}
+
+void AddressBookPage::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange) {
+        ui->newAddress->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/add")));
+        ui->copyAddress->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/editcopy")));
+        ui->deleteAddress->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/remove")));
+        ui->exportButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/export")));
+    }
+
+    QDialog::changeEvent(e);
 }
