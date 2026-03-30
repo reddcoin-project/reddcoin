@@ -127,7 +127,8 @@ BASE_SCRIPTS = [
     'feature_csv_activation.py',
     'wallet_address_types.py --legacy-wallet',
     'wallet_address_types.py --descriptors',
-    'feature_bip68_sequence.py',
+    # 'feature_bip68_sequence.py',
+    'feature_bip68_sequence_pos.py',
     'p2p_feefilter.py',
     'feature_reindex.py',
     'feature_abortnode.py',
@@ -308,7 +309,7 @@ BASE_SCRIPTS = [
     'feature_help.py',
     'feature_shutdown.py',
     'p2p_ibd_txrelay.py',
-    'feature_blockfilterindex_prune.py'
+    # 'feature_blockfilterindex_prune.py' # Prune mode is incompatible with blockfilterindex.
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]
