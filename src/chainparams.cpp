@@ -458,6 +458,7 @@ public:
         checkpointData = {
             {
                 {0, genesis.GetHash()},
+                {1500, uint256S("0x1abe50abead5c51a757e0615089aae289836a41c02e884b78c7ddd686e886572")},
             }
         };
 
@@ -654,10 +655,12 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].min_activation_height = 0;
+        // CLTV (BIP65) - Set to activate via BIP9 signaling during PoS phase
+        // With window=144, activation occurs at height 432 (3 periods) if 75% signal
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0; // No minimum activation height
         // CSV (BIP68/112/113) - Set to activate via BIP9 signaling during PoS phase
         // With window=144, activation occurs at height 432 (3 periods) if 75% signal
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
