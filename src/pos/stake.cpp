@@ -8,6 +8,7 @@
 
 #include <chainparams.h>
 #include <consensus/tx_verify.h>
+#include <deploymentstatus.h>
 #include <index/disktxpos.h>
 #include <index/txindex.h>
 #include <node/blockstorage.h>
@@ -190,8 +191,26 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         return false;
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
+    // Check if SegWit is active for the next block — needed to filter witness UTXOs
+    CBlockIndex* pindexTip = chainstate->m_chain.Tip();
+    bool fSegwitActive = DeploymentActiveAfter(pindexTip, consensusParams, Consensus::DEPLOYMENT_SEGWIT);
+
     for (const auto& pcoin : setCoins)
     {
+        // Skip witness UTXOs if SegWit is not yet active — including them in a
+        // coinstake would produce a block with witness data that gets rejected
+        // with "unexpected witness data" during ContextualCheckBlock.
+        if (!fSegwitActive) {
+            std::vector<std::vector<unsigned char>> vSolutions;
+            TxoutType type = Solver(pcoin.txout.scriptPubKey, vSolutions);
+            if (type == TxoutType::WITNESS_V0_KEYHASH ||
+                type == TxoutType::WITNESS_V0_SCRIPTHASH ||
+                type == TxoutType::WITNESS_V1_TAPROOT ||
+                type == TxoutType::WITNESS_UNKNOWN) {
+                continue;
+            }
+        }
+
         CDiskTxPos postx;
         if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
             continue;
