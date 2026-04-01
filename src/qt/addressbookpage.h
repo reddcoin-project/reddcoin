@@ -47,8 +47,12 @@ public:
 public Q_SLOTS:
     void done(int retval) override;
 
+protected:
+    void changeEvent(QEvent* e) override;
+
 private:
     Ui::AddressBookPage *ui;
+    const PlatformStyle *platformStyle;
     AddressTableModel *model;
     Mode mode;
     Tabs tab;

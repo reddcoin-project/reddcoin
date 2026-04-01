@@ -26,8 +26,6 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QSettings>
-#include <QStyle>
-#include <QStyleFactory>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
@@ -75,26 +73,11 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet) :
     ui->proxyPortTor->setEnabled(false);
     ui->proxyPortTor->setValidator(new QIntValidator(1, 65535, this));
 
-    const QString defaultStyleName = QApplication::style()->objectName();
-    QStringList styleNames = QStyleFactory::keys();
-
-    QDir styles(":themes");
-
-    for (const QString& styleStr : styles.entryList()) {
-        styleNames.append(styleStr);
-    }
-
-    for (int i = 1, size = styleNames.size(); i < size; ++i) {
-        if (defaultStyleName.compare(styleNames.at(i), Qt::CaseInsensitive) == 0) {
-            styleNames.swap(0, i);
-            break;
-        }
-    }
-
     ui->style->addItem(QString("(") + tr("default") + QString(")"), QVariant(""));
 
-    for (const QString& stylename : styleNames) {
-	    ui->style->addItem(stylename, QVariant(stylename));
+    QDir themes(":themes");
+    for (const QString& themeName : themes.entryList()) {
+        ui->style->addItem(themeName, QVariant(themeName));
     }
 
     ui->theme->addItem(QString("(") + tr("default") + QString(")"), QVariant(""));

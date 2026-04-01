@@ -88,7 +88,7 @@ public:
         }
         else if(!confirmed)
         {
-            foreground = COLOR_UNCONFIRMED;
+            foreground = QApplication::palette().color(QPalette::Disabled, QPalette::Text);
         }
         else
         {

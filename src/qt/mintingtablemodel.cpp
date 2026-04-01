@@ -21,7 +21,9 @@
 #include <chainparams.h>
 #include <node/ui_interface.h>
 
+#include <QApplication>
 #include <QColor>
+#include <QPalette>
 #include <QDebug>
 #include <QTimer>
 
@@ -481,7 +483,7 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
         break;
       case Qt::ForegroundRole:
         {
-            return COLOR_BLACK;
+            return QApplication::palette().color(QPalette::Text);
         }
         break;
     }
