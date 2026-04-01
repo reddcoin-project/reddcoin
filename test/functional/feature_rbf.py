@@ -5,6 +5,7 @@
 """Test the RBF code."""
 
 from decimal import Decimal
+from io import BytesIO
 
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.messages import (
@@ -214,7 +215,7 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         initial_nValue = 50 * COIN
         tx0_outpoint = make_utxo(self.nodes[0], initial_nValue)
 
-        def branch(prevout, initial_value, max_txs, tree_width=5, fee=0.0001 * COIN, _total_txs=None):
+        def branch(prevout, initial_value, max_txs, tree_width=5, fee=0.01 * COIN, _total_txs=None):
             if _total_txs is None:
                 _total_txs = [0]
             if _total_txs[0] >= max_txs:
@@ -245,7 +246,7 @@ class ReplaceByFeeTest(BitcoinTestFramework):
                                   _total_txs=_total_txs):
                     yield x
 
-        fee = int(0.0001 * COIN)
+        fee = int(0.01 * COIN)
         n = MAX_REPLACEMENT_LIMIT
         tree_txs = list(branch(tx0_outpoint, initial_nValue, n, fee=fee))
         assert_equal(len(tree_txs), n)
@@ -274,7 +275,7 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         # Try again, but with more total transactions than the "max txs
         # double-spent at once" anti-DoS limit.
         for n in (MAX_REPLACEMENT_LIMIT + 1, MAX_REPLACEMENT_LIMIT * 2):
-            fee = int(0.0001 * COIN)
+            fee = int(0.01 * COIN)
             tx0_outpoint = make_utxo(self.nodes[0], initial_nValue)
             tree_txs = list(branch(tx0_outpoint, initial_nValue, n, fee=fee))
             assert_equal(len(tree_txs), n)
@@ -375,9 +376,10 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         # transactions
 
         # Start by creating a single transaction with many outputs
-        initial_nValue = 10 * COIN
+        # ReddCoin: Increased initial value to accommodate 100x higher relay fees
+        initial_nValue = 1000 * COIN
         utxo = make_utxo(self.nodes[0], initial_nValue)
-        fee = int(0.0001 * COIN)
+        fee = int(0.01 * COIN)
         split_value = int((initial_nValue - fee) / (MAX_REPLACEMENT_LIMIT + 1))
 
         outputs = []
@@ -574,71 +576,69 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         assert_equal(json1["vin"][0]["sequence"], 4294967294)
 
     def test_no_inherited_signaling(self):
-        wallet = MiniWallet(self.nodes[0])
-        wallet.scan_blocks(start=76, num=1)
-        confirmed_utxo = wallet.get_utxo()
+        # ReddCoin: Use make_utxo instead of MiniWallet (MiniWallet can't find OP_TRUE outputs in PoS blocks)
+        confirmed_utxo = make_utxo(self.nodes[0], int(1.1 * COIN))
 
         # Create an explicitly opt-in parent transaction
-        optin_parent_tx = wallet.send_self_transfer(
-            from_node=self.nodes[0],
-            utxo_to_spend=confirmed_utxo,
-            sequence=BIP125_SEQUENCE_NUMBER,
-            fee_rate=Decimal('0.01'),
-        )
-        assert_equal(True, self.nodes[0].getmempoolentry(optin_parent_tx['txid'])['bip125-replaceable'])
+        optin_parent_tx = CTransaction()
+        optin_parent_tx.vin = [CTxIn(confirmed_utxo, nSequence=BIP125_SEQUENCE_NUMBER)]
+        optin_parent_tx.vout = [CTxOut(int(1.0 * COIN), DUMMY_P2WPKH_SCRIPT)]
+        optin_parent_hex = self.nodes[0].signrawtransactionwithwallet(optin_parent_tx.serialize().hex())['hex']
+        optin_parent_txid = self.nodes[0].sendrawtransaction(optin_parent_hex, 0)
+        assert_equal(True, self.nodes[0].getmempoolentry(optin_parent_txid)['bip125-replaceable'])
 
-        replacement_parent_tx = wallet.create_self_transfer(
-            from_node=self.nodes[0],
-            utxo_to_spend=confirmed_utxo,
-            sequence=BIP125_SEQUENCE_NUMBER,
-            fee_rate=Decimal('0.02'),
-        )
+        replacement_parent_tx = CTransaction()
+        replacement_parent_tx.vin = [CTxIn(confirmed_utxo, nSequence=BIP125_SEQUENCE_NUMBER)]
+        replacement_parent_tx.vout = [CTxOut(int(0.9 * COIN), DUMMY_P2WPKH_SCRIPT)]
+        replacement_parent_hex = self.nodes[0].signrawtransactionwithwallet(replacement_parent_tx.serialize().hex())['hex']
 
         # Test if parent tx can be replaced.
-        res = self.nodes[0].testmempoolaccept(rawtxs=[replacement_parent_tx['hex']])[0]
+        res = self.nodes[0].testmempoolaccept(rawtxs=[replacement_parent_hex], maxfeerate=0)[0]
 
         # Parent can be replaced.
         assert_equal(res['allowed'], True)
 
-        # Create an opt-out child tx spending the opt-in parent
-        parent_utxo = wallet.get_utxo(txid=optin_parent_tx['txid'])
-        optout_child_tx = wallet.send_self_transfer(
-            from_node=self.nodes[0],
-            utxo_to_spend=parent_utxo,
-            sequence=0xffffffff,
-            fee_rate=Decimal('0.01'),
-        )
+        # Create an opt-out child tx spending the opt-in parent (vout 0)
+        optin_parent_tx_obj = CTransaction()
+        optin_parent_tx_obj.deserialize(BytesIO(bytes.fromhex(optin_parent_hex)))
+        optin_parent_tx_obj.rehash()
+        parent_outpoint = COutPoint(int(optin_parent_txid, 16), 0)
+
+        optout_child_tx = CTransaction()
+        optout_child_tx.vin = [CTxIn(parent_outpoint, nSequence=0xffffffff)]
+        optout_child_tx.vout = [CTxOut(int(0.9 * COIN), DUMMY_P2WPKH_SCRIPT)]
+        optout_child_hex = optout_child_tx.serialize().hex()
+        optout_child_txid = self.nodes[0].sendrawtransaction(optout_child_hex, 0)
 
         # Reports true due to inheritance
-        assert_equal(True, self.nodes[0].getmempoolentry(optout_child_tx['txid'])['bip125-replaceable'])
+        assert_equal(True, self.nodes[0].getmempoolentry(optout_child_txid)['bip125-replaceable'])
 
-        replacement_child_tx = wallet.create_self_transfer(
-            from_node=self.nodes[0],
-            utxo_to_spend=parent_utxo,
-            sequence=0xffffffff,
-            fee_rate=Decimal('0.02'),
-            mempool_valid=False,
-        )
+        replacement_child_tx = CTransaction()
+        replacement_child_tx.vin = [CTxIn(parent_outpoint, nSequence=0xffffffff)]
+        replacement_child_tx.vout = [CTxOut(int(0.8 * COIN), DUMMY_P2WPKH_SCRIPT)]
+        replacement_child_hex = replacement_child_tx.serialize().hex()
 
-        # Broadcast replacement child tx
-        # BIP 125 :
-        # 1. The original transactions signal replaceability explicitly or through inheritance as described in the above
-        # Summary section.
-        # The original transaction (`optout_child_tx`) doesn't signal RBF but its parent (`optin_parent_tx`) does.
-        # The replacement transaction (`replacement_child_tx`) should be able to replace the original transaction.
+        # Broadcast replacement child tx — should fail with txn-mempool-conflict
         # See CVE-2021-31876 for further explanations.
-        assert_equal(True, self.nodes[0].getmempoolentry(optin_parent_tx['txid'])['bip125-replaceable'])
-        assert_raises_rpc_error(-26, 'txn-mempool-conflict', self.nodes[0].sendrawtransaction, replacement_child_tx["hex"], 0)
+        assert_equal(True, self.nodes[0].getmempoolentry(optin_parent_txid)['bip125-replaceable'])
+        assert_raises_rpc_error(-26, 'txn-mempool-conflict', self.nodes[0].sendrawtransaction, replacement_child_hex, 0)
 
     def test_replacement_relay_fee(self):
-        wallet = MiniWallet(self.nodes[0])
-        wallet.scan_blocks(start=77, num=1)
-        tx = wallet.send_self_transfer(from_node=self.nodes[0])['tx']
+        # ReddCoin: Use make_utxo instead of MiniWallet
+        utxo = make_utxo(self.nodes[0], int(1.1 * COIN))
+        tx = CTransaction()
+        tx.vin = [CTxIn(utxo, nSequence=BIP125_SEQUENCE_NUMBER)]
+        tx.vout = [CTxOut(int(1.0 * COIN), DUMMY_P2WPKH_SCRIPT)]
+        tx_hex = self.nodes[0].signrawtransactionwithwallet(tx.serialize().hex())['hex']
+        self.nodes[0].sendrawtransaction(tx_hex, 0)
 
         # Higher fee, higher feerate, different txid, but the replacement does not provide a relay
-        # fee conforming to node's `incrementalrelayfee` policy of 1000 sat per KB.
-        tx.vout[0].nValue -= 1
-        assert_raises_rpc_error(-26, "insufficient fee", self.nodes[0].sendrawtransaction, tx.serialize().hex())
+        # fee conforming to node's `incrementalrelayfee` policy of 100000 sat per KB (ReddCoin).
+        tx2 = CTransaction()
+        tx2.vin = [CTxIn(utxo, nSequence=BIP125_SEQUENCE_NUMBER)]
+        tx2.vout = [CTxOut(int(1.0 * COIN) - 1, DUMMY_P2WPKH_SCRIPT)]
+        tx2_hex = self.nodes[0].signrawtransactionwithwallet(tx2.serialize().hex())['hex']
+        assert_raises_rpc_error(-26, "insufficient fee", self.nodes[0].sendrawtransaction, tx2_hex, 0)
 
 if __name__ == '__main__':
     ReplaceByFeeTest().main()
