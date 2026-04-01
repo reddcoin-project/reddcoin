@@ -67,8 +67,7 @@ class MinimumChainWorkTest(BitcoinTestFramework):
 
         num_blocks_to_generate = int((self.node_min_work[1] - starting_chain_work) / REGTEST_WORK_PER_BLOCK)
         self.log.info("Generating %d blocks on node0", num_blocks_to_generate)
-        hashes = self.nodes[0].generatetoaddress(num_blocks_to_generate,
-                                                 self.nodes[0].get_deterministic_priv_key().address)
+        hashes = self.nodes[0].generate(num_blocks_to_generate)
 
         self.log.info("Node0 current chain work: %s", self.nodes[0].getblockheader(hashes[-1])['chainwork'])
 
@@ -101,17 +100,20 @@ class MinimumChainWorkTest(BitcoinTestFramework):
         assert ("headers" not in peer.last_message or len(peer.last_message["headers"].headers) == 0)
 
         self.log.info("Generating one more block")
-        self.nodes[0].generatetoaddress(1, self.nodes[0].get_deterministic_priv_key().address)
+        self.nodes[0].generate(1)
 
         self.log.info("Verifying nodes are all synced")
 
-        # Because nodes in regtest are all manual connections (eg using
-        # addnode), node1 should not have disconnected node0. If not for that,
-        # we'd expect node1 to have disconnected node0 for serving an
-        # insufficient work chain, in which case we'd need to reconnect them to
-        # continue the test.
+        # Sync mocktime from node0 to nodes 1/2 so P2P relay works
+        if self.nodes[0].mocktime:
+            # Keep node2's time offset (it's deliberately ahead for IBD testing)
+            node2_offset = 24 * 60 * 60  # 24h ahead of nodes 0/1
+            self.nodes[1].setmocktime(self.nodes[0].mocktime)
+            self.nodes[1].mocktime = self.nodes[0].mocktime
+            self.nodes[2].setmocktime(self.nodes[0].mocktime + node2_offset)
+            self.nodes[2].mocktime = self.nodes[0].mocktime + node2_offset
 
-        self.sync_all()
+        self.sync_blocks(timeout=120)
         self.log.info("Blockcounts: %s", [n.getblockcount() for n in self.nodes])
 
         self.log.info("Test that getheaders requests to node2 are not ignored")
