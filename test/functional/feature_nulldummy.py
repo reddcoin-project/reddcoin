@@ -20,11 +20,16 @@ from test_framework.blocktools import (
     add_witness_commitment,
     create_block,
     create_transaction,
+    sign_block,
 )
 from test_framework.messages import CTransaction
 from test_framework.script import CScript
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, assert_raises_rpc_error
+from test_framework.util import (
+    advance_time_for_pos,
+    assert_equal,
+    assert_raises_rpc_error,
+)
 
 NULLDUMMY_ERROR = "non-mandatory-script-verify-flag (Dummy CHECKMULTISIG argument must be zero)"
 
@@ -48,9 +53,11 @@ class NULLDUMMYTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # This script tests NULLDUMMY activation, which is part of the 'segwit' deployment, so we go through
         # normal segwit activation here (and don't use the default always-on behaviour).
+        # ReddCoin: SegWit activates at height 432 via BIP9 (no -segwitheight param).
+        # NULLDUMMY is enforced as part of SegWit activation.
         self.extra_args = [[
-            f'-segwitheight={COINBASE_MATURITY + 5}',
             '-addresstype=legacy',
+            '-staking=0',
         ]]
 
     def skip_test_if_missing_module(self):
@@ -70,16 +77,28 @@ class NULLDUMMYTest(BitcoinTestFramework):
             wmulti.importaddress(self.ms_address)
             wmulti.importaddress(self.wit_ms_address)
 
-        self.coinbase_blocks = self.nodes[0].generate(2)  # block height = 2
-        coinbase_txid = []
-        for i in self.coinbase_blocks:
-            coinbase_txid.append(self.nodes[0].getblock(i)['tx'][0])
-        self.nodes[0].generate(COINBASE_MATURITY)  # block height = COINBASE_MATURITY + 2
-        self.lastblockhash = self.nodes[0].getbestblockhash()
-        self.lastblockheight = COINBASE_MATURITY + 2
-        self.lastblocktime = int(time.time()) + self.lastblockheight
+        # ReddCoin: SegWit (and NULLDUMMY) activates at height 432 via BIP9.
+        # Create test UTXOs early, mature them, then reach activation height.
+        SEGWIT_HEIGHT = 432
+        self.log.info("Generating blocks and creating test UTXOs")
+        # Generate to height where UTXOs will mature BEFORE activation
+        self.nodes[0].generate(SEGWIT_HEIGHT - COINBASE_MATURITY - 5)  # height = 367
 
-        self.log.info(f"Test 1: NULLDUMMY compliant base transactions should be accepted to mempool and mined before activation [{COINBASE_MATURITY + 3}]")
+        # Create test UTXOs via createrawtransaction (ensure output at vout 0)
+        coinbase_txid = []
+        for _ in range(2):
+            raw = w0.createrawtransaction([], [{self.address: 50}])
+            funded = w0.fundrawtransaction(raw, {"changePosition": 1})
+            signed = w0.signrawtransactionwithwallet(funded['hex'])
+            coinbase_txid.append(w0.sendrawtransaction(signed['hex']))
+        self.nodes[0].generate(1)  # height = 368, confirm the UTXOs
+        self.nodes[0].generate(COINBASE_MATURITY)  # height = 428, UTXOs now mature
+        # Now at height 428 — 4 blocks before SegWit activation at 432
+        self.lastblockhash = self.nodes[0].getbestblockhash()
+        self.lastblockheight = self.nodes[0].getblockcount()
+        self.lastblocktime = self.nodes[0].getblockheader(self.lastblockhash)['time'] + 1
+
+        self.log.info(f"Test 1: NULLDUMMY compliant base transactions should be accepted to mempool and mined before activation [{self.lastblockheight + 1}]")
         test1txs = [create_transaction(self.nodes[0], coinbase_txid[0], self.ms_address, amount=49)]
         txid1 = self.nodes[0].sendrawtransaction(test1txs[0].serialize_with_witness().hex(), 0)
         test1txs.append(create_transaction(self.nodes[0], txid1, self.ms_address, amount=48))
@@ -95,6 +114,13 @@ class NULLDUMMYTest(BitcoinTestFramework):
 
         self.log.info(f"Test 3: Non-NULLDUMMY base transactions should be accepted in a block before activation [{COINBASE_MATURITY + 4}]")
         self.block_submit(self.nodes[0], [test2tx], False, True)
+
+        # ReddCoin: Advance past SegWit activation (height 432) for post-activation tests
+        while self.lastblockheight < SEGWIT_HEIGHT:
+            self.nodes[0].generate(1)
+            self.lastblockheight = self.nodes[0].getblockcount()
+            self.lastblockhash = self.nodes[0].getbestblockhash()
+            self.lastblocktime = self.nodes[0].getblockheader(self.lastblockhash)['time'] + 1
 
         self.log.info("Test 4: Non-NULLDUMMY base multisig transaction is invalid after activation")
         test4tx = create_transaction(self.nodes[0], test2tx.hash, self.address, amount=46)
@@ -115,24 +141,50 @@ class NULLDUMMYTest(BitcoinTestFramework):
             self.nodes[0].sendrawtransaction(i.serialize_with_witness().hex(), 0)
         self.block_submit(self.nodes[0], test6txs, True, True)
 
+    def sign_block_with_coinstake_key(self, node, block):
+        """Sign a PoS block using the coinstake's private key."""
+        coinstake = block.vtx[1]
+        decoded = node.decoderawtransaction(coinstake.serialize().hex())
+        signing_key = None
+        try:
+            script_pubkey = decoded['vout'][1]['scriptPubKey']
+            addr = script_pubkey.get('address')
+            if not addr:
+                addresses = script_pubkey.get('addresses', [])
+                if addresses:
+                    addr = addresses[0]
+            if addr:
+                signing_key = node.dumpprivkey(addr)
+        except Exception:
+            pass
+        if not signing_key:
+            signing_key = node.get_deterministic_priv_key().key
+        sign_block(block, signing_key)
+
     def block_submit(self, node, txs, witness=False, accept=False):
+        advance_time_for_pos(node, seconds=120)
         tmpl = node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
         assert_equal(tmpl['previousblockhash'], self.lastblockhash)
         assert_equal(tmpl['height'], self.lastblockheight + 1)
-        block = create_block(tmpl=tmpl, ntime=self.lastblocktime + 1)
+        # Create block with only coinstake from GBT (exclude mempool txs to avoid duplicates
+        # since we manually append the test txs below)
+        # Filter template to only keep coinstake (first tx)
+        if len(tmpl['transactions']) > 1:
+            tmpl['transactions'] = [tmpl['transactions'][0]]  # keep only coinstake
+        block = create_block(tmpl=tmpl)
         for tx in txs:
             tx.rehash()
             block.vtx.append(tx)
         block.hashMerkleRoot = block.calc_merkle_root()
         witness and add_witness_commitment(block)
         block.rehash()
-        block.solve()
+        self.sign_block_with_coinstake_key(node, block)
         assert_equal(None if accept else 'block-validation-failed', node.submitblock(block.serialize().hex()))
         if (accept):
             assert_equal(node.getbestblockhash(), block.hash)
             self.lastblockhash = block.hash
-            self.lastblocktime += 1
             self.lastblockheight += 1
+            self.lastblocktime = node.getblockheader(self.lastblockhash)['time'] + 1
         else:
             assert_equal(node.getbestblockhash(), self.lastblockhash)
 
