@@ -22,6 +22,7 @@ class PosSyncTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True  # Start from genesis
+        self.extra_args = [["-staking=0"], ["-staking=0"]]  # Prevent background staking
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -41,25 +42,9 @@ class PosSyncTest(BitcoinTestFramework):
         self.log.info("Node0: Advancing time for coin age...")
         advance_time_for_pos(self.nodes[0], seconds=600)
 
-        # Generate PoS blocks (90-110) with retry logic
+        # Generate PoS blocks (90-100) — generate() handles PoS retry automatically
         self.log.info("Node0: Generating 11 PoS blocks...")
-        for i in range(11):
-            success = False
-            max_attempts = 10
-            for attempt in range(max_attempts):
-                try:
-                    self.nodes[0].generate(1)
-                    success = True
-                    break
-                except Exception as e:
-                    if "no valid coinstake found" in str(e):
-                        if attempt < max_attempts - 1:
-                            advance_time_for_pos(self.nodes[0], seconds=60)
-                    else:
-                        raise
-
-            if not success:
-                raise AssertionError(f"Failed to generate PoS block {90+i} after {max_attempts} attempts")
+        self.nodes[0].generate(11)
 
         node0_height = self.nodes[0].getblockcount()
         node0_hash = self.nodes[0].getbestblockhash()
@@ -82,85 +67,27 @@ class PosSyncTest(BitcoinTestFramework):
         assert_equal(node1_height, 100)
         assert_equal(node1_hash, node0_hash)
 
-        # Give node1 some coins so it can stake
+        # Give node1 coins so it can stake (15 UTXOs for 10 PoS blocks + margin)
         self.log.info("Node0: Sending coins to node1...")
         node1_staking_address = self.nodes[1].getnewaddress()
-        for i in range(5):
-            self.nodes[0].sendtoaddress(node1_staking_address, 100)
+        for i in range(15):
+            self.nodes[0].sendtoaddress(node1_staking_address, 500)
 
-        # Node0 generates a block to confirm the transactions
-        self.log.info("Node0: Confirming transactions...")
-        advance_time_for_pos(self.nodes, seconds=60)
-        success = False
-        for attempt in range(10):
-            try:
-                self.nodes[0].generate(1)
-                success = True
-                break
-            except Exception as e:
-                if "no valid coinstake found" in str(e) and attempt < 9:
-                    advance_time_for_pos(self.nodes, seconds=60)
-                else:
-                    raise
-        if not success:
-            raise AssertionError("Failed to generate confirmation block")
-
-        # Sync the new block to node1
+        # Confirm and mature the coins (COINBASE_MATURITY = 60)
+        self.log.info("Node0: Confirming and maturing node1 coins...")
+        self.nodes[0].generate(61)  # 1 confirmation + 60 maturity
         self.sync_all()
         self.log.info(f"Node1 balance: {self.nodes[1].getbalance()}")
 
-        # Node0 generates blocks to mature node1's coins (need 100 confirmations)
-        self.log.info("Node0: Generating blocks to mature node1 coins...")
-        for i in range(100):
-            advance_time_for_pos(self.nodes, seconds=60)
-            success = False
-            for attempt in range(10):
-                try:
-                    self.nodes[0].generate(1)
-                    success = True
-                    break
-                except Exception as e:
-                    if "no valid coinstake found" in str(e) and attempt < 9:
-                        advance_time_for_pos(self.nodes, seconds=60)
-                    else:
-                        raise
-            if not success:
-                raise AssertionError(f"Failed to generate maturity block {i}")
-
-        # Sync all maturity blocks to node1
-        self.sync_all()
-        self.log.info(f"Node1 now at height {self.nodes[1].getblockcount()}")
-
-        # Advance time to age the coins for staking
-        self.log.info("Advancing time for node1 coin age...")
-        advance_time_for_pos(self.nodes, seconds=600)
-
         # Node1 generates 10 more PoS blocks
         self.log.info("Node1: Generating 10 additional PoS blocks...")
-
-        for i in range(10):
-            success = False
-            max_attempts = 10
-            for attempt in range(max_attempts):
-                try:
-                    # Use the address that received the coins
-                    self.nodes[1].generatetoaddress(1, node1_staking_address)
-                    success = True
-                    break
-                except Exception as e:
-                    if "no valid coinstake found" in str(e):
-                        if attempt < max_attempts - 1:
-                            advance_time_for_pos(self.nodes, seconds=60)
-                    else:
-                        raise
-
-            if not success:
-                raise AssertionError(f"Failed to generate PoS block {201+i} after {max_attempts} attempts")
+        self.nodes[1].generate(10)
 
         node1_height_after = self.nodes[1].getblockcount()
+        expected_height = 100 + 61 + 10  # initial + maturity + new
         node1_hash_after = self.nodes[1].getbestblockhash()
         self.log.info(f"Node1: Generated 10 blocks, now at height {node1_height_after}, best hash: {node1_hash_after}")
-        assert_equal(node1_height_after, 211)  # 100 + 1 confirmation + 100 maturity + 10 new
+        assert_equal(node1_height_after, expected_height)
 
         # Sync node0 with node1's new blocks
         self.log.info("Node0: Syncing new blocks from node1...")
@@ -171,7 +98,7 @@ class PosSyncTest(BitcoinTestFramework):
         self.log.info(f"Node0: Synced to height {node0_height_after}, best hash: {node0_hash_after}")
 
         # Verify both nodes are in sync
-        assert_equal(node0_height_after, 211)
+        assert_equal(node0_height_after, expected_height)
         assert_equal(node0_hash_after, node1_hash_after)
 
         self.log.info("PoS sync test completed successfully!")
