@@ -309,7 +309,14 @@ endif # ENABLE_WALLET
 
 RES_ANIMATION = $(wildcard $(srcdir)/qt/res/animation/spinner-*.png)
 
-RES_THEMES = $(wildcard $(srcdir)/qt/res/themes/*.qss)
+RES_THEMES = \
+  qt/res/themes/AMOLED.qss \
+  qt/res/themes/Aqua.qss \
+  qt/res/themes/ConsoleStyle.qss \
+  qt/res/themes/MacOS.qss \
+  qt/res/themes/ManjaroMix.qss \
+  qt/res/themes/MaterialDark.qss \
+  qt/res/themes/Ubuntu.qss
 
 BITCOIN_RC = qt/res/bitcoin-qt-res.rc
 
