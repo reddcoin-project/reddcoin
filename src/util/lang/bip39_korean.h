@@ -21,8 +21,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef BITCOIN_WALLET_BIP39_KOREAN_H
-#define BITCOIN_WALLET_BIP39_KOREAN_H
+#ifndef BITCOIN_UTIL_LANG_BIP39_KOREAN_H
+#define BITCOIN_UTIL_LANG_BIP39_KOREAN_H
 
 const char * const wordlist_ko[] = {
 "가격",
@@ -2076,4 +2076,4 @@ const char * const wordlist_ko[] = {
 0,
 };
 
-#endif // BITCOIN_WALLET_BIP39_KOREAN_H
+#endif // BITCOIN_UTIL_LANG_BIP39_KOREAN_H

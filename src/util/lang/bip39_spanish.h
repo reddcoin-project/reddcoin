@@ -21,8 +21,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef BITCOIN_WALLET_BIP39_SPANISH_H
-#define BITCOIN_WALLET_BIP39_SPANISH_H
+#ifndef BITCOIN_UTIL_LANG_BIP39_SPANISH_H
+#define BITCOIN_UTIL_LANG_BIP39_SPANISH_H
 
 const char * const wordlist_es[] = {
 "ábaco",
@@ -2076,4 +2076,4 @@ const char * const wordlist_es[] = {
 0,
 };
 
-#endif // BITCOIN_WALLET_BIP39_SPANISH_H
+#endif // BITCOIN_UTIL_LANG_BIP39_SPANISH_H

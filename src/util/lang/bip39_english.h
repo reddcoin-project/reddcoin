@@ -21,8 +21,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef BITCOIN_WALLET_BIP39_ENGLISH_H
-#define BITCOIN_WALLET_BIP39_ENGLISH_H
+#ifndef BITCOIN_UTIL_LANG_BIP39_ENGLISH_H
+#define BITCOIN_UTIL_LANG_BIP39_ENGLISH_H
 
 const char * const wordlist_en[] = {
 "abandon",
@@ -2076,4 +2076,4 @@ const char * const wordlist_en[] = {
 0,
 };
 
-#endif // BITCOIN_WALLET_BIP39_ENGLISH_H
+#endif // BITCOIN_UTIL_LANG_BIP39_ENGLISH_H
