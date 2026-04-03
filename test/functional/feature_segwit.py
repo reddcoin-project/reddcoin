@@ -293,7 +293,7 @@ class SegWitTest(BitcoinTestFramework):
         #                      tx2 (segwit input, paying to a non-segwit output) ->
         #                      tx3 (non-segwit input, paying to a non-segwit output).
         # tx1 is allowed to appear in the block, but no others.
-        txid1 = send_to_witness(1, self.nodes[0], find_spendable_utxo(self.nodes[0], 50, Decimal("50.02")), self.pubkey[0], False, Decimal("49.996"))
+        txid1 = send_to_witness(1, self.nodes[0], find_spendable_utxo(self.nodes[0], 50, Decimal("50.02")), self.pubkey[0], False, Decimal("49.999"))
         hex_tx = self.nodes[0].gettransaction(txid)['hex']
         tx = tx_from_hex(hex_tx)
         assert tx.wit.is_null()  # This should not be a segwit input
