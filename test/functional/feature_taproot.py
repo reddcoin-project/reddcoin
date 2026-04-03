@@ -1216,8 +1216,8 @@ class TaprootTest(BitcoinTestFramework):
         # Node 0 has Taproot inactive, Node 1 active.
         # -staking=0 prevents background staking from consuming test UTXOs.
         # -whitelist prevents mocktime P2P disconnections.
-        self.extra_args = [["-par=1", "-staking=0", "-whitelist=127.0.0.1"],
-                          ["-par=1", "-staking=0", "-whitelist=127.0.0.1"]]
+        self.extra_args = [["-par=1", "-staking=0", "-whitelist=127.0.0.1", "-dbcache=100"],
+                          ["-par=1", "-staking=0", "-whitelist=127.0.0.1", "-dbcache=100"]]
         if self.options.previous_release:
             self.wallet_names = [None, self.default_wallet_name]
         else:
