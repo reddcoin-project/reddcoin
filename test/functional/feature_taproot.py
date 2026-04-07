@@ -1558,9 +1558,13 @@ class TaprootTest(BitcoinTestFramework):
 
         # Transfer coins to pre-taproot node. Pre-activation tests need only
         # ~10 spenders, so moderate amounts suffice.
+        # Set explicit fee rate — the fee estimator is inflated after thousands
+        # of test blocks and may exceed maxtxfee or trigger assertion failures.
+        self.nodes[1].settxfee(0.001)
         addr = self.nodes[0].getnewaddress()
         for _ in range(3):
             self.nodes[1].sendtoaddress(addr, 50000)  # 3 × 50k RDD
+        self.nodes[1].settxfee(0)  # Reset to default
         self.nodes[1].generate(1)
         self.sync_blocks()
 
