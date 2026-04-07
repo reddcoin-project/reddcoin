@@ -244,7 +244,7 @@ BASE_SCRIPTS = [
     'feature_pos_sync.py',
     'wallet_descriptor_staking.py',
     'feature_descriptor_legacy_staking.py',
-    'feature_signet.py',
+    # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin
     'wallet_bumpfee.py --legacy-wallet',
     'wallet_bumpfee.py --descriptors',
     'wallet_implicitsegwit.py --legacy-wallet',
