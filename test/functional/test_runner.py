@@ -244,6 +244,12 @@ BASE_SCRIPTS = [
     'feature_pos_basic.py',
     'feature_pos_sync.py',
     'feature_signet.py',
+    # v4.22.9 ↔ v4.22.10 compatibility tests (require releases/v4.22.9/bin/)
+    'feature_compat_p2p_sync.py',
+    'feature_compat_pos_blocks.py',
+    'feature_compat_tx_versions.py',
+    'feature_compat_staking_interop.py',
+    'feature_compat_softfork_signaling.py',
     'wallet_bumpfee.py --legacy-wallet',
     'wallet_bumpfee.py --descriptors',
     'wallet_implicitsegwit.py --legacy-wallet',
