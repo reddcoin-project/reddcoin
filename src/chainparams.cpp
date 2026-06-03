@@ -458,6 +458,7 @@ public:
         checkpointData = {
             {
                 {0, genesis.GetHash()},
+                {1500, uint256S("0x1abe50abead5c51a757e0615089aae289836a41c02e884b78c7ddd686e886572")},
             }
         };
 
@@ -623,9 +624,10 @@ public:
         consensus.nLastPowHeight = 89;  // Allow enough PoW blocks for TestChain100Setup
         consensus.nCoinbaseMaturity = 60;  // Fast maturity for regtest, gives ~40 mature coinbases at height 100
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
-        consensus.BIP66Height = 363725; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
-        consensus.DonationHeight = 3382229; //
-        consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
+        consensus.POSVHeight = 90;      // Activate at PoS transition (nLastPowHeight + 1), matching mainnet/testnet pattern
+        consensus.BIP66Height = 500;    // Strict DER encoding; above test cache height (200) to avoid breaking hand-crafted blocks
+        consensus.DonationHeight = 500; // Dev fund 92%/8% split validation; miner already produces this for all PoS blocks
+        consensus.MinBIP9WarningHeight = 0; // regtest: allow BIP9 warnings at any height (ComputeBlockVersion check prevents false positives for known deployments)
 
         /* pow specific */
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -635,8 +637,8 @@ public:
         consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = true;
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.nRuleChangeActivationThreshold = 108; // 75% of 144 for faster regtest
+        consensus.nMinerConfirmationWindow = 144; // Faster confirmation window for testing
 
         consensus.devScript = { CScript() << ParseHex("0256508ba57f39fa6bbe2290051ec100b6e4d49005776214192c3e5dbc2bc3276d") << OP_CHECKSIG };
 
@@ -653,23 +655,29 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_HEIGHTINCB].min_activation_height = 0;
+        // CLTV (BIP65) - Set to activate via BIP9 signaling during PoS phase
+        // With window=144, activation occurs at height 432 (3 periods) if 75% signal
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0; // No minimum activation height
+        // CSV (BIP68/112/113) - Set to activate via BIP9 signaling during PoS phase
+        // With window=144, activation occurs at height 432 (3 periods) if 75% signal
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].min_activation_height = 0; // No minimum activation height
         consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 3;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].min_activation_height = 0; // No minimum activation height
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 4;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation for NEVER_ACTIVE
 
-        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000001533efd8d716a517fe2c5008");
-        consensus.defaultAssumeValid = uint256S("0x0000000000000000000b9d2ec5a352ecba0592946514a92f14319dc2b367fc72"); // 654683
+        consensus.nMinimumChainWork = uint256{}; // Regtest: accept any chainwork for testing
+        consensus.defaultAssumeValid = uint256{}; // Regtest: always validate for testing
 
         pchMessageStart[0] = 0xfa;
         pchMessageStart[1] = 0xbf;
@@ -680,22 +688,21 @@ public:
         m_assumed_blockchain_size = 1;
         m_assumed_chain_state_size = 0;
 
+        UpdateActivationParametersFromArgs(args);
+
         genesis = CreateGenesisBlock(1642570147, 1642570147, 36529, 0x207fffff, 1, 10000 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(genesis.hashMerkleRoot == uint256S("b502bc1dc42b07092b9187e92f70e32f9a53247feae16d821bebffa916af79ff"));
         assert(consensus.hashGenesisBlock == uint256S("e817774b5fd9808e7e03a557a43ec2a37f35ea4cf38550a7ce4f414531e28ef6"));
 
-        vSeeds.emplace_back("seed.reddcoin.net");
-        vSeeds.emplace_back("reddcoin.com");
-        vSeeds.emplace_back("dnsseed01.redd.ink");
-        vSeeds.emplace_back("dnsseed02.redd.ink");
-        vSeeds.emplace_back("dnsseed03.redd.ink");
+        vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
+        vSeeds.clear();      //!< Regtest mode doesn't have any DNS seeds.
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,122);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239);
-        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
-        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
+        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
+        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
         bech32_hrp = "rcrt";
 
@@ -713,17 +720,16 @@ public:
             }
         };
 
-        // Reddcoin: Updated for PoS blocks (blocks 90-110 include coinstake transactions)
-        // nChainTx = 132 (includes genesis + 89 PoW blocks + 21 PoS blocks with 2 tx each)
-        // UTXO set hash computed with HASH_SERIALIZED (not block hash)
+        // Reddcoin: assumeutxo data for 100-block test chain (89 PoW + 11 PoS blocks)
+        // TODO: Recompute these hashes after RegenerateCommitments fix
         m_assumeutxo_data = MapAssumeutxo{
             {
                 110,
-                {AssumeutxoHash{uint256S("17456f9ccafe445335f3688b426df85e5a0ea7c8a8bbf5fb724fa1cc8da4efc3")}, 132},
+                {AssumeutxoHash{uint256S("106f9f9bd6c57cea84444957b5630e4a1679a658c73455a0e0362ff0174ee181")}, 132},
             },
             {
                 200,
-                {AssumeutxoHash{uint256S("51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62")}, 200},
+                {AssumeutxoHash{uint256S("0000000000000000000000000000000000000000000000000000000000000000")}, 200},
             },
         };
 
