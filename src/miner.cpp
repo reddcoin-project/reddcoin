@@ -169,6 +169,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
+    coinbaseTx.nVersion = POSV_TX_VERSION;   // Explicit: coinbase stays v2 regardless of CTransaction::CURRENT_VERSION
     coinbaseTx.vin.resize(1);
     coinbaseTx.vin[0].prevout.SetNull();
     coinbaseTx.vout.resize(1);
@@ -184,6 +185,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;
+        txCoinStake.nVersion = POSV_TX_VERSION;   // Explicit: PoS coinstake stays v2 (BIP68-exempt at consensus)
         txCoinStake.nTime = GetAdjustedTime(); // Initialize to current time for stake search
         int64_t nSearchTime = txCoinStake.nTime; // search to current time
         // Handle mock time reset (e.g. between tests) - if time went backwards, reset search time

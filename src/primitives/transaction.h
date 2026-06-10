@@ -15,6 +15,7 @@
 #include <tuple>
 
 static const int POW_TX_VERSION = 1;
+static const int POSV_TX_VERSION = 2;  // PoS coinstake/coinbase — exempt from BIP68 (handled at consensus level via threshold >= 3)
 static const int POW_BLOCK_VERSION = 2;
 
 /**
@@ -282,7 +283,7 @@ class CTransaction
 {
 public:
     // Default transaction version.
-    static const int32_t CURRENT_VERSION=2;
+    static const int32_t CURRENT_VERSION=3;
 
     // The local variables are made const to prevent unintended modification
     // without updating the cached hash value. However, CTransaction is not
