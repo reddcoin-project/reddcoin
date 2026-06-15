@@ -219,8 +219,6 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 TestChain100Setup::TestChain100Setup()
     : TestingSetup(CBaseChainParams::REGTEST, {"-txindex=1"})
 {
-    const Consensus::Params& params = Params().GetConsensus();
-
     // Set mock time to be after genesis block time
     SetMockTime(Params().GenesisBlock().nTime + 1);
     constexpr std::array<unsigned char, 32> vchKey = {
@@ -408,7 +406,6 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
 CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, CWallet* pwallet)
 {
     const CChainParams& chainparams = Params();
-    const Consensus::Params& consensusParams = chainparams.GetConsensus();
 
     // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
     CBlockIndex* pindexPrev = m_node.chainman->ActiveChain().Tip();
