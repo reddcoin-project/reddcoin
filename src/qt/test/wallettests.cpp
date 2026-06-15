@@ -134,11 +134,13 @@ void BumpFee(TransactionView& view, const uint256& txid, bool expectDisabled, st
 //     QT_QPA_PLATFORM=cocoa   src/qt/test/test_bitcoin-qt  # macOS
 void TestGUI(interfaces::Node& node)
 {
-    // Set up wallet and chain with 15 blocks (10 from TestChain100Setup + 5 more for spending).
+    // Set up wallet and chain. TestChain100Setup builds a height-100 chain
+    // (89 PoW blocks then 11 PoS blocks), all rewards paying to coinbaseKey.
+    // With nCoinbaseMaturity=60 the early PoW coinbases are already mature and
+    // spendable, so no extra blocks are needed. (Upstream mined 5 more PoW
+    // blocks here for maturity, but Reddcoin rejects PoW past nLastPowHeight=89
+    // with "pow-ended".)
     TestChain100Setup test;
-    for (int i = 0; i < 5; ++i) {
-        test.CreateAndProcessBlock({}, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()));
-    }
     node.setContext(&test.m_node);
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
     wallet->LoadWallet();
@@ -147,7 +149,7 @@ void TestGUI(interfaces::Node& node)
         LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
         wallet->SetAddressBook(GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type), "", "receive");
         spk_man->AddKeyPubKey(test.coinbaseKey, test.coinbaseKey.GetPubKey());
-        wallet->SetLastBlockProcessed(15, node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+        wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
     }
     {
         WalletRescanReserver reserver(*wallet);
@@ -182,11 +184,14 @@ void TestGUI(interfaces::Node& node)
     }
 
     // Send two transactions, and verify they are added to transaction list.
+    // The number of pre-existing wallet transactions depends on the height-100
+    // TestChain100Setup, so assert relative to the initial count rather than a
+    // hardcoded total.
     TransactionTableModel* transactionTableModel = walletModel.getTransactionTableModel();
-    QCOMPARE(transactionTableModel->rowCount({}), 15);
+    const int initial_tx_rows = transactionTableModel->rowCount({});
     uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, false /* rbf */);
     uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, true /* rbf */);
-    QCOMPARE(transactionTableModel->rowCount({}), 17);
+    QCOMPARE(transactionTableModel->rowCount({}), initial_tx_rows + 2);
     QVERIFY(FindTx(*transactionTableModel, txid1).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
 
