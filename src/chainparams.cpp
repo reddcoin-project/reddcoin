@@ -720,8 +720,10 @@ public:
             }
         };
 
-        // Reddcoin: assumeutxo data for 100-block test chain (89 PoW + 11 PoS blocks)
-        // TODO: Recompute these hashes after RegenerateCommitments fix
+        // Reddcoin: assumeutxo data for the regtest PoS test chain (genesis +
+        // 89 PoW + PoS blocks). hash_serialized is the HASH_SERIALIZED UTXO-set
+        // hash from gettxoutsetinfo at the given height; nChainTx counts genesis
+        // + 1 tx per PoW block + 2 tx (coinbase + coinstake) per PoS block.
         m_assumeutxo_data = MapAssumeutxo{
             {
                 110,
@@ -729,7 +731,7 @@ public:
             },
             {
                 200,
-                {AssumeutxoHash{uint256S("0000000000000000000000000000000000000000000000000000000000000000")}, 200},
+                {AssumeutxoHash{uint256S("8938769375b98ee91f968cbe547cd364d7977317cc3d5241c4dca8fc92912569")}, 312},
             },
         };
 
