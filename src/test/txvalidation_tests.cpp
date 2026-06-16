@@ -105,7 +105,6 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_accept_v1_zero_time, TestChain100Setup)
 
     LOCK(cs_main);
 
-    unsigned int initialPoolSize = m_node.mempool->size();
     const MempoolAcceptResult result = AcceptToMemoryPool(m_node.chainman->ActiveChainstate(),
                                                          *m_node.mempool,
                                                          MakeTransactionRef(tx),

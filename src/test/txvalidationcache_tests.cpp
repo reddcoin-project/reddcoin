@@ -347,7 +347,11 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     // TEST CHECKSEQUENCEVERIFY
     {
         CMutableTransaction invalid_with_csv_tx;
-        invalid_with_csv_tx.nVersion = 2;
+        // Reddcoin enforces BIP68/BIP112 sequence locks only for tx nVersion >= 3
+        // (v2 is the PoS-aware tx, which does not trigger BIP68); see
+        // tx_verify.cpp and CheckSequence() in interpreter.cpp. Bitcoin uses
+        // nVersion = 2 here, so bump to 3 for CSV to actually be enforced.
+        invalid_with_csv_tx.nVersion = 3;
         invalid_with_csv_tx.vin.resize(1);
         invalid_with_csv_tx.vin[0].prevout.hash = spend_tx.GetHash();
         invalid_with_csv_tx.vin[0].prevout.n = 3;

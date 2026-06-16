@@ -205,7 +205,7 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
                         }
                     }
 
-                    bool processed = Assert(m_node.chainman)->ProcessNewBlock(Params(), block, true, &ignored);
+                    Assert(m_node.chainman)->ProcessNewBlock(Params(), block, true, &ignored);
 
                     // Reddcoin: Check if block was accepted even if not connected to active chain
                     // In a tree with forks, not all valid blocks will be on the active chain
