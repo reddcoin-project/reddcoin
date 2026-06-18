@@ -2691,7 +2691,13 @@ bool CChainState::ActivateBestChainStep(BlockValidationState& state, CBlockIndex
                 }
             } else {
                 PruneBlockIndexCandidates();
-                if (!pindexOldTip || m_chain.Tip()->nChainWork > pindexOldTip->nChainWork) {
+                // Don't break early for small connections (typical reorgs).
+                // This ensures all blocks are connected in a single batch,
+                // producing correct block announcement behavior (headers for
+                // ≤MAX_BLOCKS_TO_ANNOUNCE, inv for larger reorgs). For large
+                // connections (IBD), break early to release cs_main.
+                if (pindexMostWork->nHeight - m_chain.Tip()->nHeight > 16 &&
+                    (!pindexOldTip || m_chain.Tip()->nChainWork > pindexOldTip->nChainWork)) {
                     // We're in a better position than we were. Return temporarily to release the lock.
                     fContinue = false;
                     break;
