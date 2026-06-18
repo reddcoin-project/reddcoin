@@ -247,7 +247,13 @@ void BaseIndex::BlockConnected(const std::shared_ptr<const CBlock>& block, const
         // m_synced. Consider the case where there is a reorg and the blocks on the stale branch are
         // in the ValidationInterface queue backlog even after the sync thread has caught up to the
         // new chain tip. In this unlikely event, log a warning and let the queue clear.
-        if (best_block_index->GetAncestor(pindex->nHeight - 1) != pindex->pprev) {
+        //
+        // pindex->pprev is null only for the genesis block. When the index already has a best
+        // block, a (stale, queue-backlog) genesis BlockConnected cannot connect to it and must not
+        // reach Rewind(), which dereferences new_tip (== pprev). Treat it like any other
+        // non-connecting block.
+        if (pindex->pprev == nullptr ||
+            best_block_index->GetAncestor(pindex->nHeight - 1) != pindex->pprev) {
             LogPrintf("%s: WARNING: Block %s does not connect to an ancestor of " /* Continued */
                       "known best chain (tip=%s); not updating index\n",
                       __func__, pindex->GetBlockHash().ToString(),
