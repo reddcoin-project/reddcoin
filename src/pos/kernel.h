@@ -14,6 +14,7 @@ class CBlock;
 class CBlockHeader;
 class CBlockIndex;
 class CChainState;
+class CCoinsViewCache;
 
 // MODIFIER_INTERVAL_RATIO:
 // ratio of group interval length between the last group and the first group
@@ -37,8 +38,11 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
 // Check whether the coinstake timestamp meets protocol
 bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx);
 
-// Function to retrieve the coin age of a given transaction
-uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& consensusParams);
+// Function to retrieve the coin age of a given transaction.
+// If coins_view is provided, it is used instead of CoinsTip() to look up
+// UTXOs. This is needed during VerifyDB level 4 where ConnectBlock operates
+// on a local CCoinsViewCache that differs from the live CoinsTip().
+uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& consensusParams, CCoinsViewCache* coins_view = nullptr);
 
 // Function to calculate the coin age weight
 int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const Consensus::Params& consensusParams);
