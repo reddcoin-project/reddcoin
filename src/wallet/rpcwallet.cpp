@@ -20,6 +20,7 @@
 #include <script/descriptor.h>
 #include <script/sign.h>
 #include <util/bip32.h>
+#include <util/bip39.h>
 #include <util/fees.h>
 #include <util/message.h> // For MessageSign()
 #include <util/moneystr.h>
@@ -2535,6 +2536,7 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::NUM_TIME, "unlocked_until", /* optional */ true, "the " + UNIX_EPOCH_TIME + " until which the wallet is unlocked for transfers, or 0 if the wallet is locked (only present for passphrase-encrypted wallets)"},
                         {RPCResult::Type::STR_AMOUNT, "paytxfee", "the transaction fee configuration, set in " + CURRENCY_UNIT + "/kvB"},
                         {RPCResult::Type::STR_HEX, "hdseedid", /* optional */ true, "the Hash160 of the HD seed (only present when HD is enabled)"},
+                        {RPCResult::Type::STR, "hd_type", "HD wallet type: bip32, bip39, bip44, or none"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2583,6 +2585,21 @@ static RPCHelpMan getwalletinfo()
         if (!seed_id.IsNull()) {
             obj.pushKV("hdseedid", seed_id.GetHex());
         }
+    }
+
+    // Determine hd_type
+    if (spk_man) {
+        if (spk_man->IsBip44Enabled()) {
+            obj.pushKV("hd_type", "bip44");
+        } else if (spk_man->IsBip39Enabled()) {
+            obj.pushKV("hd_type", "bip39");
+        } else if (spk_man->IsHDEnabled()) {
+            obj.pushKV("hd_type", "bip32");
+        } else {
+            obj.pushKV("hd_type", "none");
+        }
+    } else {
+        obj.pushKV("hd_type", "none");
     }
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
@@ -2816,12 +2833,19 @@ static RPCHelpMan createwallet()
             {"descriptors", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a native descriptor wallet. The wallet will use descriptors internally to handle address creation"},
             {"load_on_startup", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "Save wallet name to persistent settings and load on startup. True to add wallet to startup list, false to remove, null to leave unchanged."},
             {"external_signer", RPCArg::Type::BOOL, RPCArg::Default{false}, "Use an external signer such as a hardware wallet. Requires -signer to be configured. Wallet creation will fail if keys cannot be fetched. Requires disable_private_keys and descriptors set to true."},
+            {"wallet_type", RPCArg::Type::STR, RPCArg::Default{"bip32"}, "HD wallet type: \"bip32\", \"bip39\", or \"bip44\". BIP39/BIP44 wallets use mnemonic seed phrases. Legacy wallets only."},
+            {"mnemonic", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "BIP39 mnemonic to import. Omit to generate a new mnemonic. Implies wallet_type=\"bip39\" if wallet_type is \"bip32\"."},
+            {"mnemonic_passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "BIP39 mnemonic passphrase (NOT the wallet encryption passphrase). Used as additional entropy for seed derivation."},
+            {"language", RPCArg::Type::STR, RPCArg::Default{"english"}, "Language for mnemonic generation. Options: english, japanese, spanish, chinese_simplified, chinese_traditional, french, italian, korean."},
+            {"entropy_bits", RPCArg::Type::NUM, RPCArg::Default{256}, "Entropy bits for mnemonic generation: 128 (12 words), 160 (15 words), 192 (18 words), 224 (21 words), or 256 (24 words)."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
             {
                 {RPCResult::Type::STR, "name", "The wallet name if created successfully. If the wallet was created using a full path, the wallet_name will be the full path."},
                 {RPCResult::Type::STR, "warning", "Warning message if wallet was not loaded cleanly."},
+                {RPCResult::Type::STR, "wallet_type", "HD wallet type: bip32, bip39, or bip44"},
+                {RPCResult::Type::STR, "mnemonic", /* optional */ true, "The generated BIP39 mnemonic phrase (only for newly generated bip39/bip44 wallets)"},
             }
         },
         RPCExamples{
@@ -2882,6 +2906,80 @@ static RPCHelpMan createwallet()
     options.require_create = true;
     options.create_flags = flags;
     options.create_passphrase = passphrase;
+
+    // Parse wallet_type (param 8)
+    bool is_bip39_or_bip44 = false;
+    bool mnemonic_provided = false;
+    if (!request.params[8].isNull()) {
+        std::string type_str = request.params[8].get_str();
+        if (type_str == "bip32") {
+            walletoptions.walletType = walletType::bip32Wallet;
+        } else if (type_str == "bip39") {
+            walletoptions.walletType = walletType::bip39Wallet;
+            is_bip39_or_bip44 = true;
+        } else if (type_str == "bip44") {
+            walletoptions.walletType = walletType::bip44Wallet;
+            is_bip39_or_bip44 = true;
+        } else {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid wallet_type. Must be \"bip32\", \"bip39\", or \"bip44\".");
+        }
+    }
+
+    // Parse mnemonic (param 9)
+    if (!request.params[9].isNull()) {
+        std::string mnemonic_str = request.params[9].get_str();
+        walletoptions.ssMnemonic = SecureString(mnemonic_str.begin(), mnemonic_str.end());
+        SecureString mnemonicCheck(mnemonic_str.begin(), mnemonic_str.end());
+        if (!CMnemonic::Check(mnemonicCheck)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mnemonic phrase.");
+        }
+        walletoptions.importing = true;
+        mnemonic_provided = true;
+        // Auto-promote bip32 to bip39 when mnemonic is provided
+        if (walletoptions.walletType == walletType::bip32Wallet) {
+            walletoptions.walletType = walletType::bip39Wallet;
+            is_bip39_or_bip44 = true;
+        }
+    }
+
+    // Parse mnemonic_passphrase (param 10)
+    if (!request.params[10].isNull()) {
+        std::string pass_str = request.params[10].get_str();
+        walletoptions.ssMnemonicPassphrase = SecureString(pass_str.begin(), pass_str.end());
+    }
+
+    // Parse language (param 11)
+    if (!request.params[11].isNull()) {
+        std::string lang_str = request.params[11].get_str();
+        int lang_idx = CMnemonic::getLanguageIndex(lang_str.c_str());
+        if (lang_idx < 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid language. Options: english, japanese, spanish, chinese_simplified, chinese_traditional, french, italian, korean.");
+        }
+        walletoptions.language = lang_idx;
+    }
+
+    // Parse entropy_bits (param 12)
+    if (!request.params[12].isNull()) {
+        int bits = request.params[12].get_int();
+        if (bits != 128 && bits != 160 && bits != 192 && bits != 224 && bits != 256) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid entropy_bits. Must be 128, 160, 192, 224, or 256.");
+        }
+        walletoptions.bits = bits;
+    }
+
+    // Validation: BIP39/BIP44 requires legacy wallet
+    if (is_bip39_or_bip44) {
+        if (flags & WALLET_FLAG_DESCRIPTORS) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "BIP39/BIP44 wallets are only supported for legacy wallets.");
+        }
+        if (flags & WALLET_FLAG_DISABLE_PRIVATE_KEYS) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "BIP39/BIP44 wallets require private keys to be enabled.");
+        }
+        if (flags & WALLET_FLAG_BLANK_WALLET) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "BIP39/BIP44 wallets cannot be blank.");
+        }
+    }
+
     bilingual_str error;
     std::optional<bool> load_on_start = request.params[6].isNull() ? std::nullopt : std::optional<bool>(request.params[6].get_bool());
     std::shared_ptr<CWallet> wallet = CreateWallet(*context.chain, request.params[0].get_str(), load_on_start, options, walletoptions, status, error, warnings);
@@ -2893,6 +2991,27 @@ static RPCHelpMan createwallet()
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("name", wallet->GetName());
     obj.pushKV("warning", Join(warnings, Untranslated("\n")).original);
+
+    // Determine wallet_type for response
+    std::string response_type = "bip32";
+    LegacyScriptPubKeyMan* spk_man = wallet->GetLegacyScriptPubKeyMan();
+    if (spk_man) {
+        if (spk_man->IsBip44Enabled()) {
+            response_type = "bip44";
+        } else if (spk_man->IsBip39Enabled()) {
+            response_type = "bip39";
+        }
+    }
+    obj.pushKV("wallet_type", response_type);
+
+    // Return mnemonic only for newly generated bip39/bip44 wallets (not imports)
+    if (is_bip39_or_bip44 && !mnemonic_provided && spk_man) {
+        const CHDChain& chain = spk_man->GetHDChain();
+        if (!chain.vchMnemonic.empty()) {
+            std::string mnemonic(chain.vchMnemonic.begin(), chain.vchMnemonic.end());
+            obj.pushKV("mnemonic", mnemonic);
+        }
+    }
 
     return obj;
 },

@@ -188,6 +188,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "createwallet", 5, "descriptors"},
     { "createwallet", 6, "load_on_startup"},
     { "createwallet", 7, "external_signer"},
+    { "createwallet", 12, "entropy_bits"},
     { "loadwallet", 1, "load_on_startup"},
     { "unloadwallet", 1, "load_on_startup"},
     { "getnodeaddresses", 0, "count"},

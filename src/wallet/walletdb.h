@@ -151,7 +151,7 @@ public:
     void SetBip44(bool b) { bBip44 = b;}
     bool IsBip44() const            { return bBip44 == true;}
 
-    bool SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed);
+    bool SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed, int bits = 256, int language = 0);
 
 };
 
