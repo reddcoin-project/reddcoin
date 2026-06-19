@@ -481,14 +481,14 @@ void CWallet::chainStateFlushed(const CBlockLocator& loc)
 void CWallet::SetMinVersion(enum WalletFeature nVersion, WalletBatch* batch_in)
 {
     LOCK(cs_wallet);
-    if (nWalletVersion >= nVersion)
+    if (nWalletVersion.load(std::memory_order_acquire) >= nVersion)
         return;
-    nWalletVersion = nVersion;
+    nWalletVersion.store(nVersion, std::memory_order_release);
 
     {
         WalletBatch* batch = batch_in ? batch_in : new WalletBatch(GetDatabase());
-        if (nWalletVersion > 40000)
-            batch->WriteMinVersion(nWalletVersion);
+        if (nVersion > 40000)
+            batch->WriteMinVersion(nVersion);
         if (!batch_in)
             delete batch;
     }
