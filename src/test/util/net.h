@@ -17,6 +17,12 @@
 
 struct ConnmanTestMsg : public CConnman {
     using CConnman::CConnman;
+
+    void SetPeerConnectTimeout(std::chrono::seconds timeout)
+    {
+        m_peer_connect_timeout = timeout;
+    }
+
     void AddTestNode(CNode& node)
     {
         LOCK(cs_vNodes);

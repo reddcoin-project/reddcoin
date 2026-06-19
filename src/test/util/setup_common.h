@@ -113,7 +113,7 @@ class CScript;
 
 /**
  * Testing fixture that pre-creates a 100-block REGTEST-mode block chain
- * Enables txindex for PoS staking support
+ * (89 PoW + 11 PoS). Enables txindex for PoS staking support.
  */
 struct TestChain100Setup : public TestingSetup {
     TestChain100Setup();
