@@ -624,6 +624,9 @@ public:
 
     uint256 GetID() const override;
 
+    //! Reddcoin: fetch the private key for keyid within the given script's descriptor
+    bool GetKey(const CScript& script, const CKeyID& keyid, CKey& key) const;
+
     void SetCache(const DescriptorCache& cache);
 
     bool AddKey(const CKeyID& key_id, const CKey& key);
