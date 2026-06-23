@@ -178,11 +178,14 @@ class ConfArgsTest(BitcoinTestFramework):
         # We expect the node will fallback immediately to fixed seeds
         assert not os.path.exists(os.path.join(default_data_dir, "peers.dat"))
         start = time.time()
+        # ReddCoin: PoS staking init makes startup slower than the 2s default
+        # assert_debug_log window (whose deadline is set before start_node runs),
+        # so give these startup-phase log checks a larger timeout.
         with self.nodes[0].assert_debug_log(expected_msgs=[
                 "Loaded 0 addresses from peers.dat",
                 "DNS seeding disabled",
                 "Adding fixed seeds as -dnsseed=0, -addnode is not provided and all -seednode(s) attempted\n",
-        ]):
+        ], timeout=10):
             self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=1'])
         assert time.time() - start < 60
         self.stop_node(0)
@@ -195,7 +198,7 @@ class ConfArgsTest(BitcoinTestFramework):
                 "Loaded 0 addresses from peers.dat",
                 "DNS seeding disabled",
                 "Fixed seeds are disabled",
-        ]):
+        ], timeout=10):
             self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=0'])
         assert time.time() - start < 60
         self.stop_node(0)
@@ -208,7 +211,7 @@ class ConfArgsTest(BitcoinTestFramework):
                 "Loaded 0 addresses from peers.dat",
                 "DNS seeding disabled",
                 "opencon thread start",  # Ensure ThreadOpenConnections::start time is properly set
-        ]):
+        ], timeout=10):
             self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=1', '-addnode=fakenodeaddr', f'-mocktime={start}'])
         with self.nodes[0].assert_debug_log(expected_msgs=[
                 "Adding fixed seeds as 60 seconds have passed and addrman is empty",
