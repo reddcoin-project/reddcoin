@@ -249,6 +249,7 @@ BASE_SCRIPTS = [
     'feature_compat_staking_interop.py',
     'feature_compat_softfork_signaling.py',
     'wallet_descriptor_staking.py',
+    'wallet_descriptor_staking_witness.py',
     'feature_descriptor_legacy_staking.py',
     # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin
     'wallet_bumpfee.py --legacy-wallet',
