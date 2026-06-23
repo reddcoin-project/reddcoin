@@ -364,19 +364,18 @@ class BlockchainTest(BitcoinTestFramework):
 
     def _test_getdifficulty(self):
         difficulty = self.nodes[0].getdifficulty()
-        # ReddCoin: PoS difficulty is computed from nBits using the formula in
-        # pos/kernel.cpp GetDifficulty(). With deterministic block generation
-        # and fixed 600s spacing, nBits at height 200 is always 0x1f25bddc.
-        #   dDiff = 0x0000ffff / (0x25bddc) / 256^(31-29)
-        #        = 65535 / 2473436 / 65536 ≈ 4.042897173045664e-7
-        assert_equal(difficulty, Decimal('4.042897173045664E-7'))
+        # ReddCoin: regtest pins difficulty at the powLimit/posLimit minimum
+        # (nBits 0x207fffff) because fPowNoRetargeting is set, so getdifficulty
+        # always returns the regtest minimum regardless of block spacing.
+        assert_equal(difficulty, Decimal('4.656542373906925E-10'))
 
     def _test_getnetworkhashps(self):
         hashes_per_second = self.nodes[0].getnetworkhashps()
         # ReddCoin: getnetworkhashps computes hash rate from block timestamps and
-        # difficulty over the default 120-block window. With deterministic chain
-        # generation and fixed 600s spacing, this value is consistent.
-        assert_equal(hashes_per_second, Decimal('8.309944444444444'))
+        # difficulty over the default 120-block window. With difficulty pinned at
+        # the regtest minimum (fPowNoRetargeting) and fixed 600s spacing, this
+        # value is deterministic.
+        assert_equal(hashes_per_second, Decimal('0.003333333333333334'))
 
     def _test_stopatheight(self):
         assert_equal(self.nodes[0].getblockcount(), 200)
