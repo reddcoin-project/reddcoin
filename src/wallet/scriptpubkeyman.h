@@ -627,6 +627,11 @@ public:
     //! Reddcoin: fetch the private key for keyid within the given script's descriptor
     bool GetKey(const CScript& script, const CKeyID& keyid, CKey& key) const;
 
+    //! Reddcoin: BIP340 Schnorr-sign a 32-byte hash with the key-path key of a
+    //! taproot (WITNESS_V1_TAPROOT) script. Used to sign PoS blocks whose
+    //! coinstake output is a taproot output. Returns a 64-byte signature.
+    bool SignBlockSchnorr(const CScript& script, const uint256& hash, std::vector<unsigned char>& sig) const;
+
     void SetCache(const DescriptorCache& cache);
 
     bool AddKey(const CKeyID& key_id, const CKey& key);

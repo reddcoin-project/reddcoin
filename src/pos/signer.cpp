@@ -13,8 +13,22 @@ bool SignBlock(CBlock& block, const CWallet& keystore)
 {
     std::vector<valtype> vSolutions;
     const CTxOut& txout = block.IsProofOfStake() ? block.vtx[1]->vout[1] : block.vtx[0]->vout[0];
+    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
 
-    if (Solver(txout.scriptPubKey, vSolutions) != TxoutType::PUBKEY) {
+    // Taproot coinstake output: BIP340 Schnorr-sign the block with the key-path
+    // key. Only descriptor wallets can hold taproot keys.
+    if (whichType == TxoutType::WITNESS_V1_TAPROOT) {
+        for (ScriptPubKeyMan* spk_man : keystore.GetAllScriptPubKeyMans()) {
+            if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+                if (desc->SignBlockSchnorr(txout.scriptPubKey, block.GetHash(), block.vchBlockSig)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    if (whichType != TxoutType::PUBKEY) {
         return false;
     }
 
@@ -70,8 +84,19 @@ bool CheckBlockSignature(const CBlock& block)
 
     std::vector<valtype> vSolutions;
     const CTxOut& txout = block.IsProofOfStake() ? block.vtx[1]->vout[1] : block.vtx[0]->vout[0];
+    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
 
-    if (Solver(txout.scriptPubKey, vSolutions) != TxoutType::PUBKEY) {
+    // Taproot coinstake output: verify the block's BIP340 Schnorr signature
+    // against the taproot output key.
+    if (whichType == TxoutType::WITNESS_V1_TAPROOT) {
+        if (block.vchBlockSig.size() != 64) {
+            return false;
+        }
+        XOnlyPubKey output_key{vSolutions[0]};
+        return output_key.VerifySchnorr(block.GetHash(), block.vchBlockSig);
+    }
+
+    if (whichType != TxoutType::PUBKEY) {
         return false;
     }
 
