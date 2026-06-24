@@ -23,12 +23,21 @@ class ReindexTest(BitcoinTestFramework):
 
     def reindex(self, justchainstate=False):
         self.nodes[0].generate(3)
+        # Capture the full chain identity (tip hash) and the UTXO set hash so we
+        # can prove reindex reconstructs the *exact same valid chain*, not merely
+        # one of the same height. This is the key check given PoS reindex skips
+        # the stake-kernel re-verification: a wrong/corrupt reconstruction would
+        # change the tip or the UTXO set.
         blockcount = self.nodes[0].getblockcount()
+        besthash = self.nodes[0].getbestblockhash()
+        utxo_hash = self.nodes[0].gettxoutsetinfo()['hash_serialized_2']
         self.stop_nodes()
         extra_args = [["-reindex-chainstate" if justchainstate else "-reindex"]]
         self.start_nodes(extra_args)
         assert_equal(self.nodes[0].getblockcount(), blockcount)
-        self.log.info("Success")
+        assert_equal(self.nodes[0].getbestblockhash(), besthash)
+        assert_equal(self.nodes[0].gettxoutsetinfo()['hash_serialized_2'], utxo_hash)
+        self.log.info("Success (height=%d, tip and UTXO set match)", blockcount)
 
     def run_test(self):
         # Generate initial 150 blocks spanning PoW and PoS phases
