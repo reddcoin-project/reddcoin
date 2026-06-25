@@ -92,6 +92,12 @@ class NULLDUMMYTest(BitcoinTestFramework):
             signed = w0.signrawtransactionwithwallet(funded['hex'])
             coinbase_txid.append(w0.sendrawtransaction(signed['hex']))
         self.nodes[0].generate(1)  # height = 368, confirm the UTXOs
+        # ReddCoin: the height-advancing generate() below produces PoS blocks
+        # whose coinstakes select wallet coins via AvailableCoins. Lock the test
+        # UTXOs (vout 0) so they aren't staked/spent before the tests use them;
+        # AvailableCoins skips locked coins, and a raw tx can still spend them.
+        for txid in coinbase_txid:
+            w0.lockunspent(False, [{"txid": txid, "vout": 0}])
         self.nodes[0].generate(COINBASE_MATURITY)  # height = 428, UTXOs now mature
         # Now at height 428 — 4 blocks before SegWit activation at 432
         self.lastblockhash = self.nodes[0].getbestblockhash()
