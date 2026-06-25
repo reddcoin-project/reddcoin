@@ -98,6 +98,12 @@ class FullBlockTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = False  # Use 199-block cache for PoS
         self.extra_args = [['-acceptnonstdtxn=1', '-staking=0']]
+        # ReddCoin: the large-reorg test generates ~2x LARGE_REORG_SIZE PoS blocks
+        # one at a time via generatetoaddress. As the wallet accumulates coinstake
+        # outputs the per-block coinstake search slows, and a single call can
+        # exceed the default 30s RPC timeout. Raise the timeout as other heavy PoS
+        # tests do.
+        self.rpc_timeout = 480
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
