@@ -1213,6 +1213,12 @@ class TaprootTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
+        # ReddCoin: each test-case block is mined via getblocktemplate, whose PoS
+        # coinstake search iterates the staking wallet's UTXOs. After hundreds of
+        # generated blocks the wallet holds thousands of coinstake outputs, so a
+        # single GBT call's (bounded) search can exceed the default 30s RPC
+        # timeout. Raise the timeout as other heavy PoS tests do.
+        self.rpc_timeout = 480
         # Node 0 has Taproot inactive, Node 1 active.
         # -staking=0 prevents background staking from consuming test UTXOs.
         # -whitelist prevents mocktime P2P disconnections.
