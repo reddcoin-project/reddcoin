@@ -188,6 +188,24 @@ class SegWitTest(BitcoinTestFramework):
         self.nodes[0].generate(1)  # mine the 60 witness txs
         self.sync_blocks()
 
+        # ReddCoin: each node owns the key for self.pubkey[n], so after SegWit
+        # activates its witness UTXOs (wit_ids[n]/p2sh_ids[n]) become stakeable and
+        # a post-activation generate() coinstake could spend them before the tests
+        # use them (-> bad-txns-inputs-missingorspent). Lock them on the staking
+        # nodes (node 0 and node 2 call generate() below); AvailableCoins skips
+        # locked coins, while send_to_witness still spends them explicitly. Node 1
+        # never stakes and needs its witness UTXOs spendable for a later
+        # fundrawtransaction, so leave it unlocked.
+        for n in (NODE_0, NODE_2):
+            known = {(u['txid'], u['vout']) for u in self.nodes[n].listunspent(0)}
+            locks = [{"txid": txid, "vout": 0}
+                     for v in range(2)
+                     for ids in (wit_ids[n][v], p2sh_ids[n][v])
+                     for txid in ids
+                     if (txid, 0) in known]
+            if locks:
+                self.nodes[n].lockunspent(False, locks)
+
         # Verify nodes 1 and 2 received their witness outputs
         assert_equal(self.nodes[1].getbalance(), 20 * Decimal("49.999"))
         assert self.nodes[2].getbalance() >= 7500 + 20 * Decimal("49.999")
@@ -629,7 +647,9 @@ class SegWitTest(BitcoinTestFramework):
                 transaction = "01000000000100e1f5050000000017a9142f8c469c2f0084c48e11f998ffbe7efa7549f26d8700000000"
 
             self.nodes[1].importaddress(scriptPubKey, "", False)
-            rawtxfund = self.nodes[1].fundrawtransaction(transaction)['hex']
+            # ReddCoin: pin an explicit low feerate. After hundreds of blocks the
+            # fee estimator is inflated, so the default-funded fee exceeds maxtxfee.
+            rawtxfund = self.nodes[1].fundrawtransaction(transaction, {"feeRate": Decimal("0.001")})['hex']
             rawtxfund = self.nodes[1].signrawtransactionwithwallet(rawtxfund)["hex"]
             txid = self.nodes[1].sendrawtransaction(rawtxfund)
 
