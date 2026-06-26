@@ -57,7 +57,9 @@ class WalletBackupTest(BitcoinTestFramework):
             ["-whitelist=127.0.0.1", "-keypool=100"],
             ["-whitelist=127.0.0.1"],
         ]
-        self.rpc_timeout = 120
+        # ReddCoin: importwallet rescan over the PoS chain can exceed 60s (=120/2)
+        # under CPU contention from concurrent staking tests. Raise for headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

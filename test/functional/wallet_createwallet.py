@@ -18,6 +18,10 @@ from test_framework.wallet_util import bytes_to_wif, generate_wif_key
 class CreateWalletTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        # ReddCoin: creating an encrypted wallet (key derivation) can exceed the
+        # default 30s createwallet timeout under CPU contention from concurrent
+        # PoS-staking tests. Raise the timeout for headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

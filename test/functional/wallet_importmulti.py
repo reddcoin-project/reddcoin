@@ -40,6 +40,9 @@ class ImportMultiTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.extra_args = [["-addresstype=legacy"], ["-addresstype=legacy"]]
         self.setup_clean_chain = True
+        # ReddCoin: createwallet/import RPCs can exceed the default 30s timeout
+        # under CPU contention from concurrent PoS-staking tests. Add headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
