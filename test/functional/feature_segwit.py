@@ -641,10 +641,19 @@ class SegWitTest(BitcoinTestFramework):
         for use_p2wsh in [False, True]:
             if use_p2wsh:
                 scriptPubKey = "00203a59f3f56b713fdcf5d1a57357f02c44342cbf306ffe0c4741046837bf90561a"
-                transaction = "01000000000100e1f505000000002200203a59f3f56b713fdcf5d1a57357f02c44342cbf306ffe0c4741046837bf90561a00000000"
             else:
                 scriptPubKey = "a9142f8c469c2f0084c48e11f998ffbe7efa7549f26d87"
-                transaction = "01000000000100e1f5050000000017a9142f8c469c2f0084c48e11f998ffbe7efa7549f26d8700000000"
+
+            # ReddCoin: build the funding template (0 inputs, one 1.0-RDD output to
+            # scriptPubKey) as a v2 tx to fund below. The PoS era rejects
+            # nVersion <= POW_TX_VERSION (bad-txns-version-pos), and the old hardcoded
+            # v1 hex can't just have its version byte bumped because a v>1 tx
+            # serializes an extra nTime field. CTransaction defaults to v2; pin nTime
+            # to the tip time (v>1 txs need a non-zero nTime) for mocktime consistency.
+            template = CTransaction()
+            template.nTime = self.nodes[1].getblockheader(self.nodes[1].getbestblockhash())['time']
+            template.vout.append(CTxOut(int(1 * COIN), bytes.fromhex(scriptPubKey)))
+            transaction = template.serialize().hex()
 
             self.nodes[1].importaddress(scriptPubKey, "", False)
             # ReddCoin: pin an explicit low feerate. After hundreds of blocks the
