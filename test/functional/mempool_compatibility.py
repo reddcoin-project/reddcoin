@@ -20,13 +20,22 @@ from test_framework.wallet import MiniWallet
 class MempoolCompatibilityTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.wallet_names = [None]
+        # ReddCoin: at the cached chain height (200) generate() takes the PoS path,
+        # so MiniWallet.generate() drives node.generate()+sendtoaddress() and the
+        # old node uses getnewaddress()/sendtoaddress() — both need a funded default
+        # wallet. Upstream left them walletless (PoW MiniWallet needs no node wallet).
+        self.wallet_names = [self.default_wallet_name, self.default_wallet_name]
+        # ReddCoin: the PoS test chain runs on regtest mocktime (~2011), but a node
+        # restarted without -mocktime falls back to real time (~2026). A tx carried
+        # via mempool.dat then looks ~15 years old and is dropped as expired on load
+        # ("N expired"). Disable mempool expiry so the moved tx survives the reload.
+        self.extra_args = [['-mempoolexpiry=999999999'], ['-mempoolexpiry=999999999']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_previous_releases()
 
     def setup_network(self):
-        self.add_nodes(self.num_nodes, versions=[
+        self.add_nodes(self.num_nodes, extra_args=self.extra_args, versions=[
             4220900,  # oldest version with getmempoolinfo.loaded (used to avoid intermittent issues)
             None,
         ])
@@ -73,7 +82,10 @@ class MempoolCompatibilityTest(BitcoinTestFramework):
         os.rename(new_node_mempool, old_node_mempool)
 
         self.log.info("Start old node again and verify mempool contains both txs")
-        self.start_node(0, ['-nowallet'])
+        # Keep -mempoolexpiry on this restart too: passing extra_args to start_node
+        # replaces the node's configured args, so it must be repeated here or the
+        # old-mocktime txs expire on load again.
+        self.start_node(0, ['-nowallet', '-mempoolexpiry=999999999'])
         assert old_tx_hash in old_node.getrawmempool()
         assert unbroadcasted_tx_hash in old_node.getrawmempool()
 
