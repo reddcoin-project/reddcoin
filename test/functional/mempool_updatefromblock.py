@@ -18,6 +18,10 @@ class MempoolUpdateFromBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [['-limitdescendantsize=1000', '-limitancestorsize=1000']]
+        # ReddCoin: transaction_graph_test issues ~5000 getnewaddress calls; with
+        # keypool=1 the per-call HD derivation latency can push a call past the
+        # default 30s RPC ceiling (worse under parallel contention). Add headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
