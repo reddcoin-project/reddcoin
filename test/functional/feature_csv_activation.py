@@ -347,12 +347,20 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.log.info("Height = {}, CSV not yet active (will activate for block {}, not {})".format(self.tipheight, CSV_ACTIVATION_HEIGHT, CSV_ACTIVATION_HEIGHT - 1))
         assert not softfork_active(node, 'csv')
 
-        # Test version 1, version 2, and version 3 transactions
-        # ReddCoin: v2 = PoS-aware (nTime field), v3 = activates BIP68/BIP112 sequence locks
+        # Test below-threshold and above-threshold transactions.
+        # ReddCoin: v2 = PoS-aware (nTime field), v3+ = activates BIP68/BIP112 sequence
+        # locks. The PoS-era chain rejects nVersion <= POW_TX_VERSION (v1) outright
+        # (bad-txns-version-pos), so the upstream "version 1" cases — which exercise
+        # BELOW-the-threshold (sequence-locks-not-enforced) behaviour — use nVersion=2
+        # here. v2 (< 3) plays the exact role Bitcoin's v1 (< 2) does: both consensus
+        # and script gate BIP68/BIP112 on nVersion >= 3 (tx_verify.cpp,
+        # interpreter.cpp CheckSequence), so v2 is not enforced while v3 is. The
+        # "_v1"/"_v2" suffixes are kept for parity with upstream; read them as
+        # below-threshold (v2) / above-threshold (v3).
         # BIP113 test transaction will be modified before each use to put in appropriate block time
         bip113tx_v1 = self.create_self_transfer_from_utxo(bip113input)
         bip113tx_v1.vin[0].nSequence = 0xFFFFFFFE
-        bip113tx_v1.nVersion = 1
+        bip113tx_v1.nVersion = 2
         bip113tx_v2 = self.create_self_transfer_from_utxo(bip113input)
         bip113tx_v2.vin[0].nSequence = 0xFFFFFFFE
         bip113tx_v2.nVersion = 2
@@ -361,30 +369,30 @@ class BIP68_112_113Test(BitcoinTestFramework):
         bip113tx_v3.nVersion = 3
 
         # For BIP68 test all 16 relative sequence locktimes
-        bip68txs_v1 = self.create_bip68txs(bip68inputs, 1)
-        # ReddCoin: BIP68 requires nVersion >= 3 (not >= 2 as in Bitcoin)
-        # nVersion=2 in ReddCoin means "PoS-aware tx with nTime field" but does NOT trigger BIP68
+        # ReddCoin: BIP68 requires nVersion >= 3 (not >= 2 as in Bitcoin). Below-threshold
+        # cases use v2 (was v1 upstream); nVersion=2 does NOT trigger BIP68.
+        bip68txs_v1 = self.create_bip68txs(bip68inputs, 2)
         bip68txs_v2 = self.create_bip68txs(bip68inputs, 3)
 
         # For BIP112 test:
         # 16 relative sequence locktimes of 10 against 10 OP_CSV OP_DROP inputs
-        bip112txs_vary_nSequence_v1 = self.create_bip112txs(bip112basicinputs[0], False, 1)
+        bip112txs_vary_nSequence_v1 = self.create_bip112txs(bip112basicinputs[0], False, 2)
         # ReddCoin: BIP112 OP_CSV also requires nVersion >= 3 (matches BIP68)
         bip112txs_vary_nSequence_v2 = self.create_bip112txs(bip112basicinputs[0], False, 3)
         # 16 relative sequence locktimes of 9 against 10 OP_CSV OP_DROP inputs
-        bip112txs_vary_nSequence_9_v1 = self.create_bip112txs(bip112basicinputs[1], False, 1, -1)
+        bip112txs_vary_nSequence_9_v1 = self.create_bip112txs(bip112basicinputs[1], False, 2, -1)
         bip112txs_vary_nSequence_9_v2 = self.create_bip112txs(bip112basicinputs[1], False, 3, -1)
         # sequence lock time of 10 against 16 (relative_lock_time) OP_CSV OP_DROP inputs
-        bip112txs_vary_OP_CSV_v1 = self.create_bip112txs(bip112diverseinputs[0], True, 1)
+        bip112txs_vary_OP_CSV_v1 = self.create_bip112txs(bip112diverseinputs[0], True, 2)
         bip112txs_vary_OP_CSV_v2 = self.create_bip112txs(bip112diverseinputs[0], True, 3)
         # sequence lock time of 9 against 16 (relative_lock_time) OP_CSV OP_DROP inputs
-        bip112txs_vary_OP_CSV_9_v1 = self.create_bip112txs(bip112diverseinputs[1], True, 1, -1)
+        bip112txs_vary_OP_CSV_9_v1 = self.create_bip112txs(bip112diverseinputs[1], True, 2, -1)
         bip112txs_vary_OP_CSV_9_v2 = self.create_bip112txs(bip112diverseinputs[1], True, 3, -1)
         # -1 OP_CSV OP_DROP input
-        bip112tx_special_v1 = self.create_bip112special(bip112specialinput, 1)
+        bip112tx_special_v1 = self.create_bip112special(bip112specialinput, 2)
         bip112tx_special_v2 = self.create_bip112special(bip112specialinput, 3)
         # (empty stack) OP_CSV input
-        bip112tx_emptystack_v1 = self.create_bip112emptystack(bip112emptystackinput, 1)
+        bip112tx_emptystack_v1 = self.create_bip112emptystack(bip112emptystackinput, 2)
         bip112tx_emptystack_v2 = self.create_bip112emptystack(bip112emptystackinput, 3)
 
         self.log.info("TESTING")
