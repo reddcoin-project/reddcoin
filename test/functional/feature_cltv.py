@@ -124,7 +124,12 @@ class BIP65Test(BitcoinTestFramework):
         change_addr = node.getnewaddress()
 
         funding_tx = CTransaction()
-        funding_tx.nVersion = 1  # Use v1 to avoid nTime complications
+        # ReddCoin: the PoS-era chain rejects nVersion <= POW_TX_VERSION
+        # (bad-txns-version-pos), so use v2. A v>1 tx must carry a non-zero nTime
+        # (bad-txns-time-zero); pin it to the chain tip time to stay consistent
+        # with regtest mocktime.
+        funding_tx.nVersion = 2
+        funding_tx.nTime = node.getblockheader(node.getbestblockhash())['time']
         funding_tx.vin = [CTxIn(COutPoint(int(utxo['txid'], 16), utxo['vout']))]
         funding_tx.vout = [
             CTxOut(int(amount * COIN), OP_TRUE_SCRIPT),
@@ -143,7 +148,9 @@ class BIP65Test(BitcoinTestFramework):
         """Create a transaction spending an OP_TRUE output (anyone-can-spend)."""
         fee = 0.01
         spend_tx = CTransaction()
-        spend_tx.nVersion = 1  # Use v1 to avoid nTime
+        # ReddCoin: v2 required in the PoS era; give it a non-zero, chain-consistent nTime.
+        spend_tx.nVersion = 2
+        spend_tx.nTime = node.getblockheader(node.getbestblockhash())['time']
         spend_tx.vin = [CTxIn(COutPoint(int(utxo_txid, 16), utxo_vout), CScript([OP_TRUE]))]
         spend_tx.vout = [CTxOut(int((utxo_amount - fee) * COIN), OP_TRUE_SCRIPT)]
         spend_tx.rehash()
