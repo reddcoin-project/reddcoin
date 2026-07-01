@@ -1224,20 +1224,28 @@ class TaprootTest(BitcoinTestFramework):
         # -whitelist prevents mocktime P2P disconnections.
         self.extra_args = [["-par=1", "-staking=0", "-whitelist=127.0.0.1", "-dbcache=100"],
                           ["-par=1", "-staking=0", "-whitelist=127.0.0.1", "-dbcache=100"]]
+        # ReddCoin: Use NEVER_ACTIVE (-2) to fully disable taproot on node0, which
+        # runs the pre-activation ("inactive") tests. The original Bitcoin value
+        # (1:1) doesn't work because all blocks signal for taproot, meeting the BIP9
+        # threshold before timeout takes effect. This override is needed for BOTH
+        # binaries node0 may run: upstream's previous release was a pre-taproot
+        # binary (v0.20.1) that never enforced taproot, but ReddCoin substitutes
+        # v4.22.9, whose regtest activates taproot via BIP9 at height 432. Without
+        # the override node0 syncs node1's post-activation chain, taproot becomes
+        # active, and the inactive spenders (e.g. keypath_empty) are wrongly rejected
+        # instead of treated as anyone-can-spend.
+        self.extra_args[0].append("-vbparams=taproot:-2:0")
         if self.options.previous_release:
             self.wallet_names = [None, self.default_wallet_name]
-        else:
-            # ReddCoin: Use NEVER_ACTIVE (-2) to fully disable taproot on node0.
-            # The original Bitcoin value (1:1) doesn't work because all blocks signal
-            # for taproot, meeting the BIP9 threshold before timeout takes effect.
-            self.extra_args[0].append("-vbparams=taproot:-2:0")
 
     def setup_network(self):
         """Override setup_network to control connection timing. Nodes must NOT
         be connected during initial block generation — mocktime drift causes
         header rejection. Connect after syncing mocktime."""
         self.add_nodes(self.num_nodes, self.extra_args, versions=[
-            200100 if self.options.previous_release else None,
+            # ReddCoin: use the v4.22.9 previous release (encoded 4220900), not
+            # upstream's pre-Taproot v0.20.1 (200100) which ReddCoin doesn't ship.
+            4220900 if self.options.previous_release else None,
             None,
         ])
         self.start_nodes()
@@ -1420,8 +1428,12 @@ class TaprootTest(BitcoinTestFramework):
         left = done
         while left:
             # Construct CTransaction with random nVersion, nLocktime
+            # ReddCoin: the chain is PoS-only past nLastPowHeight and rejects
+            # nVersion < POSV_TX_VERSION (2) — those legacy txs carry no nTime
+            # (bad-txns-version-pos). Draw only valid versions (>= 2); upstream's
+            # version-independence intent is preserved with 2, 3 and a random high one.
             tx = CTransaction()
-            tx.nVersion = random.choice([1, 2, random.randint(-0x80000000, 0x7fffffff)])
+            tx.nVersion = random.choice([2, 3, random.randint(2, 0x7fffffff)])
             min_sequence = (tx.nVersion != 1 and tx.nVersion != 0) * 0x80000000  # The minimum sequence number to disable relative locktime
             if random.choice([True, False]):
                 tx.nLockTime = random.randrange(LOCKTIME_THRESHOLD, self.lastblocktime - 7200)  # all absolute locktimes in the past
@@ -1547,31 +1559,42 @@ class TaprootTest(BitcoinTestFramework):
         self.log.info("Post-activation tests...")
         # ReddCoin: SegWit+Taproot activate at height 432 via BIP9. Need activation + maturity.
         ACTIVATION_HEIGHT = 432
-        self.nodes[1].generate(ACTIVATION_HEIGHT + COINBASE_MATURITY + 1)
-        self.test_spenders(self.nodes[1], spenders_taproot_active(), input_counts=[1, 2, 2, 2, 2, 3])
 
-        # ReddCoin: Connect nodes for coin transfer to node0 (pre-activation tests).
-        # Must sync mocktime first — node1's time is far ahead from block generation.
-        from test_framework.util import set_node_times
-        set_node_times(self.nodes, self.nodes[1].mocktime)
+        # ReddCoin: node0 runs the pre-activation tests below and must STAKE its own
+        # blocks (block_submit -> getblocktemplate searches for a coinstake), which
+        # requires MATURE coins. Fund node0 from node1 *before* the bulk of block
+        # generation so the subsequent blocks bury the funding to staking maturity.
+        # node1 needs spendable coins first, so mine well past coinbase maturity.
+        self.nodes[1].generate(COINBASE_MATURITY + 100)
 
-        # Import node1's staking key into node0 so it can stake after sync
+        # node0 wallet + staking key. In the --previous_release config node0's
+        # wallet_names entry is None and the v4.22.9 release does not auto-create a
+        # default wallet, so create an empty legacy wallet first (importprivkey
+        # requires a loaded legacy wallet).
+        if self.options.previous_release and not self.nodes[0].listwallets():
+            self.nodes[0].createwallet(wallet_name=self.default_wallet_name, descriptors=False)
         node1_key = self.nodes[1].get_deterministic_priv_key()
         self.nodes[0].importprivkey(node1_key.key, 'node1_staking')
 
-        self.connect_nodes(1, 0)
-        self.sync_blocks()
-
-        # Transfer coins to pre-taproot node. Pre-activation tests need only
-        # ~10 spenders, so moderate amounts suffice.
-        # Set explicit fee rate — the fee estimator is inflated after thousands
-        # of test blocks and may exceed maxtxfee or trigger assertion failures.
+        # Fund node0 now; the remaining generation matures these coins for staking.
+        # Explicit low fee rate — the fee estimator is inflated after thousands of
+        # blocks and may otherwise exceed maxtxfee.
+        node0_addr = self.nodes[0].getnewaddress()
         self.nodes[1].settxfee(0.001)
-        addr = self.nodes[0].getnewaddress()
         for _ in range(3):
-            self.nodes[1].sendtoaddress(addr, 50000)  # 3 × 50k RDD
+            self.nodes[1].sendtoaddress(node0_addr, 50000)  # 3 × 50k RDD
         self.nodes[1].settxfee(0)  # Reset to default
-        self.nodes[1].generate(1)
+        self.nodes[1].generate(1)  # confirm the funding txs
+
+        # Extend to activation + maturity (buries node0's coins deeply -> stakeable).
+        self.nodes[1].generate(ACTIVATION_HEIGHT + COINBASE_MATURITY + 1 - self.nodes[1].getblockcount())
+        self.test_spenders(self.nodes[1], spenders_taproot_active(), input_counts=[1, 2, 2, 2, 2, 3])
+
+        # ReddCoin: connect nodes and sync so node0 receives its now-mature coins.
+        # Sync mocktime first — node1's time is far ahead from block generation.
+        from test_framework.util import set_node_times
+        set_node_times(self.nodes, self.nodes[1].mocktime)
+        self.connect_nodes(1, 0)
         self.sync_blocks()
 
         # Pre-taproot activation tests.
