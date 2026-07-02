@@ -1099,6 +1099,17 @@ class CompactBlocksTest(BitcoinTestFramework):
         assert_equal(int(node.getbestblockhash(), 16), block.sha256)
 
     def test_highbandwidth_mode_states_via_getpeerinfo(self):
+        # ReddCoin: disconnect the peers left over from earlier subtests before
+        # starting. Those peers can leave a never-delivered block in flight (a
+        # competing height-N PoS block one of them announced via cmpctblock, which
+        # node0 requested but never received). node0 only promotes the delivering
+        # peer to high-bandwidth when no OTHER block is in flight
+        # (BlockChecked: mapBlocksInFlight.count(hash) == mapBlocksInFlight.size(),
+        # net_processing.cpp), so a stale in-flight entry would suppress the
+        # bip152_hb_to transition this subtest asserts. Upstream doesn't hit this
+        # because PoW peers all announce the same tip block; ReddCoin's PoS
+        # build_block_on_tip produces a distinct block each call.
+        self.nodes[0].disconnect_p2ps()
         # create new p2p connection for a fresh state w/o any prior sendcmpct messages sent
         hb_test_node = self.nodes[0].add_p2p_connection(TestP2PConn(cmpct_version=2))
 
