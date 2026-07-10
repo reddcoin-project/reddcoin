@@ -141,6 +141,7 @@ BASE_SCRIPTS = [
     'feature_bind_extra.py',
     'mempool_resurrect.py',
     'wallet_txn_doublespend.py --mineblock',
+    'feature_pos_coinage_source.py',
     'tool_wallet.py --legacy-wallet',
     'tool_wallet.py --descriptors',
     'wallet_txn_clone.py',

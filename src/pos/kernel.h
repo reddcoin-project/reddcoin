@@ -44,6 +44,15 @@ bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx);
 // on a local CCoinsViewCache that differs from the live CoinsTip().
 uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& consensusParams, CCoinsViewCache* coins_view = nullptr);
 
+// Resolve a prevout's containing-block time and prev-tx time from the UTXO set.
+// This is the single source of truth (UTXO Coin) for the PoS age gates in
+// CreateCoinStake, matching the source GetCoinAge already uses. nTimeTxPrev is
+// the raw Coin.nTime (no zero fixup) so callers reproduce the exact value the
+// former disk read (tx->nTime) provided. Returns false if the coin is absent or
+// spent in the view, or its creating block is not on the active chain.
+// Requires cs_main.
+bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, uint32_t& nTimeBlockFrom, uint32_t& nTimeTxPrev);
+
 // Function to calculate the coin age weight
 int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const Consensus::Params& consensusParams);
 
