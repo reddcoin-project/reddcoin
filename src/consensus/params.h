@@ -128,6 +128,12 @@ struct Params {
     int64_t nStakeMaxAge;
     int64_t nModifierInterval;
     int nLastPowHeight;
+    /** Height at (and above) which PoS-era blocks must contain only
+     *  nVersion > POW_TX_VERSION transactions (bad-txns-version-pos).
+     *  Set above the deployment tip so pre-existing v1 txs are grandfathered.
+     *  Defaults to "never active" so a network that does not set it (e.g. signet)
+     *  never spuriously rejects blocks. */
+    int nPosTxVersionFloorHeight{std::numeric_limits<int>::max()};
 
     /**
      * If true, witness commitments contain a payload equal to a Bitcoin Script solution

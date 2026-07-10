@@ -585,6 +585,17 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (tx.IsCoinBase() || tx.IsCoinStake())
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "coinbase");
 
+    // ReddCoin: mirror the PoS-era transaction-version floor enforced in
+    // ContextualCheckBlock so legacy nVersion <= POW_TX_VERSION (zero-nTime) txs are
+    // never relayed into, or mined for, a block subject to the floor. The tx would be
+    // confirmed in the next block (tip height + 1), so apply once that height reaches
+    // the activation height.
+    if (m_active_chainstate.m_chain.Height() + 1 >= args.m_chainparams.GetConsensus().nPosTxVersionFloorHeight
+        && tx.nVersion <= POW_TX_VERSION) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-version-pos",
+                             strprintf("transaction version %d below PoS minimum %d", tx.nVersion, POW_TX_VERSION + 1));
+    }
+
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     std::string reason;
     if (fRequireStandard && !IsStandardTx(tx, reason))
@@ -3404,6 +3415,26 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
     for (const auto& tx : block.vtx) {
         if (!IsFinalTx(*tx, nHeight, nLockTimeCutoff)) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal", "non-final transaction");
+        }
+    }
+
+    // ReddCoin: after the PoW era the chain is PoS-only, so every transaction must
+    // carry a non-zero nTime. nTime is serialized only for nVersion > POW_TX_VERSION
+    // (primitives/transaction.h), so legacy nVersion <= POW_TX_VERSION ("v1") txs
+    // have no timestamp: their outputs enter the UTXO set with Coin.nTime == 0,
+    // which makes PoSV coin-age ambiguous (the nTime==0 fallback resolves
+    // differently across implementations -> consensus divergence). Require all
+    // such transactions to be nVersion >= POSV_TX_VERSION. Gated on
+    // nPosTxVersionFloorHeight (an activation height above the deployment tip) so
+    // that historical blocks — the PoW era AND a handful of PoS-era blocks that
+    // legitimately contain v1 txs (see contrib/devtools/audit_tx_version.py) —
+    // still validate. Only blocks at/after activation are constrained.
+    if (nHeight >= consensusParams.nPosTxVersionFloorHeight) {
+        for (const auto& tx : block.vtx) {
+            if (tx->nVersion <= POW_TX_VERSION) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-version-pos",
+                                     strprintf("transaction version %d below PoS minimum %d", tx->nVersion, POW_TX_VERSION + 1));
+            }
         }
     }
 

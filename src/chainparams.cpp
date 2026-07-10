@@ -67,6 +67,12 @@ public:
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.nLastPowHeight = 260799;
+        // Enforce the PoS tx-version floor only for future blocks. Seven historical
+        // v1 transactions exist at heights 6414327 and 6450671..6452200 (audited via
+        // contrib/devtools/audit_tx_version.py), so the floor MUST activate above them
+        // AND above the tip at release. TODO: replace with a concrete height safely
+        // above the mainnet tip at deployment (placeholder below).
+        consensus.nPosTxVersionFloorHeight = 6700000;
         consensus.nRevertCoinbase = 254208; //! disregard bip34 from this height (?)
         consensus.nCoinbaseMaturity = 30;
         consensus.BIP16Exception = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
@@ -358,6 +364,9 @@ public:
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.nLastPowHeight = 1439;
+        // TODO: set above the testnet tip at release; re-run the audit on testnet to
+        // confirm the range from this height forward is clean (placeholder below).
+        consensus.nPosTxVersionFloorHeight = 5000000;
         consensus.nCoinbaseMaturity = 50;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
         consensus.POSVHeight = 1440;
@@ -622,6 +631,10 @@ public:
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.nLastPowHeight = 89;  // Allow enough PoW blocks for TestChain100Setup
+        // Regtest: keep the floor active for the whole PoS era (height >= 90).
+        // Identical to the previous rule (nHeight > nLastPowHeight), so the
+        // functional tests exercise it unchanged.
+        consensus.nPosTxVersionFloorHeight = 90;
         consensus.nCoinbaseMaturity = 60;  // Fast maturity for regtest, gives ~40 mature coinbases at height 100
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
         consensus.POSVHeight = 90;      // Activate at PoS transition (nLastPowHeight + 1), matching mainnet/testnet pattern
