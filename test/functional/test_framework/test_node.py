@@ -315,8 +315,9 @@ class TestNode():
                 new_time = max(self.mocktime, block_time) + POS_BLOCK_SPACING
                 self.setmocktime(new_time)
                 self.mocktime = new_time  # Track for sync_time()
-            except Exception:
-                pass  # If mocktime isn't set or fails, continue anyway
+            except JSONRPCException as e:
+                # Best-effort: no tip to read yet (e.g. empty chain). Continue anyway.
+                self.log.debug("generate: skipping PoS mocktime advance: %s" % e)
 
             # PoS retry logic - retry with time advancement on staking failures
             for attempt in range(pos_retry_attempts):
@@ -331,8 +332,8 @@ class TestNode():
                             new_time = self.mocktime + POS_RETRY_SPACING
                             self.setmocktime(new_time)
                             self.mocktime = new_time
-                        except Exception:
-                            pass
+                        except JSONRPCException as e:
+                            self.log.debug("generate: PoS retry mocktime advance failed: %s" % e)
                     else:
                         raise
 

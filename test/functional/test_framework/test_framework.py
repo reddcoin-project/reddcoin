@@ -468,8 +468,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 # Advance 5 minutes past the tip to ensure all cache coins are mature for staking
                 n.setmocktime(tip_time + 300)
                 n.mocktime = tip_time + 300
-            except Exception:
-                pass
+            except JSONRPCException as e:
+                # Best-effort: a node without blocks yet (e.g. no cache) has no tip to
+                # read. Log and continue rather than failing wallet init.
+                self.log.debug("init_wallet: skipping PoS mocktime advance for node %d: %s" % (i, e))
 
             # For PoS: Set the node's default RPC to use the wallet context
             # This ensures generatetoaddress and other wallet-dependent RPCs work
