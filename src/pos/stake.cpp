@@ -498,3 +498,65 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     // Successfully generated coinstake
     return true;
 }
+
+bool FinalizeCoinStakeReward(const CWallet* pwallet, CChainState* chainstate, CMutableTransaction& txCoinStake, const CAmount& nFees, const Consensus::Params& consensusParams)
+{
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    // Recompute the stake reward WITH the block's transaction fees, exactly as
+    // the validator does in ConnectBlock:
+    //   nCalculatedStakeReward = GetProofOfStakeReward(nCoinAge, nFees, fInflationAdjustment)
+    // Coin age is read from the same UTXO source (CoinsTip) the validator uses,
+    // over the final coinstake inputs (still unspent at the tip during mining).
+    uint64_t nCoinAge = GetCoinAge(chainstate, (const CTransaction)txCoinStake, consensusParams);
+    if (!nCoinAge)
+        return error("FinalizeCoinStakeReward : failed to calculate coin age");
+
+    double fInflationAdjustment = GetInflationAdjustment(chainstate, consensusParams);
+    CAmount nReward = GetProofOfStakeReward(nCoinAge, nFees, fInflationAdjustment);
+    if (nReward <= 0)
+        return error("FinalizeCoinStakeReward : non-positive reward");
+
+    // Same truncating 92/8 split as CreateCoinStake and ConnectBlock, so the dev
+    // output equals the validator's nCalculatedDevEndCredit exactly.
+    CAmount nEndCredit = nReward * 0.92;
+    CAmount nDevCredit = nReward - nEndCredit;
+
+    // Sum the staked inputs from the UTXO set to recompute the staker credit.
+    CCoinsViewCache& view = chainstate->CoinsTip();
+    CAmount nCredit = nEndCredit;
+    for (const CTxIn& txin : txCoinStake.vin) {
+        const Coin& coin = view.AccessCoin(txin.prevout);
+        if (coin.IsSpent())
+            return error("FinalizeCoinStakeReward : coinstake input not available");
+        nCredit += coin.out.nValue;
+    }
+
+    // Rewrite outputs using the existing coinstake layout (dev output is last).
+    if (txCoinStake.vout.size() == 4) {
+        txCoinStake.vout[1].nValue = (nCredit / 2 / CENT) * CENT;
+        txCoinStake.vout[2].nValue = nCredit - txCoinStake.vout[1].nValue;
+        txCoinStake.vout[3].nValue = nDevCredit;
+    } else {
+        txCoinStake.vout[1].nValue = nCredit;
+        txCoinStake.vout[2].nValue = nDevCredit;
+    }
+
+    // Re-sign over the new output amounts. Build the prevout map from the UTXO
+    // Coins (they carry the correct nTime / coinbase / coinstake flags).
+    std::map<COutPoint, Coin> coins;
+    for (const CTxIn& txin : txCoinStake.vin)
+        coins[txin.prevout] = view.AccessCoin(txin.prevout);
+    std::map<int, std::string> input_errors;
+    if (!pwallet->SignTransaction(txCoinStake, coins, SIGHASH_ALL, input_errors)) {
+        for (const auto& err : input_errors)
+            LogPrintf("FinalizeCoinStakeReward : sign error input %d: %s\n", err.first, err.second);
+        return error("FinalizeCoinStakeReward : failed to sign coinstake");
+    }
+
+    unsigned int nBytes = ::GetSerializeSize(txCoinStake, PROTOCOL_VERSION);
+    if (nBytes >= 1000000 / 5)
+        return error("FinalizeCoinStakeReward : exceeded coinstake size limit");
+
+    return true;
+}

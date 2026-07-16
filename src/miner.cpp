@@ -241,6 +241,17 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     int nDescendantsUpdated = 0;
     addPackageTxs(nPackagesSelected, nDescendantsUpdated);
 
+    // reddcoin: now that mempool fees (nFees) are known, fold them into the
+    // coinstake reward and re-sign. CreateCoinStake ran before addPackageTxs
+    // with fees=0, so without this the staker forfeits the block's fees and
+    // ConnectBlock's fee-inclusive reward check would only pass leniently.
+    if (pblock->IsProofOfStake()) {
+        CMutableTransaction txCoinStake(*pblock->vtx[1]);
+        if (!FinalizeCoinStakeReward(pwallet, &m_chainstate, txCoinStake, nFees, chainparams.GetConsensus()))
+            throw std::runtime_error(strprintf("%s: FinalizeCoinStakeReward failed", __func__));
+        pblock->vtx[1] = MakeTransactionRef(std::move(txCoinStake));
+    }
+
     int64_t nTime1 = GetTimeMicros();
 
     m_last_block_num_txs = nBlockTx;

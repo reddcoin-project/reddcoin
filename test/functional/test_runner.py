@@ -242,10 +242,12 @@ BASE_SCRIPTS = [
     'rpc_bind.py --nonloopback',
     'mining_basic.py',
     'feature_pos_basic.py',
+    'feature_pos_coinstake_fees.py',
     'feature_pos_sync.py',
     # v4.22.9 ↔ v4.22.10 compatibility tests (require releases/v4.22.9/bin/)
     'feature_compat_p2p_sync.py',
     'feature_compat_pos_blocks.py',
+    'feature_pos_coinstake_fees.py --previous_release',
     'feature_compat_tx_versions.py',
     'feature_compat_staking_interop.py',
     'feature_compat_softfork_signaling.py',
