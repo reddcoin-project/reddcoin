@@ -311,8 +311,8 @@ class AddressTypeTest(BitcoinTestFramework):
                 if i != from_node:
                     try:
                         self.nodes[i].sendrawtransaction(raw_tx)
-                    except Exception:
-                        pass  # Already in mempool
+                    except Exception as e:
+                        self.log.debug("relay skipped, likely already in mempool: %s" % e)
             self.sync_mempools()
 
             unconf_balances = self.get_balances('untrusted_pending')

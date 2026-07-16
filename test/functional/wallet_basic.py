@@ -430,8 +430,8 @@ class WalletTest(BitcoinTestFramework):
             rawtx = self.nodes[0].getrawtransaction(mempool_txid)
             try:
                 self.nodes[1].sendrawtransaction(rawtx)
-            except Exception:
-                pass  # May already be in mempool
+            except Exception as e:
+                self.log.debug("relay skipped, likely already in mempool: %s" % e)
         advance_time_for_pos(self.nodes[0:3], seconds=60)
         self.nodes[1].generate(1)
         self.sync_blocks(self.nodes[0:3])

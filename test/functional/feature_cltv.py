@@ -170,8 +170,8 @@ class BIP65Test(BitcoinTestFramework):
                     addr = addresses[0]
             if addr:
                 signing_key = node.dumpprivkey(addr)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug("coinstake key lookup failed: %s" % e)
         if not signing_key:
             signing_key = node.get_deterministic_priv_key().key
         sign_block(block, signing_key)

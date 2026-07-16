@@ -101,12 +101,12 @@ class CompactFiltersTest(BitcoinTestFramework):
         # Reconnect P2P peers (may have disconnected during long block generation)
         try:
             peer_0.peer_disconnect()
-        except:
-            pass
+        except Exception as e:
+            self.log.debug("peer_0 disconnect skipped: %s" % e)
         try:
             peer_1.peer_disconnect()
-        except:
-            pass
+        except Exception as e:
+            self.log.debug("peer_1 disconnect skipped: %s" % e)
         peer_0 = self.nodes[0].add_p2p_connection(FiltersClient())
         peer_1 = self.nodes[1].add_p2p_connection(FiltersClient())
 

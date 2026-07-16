@@ -243,8 +243,8 @@ class BIP68_112_113Test(BitcoinTestFramework):
                     coinstake_address = key_to_p2pkh(pubkey_hex, main=False)
             if coinstake_address:
                 signing_key = node.dumpprivkey(coinstake_address)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug("coinstake key lookup failed: %s" % e)
 
         if not signing_key:
             signing_key = node.get_deterministic_priv_key().key

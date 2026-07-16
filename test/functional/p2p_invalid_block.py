@@ -92,8 +92,8 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
                     coinstake_address = addresses[0]
             if coinstake_address:
                 signing_key = node.dumpprivkey(coinstake_address)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug("coinstake key lookup failed: %s" % e)
 
         if not signing_key:
             signing_key = node.get_deterministic_priv_key().key

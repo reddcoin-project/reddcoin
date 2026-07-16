@@ -1495,8 +1495,8 @@ class FullBlockTest(BitcoinTestFramework):
         target_height = None
         try:
             target_height = node.getblockheader(target_hash_hex)['height']
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug("target height lookup failed: %s" % e)
 
         max_rollback = 200
         count = 0
@@ -1591,8 +1591,8 @@ class FullBlockTest(BitcoinTestFramework):
                 tx.rehash()
                 try:
                     node.sendrawtransaction(tx.serialize().hex())
-                except Exception:
-                    pass  # Conflict with mempool tx from invalidated chain
+                except Exception as e:
+                    self.log.debug("spend tx not relayed (conflict with invalidated-chain tx): %s" % e)
 
             advance_time_for_pos(node, seconds=120)
             gen_hash = node.generate(1)[0]

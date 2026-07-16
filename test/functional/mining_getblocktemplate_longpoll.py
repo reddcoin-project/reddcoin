@@ -8,6 +8,7 @@ from decimal import Decimal
 import random
 import threading
 
+from test_framework.authproxy import JSONRPCException
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import advance_time_for_pos, get_rpc_proxy
@@ -27,7 +28,7 @@ class LongpollThread(threading.Thread):
     def run(self):
         try:
             self.node.getblocktemplate({'longpollid': self.longpollid, 'rules': ['segwit']})
-        except Exception:
+        except JSONRPCException:
             # In PoS, the longpoll correctly unblocks when a change is detected,
             # but creating the response template may fail if nLastCoinStakeSearchTime
             # was consumed by a recent generate() call on the same node.

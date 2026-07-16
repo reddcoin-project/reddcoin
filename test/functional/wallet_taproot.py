@@ -208,8 +208,8 @@ class WalletTaprootTest(BitcoinTestFramework):
                 new_time = max(node.mocktime, block_time) + POS_BLOCK_SPACING
                 node.setmocktime(new_time)
                 node.mocktime = new_time
-            except Exception:
-                pass
+            except Exception as e:
+                self.log.debug("PoS mocktime advance failed: %s" % e)
             for attempt in range(MAX_RETRIES):
                 try:
                     block = self.staking.generatetoaddress(1, self.staking.getnewaddress())

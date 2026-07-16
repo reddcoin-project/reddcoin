@@ -633,8 +633,8 @@ def test_no_more_inputs_fails(self, rbf_node, peer_node, dest_address):
     raw_tx = rbf_node.getrawtransaction(rbfid)
     try:
         peer_node.sendrawtransaction(raw_tx)
-    except Exception:
-        pass  # Already in mempool
+    except Exception as e:
+        self.log.debug("relay skipped, likely already in mempool: %s" % e)
     peer_node.generate(1)
     self.sync_blocks()
 

@@ -1271,8 +1271,8 @@ class TaprootTest(BitcoinTestFramework):
             if addr:
                 try:
                     signing_key = node.dumpprivkey(addr)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.log.debug("coinstake key lookup failed: %s" % e)
         if not signing_key:
             signing_key = node.get_deterministic_priv_key().key
         sign_block(block, signing_key)
@@ -1535,8 +1535,8 @@ class TaprootTest(BitcoinTestFramework):
                     try:
                         node.sendrawtransaction(tx.serialize().hex(), 0)
                         self.log.debug("Non-standard tx accepted (ReddCoin policy differs): %s" % msg)
-                    except Exception:
-                        pass  # Expected rejection
+                    except Exception as e:
+                        self.log.debug("Non-standard tx rejected as expected: %s" % e)
                 # Submit in a block
                 self.block_submit(node, [tx], msg, witness=True, accept=fail_input is None, cb_pubkey=cb_pubkey, fees=fee, sigops_weight=sigops_weight, err_msg=expected_fail_msg)
 
