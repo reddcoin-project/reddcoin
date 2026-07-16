@@ -664,7 +664,10 @@ def LegacySignatureHash(script, txTo, inIdx, hashtype):
         txtmp.vin = []
         txtmp.vin.append(tmp)
 
-    s = txtmp.serialize_without_witness()
+    # ReddCoin: Use serialize_for_legacy_sighash() which excludes nTime.
+    # Legacy signature hash does NOT include nTime, matching the C++
+    # CTransactionSignatureSerializer::Serialize() implementation.
+    s = txtmp.serialize_for_legacy_sighash()
     s += struct.pack(b"<I", hashtype)
 
     hash = hash256(s)

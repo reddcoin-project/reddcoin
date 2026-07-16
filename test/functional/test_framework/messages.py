@@ -32,13 +32,35 @@ import time
 from test_framework.siphash import siphash256
 from test_framework.util import hex_str_to_bytes, assert_equal
 
+# Try to import scrypt for ReddCoin PoW mining (similar to Litecoin's litecoin_scrypt)
+# If not available, solve() will fall back to SHA256 (which will fail validation)
+try:
+    import scrypt as scrypt_module
+    SCRYPT_AVAILABLE = True
+except ImportError:
+    SCRYPT_AVAILABLE = False
+
+
+def scrypt_hash(data):
+    """Compute scrypt hash for ReddCoin PoW (N=1024, r=1, p=1, buflen=32)."""
+    if SCRYPT_AVAILABLE:
+        return scrypt_module.hash(data, data, N=1024, r=1, p=1, buflen=32)
+    else:
+        # Fallback to SHA256 (will fail validation but useful for testing serialization)
+        return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+
 MAX_LOCATOR_SZ = 101
 MAX_BLOCK_BASE_SIZE = 1000000
 MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
 COIN = 100000000  # 1 btc in satoshis
-MAX_MONEY = 21000000 * COIN
+MAX_MONEY = 92233720368 * COIN
+COINBASE_REWARD = 545000000  # ReddCoin regtest premine block subsidy (blocks 1-10) in coins
+NORMAL_BLOCK_REWARD = 300000  # ReddCoin regtest normal block subsidy (blocks 11+) in coins
+
+# ReddCoin: Block version constants
+POW_BLOCK_VERSION = 2  # Blocks with version > 2 are PoS and require block signature
 
 BIP125_SEQUENCE_NUMBER = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 
@@ -503,15 +525,21 @@ class CTxWitness:
 
 class CTransaction:
     __slots__ = ("hash", "nLockTime", "nVersion", "sha256", "vin", "vout",
-                 "wit")
+                 "wit", "nTime")
 
     def __init__(self, tx=None):
         if tx is None:
-            self.nVersion = 1
+            # Reddcoin: Default to nVersion=2 (CTransaction::CURRENT_VERSION)
+            # This matches ReddCoin's standard transaction version
+            self.nVersion = 2
             self.vin = []
             self.vout = []
             self.wit = CTxWitness()
             self.nLockTime = 0
+            # Reddcoin: nTime field (only serialized if nVersion > 1)
+            # MUST be non-zero for nVersion > 1, so default to current time
+            import time
+            self.nTime = int(time.time())
             self.sha256 = None
             self.hash = None
         else:
@@ -519,6 +547,7 @@ class CTransaction:
             self.vin = copy.deepcopy(tx.vin)
             self.vout = copy.deepcopy(tx.vout)
             self.nLockTime = tx.nLockTime
+            self.nTime = tx.nTime if hasattr(tx, 'nTime') else 0  # Reddcoin: nTime field
             self.sha256 = tx.sha256
             self.hash = tx.hash
             self.wit = copy.deepcopy(tx.wit)
@@ -542,6 +571,11 @@ class CTransaction:
         else:
             self.wit = CTxWitness()
         self.nLockTime = struct.unpack("<I", f.read(4))[0]
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            self.nTime = struct.unpack("<I", f.read(4))[0]
+        else:
+            self.nTime = 0
         self.sha256 = None
         self.hash = None
 
@@ -551,6 +585,24 @@ class CTransaction:
         r += ser_vector(self.vin)
         r += ser_vector(self.vout)
         r += struct.pack("<I", self.nLockTime)
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            r += struct.pack("<I", self.nTime)
+        return r
+
+    def serialize_for_legacy_sighash(self):
+        """Serialize for legacy (pre-BIP143) signature hash.
+
+        ReddCoin: The legacy signature hash does NOT include nTime.
+        This matches CTransactionSignatureSerializer::Serialize() in C++
+        which only serializes: nVersion, vin, vout, nLockTime.
+        """
+        r = b""
+        r += struct.pack("<i", self.nVersion)
+        r += ser_vector(self.vin)
+        r += ser_vector(self.vout)
+        r += struct.pack("<I", self.nLockTime)
+        # Note: nTime is intentionally NOT included for legacy sighash
         return r
 
     # Only serialize with witness when explicitly called for
@@ -574,6 +626,9 @@ class CTransaction:
                     self.wit.vtxinwit.append(CTxInWitness())
             r += self.wit.serialize()
         r += struct.pack("<I", self.nLockTime)
+        # Reddcoin: nTime field comes after nLockTime for nVersion > 1
+        if self.nVersion > 1:
+            r += struct.pack("<I", self.nTime)
         return r
 
     # Regular serialization is with witness -- must explicitly
@@ -621,8 +676,9 @@ class CTransaction:
 
 
 class CBlockHeader:
+    # ReddCoin: Added scrypt256 for PoW validation (like Litecoin's litecoin_scrypt)
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256")
+                 "nTime", "nVersion", "sha256", "scrypt256")
 
     def __init__(self, header=None):
         if header is None:
@@ -636,6 +692,7 @@ class CBlockHeader:
             self.nNonce = header.nNonce
             self.sha256 = header.sha256
             self.hash = header.hash
+            self.scrypt256 = getattr(header, 'scrypt256', None)
             self.calc_sha256()
 
     def set_null(self):
@@ -647,6 +704,7 @@ class CBlockHeader:
         self.nNonce = 0
         self.sha256 = None
         self.hash = None
+        self.scrypt256 = None
 
     def deserialize(self, f):
         self.nVersion = struct.unpack("<i", f.read(4))[0]
@@ -657,6 +715,7 @@ class CBlockHeader:
         self.nNonce = struct.unpack("<I", f.read(4))[0]
         self.sha256 = None
         self.hash = None
+        self.scrypt256 = None
 
     def serialize(self):
         r = b""
@@ -679,6 +738,8 @@ class CBlockHeader:
             r += struct.pack("<I", self.nNonce)
             self.sha256 = uint256_from_str(hash256(r))
             self.hash = encode(hash256(r)[::-1], 'hex_codec').decode('ascii')
+            # ReddCoin: Also compute scrypt256 for PoW validation (like Litecoin)
+            self.scrypt256 = uint256_from_str(scrypt_hash(r))
 
     def rehash(self):
         self.sha256 = None
@@ -694,15 +755,19 @@ BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
 assert_equal(BLOCK_HEADER_SIZE, 80)
 
 class CBlock(CBlockHeader):
-    __slots__ = ("vtx",)
+    __slots__ = ("vtx", "vchBlockSig")
 
     def __init__(self, header=None):
         super().__init__(header)
         self.vtx = []
+        self.vchBlockSig = b""
 
     def deserialize(self, f):
         super().deserialize(f)
         self.vtx = deser_vector(f, CTransaction)
+        # PoS blocks (version > POW_BLOCK_VERSION) have a block signature
+        if self.nVersion > POW_BLOCK_VERSION:
+            self.vchBlockSig = deser_string(f)
 
     def serialize(self, with_witness=True):
         r = b""
@@ -711,6 +776,9 @@ class CBlock(CBlockHeader):
             r += ser_vector(self.vtx, "serialize_with_witness")
         else:
             r += ser_vector(self.vtx, "serialize_without_witness")
+        # PoS blocks (version > POW_BLOCK_VERSION) have a block signature
+        if self.nVersion > POW_BLOCK_VERSION:
+            r += ser_string(self.vchBlockSig)
         return r
 
     # Calculate the merkle root given a vector of transaction hashes
@@ -744,9 +812,12 @@ class CBlock(CBlockHeader):
 
     def is_valid(self):
         self.calc_sha256()
-        target = uint256_from_compact(self.nBits)
-        if self.sha256 > target:
-            return False
+        # PoS blocks (version > POW_BLOCK_VERSION) don't use hash difficulty
+        # They are validated by block signature instead
+        if self.nVersion <= POW_BLOCK_VERSION:
+            target = uint256_from_compact(self.nBits)
+            if self.sha256 > target:
+                return False
         for tx in self.vtx:
             if not tx.is_valid():
                 return False
@@ -755,16 +826,27 @@ class CBlock(CBlockHeader):
         return True
 
     def solve(self):
+        """Mine a valid nonce for PoW blocks using scrypt (ReddCoin, like Litecoin).
+
+        For PoS blocks (nVersion > POW_BLOCK_VERSION), does nothing as they use
+        block signatures instead of PoW.
+        """
         self.rehash()
+        # PoS blocks (version > POW_BLOCK_VERSION) don't use nonce-based mining
+        # They are validated by block signature, so nonce stays at 0
+        if self.nVersion > POW_BLOCK_VERSION:
+            return
         target = uint256_from_compact(self.nBits)
-        while self.sha256 > target:
+        # ReddCoin: Use scrypt256 for PoW validation (computed in calc_sha256 like Litecoin)
+        while self.scrypt256 > target:
             self.nNonce += 1
             self.rehash()
 
     def __repr__(self):
-        return "CBlock(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x vtx=%s)" \
+        sig_info = f" vchBlockSig={self.vchBlockSig.hex()}" if self.vchBlockSig else ""
+        return "CBlock(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x vtx=%s%s)" \
             % (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot,
-               time.ctime(self.nTime), self.nBits, self.nNonce, repr(self.vtx))
+               time.ctime(self.nTime), self.nBits, self.nNonce, repr(self.vtx), sig_info)
 
 
 class PrefilledTransaction:
@@ -800,12 +882,13 @@ class PrefilledTransaction:
 
 # This is what we send on the wire, in a cmpctblock message.
 class P2PHeaderAndShortIDs:
-    __slots__ = ("header", "nonce", "prefilled_txn", "prefilled_txn_length",
+    __slots__ = ("header", "nonce", "vchBlockSig", "prefilled_txn", "prefilled_txn_length",
                  "shortids", "shortids_length")
 
     def __init__(self):
         self.header = CBlockHeader()
         self.nonce = 0
+        self.vchBlockSig = b""
         self.shortids_length = 0
         self.shortids = []
         self.prefilled_txn_length = 0
@@ -814,6 +897,8 @@ class P2PHeaderAndShortIDs:
     def deserialize(self, f):
         self.header.deserialize(f)
         self.nonce = struct.unpack("<Q", f.read(8))[0]
+        # ReddCoin: PoS blocks include vchBlockSig after nonce
+        self.vchBlockSig = deser_string(f)
         self.shortids_length = deser_compact_size(f)
         for _ in range(self.shortids_length):
             # shortids are defined to be 6 bytes in the spec, so append
@@ -827,6 +912,8 @@ class P2PHeaderAndShortIDs:
         r = b""
         r += self.header.serialize()
         r += struct.pack("<Q", self.nonce)
+        # ReddCoin: PoS blocks include vchBlockSig after nonce
+        r += ser_string(self.vchBlockSig)
         r += ser_compact_size(self.shortids_length)
         for x in self.shortids:
             # We only want the first 6 bytes
@@ -858,11 +945,12 @@ def calculate_shortid(k0, k1, tx_hash):
 # This version gets rid of the array lengths, and reinterprets the differential
 # encoding into indices that can be used for lookup.
 class HeaderAndShortIDs:
-    __slots__ = ("header", "nonce", "prefilled_txn", "shortids", "use_witness")
+    __slots__ = ("header", "nonce", "vchBlockSig", "prefilled_txn", "shortids", "use_witness")
 
     def __init__(self, p2pheaders_and_shortids = None):
         self.header = CBlockHeader()
         self.nonce = 0
+        self.vchBlockSig = b""  # ReddCoin: PoS block signature
         self.shortids = []
         self.prefilled_txn = []
         self.use_witness = False
@@ -870,6 +958,7 @@ class HeaderAndShortIDs:
         if p2pheaders_and_shortids is not None:
             self.header = p2pheaders_and_shortids.header
             self.nonce = p2pheaders_and_shortids.nonce
+            self.vchBlockSig = p2pheaders_and_shortids.vchBlockSig  # ReddCoin: copy block signature
             self.shortids = p2pheaders_and_shortids.shortids
             last_index = -1
             for x in p2pheaders_and_shortids.prefilled_txn:
@@ -883,6 +972,7 @@ class HeaderAndShortIDs:
             ret = P2PHeaderAndShortIDs()
         ret.header = self.header
         ret.nonce = self.nonce
+        ret.vchBlockSig = self.vchBlockSig  # ReddCoin: copy block signature
         ret.shortids_length = len(self.shortids)
         ret.shortids = self.shortids
         ret.prefilled_txn_length = len(self.prefilled_txn)
@@ -907,6 +997,8 @@ class HeaderAndShortIDs:
             prefill_list = [0]
         self.header = CBlockHeader(block)
         self.nonce = nonce
+        # ReddCoin: copy block signature for PoS blocks
+        self.vchBlockSig = getattr(block, 'vchBlockSig', b"")
         self.prefilled_txn = [ PrefilledTransaction(i, block.vtx[i]) for i in prefill_list ]
         self.shortids = []
         self.use_witness = use_witness

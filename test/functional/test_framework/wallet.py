@@ -105,6 +105,22 @@ class MiniWallet:
 
     def generate(self, num_blocks):
         """Generate blocks with coinbase outputs to the internal address, and append the outputs to the internal list"""
+        # ReddCoin: Check if we're in PoS phase (nLastPowHeight = 89 for regtest)
+        current_height = self._test_node.getblockcount()
+        regtest_last_pow_height = 89
+
+        if current_height >= regtest_last_pow_height:
+            # PoS phase: use node.generate() then send UTXOs to MiniWallet's address
+            blocks = self._test_node.generate(num_blocks)
+            if self._address:
+                # Send coins to MiniWallet's address for each block requested
+                for _ in range(num_blocks):
+                    txid = self._test_node.sendtoaddress(self._address, 1)
+                    tx = self._test_node.getrawtransaction(txid, True)
+                    self.scan_tx(tx)
+            return blocks
+
+        # PoW phase: generatetodescriptor works as expected
         blocks = self._test_node.generatetodescriptor(num_blocks, f'raw({self._scriptPubKey.hex()})')
         for b in blocks:
             cb_tx = self._test_node.getblock(blockhash=b, verbosity=2)['tx'][0]
@@ -142,15 +158,20 @@ class MiniWallet:
         """Create and return a tx with the specified fee_rate. Fee may be exact or at most one satoshi higher than needed."""
         self._utxos = sorted(self._utxos, key=lambda k: k['value'])
         utxo_to_spend = utxo_to_spend or self._utxos.pop()  # Pick the largest utxo (if none provided) and hope it covers the fee
+        # Reddcoin: +4 bytes for nTime field when nVersion > 1 (Bitcoin values are 96/168)
         if self._priv_key is None:
-            vsize = Decimal(96)  # anyone-can-spend
+            vsize = Decimal(100)  # anyone-can-spend
         else:
-            vsize = Decimal(168)  # P2PK (73 bytes scriptSig + 35 bytes scriptPubKey + 60 bytes other)
+            vsize = Decimal(172)  # P2PK (73 bytes scriptSig + 35 bytes scriptPubKey + 64 bytes other)
         send_value = satoshi_round(utxo_to_spend['value'] - fee_rate * (vsize / 1000))
         fee = utxo_to_spend['value'] - send_value
         assert send_value > 0
 
         tx = CTransaction()
+        # Use the node's tip time for nTime so tx can be included in PoS blocks
+        # (CTransaction defaults to time.time() which is real time, not mocktime)
+        tip_time = from_node.getblockheader(from_node.getbestblockhash())['time']
+        tx.nTime = tip_time
         tx.vin = [CTxIn(COutPoint(int(utxo_to_spend['txid'], 16), utxo_to_spend['vout']), nSequence=sequence)]
         tx.vout = [CTxOut(int(send_value * COIN), self._scriptPubKey)]
         tx.nLockTime = locktime

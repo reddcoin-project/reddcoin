@@ -112,6 +112,16 @@ class AuthServiceProxy():
             self.__conn.close()
             self.__conn.request(method, path, postdata, headers)
             return self._get_response()
+        except (http.client.CannotSendRequest, http.client.ResponseNotReady):
+            # The connection was left mid-request/response by a *previous* call
+            # whose response read was interrupted (e.g. a slow/timed-out or
+            # truncated response under heavy system load) and whose error was
+            # caught by the caller. The stale connection is unusable until reset.
+            # CannotSendRequest is raised before any bytes of this request are
+            # sent, so closing and retrying cannot double-execute the RPC.
+            self.__conn.close()
+            self.__conn.request(method, path, postdata, headers)
+            return self._get_response()
         except OSError as e:
             retry = (
                 '[WinError 10053] An established connection was aborted by the software in your host machine' in str(e))

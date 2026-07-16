@@ -172,7 +172,7 @@ def build_release(tag, args) -> int:
         # Move binaries, so they're in the same place as in the
         # release download
         Path('bin').mkdir(exist_ok=True)
-        files = ['bitcoind', 'bitcoin-cli', 'bitcoin-tx']
+        files = ['reddcoind', 'reddcoin-cli', 'reddcoin-tx']
         for f in files:
             Path('src/'+f).rename('bin/'+f)
     return 0
