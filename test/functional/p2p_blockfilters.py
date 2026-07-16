@@ -46,9 +46,12 @@ class CompactFiltersTest(BitcoinTestFramework):
         self.rpc_timeout = 480
         self.num_nodes = 2
         self.extra_args = [
-            ["-blockfilterindex", "-peerblockfilters"],
-            ["-blockfilterindex"],
+            ["-whitelist=127.0.0.1", "-blockfilterindex", "-peerblockfilters", "-vbparams=segwit:2000000000:1"],  # Far future start, nTimeout=1 → NODE_WITNESS],
+            ["-whitelist=127.0.0.1", "-blockfilterindex","-vbparams=segwit:2000000000:1"],
         ]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         # Node 0 supports COMPACT_FILTERS, node 1 does not.
@@ -56,17 +59,35 @@ class CompactFiltersTest(BitcoinTestFramework):
         peer_1 = self.nodes[1].add_p2p_connection(FiltersClient())
 
         # Nodes 0 & 1 share the same first 999 blocks in the chain.
-        self.nodes[0].generate(999)
+        # First generate enough blocks to have many mature coins
+        self.log.info("Mining initial blocks on node0...")
+        self.generate(300)
+
+        # Fund node1 with UTXOs for staking 1001 blocks independently
+        self.log.info("Funding node1 with staking UTXOs...")
+        node1_addr = self.nodes[1].get_deterministic_priv_key().address
+        for _ in range(50):
+            self.nodes[0].sendtoaddress(node1_addr, 5000)
+
+        # Generate blocks to mature node1's UTXOs and add more funding
+        self.log.info("Mining more blocks and adding more UTXOs...")
+        self.generate(200)  # 300 + 200 = 500
+        for _ in range(50):
+            self.nodes[0].sendtoaddress(node1_addr, 5000)
+
+        # Continue to 999
+        self.log.info("Node0 continue generate to reach block 999...")
+        self.generate(499)  # 500 + 499 = 999
         self.sync_blocks(timeout=600)
 
         # Stale blocks by disconnecting nodes 0 & 1, mining, then reconnecting
         self.disconnect_nodes(0, 1)
 
-        stale_block_hash = self.nodes[0].generate(1)[0]
+        stale_block_hash = self.generate(1)[0]
         self.nodes[0].syncwithvalidationinterfacequeue()
         assert_equal(self.nodes[0].getblockcount(), 1000)
 
-        self.nodes[1].generate(1001)
+        self.generate(1001, self.nodes[1])
         assert_equal(self.nodes[1].getblockcount(), 2000)
 
         # Check that nodes have signalled NODE_COMPACT_FILTERS correctly.
@@ -76,6 +97,18 @@ class CompactFiltersTest(BitcoinTestFramework):
         # Check that the localservices is as expected.
         assert int(self.nodes[0].getnetworkinfo()['localservices'], 16) & NODE_COMPACT_FILTERS != 0
         assert int(self.nodes[1].getnetworkinfo()['localservices'], 16) & NODE_COMPACT_FILTERS == 0
+
+        # Reconnect P2P peers (may have disconnected during long block generation)
+        try:
+            peer_0.peer_disconnect()
+        except Exception as e:
+            self.log.debug("peer_0 disconnect skipped: %s" % e)
+        try:
+            peer_1.peer_disconnect()
+        except Exception as e:
+            self.log.debug("peer_1 disconnect skipped: %s" % e)
+        peer_0 = self.nodes[0].add_p2p_connection(FiltersClient())
+        peer_1 = self.nodes[1].add_p2p_connection(FiltersClient())
 
         self.log.info("get cfcheckpt on chain to be re-orged out.")
         request = msg_getcfcheckpt(

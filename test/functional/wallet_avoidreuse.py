@@ -298,10 +298,14 @@ class AvoidReuseTest(BitcoinTestFramework):
         new_addr = self.nodes[1].getnewaddress()
         ret_addr = self.nodes[0].getnewaddress()
 
-        # send multiple transactions, reusing one address
-        for _ in range(101):
+        # Send in batches with intermediate confirms to avoid exhausting
+        # all confirmed UTXOs (PoS needs confirmed UTXOs for coinstake)
+        for _ in range(50):
             self.nodes[0].sendtoaddress(new_addr, 1)
-
+        self.nodes[0].generate(1)
+        self.sync_all()
+        for _ in range(51):
+            self.nodes[0].sendtoaddress(new_addr, 1)
         self.nodes[0].generate(1)
         self.sync_all()
 
@@ -311,8 +315,9 @@ class AvoidReuseTest(BitcoinTestFramework):
 
         # getbalances and listunspent should show the remaining outputs
         # in the reused address as used/reused
-        assert_unspent(self.nodes[1], total_count=2, total_sum=96, reused_count=1, reused_sum=1, margin=0.01)
-        assert_balances(self.nodes[1], mine={"used": 1, "trusted": 95}, margin=0.01)
+        # ReddCoin has 100x higher fees than Bitcoin, so widen margin
+        assert_unspent(self.nodes[1], total_count=2, total_sum=96, reused_count=1, reused_sum=1, margin=0.1)
+        assert_balances(self.nodes[1], mine={"used": 1, "trusted": 95}, margin=0.1)
 
     def test_full_destination_group_is_preferred(self):
         '''
@@ -330,10 +335,14 @@ class AvoidReuseTest(BitcoinTestFramework):
         new_addr = self.nodes[1].getnewaddress()
         ret_addr = self.nodes[0].getnewaddress()
 
-        # Send 101 outputs of 1 BTC to the same, reused address in the wallet
-        for _ in range(101):
+        # Send in batches with intermediate confirms to avoid exhausting
+        # all confirmed UTXOs (PoS needs confirmed UTXOs for coinstake)
+        for _ in range(50):
             self.nodes[0].sendtoaddress(new_addr, 1)
-
+        self.nodes[0].generate(1)
+        self.sync_all()
+        for _ in range(51):
+            self.nodes[0].sendtoaddress(new_addr, 1)
         self.nodes[0].generate(1)
         self.sync_all()
 
@@ -359,12 +368,14 @@ class AvoidReuseTest(BitcoinTestFramework):
         new_addr = self.nodes[1].getnewaddress()
         ret_addr = self.nodes[0].getnewaddress()
 
-        # Send 202 outputs of 1 BTC to the same, reused address in the wallet
-        for _ in range(202):
-            self.nodes[0].sendtoaddress(new_addr, 1)
-
-        self.nodes[0].generate(1)
-        self.sync_all()
+        # Send in batches with intermediate confirms to avoid exhausting
+        # all confirmed UTXOs (PoS needs confirmed UTXOs for coinstake)
+        for i in range(0, 202, 50):
+            batch = min(50, 202 - i)
+            for _ in range(batch):
+                self.nodes[0].sendtoaddress(new_addr, 1)
+            self.nodes[0].generate(1)
+            self.sync_all()
 
         # Sending a transaction that needs to use the full groups
         # of 100 inputs but also the incomplete group of 2 inputs.

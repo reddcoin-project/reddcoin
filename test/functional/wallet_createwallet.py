@@ -18,6 +18,10 @@ from test_framework.wallet_util import bytes_to_wif, generate_wif_key
 class CreateWalletTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        # ReddCoin: creating an encrypted wallet (key derivation) can exceed the
+        # default 30s createwallet timeout under CPU contention from concurrent
+        # PoS-staking tests. Raise the timeout for headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -85,8 +89,12 @@ class CreateWalletTest(BitcoinTestFramework):
         else:
             w3.sethdseed()
         assert_equal(w3.getwalletinfo()['keypoolsize'], 1)
-        w3.getnewaddress()
-        w3.getrawchangeaddress()
+        if self.options.descriptors:
+            w3.getnewaddress('', 'bech32')
+            w3.getrawchangeaddress('bech32')
+        else:
+            w3.getnewaddress()
+            w3.getrawchangeaddress()
 
         self.log.info("Test blank creation with privkeys enabled and then encryption")
         self.nodes[0].createwallet(wallet_name='w4', disable_private_keys=False, blank=True)
@@ -114,8 +122,12 @@ class CreateWalletTest(BitcoinTestFramework):
             }])
         else:
             w4.sethdseed()
-        w4.getnewaddress()
-        w4.getrawchangeaddress()
+        if self.options.descriptors:
+            w4.getnewaddress('', 'bech32')
+            w4.getrawchangeaddress('bech32')
+        else:
+            w4.getnewaddress()
+            w4.getrawchangeaddress()
 
         self.log.info("Test blank creation with privkeys disabled and then encryption")
         self.nodes[0].createwallet(wallet_name='w5', disable_private_keys=True, blank=True)
@@ -163,6 +175,79 @@ class CreateWalletTest(BitcoinTestFramework):
 
         self.log.info('Using a passphrase with private keys disabled returns error')
         assert_raises_rpc_error(-4, 'Passphrase provided but private keys are disabled. A passphrase is only used to encrypt private keys, so cannot be used for wallets with private keys disabled.', self.nodes[0].createwallet, wallet_name='w9', disable_private_keys=True, passphrase='thisisapassphrase')
+
+        if not self.options.descriptors:
+            self.run_bip39_tests(node)
+
+    def run_bip39_tests(self, node):
+        """Test BIP39/BIP44 wallet creation (legacy wallets only)."""
+
+        self.log.info("Test creating a BIP44 wallet")
+        resp = node.createwallet(wallet_name='bip44test', wallet_type='bip44')
+        assert_equal(resp['wallet_type'], 'bip44')
+        assert 'mnemonic' in resp
+        mnemonic = resp['mnemonic']
+        word_count = len(mnemonic.split())
+        assert_equal(word_count, 24)
+        w_bip44 = node.get_wallet_rpc('bip44test')
+        info = w_bip44.getwalletinfo()
+        assert_equal(info['hd_type'], 'bip44')
+
+        self.log.info("Test creating a BIP39 wallet with 12 words")
+        resp = node.createwallet(wallet_name='bip39_12', wallet_type='bip39', entropy_bits=128)
+        assert_equal(resp['wallet_type'], 'bip39')
+        assert 'mnemonic' in resp
+        assert_equal(len(resp['mnemonic'].split()), 12)
+
+        self.log.info("Test mnemonic restore produces same addresses")
+        resp1 = node.createwallet(wallet_name='bip44_orig', wallet_type='bip44')
+        saved_mnemonic = resp1['mnemonic']
+        w_orig = node.get_wallet_rpc('bip44_orig')
+        addr_orig = w_orig.getnewaddress()
+
+        resp2 = node.createwallet(wallet_name='bip44_restore', wallet_type='bip44', mnemonic=saved_mnemonic)
+        assert_equal(resp2['wallet_type'], 'bip44')
+        assert 'mnemonic' not in resp2  # No mnemonic returned for imports
+        w_restore = node.get_wallet_rpc('bip44_restore')
+        addr_restore = w_restore.getnewaddress()
+        assert_equal(addr_orig, addr_restore)
+
+        self.log.info("Test getwalletinfo hd_type for default wallet")
+        resp = node.createwallet(wallet_name='default_type')
+        w_default = node.get_wallet_rpc('default_type')
+        info = w_default.getwalletinfo()
+        assert_equal(info['hd_type'], 'bip32')
+
+        self.log.info("Test gethdwalletinfo returns matching mnemonic")
+        w_bip44_info = node.get_wallet_rpc('bip44test')
+        hdinfo = w_bip44_info.gethdwalletinfo()
+        assert_equal(hdinfo['mnemonic'], mnemonic)
+
+        self.log.info("Test encrypted BIP44 wallet")
+        resp = node.createwallet(wallet_name='enc_bip44', wallet_type='bip44', passphrase='test')
+        assert_equal(resp['wallet_type'], 'bip44')
+        assert 'mnemonic' in resp
+        assert_equal(len(resp['mnemonic'].split()), 24)
+
+        self.log.info("Test auto-promote to bip39 when mnemonic provided with bip32 type")
+        resp_auto = node.createwallet(wallet_name='auto_promote', mnemonic=saved_mnemonic)
+        assert_equal(resp_auto['wallet_type'], 'bip39')
+
+        self.log.info("Test error cases")
+        # Invalid mnemonic
+        assert_raises_rpc_error(-8, "Invalid mnemonic phrase", node.createwallet, wallet_name='bad_mnemonic', wallet_type='bip39', mnemonic='invalid words here not a real mnemonic')
+        # BIP44 + descriptors
+        assert_raises_rpc_error(-8, "BIP39/BIP44 wallets are only supported for legacy wallets", node.createwallet, wallet_name='bad_desc', descriptors=True, wallet_type='bip44')
+        # BIP44 + disable_private_keys
+        assert_raises_rpc_error(-8, "BIP39/BIP44 wallets require private keys", node.createwallet, wallet_name='bad_nokeys', disable_private_keys=True, wallet_type='bip44')
+        # BIP44 + blank
+        assert_raises_rpc_error(-8, "BIP39/BIP44 wallets cannot be blank", node.createwallet, wallet_name='bad_blank', blank=True, wallet_type='bip44')
+        # Invalid entropy_bits
+        assert_raises_rpc_error(-8, "Invalid entropy_bits", node.createwallet, wallet_name='bad_bits', wallet_type='bip44', entropy_bits=100)
+        # Invalid wallet_type
+        assert_raises_rpc_error(-8, "Invalid wallet_type", node.createwallet, wallet_name='bad_type', wallet_type='invalid')
+        # Invalid language
+        assert_raises_rpc_error(-8, "Invalid language", node.createwallet, wallet_name='bad_lang', wallet_type='bip44', language='klingon')
 
 if __name__ == '__main__':
     CreateWalletTest().main()

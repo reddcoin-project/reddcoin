@@ -7,7 +7,7 @@
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
-from test_framework.wallet import MiniWallet
+from test_framework.wallet import MiniWallet, MiniWalletMode
 
 
 class MempoolCoinbaseTest(BitcoinTestFramework):
@@ -15,9 +15,12 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         node = self.nodes[0]
-        wallet = MiniWallet(node)
+        wallet = MiniWallet(node, mode=MiniWalletMode.RAW_P2PK)
 
         # Add enough mature utxos to the wallet so that all txs spend confirmed coins
         wallet.generate(3)

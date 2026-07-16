@@ -32,11 +32,12 @@ from test_framework.wallet_util import (
 class ImportDescriptorsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.extra_args = [["-addresstype=legacy"],
-                           ["-addresstype=bech32", "-keypool=5"]
+        self.extra_args = [["-addresstype=legacy", "-whitelist=127.0.0.1"],
+                           ["-addresstype=bech32", "-keypool=5", "-whitelist=127.0.0.1"]
                           ]
         self.setup_clean_chain = True
         self.wallet_names = []
+        self.rpc_timeout = 480
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -73,8 +74,19 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         wpriv = self.nodes[1].get_wallet_rpc("wpriv")
         assert_equal(wpriv.getwalletinfo()['keypoolsize'], 0)
 
-        self.log.info('Mining coins')
-        w0.generatetoaddress(COINBASE_MATURITY + 1, w0.getnewaddress())
+        self.log.info('Mining coins and activating SegWit')
+        # ReddCoin regtest: SegWit activates via BIP9 at height 432
+        # (3 periods of 144 blocks with 75% signaling threshold).
+        # Witness transactions cannot be mined before activation.
+        # Import deterministic coinbase key so w0 can stake for PoS blocks.
+        coinbase_key = self.nodes[0].get_deterministic_priv_key()
+        w0.importdescriptors([{
+            "desc": descsum_create("pkh(" + coinbase_key.key + ")"),
+            "timestamp": 0,
+        }])
+        # Use framework generate() for automatic PoS time advancement.
+        self.nodes[0].generate(432)
+        self.sync_all()
 
         # RPC importdescriptors -----------------------------------------------
 
@@ -187,8 +199,10 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         # # Test ranged descriptors
         xpriv = "tprv8ZgxMBicQKsPeuVhWwi6wuMQGfPKi9Li5GtX35jVNknACgqe3CY4g5xgkfDDJcmtF7o1QnxWDRYw4H5P26PXq7sbcUkEqeR4fg3Kxp2tigg"
         xpub = "tpubD6NzVbkrYhZ4YNXVQbNhMK1WqguFsUXceaVJKbmno2aZ3B6QfbMeraaYvnBSGpV3vxLyTTK9DYT1yoEck4XUScMzXoQ2U2oSmE2JyMedq3H"
-        addresses = ["2N7yv4p8G8yEaPddJxY41kPihnWvs39qCMf", "2MsHxyb2JS3pAySeNUsJ7mNnurtpeenDzLA"] # hdkeypath=m/0'/0'/0' and 1'
-        addresses += ["bcrt1qrd3n235cj2czsfmsuvqqpr3lu6lg0ju7scl8gn", "bcrt1qfqeppuvj0ww98r6qghmdkj70tv8qpchehegrg8"] # wpkh subscripts corresponding to the above addresses
+        # Addresses at high indices (10000, 10001) outside any cached range, so they
+        # remain ismine=False after the inactive descriptor import below.
+        addresses = ["379NvY8L4d9MFQyuNxbX2FJMfTazRp9usa", "3QGX2krjyuChSCLeYGBS4D4NCGYZ6NvCAS"] # sh(wpkh) at index 10000, 10001
+        addresses += ["rcrt1q0qvm6sdg3dd8rwk7yfxv8ms4ns6kwl70lcvqam", "rcrt1qrj9wcnp7g70e0uyaefmgja4g2dcgsnxvkdh6jx"] # wpkh at index 10000, 10001
         desc = "sh(wpkh(" + xpub + "/0/0/*" + "))"
 
         self.log.info("Ranged descriptors cannot have labels")
@@ -293,11 +307,11 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         self.log.info('Key ranges should be imported in order')
         xpub = "tpubDAXcJ7s7ZwicqjprRaEWdPoHKrCS215qxGYxpusRLLmJuT69ZSicuGdSfyvyKpvUNYBW1s2U3NSrT6vrCYB9e6nZUEvrqnwXPF8ArTCRXMY"
         addresses = [
-            'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv', # m/0'/0'/0
-            'bcrt1q8vprchan07gzagd5e6v9wd7azyucksq2xc76k8', # m/0'/0'/1
-            'bcrt1qtuqdtha7zmqgcrr26n2rqxztv5y8rafjp9lulu', # m/0'/0'/2
-            'bcrt1qau64272ymawq26t90md6an0ps99qkrse58m640', # m/0'/0'/3
-            'bcrt1qsg97266hrh6cpmutqen8s4s962aryy77jp0fg0', # m/0'/0'/4
+            'rcrt1qtmp74ayg7p24uslctssvjm06q5phz4yr748d0w', # m/0'/0'/0
+            'rcrt1q8vprchan07gzagd5e6v9wd7azyucksq273pl29', # m/0'/0'/1
+            'rcrt1qtuqdtha7zmqgcrr26n2rqxztv5y8rafjevqer7', # m/0'/0'/2
+            'rcrt1qau64272ymawq26t90md6an0ps99qkrsevwylfd', # m/0'/0'/3
+            'rcrt1qsg97266hrh6cpmutqen8s4s962aryy772gsv5d', # m/0'/0'/4
         ]
 
         self.test_importdesc({'desc': descsum_create('wpkh([80002067/0h/0h]' + xpub + '/*)'),
@@ -370,7 +384,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                               },
                              success=True)
         address = w1.getrawchangeaddress('legacy')
-        assert_equal(address, "mpA2Wh9dvZT7yfELq1UnrUmAoc5qCkMetg")
+        assert_equal(address, 'rEsfLtRojYYkyRmJ6d9JBrkpj9vCzLNafn') # pkh at m/0
 
         self.log.info('Check can deactivate active descriptor')
         self.test_importdesc({'desc': descsum_create('pkh([12345678]' + xpub + '/*)'),
@@ -389,7 +403,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
 
         # # Test importing a descriptor containing a WIF private key
         wif_priv = "cTe1f5rdT8A8DFgVWTjyPwACsDPJM9ff4QngFxUixCSvvbg1x6sh"
-        address = "2MuhcG52uHPknxDgmGPsV18jSHFBnnRgjPg"
+        address = "349QCL6sfwFSkS4DbGFcPBkB4tyczHWxEE"
         desc = "sh(wpkh(" + wif_priv + "))"
         self.log.info("Should import a descriptor with a WIF private key as spendable")
         self.test_importdesc({"desc": descsum_create(desc),
@@ -405,11 +419,14 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                      solvable=True,
                      ismine=True)
         txid = w0.sendtoaddress(address, 49.99995540)
-        w0.generatetoaddress(6, w0.getnewaddress())
-        self.sync_blocks()
-        tx = wpriv.createrawtransaction([{"txid": txid, "vout": 0}], {w0.getnewaddress(): 49.999})
+        vout = find_vout_for_address(self.nodes[0], txid, address)
+        self.nodes[0].generate(6)
+        self.sync_all()
+        tx = wpriv.createrawtransaction([{"txid": txid, "vout": vout}], {w0.getnewaddress(): 49.999})
         signed_tx = wpriv.signrawtransactionwithwallet(tx)
         w1.sendrawtransaction(signed_tx['hex'])
+        # Submit to node 0 as well to avoid P2P relay timing issues
+        self.nodes[0].sendrawtransaction(signed_tx['hex'])
 
         # Make sure that we can use import and use multisig as addresses
         self.log.info('Test that multisigs can be imported, signed for, and getnewaddress\'d')
@@ -446,9 +463,9 @@ class ImportDescriptorsTest(BitcoinTestFramework):
 
         assert_equal(wmulti_priv.getwalletinfo()['keypoolsize'], 1001) # Range end (1000) is inclusive, so 1001 addresses generated
         addr = wmulti_priv.getnewaddress('', 'bech32')
-        assert_equal(addr, 'bcrt1qdt0qy5p7dzhxzmegnn4ulzhard33s2809arjqgjndx87rv5vd0fq2czhy8') # Derived at m/84'/0'/0'/0
+        assert_equal(addr, 'rcrt1qdt0qy5p7dzhxzmegnn4ulzhard33s2809arjqgjndx87rv5vd0fq04h9uf') # Derived at m/84'/0'/0'/0
         change_addr = wmulti_priv.getrawchangeaddress('bech32')
-        assert_equal(change_addr, 'bcrt1qt9uhe3a9hnq7vajl7a094z4s3crm9ttf8zw3f5v9gr2nyd7e3lnsy44n8e')
+        assert_equal(change_addr, 'rcrt1qt9uhe3a9hnq7vajl7a094z4s3crm9ttf8zw3f5v9gr2nyd7e3lnspcqplh') # Derived at m/84'/1'/0'/0
         assert_equal(wmulti_priv.getwalletinfo()['keypoolsize'], 1000)
         txid = w0.sendtoaddress(addr, 10)
         self.nodes[0].generate(6)
@@ -456,6 +473,8 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         send_txid = wmulti_priv.sendtoaddress(w0.getnewaddress(), 8)
         decoded = wmulti_priv.decoderawtransaction(wmulti_priv.gettransaction(send_txid)['hex'])
         assert_equal(len(decoded['vin'][0]['txinwitness']), 4)
+        # Relay tx to node 0 for mining (P2P outbound relay timing unreliable with mocktime)
+        self.nodes[0].sendrawtransaction(wmulti_priv.gettransaction(send_txid)['hex'])
         self.nodes[0].generate(6)
         self.sync_all()
 
@@ -467,7 +486,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                             "active": True,
                             "range": 1000,
                             "next_index": 0,
-                            "timestamp": "now"},
+                            "timestamp": 0},
                             success=True,
                             wallet=wmulti_pub)
         self.test_importdesc({"desc":"wsh(multi(2,[7b2d0242/84h/1h/0h]" + chg_xpub1 + "/*,[59b09cd6/84h/1h/0h]" + chg_xpub2 + "/*,[e81a0532/84h/1h/0h]" + chg_xpub3 + "/*))#c08a2rzv",
@@ -475,15 +494,18 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                             "internal" : True,
                             "range": 1000,
                             "next_index": 0,
-                            "timestamp": "now"},
+                            "timestamp": 0},
                             success=True,
                             wallet=wmulti_pub)
 
+        # Full rescan to ensure wmulti_pub sees all historical transactions
+        # including sends made by wmulti_priv before wmulti_pub was created.
+        wmulti_pub.rescanblockchain()
         assert_equal(wmulti_pub.getwalletinfo()['keypoolsize'], 1000) # The first one was already consumed by previous import and is detected as used
         addr = wmulti_pub.getnewaddress('', 'bech32')
-        assert_equal(addr, 'bcrt1qp8s25ckjl7gr6x2q3dx3tn2pytwp05upkjztk6ey857tt50r5aeqn6mvr9') # Derived at m/84'/0'/0'/1
+        assert_equal(addr, 'rcrt1qp8s25ckjl7gr6x2q3dx3tn2pytwp05upkjztk6ey857tt50r5aeqkhw7mt') # Derived at m/84'/0'/0'/1 (index 0 was consumed by wmulti_priv)
         change_addr = wmulti_pub.getrawchangeaddress('bech32')
-        assert_equal(change_addr, 'bcrt1qt9uhe3a9hnq7vajl7a094z4s3crm9ttf8zw3f5v9gr2nyd7e3lnsy44n8e')
+        assert_equal(change_addr, 'rcrt1qzxl0qz2t88kljdnkzg4n4gapr6kte26390gttrg79x66nt4p04fs4lprt3') # Derived at m/84'/1'/0'/3 (indices 0-2 consumed by wmulti_priv)
         assert_equal(wmulti_pub.getwalletinfo()['keypoolsize'], 999)
 
         # generate some utxos for next tests
@@ -555,6 +577,8 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         tx_signed_2 = wmulti_priv2.signrawtransactionwithwallet(tx_signed_1['hex'])
         assert_equal(tx_signed_2['complete'], True)
         self.nodes[1].sendrawtransaction(tx_signed_2['hex'])
+        # Relay to node 0 for mining (P2P outbound relay timing unreliable with mocktime)
+        self.nodes[0].sendrawtransaction(tx_signed_2['hex'])
 
         self.log.info("We can create and use a huge multisig under P2WSH")
         self.nodes[1].createwallet(wallet_name='wmulti_priv_big', blank=True, descriptors=True)
@@ -618,7 +642,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
         addr = multi_priv_big.getnewaddress("", "legacy")
         w0.sendtoaddress(addr, 10)
         self.nodes[0].generate(6)
-        self.sync_all()
+        self.sync_blocks()  # Not sync_all: unconfirmed tx from wmulti_priv_big (line 616) is in node 1's mempool only
         # It is standard and would relay.
         txid = multi_priv_big.sendtoaddress(w0.getnewaddress(), 10, "", "",
                                             True)

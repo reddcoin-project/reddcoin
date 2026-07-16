@@ -60,6 +60,7 @@ from test_framework.descriptors import (
     descsum_check,
 )
 from test_framework.util import (
+    advance_time_for_pos,
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
@@ -76,9 +77,10 @@ class AddressTypeTest(BitcoinTestFramework):
             ["-changetype=p2sh-segwit"],
             [],
         ]
-        # whitelist all peers to speed up tx relay / mempool sync
+        # whitelist all peers — grant all permissions (relay, noban, mempool)
+        # to bypass trickle delay and prevent P2P relay issues
         for args in self.extra_args:
-            args.append("-whitelist=noban@127.0.0.1")
+            args.append("-whitelist=127.0.0.1")
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
@@ -219,9 +221,11 @@ class AddressTypeTest(BitcoinTestFramework):
         self.test_address(node_sender, change_addresses[0], multisig=False, typ=expected_type)
 
     def run_test(self):
-        # Mine 101 blocks on node5 to bring nodes out of IBD and make sure that
-        # no coinbases are maturing for the nodes-under-test during the test
-        self.nodes[5].generate(COINBASE_MATURITY + 1)
+        # Generate 233 blocks to activate SegWit via BIP9 on regtest.
+        # Cache starts at height 199. BIP9 SegWit needs 432 blocks
+        # (3 full periods of 144: DEFINED→STARTED→LOCKED_IN→ACTIVE).
+        advance_time_for_pos(self.nodes, seconds=600)
+        self.nodes[5].generate(233)
         self.sync_blocks()
 
         uncompressed_1 = "0496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858ee"
@@ -259,7 +263,10 @@ class AddressTypeTest(BitcoinTestFramework):
             self.log.info("Sending from node {} ({}) with{} multisig using {}".format(from_node, self.extra_args[from_node], "" if multisig else "out", "default" if address_type is None else address_type))
             old_balances = self.get_balances()
             self.log.debug("Old balances are {}".format(old_balances))
-            to_send = (old_balances[from_node] / (COINBASE_MATURITY + 1)).quantize(Decimal("0.00000001"))
+            # Divisor must be > 100 since total sends = 100 * to_send.
+            # Bitcoin uses COINBASE_MATURITY + 1 = 101; ReddCoin's COINBASE_MATURITY = 60
+            # would make this 61, causing sends to exceed balance. Use 101 directly.
+            to_send = (old_balances[from_node] / 101).quantize(Decimal("0.00000001"))
             sends = {}
             addresses = {}
 
@@ -295,7 +302,17 @@ class AddressTypeTest(BitcoinTestFramework):
                 addresses[to_node] = (address, typ)
 
             self.log.debug("Sending: {}".format(sends))
-            self.nodes[from_node].sendmany("", sends)
+            txid = self.nodes[from_node].sendmany("", sends)
+            # Submit tx directly to all nodes via RPC to avoid trickle timer
+            # issues with outbound peers (frozen mocktime prevents nNextInvSend
+            # from expiring on outbound connections that lack NoBan permission).
+            raw_tx = self.nodes[from_node].getrawtransaction(txid)
+            for i in range(self.num_nodes):
+                if i != from_node:
+                    try:
+                        self.nodes[i].sendrawtransaction(raw_tx)
+                    except Exception as e:
+                        self.log.debug("relay skipped, likely already in mempool: %s" % e)
             self.sync_mempools()
 
             unconf_balances = self.get_balances('untrusted_pending')
@@ -308,6 +325,8 @@ class AddressTypeTest(BitcoinTestFramework):
             # node5 collects fee and block subsidy to keep accounting simple
             self.nodes[5].generate(1)
             self.sync_blocks()
+            tx_info = self.nodes[from_node].gettransaction(txid)
+            self.log.debug("txid=%s confirmations=%d", txid, tx_info['confirmations'])
 
             # Verify that the receiving wallet contains a UTXO with the expected address, and expected descriptor
             for n, to_node in enumerate(range(from_node, from_node + 4)):
@@ -318,6 +337,10 @@ class AddressTypeTest(BitcoinTestFramework):
                         found = True
                         self.test_desc(to_node, addresses[to_node][0], multisig, addresses[to_node][1], utxo)
                         break
+                if not found:
+                    self.log.error("UTXO not found for node%d address %s (from_node=%d)", to_node, addresses[to_node][0], from_node)
+                    utxo_addrs = [u['address'] for u in self.nodes[to_node].listunspent()]
+                    self.log.error("  listunspent has %d UTXOs, addresses: %s", len(utxo_addrs), utxo_addrs[:10])
                 assert found
 
             new_balances = self.get_balances()
@@ -334,11 +357,12 @@ class AddressTypeTest(BitcoinTestFramework):
         to_address_bech32_1 = self.nodes[3].getnewaddress()
         to_address_bech32_2 = self.nodes[3].getnewaddress()
 
-        # Fund node 4:
+        # Fund node 4 and verify the send arrived:
+        node4_bal_before = self.nodes[4].getbalance()
         self.nodes[5].sendtoaddress(self.nodes[4].getnewaddress(), Decimal("1"))
         self.nodes[5].generate(1)
         self.sync_blocks()
-        assert_equal(self.nodes[4].getbalance(), 1)
+        assert_equal(self.nodes[4].getbalance(), node4_bal_before + 1)
 
         self.log.info("Nodes with addresstype=legacy never use a P2WPKH change output (unless changetype is set otherwise):")
         self.test_change_output_type(0, [to_address_bech32_1], 'legacy')

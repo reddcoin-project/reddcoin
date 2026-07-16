@@ -10,10 +10,12 @@ soft-forks, and test that warning alerts are generated.
 import os
 import re
 
-from test_framework.blocktools import create_block, create_coinbase
+from test_framework.address import key_to_p2pkh
+from test_framework.blocktools import create_block, create_coinbase, sign_block, NORMAL_GBT_REQUEST_PARAMS
 from test_framework.messages import msg_block
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import advance_time_for_pos
 
 VB_PERIOD = 144           # versionbits period length for regtest
 VB_THRESHOLD = 108        # versionbits activation threshold for regtest
@@ -29,30 +31,94 @@ class VersionBitsWarningTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def setup_network(self):
         self.alert_filename = os.path.join(self.options.tmpdir, "alert.txt")
         # Open and close to create zero-length file
         with open(self.alert_filename, 'w', encoding='utf8'):
             pass
-        self.extra_args = [["-alertnotify=echo %s >> \"" + self.alert_filename + "\""]]
+        self.extra_args = [["-alertnotify=echo %s >> \"" + self.alert_filename + "\"", "-whitelist=127.0.0.1"]]
         self.setup_nodes()
+
+    def get_signing_key(self, node, block):
+        """Extract the signing key for a PoS block from the coinstake transaction."""
+        coinstake = block.vtx[1]
+        coinstake_hex = coinstake.serialize().hex()
+        decoded_tx = node.decoderawtransaction(coinstake_hex)
+
+        signing_key = None
+        try:
+            script_pubkey = decoded_tx['vout'][1]['scriptPubKey']
+            coinstake_address = script_pubkey.get('address')
+            if not coinstake_address:
+                addresses = script_pubkey.get('addresses', [])
+                if addresses:
+                    coinstake_address = addresses[0]
+
+            if not coinstake_address and script_pubkey.get('type') == 'pubkey':
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    pubkey_hex = parts[0]
+                    coinstake_address = key_to_p2pkh(pubkey_hex, main=False)
+
+            if coinstake_address:
+                signing_key = node.dumpprivkey(coinstake_address)
+        except Exception as e:
+            self.log.debug(f"Could not get signing key: {e}")
+
+        if not signing_key:
+            self.log.debug("No signing key found, using deterministic key")
+            signing_key = node.get_deterministic_priv_key().key
+
+        return signing_key
 
     def send_blocks_with_version(self, peer, numblocks, version):
         """Send numblocks blocks to peer with version set"""
-        tip = self.nodes[0].getbestblockhash()
-        height = self.nodes[0].getblockcount()
-        block_time = self.nodes[0].getblockheader(tip)["time"] + 1
-        tip = int(tip, 16)
+        node = self.nodes[0]
+        height = node.getblockcount()
 
+        # PoW path for heights <= 89 (nLastPowHeight)
+        if height < 89:
+            tip = node.getbestblockhash()
+            block_time = node.getblockheader(tip)["time"] + 1
+            tip = int(tip, 16)
+
+            pow_blocks = min(numblocks, 89 - height)
+            for _ in range(pow_blocks):
+                block = create_block(tip, create_coinbase(height + 1), block_time)
+                block.nVersion = version
+                block.solve()
+                peer.send_message(msg_block(block))
+                block_time += 1
+                height += 1
+                tip = block.sha256
+            peer.sync_with_ping()
+            numblocks -= pow_blocks
+
+        # PoS path for heights >= 90
         for _ in range(numblocks):
-            block = create_block(tip, create_coinbase(height + 1), block_time)
-            block.nVersion = version
-            block.solve()
-            peer.send_message(msg_block(block))
-            block_time += 1
-            height += 1
-            tip = block.sha256
-        peer.sync_with_ping()
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                try:
+                    advance_time_for_pos(node, seconds=60)
+                    tmpl = node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
+                    block = create_block(tmpl=tmpl, version=version)
+                    block.solve()
+
+                    signing_key = self.get_signing_key(node, block)
+                    sign_block(block, signing_key)
+
+                    peer.send_message(msg_block(block))
+                    peer.sync_with_ping()
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e) and attempt < max_attempts - 1:
+                        advance_time_for_pos(node, seconds=120)
+                        continue
+                    raise
 
     def versionbits_in_alert_file(self):
         """Test that the versionbits warning has been written to the alert file."""
@@ -63,14 +129,13 @@ class VersionBitsWarningTest(BitcoinTestFramework):
         node = self.nodes[0]
         peer = node.add_p2p_connection(P2PInterface())
 
-        node_deterministic_address = node.get_deterministic_priv_key().address
         # Mine one period worth of blocks
-        node.generatetoaddress(VB_PERIOD, node_deterministic_address)
+        node.generate(VB_PERIOD)
 
         self.log.info("Check that there is no warning if previous VB_BLOCKS have <VB_THRESHOLD blocks with unknown versionbits version.")
         # Build one period of blocks with < VB_THRESHOLD blocks signaling some unknown bit
         self.send_blocks_with_version(peer, VB_THRESHOLD - 1, VB_UNKNOWN_VERSION)
-        node.generatetoaddress(VB_PERIOD - VB_THRESHOLD + 1, node_deterministic_address)
+        node.generate(VB_PERIOD - VB_THRESHOLD + 1)
 
         # Check that we're not getting any versionbit-related errors in get*info()
         assert not VB_PATTERN.match(node.getmininginfo()["warnings"])
@@ -78,21 +143,21 @@ class VersionBitsWarningTest(BitcoinTestFramework):
 
         # Build one period of blocks with VB_THRESHOLD blocks signaling some unknown bit
         self.send_blocks_with_version(peer, VB_THRESHOLD, VB_UNKNOWN_VERSION)
-        node.generatetoaddress(VB_PERIOD - VB_THRESHOLD, node_deterministic_address)
+        node.generate(VB_PERIOD - VB_THRESHOLD)
 
         self.log.info("Check that there is a warning if previous VB_BLOCKS have >=VB_THRESHOLD blocks with unknown versionbits version.")
         # Mine a period worth of expected blocks so the generic block-version warning
         # is cleared. This will move the versionbit state to ACTIVE.
-        node.generatetoaddress(VB_PERIOD, node_deterministic_address)
+        node.generate(VB_PERIOD)
 
         # Stop-start the node. This is required because bitcoind will only warn once about unknown versions or unknown rules activating.
         self.restart_node(0)
 
         # Generating one block guarantees that we'll get out of IBD
-        node.generatetoaddress(1, node_deterministic_address)
+        node.generate(1)
         self.wait_until(lambda: not node.getblockchaininfo()['initialblockdownload'])
         # Generating one more block will be enough to generate an error.
-        node.generatetoaddress(1, node_deterministic_address)
+        node.generate(1)
         # Check that get*info() shows the versionbits unknown rules warning
         assert WARN_UNKNOWN_RULES_ACTIVE in node.getmininginfo()["warnings"]
         assert WARN_UNKNOWN_RULES_ACTIVE in node.getnetworkinfo()["warnings"]

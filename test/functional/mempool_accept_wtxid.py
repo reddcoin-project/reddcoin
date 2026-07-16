@@ -31,19 +31,41 @@ from test_framework.script import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
+    advance_time_for_pos,
 )
 
 class MempoolWtxidTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
+        # Whitelist test connections to:
+        # 1. Bypass 5s inbound trickle relay delay for faster test execution
+        # 2. Prevent timeout disconnections caused by mocktime/realtime mismatch in net.cpp
+        self.extra_args = [['-whitelist=127.0.0.1']]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         node = self.nodes[0]
 
-        self.log.info('Start with empty mempool and 101 blocks')
-        # The last 100 coinbase transactions are premature
-        blockhash = node.generate(101)[0]
+        self.log.info('Start with empty mempool and generate blocks')
+        # ReddCoin: Generate PoW blocks (0-89), then advance time for PoS
+        node.generate(90)  # PoW blocks 0-89
+
+        # Advance time to age coins for PoS staking
+        advance_time_for_pos(node, seconds=600)
+
+        # Generate PoS blocks to mature coinbases (need 100 confirmations)
+        # Blocks 90-101 (12 PoS blocks)
+        node.generate(12)
+
+        # ReddCoin: Use block 2 instead of block 0 (blocks 0-1 coinbases are unspendable)
+        # Block 2 now has 100 confirmations (at height 101, block 2 is at height 2)
+        blockhash = node.getblockhash(2)
         txid = node.getblock(blockhash=blockhash, verbosity=2)["tx"][0]["txid"]
         assert_equal(node.getmempoolinfo()['size'], 0)
 
@@ -55,7 +77,7 @@ class MempoolWtxidTest(BitcoinTestFramework):
 
         parent = CTransaction()
         parent.vin.append(CTxIn(COutPoint(int(txid, 16), 0), b""))
-        parent.vout.append(CTxOut(int(9.99998 * COIN), script_pubkey))
+        parent.vout.append(CTxOut(int(9.9990 * COIN), script_pubkey))
         parent.rehash()
 
         privkeys = [node.get_deterministic_priv_key().key]
@@ -72,7 +94,7 @@ class MempoolWtxidTest(BitcoinTestFramework):
 
         child_one = CTransaction()
         child_one.vin.append(CTxIn(COutPoint(int(parent_txid, 16), 0), b""))
-        child_one.vout.append(CTxOut(int(9.99996 * COIN), child_script_pubkey))
+        child_one.vout.append(CTxOut(int(9.9980 * COIN), child_script_pubkey))
         child_one.wit.vtxinwit.append(CTxInWitness())
         child_one.wit.vtxinwit[0].scriptWitness.stack = [b'Preimage', b'\x01', witness_script]
         child_one_wtxid = child_one.getwtxid()
@@ -81,7 +103,7 @@ class MempoolWtxidTest(BitcoinTestFramework):
         # Create another identical transaction with witness solving second branch
         child_two = CTransaction()
         child_two.vin.append(CTxIn(COutPoint(int(parent_txid, 16), 0), b""))
-        child_two.vout.append(CTxOut(int(9.99996 * COIN), child_script_pubkey))
+        child_two.vout.append(CTxOut(int(9.9980 * COIN), child_script_pubkey))
         child_two.wit.vtxinwit.append(CTxInWitness())
         child_two.wit.vtxinwit[0].scriptWitness.stack = [b'', witness_script]
         child_two_wtxid = child_two.getwtxid()

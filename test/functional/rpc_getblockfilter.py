@@ -17,6 +17,9 @@ class GetBlockFilterTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.extra_args = [["-blockfilterindex"], []]
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         # Create two chains by disconnecting nodes 0 & 1, mining, then reconnecting
         self.disconnect_nodes(0, 1)

@@ -49,6 +49,9 @@ class NetTest(BitcoinTestFramework):
         self.extra_args = [["-minrelaytxfee=0.00001000"], ["-minrelaytxfee=0.00000500"]]
         self.supports_cli = False
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         # We need miniwallet to make a transaction
         self.wallet = MiniWallet(self.nodes[0])
@@ -83,13 +86,16 @@ class NetTest(BitcoinTestFramework):
         self.wallet.send_self_transfer(from_node=self.nodes[0]) # Make a transaction so we can see it in the getpeerinfo results
         self.nodes[1].generate(1)
         self.sync_all()
-        time_now = int(time.time())
+        time_now = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
         peer_info = [x.getpeerinfo() for x in self.nodes]
         # Verify last_block and last_transaction keys/values.
+        # Use large vspan to account for mocktime spread during PoS block generation
+        # (each block advances mocktime by 60s, and we generated COINBASE_MATURITY+2 blocks)
+        time_vspan = (COINBASE_MATURITY + 5) * 60
         for node, peer, field in product(range(self.num_nodes), range(2), ['last_block', 'last_transaction']):
             assert field in peer_info[node][peer].keys()
             if peer_info[node][peer][field] != 0:
-                assert_approx(peer_info[node][peer][field], time_now, vspan=60)
+                assert_approx(peer_info[node][peer][field], time_now, vspan=time_vspan)
         # check both sides of bidirectional connection between nodes
         # the address bound to on one side will be the source address for the other node
         assert_equal(peer_info[0][0]['addrbind'], peer_info[1][0]['addr'])

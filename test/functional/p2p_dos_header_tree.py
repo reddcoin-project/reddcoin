@@ -22,6 +22,8 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.chain = 'testnet3'  # Use testnet chain because it has an early checkpoint
         self.num_nodes = 2
+        # Use minimumchainwork=0 so fresh nodes will serve headers
+        self.extra_args = [['-minimumchainwork=0'], ['-minimumchainwork=0']]
 
     def add_options(self, parser):
         parser.add_argument(
@@ -49,9 +51,9 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         peer_checkpoint = self.nodes[0].add_p2p_connection(P2PInterface())
         peer_checkpoint.send_and_ping(msg_headers(self.headers))
         assert {
-            'height': 546,
-            'hash': '000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70',
-            'branchlen': 546,
+            'height': 1500,
+            'hash': '1abe50abead5c51a757e0615089aae289836a41c02e884b78c7ddd686e886572',
+            'branchlen': 1500,
             'status': 'headers-only',
         } in self.nodes[0].getchaintips()
 
@@ -62,12 +64,12 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         self.log.info("Feed all fork headers (succeeds without checkpoint)")
         # On node 0 it succeeds because checkpoints are disabled
-        self.restart_node(0, extra_args=['-nocheckpoints'])
+        self.restart_node(0, extra_args=['-nocheckpoints', '-minimumchainwork=0'])
         peer_no_checkpoint = self.nodes[0].add_p2p_connection(P2PInterface())
         peer_no_checkpoint.send_and_ping(msg_headers(self.headers_fork))
         assert {
             "height": 2,
-            "hash": "00000000b0494bd6c3d5ff79c497cfce40831871cbf39b1bc28bd1dac817dc39",
+            "hash": "1d54e4c528f5e044bd2ad34ff6c3c9fb0da22e9db4e7aa26f5244649acc0bd0d",
             "branchlen": 2,
             "status": "headers-only",
         } in self.nodes[0].getchaintips()
@@ -77,7 +79,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         peer_before_checkpoint.send_and_ping(msg_headers(self.headers_fork))
         assert {
             "height": 2,
-            "hash": "00000000b0494bd6c3d5ff79c497cfce40831871cbf39b1bc28bd1dac817dc39",
+            "hash": "1d54e4c528f5e044bd2ad34ff6c3c9fb0da22e9db4e7aa26f5244649acc0bd0d",
             "branchlen": 2,
             "status": "headers-only",
         } in self.nodes[1].getchaintips()

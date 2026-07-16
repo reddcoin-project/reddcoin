@@ -23,6 +23,7 @@ from test_framework.script import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.descriptors import descsum_create
 from test_framework.util import (
+    advance_time_for_pos,
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
@@ -39,6 +40,9 @@ class ImportMultiTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.extra_args = [["-addresstype=legacy"], ["-addresstype=legacy"]]
         self.setup_clean_chain = True
+        # ReddCoin: createwallet/import RPCs can exceed the default 30s timeout
+        # under CPU contention from concurrent PoS-staking tests. Add headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -64,6 +68,13 @@ class ImportMultiTest(BitcoinTestFramework):
         self.log.info("Mining blocks...")
         self.nodes[0].generate(1)
         self.nodes[1].generate(1)
+
+        # ReddCoin: Pre-generate all PoW blocks (up to nLastPowHeight=89)
+        # so all subsequent generate() calls in the test are PoS.
+        self.log.info("Pre-generating PoW blocks to height 89...")
+        self.nodes[1].generate(88)  # heights 2-89, all PoW
+        advance_time_for_pos(self.nodes[1], seconds=600)
+
         timestamp = self.nodes[1].getblock(self.nodes[1].getbestblockhash())['mediantime']
         self.nodes[1].syncwithvalidationinterfacequeue()  # Sync the timestamp to the wallet, so that importmulti works
 
@@ -73,7 +84,7 @@ class ImportMultiTest(BitcoinTestFramework):
         assert_equal(node0_address1['ismine'], True)
 
         # Node 1 sync test
-        assert_equal(self.nodes[1].getblockcount(), 1)
+        assert_equal(self.nodes[1].getblockcount(), 89)
 
         # Address Test - before import
         address_info = self.nodes[1].getaddressinfo(node0_address1['address'])
@@ -254,91 +265,86 @@ class ImportMultiTest(BitcoinTestFramework):
                      ismine=False,
                      timestamp=None)
 
-        # P2SH address
-        multisig = get_multisig(self.nodes[0])
-        self.nodes[1].generate(COINBASE_MATURITY)
-        self.nodes[1].sendtoaddress(multisig.p2sh_addr, 10.00)
-        self.nodes[1].generate(1)
+        # ReddCoin: Pre-send all 4 P2SH transactions and generate their blocks
+        # BEFORE any importmulti calls. This avoids watch-only UTXOs in the
+        # wallet during PoS staking (CreateCoinStake inflates nAvailable with
+        # watch-only values but SelectCoins skips non-spendable coins).
+        multisig1 = get_multisig(self.nodes[0])
+        self.nodes[1].sendtoaddress(multisig1.p2sh_addr, 10.00)
+        self.nodes[1].generate(1, pos_retry_attempts=50)
+
+        multisig2 = get_multisig(self.nodes[0])
+        self.nodes[1].sendtoaddress(multisig2.p2sh_addr, 10.00)
+        self.nodes[1].generate(1, pos_retry_attempts=50)
+
+        multisig3 = get_multisig(self.nodes[0])
+        self.nodes[1].sendtoaddress(multisig3.p2sh_addr, 10.00)
+        self.nodes[1].generate(1, pos_retry_attempts=50)
+
+        multisig4 = get_multisig(self.nodes[0])
+        self.nodes[1].sendtoaddress(multisig4.p2sh_addr, 10.00)
+        self.nodes[1].generate(1, pos_retry_attempts=50)
+
         timestamp = self.nodes[1].getblock(self.nodes[1].getbestblockhash())['mediantime']
         self.nodes[1].syncwithvalidationinterfacequeue()
 
+        # P2SH address
         self.log.info("Should import a p2sh")
-        self.test_importmulti({"scriptPubKey": {"address": multisig.p2sh_addr},
+        self.test_importmulti({"scriptPubKey": {"address": multisig1.p2sh_addr},
                                "timestamp": "now"},
                               success=True)
         test_address(self.nodes[1],
-                     multisig.p2sh_addr,
+                     multisig1.p2sh_addr,
                      isscript=True,
                      iswatchonly=True,
                      timestamp=timestamp)
-        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig.p2sh_addr])[0]
+        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig1.p2sh_addr])[0]
         assert_equal(p2shunspent['spendable'], False)
         assert_equal(p2shunspent['solvable'], False)
 
         # P2SH + Redeem script
-        multisig = get_multisig(self.nodes[0])
-        self.nodes[1].generate(COINBASE_MATURITY)
-        self.nodes[1].sendtoaddress(multisig.p2sh_addr, 10.00)
-        self.nodes[1].generate(1)
-        timestamp = self.nodes[1].getblock(self.nodes[1].getbestblockhash())['mediantime']
-        self.nodes[1].syncwithvalidationinterfacequeue()
-
         self.log.info("Should import a p2sh with respective redeem script")
-        self.test_importmulti({"scriptPubKey": {"address": multisig.p2sh_addr},
+        self.test_importmulti({"scriptPubKey": {"address": multisig2.p2sh_addr},
                                "timestamp": "now",
-                               "redeemscript": multisig.redeem_script},
+                               "redeemscript": multisig2.redeem_script},
                               success=True,
                               warnings=["Some private keys are missing, outputs will be considered watchonly. If this is intentional, specify the watchonly flag."])
         test_address(self.nodes[1],
-                     multisig.p2sh_addr, timestamp=timestamp, iswatchonly=True, ismine=False, solvable=True)
+                     multisig2.p2sh_addr, timestamp=timestamp, iswatchonly=True, ismine=False, solvable=True)
 
-        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig.p2sh_addr])[0]
+        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig2.p2sh_addr])[0]
         assert_equal(p2shunspent['spendable'], False)
         assert_equal(p2shunspent['solvable'], True)
 
         # P2SH + Redeem script + Private Keys + !Watchonly
-        multisig = get_multisig(self.nodes[0])
-        self.nodes[1].generate(COINBASE_MATURITY)
-        self.nodes[1].sendtoaddress(multisig.p2sh_addr, 10.00)
-        self.nodes[1].generate(1)
-        timestamp = self.nodes[1].getblock(self.nodes[1].getbestblockhash())['mediantime']
-        self.nodes[1].syncwithvalidationinterfacequeue()
-
         self.log.info("Should import a p2sh with respective redeem script and private keys")
-        self.test_importmulti({"scriptPubKey": {"address": multisig.p2sh_addr},
+        self.test_importmulti({"scriptPubKey": {"address": multisig3.p2sh_addr},
                                "timestamp": "now",
-                               "redeemscript": multisig.redeem_script,
-                               "keys": multisig.privkeys[0:2]},
+                               "redeemscript": multisig3.redeem_script,
+                               "keys": multisig3.privkeys[0:2]},
                               success=True,
                               warnings=["Some private keys are missing, outputs will be considered watchonly. If this is intentional, specify the watchonly flag."])
         test_address(self.nodes[1],
-                     multisig.p2sh_addr,
+                     multisig3.p2sh_addr,
                      timestamp=timestamp,
                      ismine=False,
                      iswatchonly=True,
                      solvable=True)
 
-        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig.p2sh_addr])[0]
+        p2shunspent = self.nodes[1].listunspent(0, 999999, [multisig3.p2sh_addr])[0]
         assert_equal(p2shunspent['spendable'], False)
         assert_equal(p2shunspent['solvable'], True)
 
         # P2SH + Redeem script + Private Keys + Watchonly
-        multisig = get_multisig(self.nodes[0])
-        self.nodes[1].generate(COINBASE_MATURITY)
-        self.nodes[1].sendtoaddress(multisig.p2sh_addr, 10.00)
-        self.nodes[1].generate(1)
-        timestamp = self.nodes[1].getblock(self.nodes[1].getbestblockhash())['mediantime']
-        self.nodes[1].syncwithvalidationinterfacequeue()
-
         self.log.info("Should import a p2sh with respective redeem script and private keys")
-        self.test_importmulti({"scriptPubKey": {"address": multisig.p2sh_addr},
+        self.test_importmulti({"scriptPubKey": {"address": multisig4.p2sh_addr},
                                "timestamp": "now",
-                               "redeemscript": multisig.redeem_script,
-                               "keys": multisig.privkeys[0:2],
+                               "redeemscript": multisig4.redeem_script,
+                               "keys": multisig4.privkeys[0:2],
                                "watchonly": True},
                               success=True)
         test_address(self.nodes[1],
-                     multisig.p2sh_addr,
+                     multisig4.p2sh_addr,
                      iswatchonly=True,
                      ismine=False,
                      solvable=True,
@@ -580,9 +586,14 @@ class ImportMultiTest(BitcoinTestFramework):
 
         # Test ranged descriptor fails if range is not specified
         xpriv = "tprv8ZgxMBicQKsPeuVhWwi6wuMQGfPKi9Li5GtX35jVNknACgqe3CY4g5xgkfDDJcmtF7o1QnxWDRYw4H5P26PXq7sbcUkEqeR4fg3Kxp2tigg"
-        addresses = ["2N7yv4p8G8yEaPddJxY41kPihnWvs39qCMf", "2MsHxyb2JS3pAySeNUsJ7mNnurtpeenDzLA"] # hdkeypath=m/0'/0'/0' and 1'
-        addresses += ["bcrt1qrd3n235cj2czsfmsuvqqpr3lu6lg0ju7scl8gn", "bcrt1qfqeppuvj0ww98r6qghmdkj70tv8qpchehegrg8"] # wpkh subscripts corresponding to the above addresses
+        addresses = [
+            "3GRi15CEXWjEBqzmHQS98SjSaAihJHFnfK",   # sh(wpkh) at m/0'/0'/0'
+            "31jkur6GpbJpmf1pojgF9RoeeYcUqqPLWE",    # sh(wpkh) at m/0'/0'/1'
+            "rcrt1qrd3n235cj2czsfmsuvqqpr3lu6lg0ju7g3qz53",  # wpkh at m/0'/0'/0'
+            "rcrt1qfqeppuvj0ww98r6qghmdkj70tv8qpche0shx59",  # wpkh at m/0'/0'/1'
+        ]
         desc = "sh(wpkh(" + xpriv + "/0'/0'/*'" + "))"
+        wpkh_desc = "wpkh(" + xpriv + "/0'/0'/*'" + ")"
         self.log.info("Ranged descriptor import should fail without a specified range")
         self.test_importmulti({"desc": descsum_create(desc),
                                "timestamp": "now"},
@@ -619,7 +630,7 @@ class ImportMultiTest(BitcoinTestFramework):
 
         # Test importing a descriptor containing a WIF private key
         wif_priv = "cTe1f5rdT8A8DFgVWTjyPwACsDPJM9ff4QngFxUixCSvvbg1x6sh"
-        address = "2MuhcG52uHPknxDgmGPsV18jSHFBnnRgjPg"
+        address = "349QCL6sfwFSkS4DbGFcPBkB4tyczHWxEE"
         desc = "sh(wpkh(" + wif_priv + "))"
         self.log.info("Should import a descriptor with a WIF private key as spendable")
         self.test_importmulti({"desc": descsum_create(desc),
@@ -750,7 +761,7 @@ class ImportMultiTest(BitcoinTestFramework):
         self.log.info("Bech32m addresses and descriptors cannot be imported")
         self.test_importmulti(
             {
-                "scriptPubKey": {"address": "bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqc8gma6"},
+                "scriptPubKey": {"address": "rcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqa2af95"},
                 "timestamp": "now",
             },
             success=False,
@@ -861,11 +872,11 @@ class ImportMultiTest(BitcoinTestFramework):
         assert_equal(wrpc.getwalletinfo()["private_keys_enabled"], False)
         xpub = "tpubDAXcJ7s7ZwicqjprRaEWdPoHKrCS215qxGYxpusRLLmJuT69ZSicuGdSfyvyKpvUNYBW1s2U3NSrT6vrCYB9e6nZUEvrqnwXPF8ArTCRXMY"
         addresses = [
-            'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv', # m/0'/0'/0
-            'bcrt1q8vprchan07gzagd5e6v9wd7azyucksq2xc76k8', # m/0'/0'/1
-            'bcrt1qtuqdtha7zmqgcrr26n2rqxztv5y8rafjp9lulu', # m/0'/0'/2
-            'bcrt1qau64272ymawq26t90md6an0ps99qkrse58m640', # m/0'/0'/3
-            'bcrt1qsg97266hrh6cpmutqen8s4s962aryy77jp0fg0', # m/0'/0'/4
+            'rcrt1qtmp74ayg7p24uslctssvjm06q5phz4yr748d0w',  # m/0'/0'/0
+            'rcrt1q8vprchan07gzagd5e6v9wd7azyucksq273pl29',  # m/0'/0'/1
+            'rcrt1qtuqdtha7zmqgcrr26n2rqxztv5y8rafjevqer7',  # m/0'/0'/2
+            'rcrt1qau64272ymawq26t90md6an0ps99qkrsevwylfd',  # m/0'/0'/3
+            'rcrt1qsg97266hrh6cpmutqen8s4s962aryy772gsv5d',  # m/0'/0'/4
         ]
         result = wrpc.importmulti(
             [{

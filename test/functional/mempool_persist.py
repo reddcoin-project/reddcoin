@@ -59,12 +59,12 @@ class MempoolPersistTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.debug("Send 5 transactions from node2 (to its own address)")
-        tx_creation_time_lower = int(time.time())
+        tx_creation_time_lower = self.nodes[2].mocktime if self.nodes[2].mocktime else int(time.time())
         for _ in range(5):
             last_txid = self.nodes[2].sendtoaddress(self.nodes[2].getnewaddress(), Decimal("10"))
         node2_balance = self.nodes[2].getbalance()
         self.sync_all()
-        tx_creation_time_higher = int(time.time())
+        tx_creation_time_higher = self.nodes[0].mocktime + 600 if self.nodes[0].mocktime else int(time.time())
 
         self.log.debug("Verify that node0 and node1 have 5 transactions in their mempools")
         assert_equal(len(self.nodes[0].getrawmempool()), 5)
@@ -95,12 +95,15 @@ class MempoolPersistTest(BitcoinTestFramework):
         self.connect_nodes(0, 2)
 
         self.log.debug("Stop-start the nodes. Verify that node0 has the transactions in its mempool and node1 does not. Verify that node2 calculates its balance correctly after loading wallet transactions.")
+        # Save mocktime so LoadMempool doesn't expire transactions (mocktime is
+        # far in the past relative to real wall-clock time)
+        mock_time = self.nodes[0].mocktime
         self.stop_nodes()
         # Give this node a head-start, so we can be "extra-sure" that it didn't load anything later
         # Also don't store the mempool, to keep the datadir clean
-        self.start_node(1, extra_args=["-persistmempool=0"])
-        self.start_node(0)
-        self.start_node(2)
+        self.start_node(1, extra_args=["-persistmempool=0", "-mocktime={}".format(mock_time)])
+        self.start_node(0, extra_args=["-mocktime={}".format(mock_time)])
+        self.start_node(2, extra_args=["-mocktime={}".format(mock_time)])
         assert self.nodes[0].getmempoolinfo()["loaded"]  # start_node is blocking on the mempool being loaded
         assert self.nodes[2].getmempoolinfo()["loaded"]
         assert_equal(len(self.nodes[0].getrawmempool()), 6)
@@ -122,13 +125,13 @@ class MempoolPersistTest(BitcoinTestFramework):
         # start node0 with wallet disabled so wallet transactions don't get resubmitted
         self.log.debug("Stop-start node0 with -persistmempool=0. Verify that it doesn't load its mempool.dat file.")
         self.stop_nodes()
-        self.start_node(0, extra_args=["-persistmempool=0", "-disablewallet"])
+        self.start_node(0, extra_args=["-persistmempool=0", "-disablewallet", "-mocktime={}".format(mock_time)])
         assert self.nodes[0].getmempoolinfo()["loaded"]
         assert_equal(len(self.nodes[0].getrawmempool()), 0)
 
         self.log.debug("Stop-start node0. Verify that it has the transactions in its mempool.")
         self.stop_nodes()
-        self.start_node(0)
+        self.start_node(0, extra_args=["-mocktime={}".format(mock_time)])
         assert self.nodes[0].getmempoolinfo()["loaded"]
         assert_equal(len(self.nodes[0].getrawmempool()), 6)
 
@@ -142,7 +145,7 @@ class MempoolPersistTest(BitcoinTestFramework):
         self.log.debug("Stop nodes, make node1 use mempool.dat from node0. Verify it has 6 transactions")
         os.rename(mempooldat0, mempooldat1)
         self.stop_nodes()
-        self.start_node(1, extra_args=["-persistmempool"])
+        self.start_node(1, extra_args=["-persistmempool", "-mocktime={}".format(mock_time)])
         assert self.nodes[1].getmempoolinfo()["loaded"]
         assert_equal(len(self.nodes[1].getrawmempool()), 6)
 
@@ -154,11 +157,11 @@ class MempoolPersistTest(BitcoinTestFramework):
         assert_raises_rpc_error(-1, "Unable to dump mempool to disk", self.nodes[1].savemempool)
         os.rmdir(mempooldotnew1)
 
-        self.test_persist_unbroadcast()
+        self.test_persist_unbroadcast(mock_time)
 
-    def test_persist_unbroadcast(self):
+    def test_persist_unbroadcast(self, mock_time):
         node0 = self.nodes[0]
-        self.start_node(0)
+        self.start_node(0, extra_args=["-mocktime={}".format(mock_time)])
 
         # clear out mempool
         node0.generate(1)
@@ -171,10 +174,14 @@ class MempoolPersistTest(BitcoinTestFramework):
 
         # shutdown, then startup with wallet disabled
         self.stop_nodes()
-        self.start_node(0, extra_args=["-disablewallet"])
+        # Use -mocktime so LoadMempool doesn't expire the tx (created at old
+        # mocktime). Then advance mocktime via RPC so SendMessages timing works.
+        self.start_node(0, extra_args=["-disablewallet", "-mocktime={}".format(mock_time)])
 
         # check that txn gets broadcast due to unbroadcast logic
         conn = node0.add_p2p_connection(P2PTxInvStore())
+        # Advance mocktime so SendMessages inv timing triggers
+        node0.setmocktime(mock_time + 16 * 60 + 60)
         node0.mockscheduler(16*60) # 15 min + 1 for buffer
         self.wait_until(lambda: len(conn.get_invs()) == 1)
 

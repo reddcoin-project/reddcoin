@@ -242,6 +242,12 @@ BASE_SCRIPTS = [
     'mining_basic.py',
     'feature_pos_basic.py',
     'feature_pos_sync.py',
+    # v4.22.9 ↔ v4.22.10 compatibility tests (require releases/v4.22.9/bin/)
+    'feature_compat_p2p_sync.py',
+    'feature_compat_pos_blocks.py',
+    'feature_compat_tx_versions.py',
+    'feature_compat_staking_interop.py',
+    'feature_compat_softfork_signaling.py',
     'wallet_descriptor_staking.py',
     'feature_descriptor_legacy_staking.py',
     # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin

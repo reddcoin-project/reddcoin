@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2014-2022 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,7 +21,6 @@ TESTSDIR = os.path.dirname(os.path.realpath(__file__))
 
 class GetblockstatsTest(BitcoinTestFramework):
 
-    start_height = 101
     max_stat_pos = 2
 
     def add_options(self, parser):
@@ -34,43 +34,52 @@ class GetblockstatsTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
-        self.setup_clean_chain = True
+        self.setup_clean_chain = False  # Use cache with 199 blocks (90 PoW + 109 PoS)
         self.supports_cli = False
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def get_stats(self):
         return [self.nodes[0].getblockstats(hash_or_height=self.start_height + i) for i in range(self.max_stat_pos+1)]
 
     def generate_test_data(self, filename):
-        mocktime = 1525107225
-        self.nodes[0].setmocktime(mocktime)
-        self.nodes[0].generate(COINBASE_MATURITY + 1)
+        node = self.nodes[0]
+        cache_height = node.getblockcount()  # 199 from cache
 
-        address = self.nodes[0].get_deterministic_priv_key().address
-        self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
-        self.nodes[0].generate(1)
-        self.sync_all()
+        # Generate a PoS block with one user transaction
+        address = node.get_deterministic_priv_key().address
+        node.sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
+        node.generate(1)
 
-        self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
-        self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=False)
-        self.nodes[0].settxfee(amount=0.003)
-        self.nodes[0].sendtoaddress(address=address, amount=1, subtractfeefromamount=True)
-        self.sync_all()
-        self.nodes[0].generate(1)
+        # start_height is the first block we'll check stats on (a PoS block)
+        self.start_height = cache_height + 1
+
+        # Generate a PoS block with multiple user transactions
+        node.sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
+        node.sendtoaddress(address=address, amount=10, subtractfeefromamount=False)
+        node.settxfee(amount=0.003)
+        node.sendtoaddress(address=address, amount=1, subtractfeefromamount=True)
+        node.generate(1)
+
+        # Generate one more empty PoS block
+        node.generate(1)
 
         self.expected_stats = self.get_stats()
 
         blocks = []
-        tip = self.nodes[0].getbestblockhash()
+        tip = node.getbestblockhash()
         blockhash = None
         height = 0
         while tip != blockhash:
-            blockhash = self.nodes[0].getblockhash(height)
-            blocks.append(self.nodes[0].getblock(blockhash, 0))
+            blockhash = node.getblockhash(height)
+            blocks.append(node.getblock(blockhash, 0))
             height += 1
 
         to_dump = {
             'blocks': blocks,
-            'mocktime': int(mocktime),
+            'mocktime': int(node.getblockheader(tip)['time']),
+            'start_height': self.start_height,
             'stats': self.expected_stats,
         }
         with open(filename, 'w', encoding="utf8") as f:
@@ -81,6 +90,7 @@ class GetblockstatsTest(BitcoinTestFramework):
             d = json.load(f)
             blocks = d['blocks']
             mocktime = d['mocktime']
+            self.start_height = d['start_height']
             self.expected_stats = d['stats']
 
         # Set the timestamps from the file so that the nodes can get out of Initial Block Download
