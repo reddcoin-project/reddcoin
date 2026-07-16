@@ -476,6 +476,25 @@ bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx)
 // guaranteed to be in main chain by sync-checkpoint. This rule is
 // introduced to help nodes establish a consistent view of the coin
 // age (trust score) of competing branches.
+bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, uint32_t& nTimeBlockFrom, uint32_t& nTimeTxPrev)
+{
+    AssertLockHeld(cs_main);
+    // Mirror GetCoinAge's per-coin UTXO lookup (see below): the Coin already
+    // carries both the creating tx's nTime and its height, so the age gates no
+    // longer need a separate disk read. Values are identical to the former disk
+    // source: m_chain[coin.nHeight]->GetBlockTime() == the block header nTime,
+    // and coin.nTime == the prev tx's nTime.
+    const Coin& coin = view.AccessCoin(outpoint);
+    if (coin.IsSpent())
+        return false;
+    const CBlockIndex* pindex = active_chainstate->m_chain[coin.nHeight];
+    if (!pindex)
+        return false;
+    nTimeBlockFrom = pindex->GetBlockTime();
+    nTimeTxPrev = coin.nTime;
+    return true;
+}
+
 uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, const Consensus::Params& params, CCoinsViewCache* coins_view)
 {
     arith_uint256 bnCentSecond = 0; // coin age in the unit of cent-seconds

@@ -347,7 +347,13 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 nCredit += pcoin.txout.nValue;
                 vwtxPrev.push_back(tx);
                 txNew.vout.push_back(CTxOut(0, scriptPubKeyOut));
-                if (GetCoinAgeWeight(header.GetBlockTime(), (int64_t)txNew.nTime, consensusParams) < nStakeSplitAge && nCredit >= nCombineThreshold)
+                // Age the kernel from the UTXO Coin (single source of truth,
+                // same source GetCoinAge/ConnectBlock use). Value is identical
+                // to the disk header.GetBlockTime(); fall back to it defensively.
+                uint32_t nKernelBlockTime = header.GetBlockTime();
+                uint32_t nKernelTxPrevTime;
+                GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nKernelBlockTime, nKernelTxPrevTime);
+                if (GetCoinAgeWeight(nKernelBlockTime, (int64_t)txNew.nTime, consensusParams) < nStakeSplitAge && nCredit >= nCombineThreshold)
                     txNew.vout.push_back(CTxOut(0, scriptPubKeyOut)); // Split stake
                 LogPrintf("CreateCoinStake : added kernel type=%s\n", GetTxnOutputType(whichType));
                 fKernelFound = true;
@@ -395,8 +401,12 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             // Do not add additional significant input
             if (pcoin.txout.nValue > nCombineThreshold)
                 continue;
-            // Do not add input that is still too young
-            if (tx->nTime + consensusParams.nStakeMaxAge > txNew.nTime)
+            // Do not add input that is still too young. Age from the UTXO Coin
+            // (single source of truth); raw coin.nTime is identical to the disk
+            // tx->nTime, so behaviour is unchanged. Fall back defensively.
+            uint32_t nCombineBlockTime, nCombineTxPrevTime = tx->nTime;
+            GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nCombineBlockTime, nCombineTxPrevTime);
+            if (nCombineTxPrevTime + consensusParams.nStakeMaxAge > txNew.nTime)
                 continue;
             txNew.vin.push_back(CTxIn(pcoin.outpoint.hash, pcoin.outpoint.n));
             nCredit += pcoin.txout.nValue;
