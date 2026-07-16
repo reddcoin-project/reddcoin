@@ -8,6 +8,7 @@
 
 #include <chainparams.h>
 #include <consensus/tx_verify.h>
+#include <deploymentstatus.h>
 #include <index/disktxpos.h>
 #include <index/txindex.h>
 #include <node/blockstorage.h>
@@ -190,8 +191,26 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         return false;
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
+    // Check if SegWit is active for the next block — needed to filter witness UTXOs
+    CBlockIndex* pindexTip = chainstate->m_chain.Tip();
+    bool fSegwitActive = DeploymentActiveAfter(pindexTip, consensusParams, Consensus::DEPLOYMENT_SEGWIT);
+
     for (const auto& pcoin : setCoins)
     {
+        // Skip witness UTXOs if SegWit is not yet active — including them in a
+        // coinstake would produce a block with witness data that gets rejected
+        // with "unexpected witness data" during ContextualCheckBlock.
+        if (!fSegwitActive) {
+            std::vector<std::vector<unsigned char>> vSolutions;
+            TxoutType type = Solver(pcoin.txout.scriptPubKey, vSolutions);
+            if (type == TxoutType::WITNESS_V0_KEYHASH ||
+                type == TxoutType::WITNESS_V0_SCRIPTHASH ||
+                type == TxoutType::WITNESS_V1_TAPROOT ||
+                type == TxoutType::WITNESS_UNKNOWN) {
+                continue;
+            }
+        }
+
         CDiskTxPos postx;
         if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
             continue;
@@ -231,7 +250,10 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 CScript scriptPubKeyOut;
                 scriptPubKeyKernel = pcoin.txout.scriptPubKey;
                 TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
-                if (whichType != TxoutType::PUBKEY && whichType != TxoutType::PUBKEYHASH && whichType != TxoutType::WITNESS_V0_KEYHASH) {
+                if (whichType != TxoutType::PUBKEY &&
+                    whichType != TxoutType::PUBKEYHASH &&
+                    whichType != TxoutType::WITNESS_V0_KEYHASH &&
+                    whichType != TxoutType::WITNESS_V1_TAPROOT) {
                     LogPrintf("CreateCoinStake : no support for kernel type=%s\n", GetTxnOutputType(whichType));
                     break;
                 }
@@ -239,14 +261,86 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 {
                     // convert to pay to public key type
                     CKey key;
-                    if (!pwallet->GetLegacyScriptPubKeyMan()->GetKey(CKeyID(uint160(vSolutions[0])), key)) {
+                    CKeyID keyid{uint160{vSolutions[0]}};
+                    bool found_key = false;
+
+                    // Try all ScriptPubKeyMans (supports both legacy and descriptor wallets)
+                    for (ScriptPubKeyMan* spk_man : pwallet->GetAllScriptPubKeyMans()) {
+                        SignatureData sigdata;
+                        if (spk_man->CanProvide(scriptPubKeyKernel, sigdata)) {
+                            if (auto* legacy = dynamic_cast<LegacyScriptPubKeyMan*>(spk_man)) {
+                                if (legacy->GetKey(keyid, key)) {
+                                    found_key = true;
+                                    break;
+                                }
+                            } else if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+                                if (desc->GetKey(scriptPubKeyKernel, keyid, key)) {
+                                    found_key = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!found_key) {
                         LogPrintf("CreateCoinStake : failed to get key for kernel type=%s\n", GetTxnOutputType(whichType));
                         break;
                     }
                     scriptPubKeyOut << ToByteVector(key.GetPubKey()) << OP_CHECKSIG;
                 }
-                else
+                else if (whichType == TxoutType::WITNESS_V1_TAPROOT)
+                {
+                    // Taproot: verify we have the key for key-path spending
+                    // vSolutions[0] contains the 32-byte x-only pubkey
+                    bool found_key = false;
+
+                    // Try all ScriptPubKeyMans (supports both legacy and descriptor wallets)
+                    for (ScriptPubKeyMan* spk_man : pwallet->GetAllScriptPubKeyMans()) {
+                        SignatureData sigdata;
+                        if (spk_man->CanProvide(scriptPubKeyKernel, sigdata)) {
+                            found_key = true;
+                            break;
+                        }
+                    }
+
+                    if (!found_key) {
+                        LogPrintf("CreateCoinStake : failed to get key for kernel type=%s\n", GetTxnOutputType(whichType));
+                        break;
+                    }
                     scriptPubKeyOut = scriptPubKeyKernel;
+                }
+                else if (whichType == TxoutType::PUBKEY)
+                {
+                    // P2PK: verify we have the key
+                    // vSolutions[0] contains the pubkey
+                    CKeyID keyid = CPubKey(vSolutions[0]).GetID();
+                    bool found_key = false;
+
+                    // Try all ScriptPubKeyMans (supports both legacy and descriptor wallets)
+                    for (ScriptPubKeyMan* spk_man : pwallet->GetAllScriptPubKeyMans()) {
+                        if (auto* legacy = dynamic_cast<LegacyScriptPubKeyMan*>(spk_man)) {
+                            CKey key;
+                            if (legacy->GetKey(keyid, key)) {
+                                found_key = true;
+                                break;
+                            }
+                        } else if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+                            // For descriptor wallets, try with a P2PKH script since that's what they track
+                            CScript p2pkh_script = GetScriptForDestination(PKHash(keyid));
+                            CKey key;
+                            if (desc->GetKey(p2pkh_script, keyid, key)) {
+                                found_key = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!found_key) {
+                        LogPrintf("CreateCoinStake : failed to get key for kernel type=%s\n", GetTxnOutputType(whichType));
+                        break;
+                    }
+                    scriptPubKeyOut = scriptPubKeyKernel;
+                }
 
                 txNew.nTime -= n;
                 txNew.vin.push_back(CTxIn(pcoin.outpoint.hash, pcoin.outpoint.n));
@@ -357,12 +451,19 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             txNew.vout[2].nValue = nDevCredit;
         }
 
-        // Sign
-        int nIn = 0;
-        for (const auto& pcoin : vwtxPrev)
-        {
-            if (!SignSignature(*pwallet->GetLegacyScriptPubKeyMan(), *pcoin, txNew, nIn++, SIGHASH_ALL))
-                return error("CreateCoinStake : failed to sign coinstake");
+        // Sign using wallet's SignTransaction (supports both legacy and descriptor wallets)
+        std::map<COutPoint, Coin> coins;
+        for (size_t i = 0; i < vwtxPrev.size(); ++i) {
+            const CTxIn& txin = txNew.vin[i];
+            const CTransactionRef& prevTx = vwtxPrev[i];
+            coins[txin.prevout] = Coin(prevTx->vout[txin.prevout.n], 0, prevTx->IsCoinBase(), prevTx->IsCoinStake(), prevTx->nTime);
+        }
+        std::map<int, std::string> input_errors;
+        if (!pwallet->SignTransaction(txNew, coins, SIGHASH_ALL, input_errors)) {
+            for (const auto& err : input_errors) {
+                LogPrintf("CreateCoinStake : sign error input %d: %s\n", err.first, err.second);
+            }
+            return error("CreateCoinStake : failed to sign coinstake");
         }
 
         // Limit size

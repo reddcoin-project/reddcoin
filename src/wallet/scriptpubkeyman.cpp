@@ -2236,6 +2236,45 @@ bool DescriptorScriptPubKeyMan::GetKey(const CScript& script, const CKeyID& keyi
     return provider->GetKey(keyid, key);
 }
 
+bool DescriptorScriptPubKeyMan::SignBlockSchnorr(const CScript& script, const uint256& hash, std::vector<unsigned char>& sig) const
+{
+    std::vector<std::vector<unsigned char>> solutions;
+    if (Solver(script, solutions) != TxoutType::WITNESS_V1_TAPROOT) {
+        return false;
+    }
+
+    std::unique_ptr<FlatSigningProvider> provider = GetSigningProvider(script, true);
+    if (!provider) {
+        return false;
+    }
+
+    // Resolve the taproot output key to its internal key and merkle root.
+    XOnlyPubKey output_key{solutions[0]};
+    TaprootSpendData spenddata;
+    if (!provider->GetTaprootSpendData(output_key, spenddata)) {
+        return false;
+    }
+
+    // The signing provider indexes keys by Hash160 of the full (33-byte) pubkey,
+    // so try both possible parities of the x-only internal key.
+    CKey key;
+    unsigned char full[33] = {0x02};
+    std::copy(spenddata.internal_key.begin(), spenddata.internal_key.end(), full + 1);
+    CPubKey internal_pubkey(full, full + 33);
+    if (!provider->GetKey(internal_pubkey.GetID(), key)) {
+        full[0] = 0x03;
+        internal_pubkey = CPubKey(full, full + 33);
+        if (!provider->GetKey(internal_pubkey.GetID(), key)) {
+            return false;
+        }
+    }
+
+    // SignSchnorr applies the taproot tweak (key-path, no script tree) so the
+    // signature verifies against the output key.
+    sig.resize(64);
+    return key.SignSchnorr(hash, sig, &spenddata.merkle_root, nullptr);
+}
+
 bool DescriptorScriptPubKeyMan::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint, Coin>& coins, int sighash, std::map<int, std::string>& input_errors) const
 {
     std::unique_ptr<FlatSigningProvider> keys = std::make_unique<FlatSigningProvider>();

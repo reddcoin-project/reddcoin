@@ -38,4 +38,51 @@ BOOST_AUTO_TEST_CASE(CanProvide)
     BOOST_CHECK(keyman.CanProvide(p2sh_script, data));
 }
 
+// Test DescriptorScriptPubKeyMan::GetKey behavior for retrieving private keys
+BOOST_AUTO_TEST_CASE(DescriptorGetKey)
+{
+    // Create a wallet with descriptor flag set
+    CWallet wallet(m_node.chain.get(), "", CreateMockWalletDatabase());
+    wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+    LOCK(wallet.cs_wallet);
+
+    // Create a master key
+    CKey master_key;
+    master_key.MakeNewKey(true);
+    CExtKey master_ext;
+    master_ext.SetSeed(master_key.begin(), master_key.size());
+
+    // Create and setup a DescriptorScriptPubKeyMan with a pkh descriptor
+    auto desc_spk_man = std::unique_ptr<DescriptorScriptPubKeyMan>(new DescriptorScriptPubKeyMan(wallet));
+    BOOST_CHECK(desc_spk_man->SetupDescriptorGeneration(master_ext, OutputType::LEGACY, false));
+
+    // Get a destination from the descriptor
+    CTxDestination dest;
+    std::string error;
+    BOOST_CHECK(desc_spk_man->GetNewDestination(OutputType::LEGACY, dest, error));
+
+    // Convert destination to script
+    CScript script = GetScriptForDestination(dest);
+
+    // Extract the keyid from the destination (it's a PKHash for LEGACY type)
+    BOOST_CHECK(std::holds_alternative<PKHash>(dest));
+    CKeyID keyid = ToKeyID(std::get<PKHash>(dest));
+
+    // Test GetKey succeeds for a key we own
+    CKey retrieved_key;
+    BOOST_CHECK(desc_spk_man->GetKey(script, keyid, retrieved_key));
+    BOOST_CHECK(retrieved_key.IsValid());
+
+    // Verify the retrieved key corresponds to the keyid
+    BOOST_CHECK(retrieved_key.GetPubKey().GetID() == keyid);
+
+    // Test GetKey fails for a key we don't own
+    CKey random_key;
+    random_key.MakeNewKey(true);
+    CKeyID random_keyid = random_key.GetPubKey().GetID();
+    CScript random_script = GetScriptForDestination(PKHash(random_keyid));
+    CKey not_found_key;
+    BOOST_CHECK(!desc_spk_man->GetKey(random_script, random_keyid, not_found_key));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
