@@ -389,8 +389,8 @@ class BlockchainTest(BitcoinTestFramework):
         assert_raises(subprocess.TimeoutExpired, lambda: self.nodes[0].process.wait(timeout=3))
         try:
             self.nodes[0].generate(1)
-        except (ConnectionError, http.client.BadStatusLine):
-            pass  # The node already shut down before response
+        except (ConnectionError, http.client.BadStatusLine) as e:
+            self.log.debug("node already shut down before response: %s" % e)
         self.log.debug('Node should stop at this height...')
         self.nodes[0].wait_until_stopped()
         self.start_node(0)

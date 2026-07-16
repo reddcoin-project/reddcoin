@@ -89,8 +89,8 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
         self.connect_nodes(0, 2)
         try:
             self.sync_blocks([self.nodes[0], self.nodes[2]], timeout=5)
-        except:
-            pass
+        except Exception as e:
+            self.log.debug("sync not possible as expected (NODE_NETWORK_LIMITED peer): %s" % e)
         # node2 must remain at height 0
         assert_equal(self.nodes[2].getblockheader(self.nodes[2].getbestblockhash())['height'], 0)
 
