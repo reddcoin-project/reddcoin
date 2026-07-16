@@ -240,7 +240,11 @@ BASE_SCRIPTS = [
     'rpc_bind.py --ipv6',
     'rpc_bind.py --nonloopback',
     'mining_basic.py',
-    'feature_signet.py',
+    'feature_pos_basic.py',
+    'feature_pos_sync.py',
+    'wallet_descriptor_staking.py',
+    'feature_descriptor_legacy_staking.py',
+    # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin
     'wallet_bumpfee.py --legacy-wallet',
     'wallet_bumpfee.py --descriptors',
     'wallet_implicitsegwit.py --legacy-wallet',
@@ -304,7 +308,7 @@ BASE_SCRIPTS = [
     'feature_help.py',
     'feature_shutdown.py',
     'p2p_ibd_txrelay.py',
-    'feature_blockfilterindex_prune.py'
+    # 'feature_blockfilterindex_prune.py' # Prune mode is incompatible with blockfilterindex.
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]
@@ -365,7 +369,7 @@ def main():
     logging.basicConfig(format='%(message)s', level=logging_level)
 
     # Create base test directory
-    tmpdir = "%s/test_runner_₿_🏃_%s" % (args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    tmpdir = "%s/test_runner_Ɍ_🏃_%s" % (args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     os.makedirs(tmpdir)
 

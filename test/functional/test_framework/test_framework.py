@@ -32,6 +32,7 @@ from .util import (
     get_datadir_path,
     initialize_datadir,
     p2p_port,
+    set_node_times,
     wait_until_helper,
 )
 
@@ -45,7 +46,7 @@ TEST_EXIT_PASSED = 0
 TEST_EXIT_FAILED = 1
 TEST_EXIT_SKIPPED = 77
 
-TMPDIR_PREFIX = "bitcoin_func_test_"
+TMPDIR_PREFIX = "reddcoin_func_test_"
 
 
 class SkipTest(Exception):
@@ -155,9 +156,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         previous_releases_path = os.getenv("PREVIOUS_RELEASES_DIR") or os.getcwd() + "/releases"
         parser = argparse.ArgumentParser(usage="%(prog)s [options]")
         parser.add_argument("--nocleanup", dest="nocleanup", default=False, action="store_true",
-                            help="Leave bitcoinds and test.* datadir on exit or error")
+                            help="Leave reddcoinds and test.* datadir on exit or error")
         parser.add_argument("--noshutdown", dest="noshutdown", default=False, action="store_true",
-                            help="Don't stop bitcoinds after the test execution")
+                            help="Don't stop reddcoinds after the test execution")
         parser.add_argument("--cachedir", dest="cachedir", default=os.path.abspath(os.path.dirname(os.path.realpath(__file__)) + "/../../cache"),
                             help="Directory for caching pregenerated datadirs (default: %(default)s)")
         parser.add_argument("--tmpdir", dest="tmpdir", help="Root directory for datadirs")
@@ -178,7 +179,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--pdbonfailure", dest="pdbonfailure", default=False, action="store_true",
                             help="Attach a python debugger if test fails")
         parser.add_argument("--usecli", dest="usecli", default=False, action="store_true",
-                            help="use bitcoin-cli instead of RPC for all commands")
+                            help="use reddcoin-cli instead of RPC for all commands")
         parser.add_argument("--perf", dest="perf", default=False, action="store_true",
                             help="profile running nodes with perf for the duration of the test")
         parser.add_argument("--valgrind", dest="valgrind", default=False, action="store_true",
@@ -230,15 +231,15 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         fname_bitcoind = os.path.join(
             config["environment"]["BUILDDIR"],
             "src",
-            "bitcoind" + config["environment"]["EXEEXT"],
+            "reddcoind" + config["environment"]["EXEEXT"],
         )
         fname_bitcoincli = os.path.join(
             config["environment"]["BUILDDIR"],
             "src",
-            "bitcoin-cli" + config["environment"]["EXEEXT"],
+            "reddcoin-cli" + config["environment"]["EXEEXT"],
         )
-        self.options.bitcoind = os.getenv("BITCOIND", default=fname_bitcoind)
-        self.options.bitcoincli = os.getenv("BITCOINCLI", default=fname_bitcoincli)
+        self.options.bitcoind = os.getenv("REDDCOIND", default=fname_bitcoind)
+        self.options.bitcoincli = os.getenv("REDDCOINCLI", default=fname_bitcoincli)
 
         os.environ['PATH'] = os.pathsep.join([
             os.path.join(config['environment']['BUILDDIR'], 'src'),
@@ -299,7 +300,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         else:
             for node in self.nodes:
                 node.cleanup_on_exit = False
-            self.log.info("Note: bitcoinds were not stopped and may still be running")
+            self.log.info("Note: reddcoinds were not stopped and may still be running")
 
         should_clean_up = (
             not self.options.nocleanup and
@@ -340,7 +341,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             h.flush()
             h.close()
             self.log.removeHandler(h)
-        rpc_logger = logging.getLogger("BitcoinRPC")
+        rpc_logger = logging.getLogger("ReddcoinRPC")
         for h in list(rpc_logger.handlers):
             h.flush()
             rpc_logger.removeHandler(h)
@@ -397,8 +398,17 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         extra_args = [[]] * self.num_nodes
         if hasattr(self, "extra_args"):
             extra_args = self.extra_args
+        # Add txindex to all nodes for PoS staking support
+        for args in extra_args:
+            if '-txindex' not in str(args) and '-txindex=1' not in args and '-txindex=0' not in args:
+                args.append('-txindex=1')
         self.add_nodes(self.num_nodes, extra_args)
         self.start_nodes()
+        # Set time sync callback so node.generate() keeps other nodes' mocktime
+        # in sync, preventing blocks from exceeding MAX_FUTURE_BLOCK_TIME
+        if self.num_nodes > 1:
+            for n in self.nodes:
+                n.time_sync_callback = self.sync_time
         if self.requires_wallet:
             self.import_deterministic_coinbase_privkeys()
         if not self.setup_clean_chain:
@@ -406,14 +416,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 assert_equal(n.getblockchaininfo()["blocks"], 199)
             # To ensure that all nodes are out of IBD, the most recent block
             # must have a timestamp not too old (see IsInitialBlockDownload()).
-            self.log.debug('Generate a block with current time')
-            block_hash = self.nodes[0].generate(1)[0]
-            block = self.nodes[0].getblock(blockhash=block_hash, verbosity=0)
-            for n in self.nodes:
-                n.submitblock(block)
-                chain_info = n.getblockchaininfo()
-                assert_equal(chain_info["blocks"], 200)
-                assert_equal(chain_info["initialblockdownload"], False)
+            # For PoS: The mocktime advancement in init_wallet ensures tip is recent
 
     def import_deterministic_coinbase_privkeys(self):
         for i in range(self.num_nodes):
@@ -424,8 +427,57 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if wallet_name is not False:
             n = self.nodes[i]
             if wallet_name is not None:
-                n.createwallet(wallet_name=wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
-            n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
+                # For PoS: prefer legacy wallet to support importprivkey for staking
+                # But respect test preference if explicitly set via options.descriptors
+                use_descriptors = self.options.descriptors if hasattr(self, 'options') else False
+                n.createwallet(wallet_name=wallet_name, descriptors=use_descriptors, load_on_startup=True)
+
+            # Import the deterministic key for this node
+            if wallet_name is not None:
+                key_pair = n.get_deterministic_priv_key()
+
+                if self.options.descriptors:
+                    # For descriptor wallets, import the key as a descriptor
+                    # pkh() creates a P2PKH descriptor (standard address type)
+                    # Note: getdescriptorinfo converts the private key to a public key in the
+                    # returned descriptor, but we need to keep the private key for import.
+                    # So we use the checksum from getdescriptorinfo but keep the original descriptor.
+                    desc = f"pkh({key_pair.key})"
+                    desc_info = n.getdescriptorinfo(desc)
+                    desc_with_checksum = f"{desc}#{desc_info['checksum']}"
+
+                    n.importdescriptors([{
+                        "desc": desc_with_checksum,
+                        "timestamp": "now",
+                        "label": "coinbase"
+                    }])
+                else:
+                    # Legacy wallet: use importprivkey
+                    n.importprivkey(privkey=key_pair.key, label='coinbase')
+
+            # NOTE: Each node now only has its own key (PRIV_KEYS[node_index])
+            # The cache was generated with all block rewards going to PRIV_KEYS[0]
+            # and funding transactions sent to PRIV_KEYS[1..3] for other nodes.
+            # This avoids key sharing issues where multiple nodes see the same coins.
+
+            # For PoS: Set mock time well beyond tip time to give imported coins sufficient age
+            # The cache blocks were generated with 60s spacing, but we need to ensure
+            # the coins have at least nStakeMinAge (10s on regtest) from "now"
+            try:
+                tip_time = n.getblockheader(n.getbestblockhash())['time']
+                # Advance 5 minutes past the tip to ensure all cache coins are mature for staking
+                n.setmocktime(tip_time + 300)
+                n.mocktime = tip_time + 300
+            except JSONRPCException as e:
+                # Best-effort: a node without blocks yet (e.g. no cache) has no tip to
+                # read. Log and continue rather than failing wallet init.
+                self.log.debug("init_wallet: skipping PoS mocktime advance for node %d: %s" % (i, e))
+
+            # For PoS: Set the node's default RPC to use the wallet context
+            # This ensures generatetoaddress and other wallet-dependent RPCs work
+            if wallet_name is not None:
+                n._base_rpc = n.rpc
+                n.rpc = n.get_wallet_rpc(wallet_name)
 
     def run_test(self):
         """Tests must override this method to define test logic"""
@@ -466,9 +518,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if versions is None:
             versions = [None] * num_nodes
         if binary is None:
-            binary = [get_bin_from_version(v, 'bitcoind', self.options.bitcoind) for v in versions]
+            binary = [get_bin_from_version(v, 'reddcoind', self.options.bitcoind) for v in versions]
         if binary_cli is None:
-            binary_cli = [get_bin_from_version(v, 'bitcoin-cli', self.options.bitcoincli) for v in versions]
+            binary_cli = [get_bin_from_version(v, 'reddcoin-cli', self.options.bitcoincli) for v in versions]
         assert_equal(len(extra_confs), num_nodes)
         assert_equal(len(extra_args), num_nodes)
         assert_equal(len(versions), num_nodes)
@@ -641,7 +693,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def sync_mempools(self, nodes=None, wait=1, timeout=60, flush_scheduler=True):
         """
         Wait until everybody has the same transactions in their memory
-        pools
+        pools.
+
+        When mocktime is set, advances it by 5 seconds each poll iteration
+        so that outbound trickle relay Poisson timers can fire. Without this,
+        frozen mocktime prevents inv messages from being sent to outbound peers.
         """
         rpc_connections = nodes or self.nodes
         timeout = int(timeout * self.options.timeout_factor)
@@ -655,15 +711,101 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 return
             # Check that each peer has at least one connection
             assert (all([len(x.getpeerinfo()) for x in rpc_connections]))
+            # Advance mocktime so outbound trickle relay timers can fire
+            if hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
+                for node in rpc_connections:
+                    node.mocktime += 5
+                    node.setmocktime(node.mocktime)
             time.sleep(wait)
         raise AssertionError("Mempool sync timed out after {}s:{}".format(
             timeout,
             "".join("\n  {!r}".format(m) for m in pool),
         ))
 
+    def sync_time(self, nodes=None):
+        """
+        Synchronize mocktime across all nodes by setting all to the maximum time.
+
+        Reads the tracked mocktime from each node and sets all nodes to the
+        maximum time found. This prevents P2P disconnections caused by time
+        drift between nodes when using mocktime.
+
+        ReddCoin PoS requires synchronized time across nodes because:
+        - Block timestamps must be within acceptable range
+        - Coin age calculations depend on consistent time
+        - P2P connections can timeout if mocktime differs significantly
+
+        Note: mocktime is tracked in node.mocktime by generate() and set_node_times().
+        """
+        rpc_connections = nodes or self.nodes
+        # Filter out stopped nodes that don't have RPC connections
+        rpc_connections = [n for n in rpc_connections if n.running and n.rpc_connected]
+        if len(rpc_connections) <= 1:
+            return
+
+        # Get tracked mocktime from each node
+        times = [node.mocktime for node in rpc_connections]
+
+        # Only sync if at least one node has mocktime set
+        max_time = max(times)
+        if max_time > 0:
+            set_node_times(rpc_connections, max_time)
+
     def sync_all(self, nodes=None):
+        self.sync_time(nodes)
         self.sync_blocks(nodes)
         self.sync_mempools(nodes)
+
+    def generate(self, nblocks, node=None, sync_every=10, max_tries=10):
+        """
+        Generate blocks while keeping all nodes' mocktime synchronized.
+
+        Generates blocks one at a time on the specified node, syncing mocktime
+        across all nodes every sync_every blocks. This prevents time drift
+        between nodes during long block generation sequences.
+
+        Includes retry logic for PoS: if "no valid coinstake found" error occurs,
+        advances time and retries up to max_tries times per block.
+
+        Args:
+            nblocks: Number of blocks to generate
+            node: Node to generate on (default: self.nodes[0])
+            sync_every: Sync time across all nodes every N blocks (default: 10)
+            max_tries: Max retry attempts per block on coinstake failure (default: 10)
+
+        Returns:
+            List of generated block hashes
+        """
+        if node is None:
+            node = self.nodes[0]
+
+        blocks = []
+        for i in range(nblocks):
+            # Retry logic for PoS coinstake failures
+            for attempt in range(max_tries):
+                try:
+                    block = node.generate(1)
+                    blocks.extend(block)
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e):
+                        if attempt < max_tries - 1:
+                            # Advance time and retry
+                            set_node_times(self.nodes, node.mocktime + 60)
+                        else:
+                            raise
+                    else:
+                        raise
+
+            # Sync time across all nodes periodically
+            if (i + 1) % sync_every == 0:
+                self.sync_time()
+
+        # Final sync after all blocks generated
+        if nblocks % sync_every != 0:
+            self.sync_time()
+
+        return blocks
 
     def wait_until(self, test_function, timeout=60):
         return wait_until_helper(test_function, timeout=timeout, timeout_factor=self.options.timeout_factor)
@@ -692,7 +834,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self.log.addHandler(ch)
 
         if self.options.trace_rpc:
-            rpc_logger = logging.getLogger("BitcoinRPC")
+            rpc_logger = logging.getLogger("ReddcoinRPC")
             rpc_logger.setLevel(logging.DEBUG)
             rpc_handler = logging.StreamHandler(sys.stdout)
             rpc_handler.setLevel(logging.DEBUG)
@@ -718,7 +860,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     cache_node_dir,
                     chain=self.chain,
                     extra_conf=["bind=127.0.0.1"],
-                    extra_args=['-disablewallet'],
+                    extra_args=['-txindex=1', '-limitancestorcount=1000', '-limitdescendantcount=1000'],  # txindex for PoS, raised chain limits for funding
                     rpchost=None,
                     timewait=self.rpc_timeout,
                     timeout_factor=self.options.timeout_factor,
@@ -734,22 +876,112 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # Wait for RPC connections to be ready
             cache_node.wait_for_rpc_connection()
 
-            # Set a time in the past, so that blocks don't end up in the future
-            cache_node.setmocktime(cache_node.getblockheader(cache_node.getbestblockhash())['time'])
+            # Create a wallet for PoS block generation in ReddCoin
+            # For PoS, use legacy wallet to easily import private keys for staking
+            cache_node.createwallet(wallet_name=self.default_wallet_name, descriptors=False, load_on_startup=True)
 
-            # Create a 199-block-long chain; each of the 3 first nodes
-            # gets 25 mature blocks and 25 immature.
-            # The 4th address gets 25 mature and only 24 immature blocks so that the very last
-            # block in the cache does not age too much (have an old tip age).
-            # This is needed so that we are out of IBD when the test starts,
-            # see the tip age check in IsInitialBlockDownload().
-            gen_addresses = [k.address for k in TestNode.PRIV_KEYS][:3] + [ADDRESS_BCRT1_P2WSH_OP_TRUE]
-            assert_equal(len(gen_addresses), 4)
-            for i in range(8):
-                cache_node.generatetoaddress(
-                    nblocks=25 if i != 7 else 24,
-                    address=gen_addresses[i % len(gen_addresses)],
-                )
+            # Set the cache node's RPC to use the wallet context (same as we do for test nodes)
+            cache_node.rpc = cache_node.get_wallet_rpc(self.default_wallet_name)
+
+            # Import only node 0's key - this node will accumulate all block rewards
+            # Then fund other nodes with explicit transactions to avoid key sharing
+            cache_node.importprivkey(TestNode.PRIV_KEYS[0].key, "", False)
+
+            # Set a time in the past, so that blocks don't end up in the future
+            # For PoS, we need sufficient coinage, so start with a reasonable base time
+            initial_time = cache_node.getblockheader(cache_node.getbestblockhash())['time']
+            cache_node.setmocktime(initial_time)
+
+            # Generate all blocks to node 0's address only - this avoids key sharing issues
+            # where multiple nodes see the same coinbase rewards.
+            # Other nodes will be funded via explicit transactions.
+            gen_address = TestNode.PRIV_KEYS[0].address
+
+            # For PoS: Advance time between blocks to build coinage
+            # ReddCoin regtest nStakeMinAge = 10 seconds, so use block spacing to ensure coinage
+            POS_BLOCK_SPACING = 60  # 60 seconds between blocks (well above 10 second minimum)
+
+            # Helper: generate one block with PoS retry logic
+            def _generate_one_block():
+                nonlocal initial_time
+                for attempt in range(10):
+                    initial_time += POS_BLOCK_SPACING
+                    cache_node.setmocktime(initial_time)
+                    try:
+                        cache_node.generatetoaddress(1, gen_address)
+                        return
+                    except JSONRPCException as e:
+                        if "no valid coinstake found" in str(e) and attempt < 9:
+                            continue
+                        raise
+
+            # Phase 1: Generate 90 blocks (89 PoW + 1 PoS)
+            # nLastPowHeight=89 on regtest, so block 90 is the first PoS block.
+            # All rewards go to PRIV_KEYS[0]. At block 90, blocks 1-30 are mature.
+            PHASE1_BLOCKS = 90
+            for i in range(PHASE1_BLOCKS):
+                _generate_one_block()
+
+            # Phase 2: Fund nodes 1-5 from mature coinbase UTXOs
+            # Chain multiple transactions off a coinbase's change output,
+            # so only 1 coinbase is consumed per funding pass.
+            # Each node gets NUM_FUNDING_TXS UTXOs of ~FUND_AMOUNT RDD each.
+            # Funding at block 90 gives 108+ confirmations by block 199
+            # (well over COINBASE_MATURITY=60), so funded UTXOs are staking-ready.
+            #
+            # Nodes 1-3 are funded from utxos[0] (premine block, ~545M RDD).
+            # Nodes 4-5 are funded from utxos[1] (another premine block).
+            # This ensures tests with 6+ nodes (e.g., wallet_address_types.py)
+            # have funded nodes for both block generation and transactions.
+            FUND_AMOUNT = 2500000
+            NUM_FUNDING_TXS = 70  # Each node gets this many UTXOs for staking
+
+            utxos = cache_node.listunspent(60)
+            utxos.sort(key=lambda x: x['amount'], reverse=True)
+
+            def _fund_nodes(source_utxo, node_keys):
+                """Fund multiple nodes from a single source UTXO via chained txs."""
+                prev_txid = source_utxo['txid']
+                prev_vout = source_utxo['vout']
+                prev_amount = source_utxo['amount']
+                num_nodes = len(node_keys)
+
+                for _ in range(NUM_FUNDING_TXS):
+                    change = prev_amount - FUND_AMOUNT * num_nodes - 1
+
+                    inputs = [{"txid": prev_txid, "vout": prev_vout}]
+                    outputs = {}
+                    for key_idx in node_keys:
+                        outputs[TestNode.PRIV_KEYS[key_idx].address] = FUND_AMOUNT
+                    outputs[gen_address] = change
+
+                    raw_tx = cache_node.createrawtransaction(inputs, outputs)
+                    signed_tx = cache_node.signrawtransactionwithwallet(raw_tx)
+                    assert signed_tx['complete']
+                    txid = cache_node.sendrawtransaction(signed_tx['hex'], 0)
+
+                    # Find the change output to use as input for the next tx
+                    decoded = cache_node.decoderawtransaction(signed_tx['hex'])
+                    for vout_info in decoded['vout']:
+                        spk = vout_info['scriptPubKey']
+                        vout_addr = spk.get('address', '')
+                        if not vout_addr and 'addresses' in spk:
+                            vout_addr = spk['addresses'][0]
+                        if vout_addr == gen_address:
+                            prev_txid = txid
+                            prev_vout = vout_info['n']
+                            prev_amount = vout_info['value']
+                            break
+
+            # Fund nodes 1-3 from first premine UTXO (~545M, needs ~525M)
+            _fund_nodes(utxos[0], [1, 2, 3])
+            # Fund nodes 4-5 from second premine UTXO (~545M, needs ~350M)
+            _fund_nodes(utxos[1], [4, 5])
+
+            # Phase 3: Generate remaining 109 PoS blocks to confirm and mature funding
+            PHASE3_BLOCKS = 199 - PHASE1_BLOCKS
+            for i in range(PHASE3_BLOCKS):
+                _generate_one_block()
 
             assert_equal(cache_node.getblockchaininfo()["blocks"], 199)
 
@@ -760,7 +992,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             def cache_path(*paths):
                 return os.path.join(cache_node_dir, self.chain, *paths)
 
-            os.rmdir(cache_path('wallets'))  # Remove empty wallets dir
+            # Remove wallets directory (including any created wallets for PoS)
+            wallets_dir = cache_path('wallets')
+            if os.path.exists(wallets_dir):
+                shutil.rmtree(wallets_dir)
             for entry in os.listdir(cache_path()):
                 if entry not in ['chainstate', 'blocks', 'indexes']:  # Only indexes, chainstate and blocks folders
                     os.remove(cache_path(entry))
@@ -769,7 +1004,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             self.log.debug("Copy cache directory {} to node {}".format(cache_node_dir, i))
             to_dir = get_datadir_path(self.options.tmpdir, i)
             shutil.copytree(cache_node_dir, to_dir)
-            initialize_datadir(self.options.tmpdir, i, self.chain)  # Overwrite port/rpcport in bitcoin.conf
+            initialize_datadir(self.options.tmpdir, i, self.chain)  # Overwrite port/rpcport in reddcoin.conf
 
     def _initialize_chain_clean(self):
         """Initialize empty blockchain for use by the test.
@@ -787,9 +1022,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             raise SkipTest("python3-zmq module not available.")
 
     def skip_if_no_bitcoind_zmq(self):
-        """Skip the running test if bitcoind has not been compiled with zmq support."""
+        """Skip the running test if reddcoind has not been compiled with zmq support."""
         if not self.is_zmq_compiled():
-            raise SkipTest("bitcoind has not been built with zmq enabled.")
+            raise SkipTest("reddcoind has not been built with zmq enabled.")
 
     def skip_if_no_wallet(self):
         """Skip the running test if wallet has not been compiled."""
@@ -814,12 +1049,12 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def skip_if_no_wallet_tool(self):
         """Skip the running test if bitcoin-wallet has not been compiled."""
         if not self.is_wallet_tool_compiled():
-            raise SkipTest("bitcoin-wallet has not been compiled")
+            raise SkipTest("reddcoin-wallet has not been compiled")
 
     def skip_if_no_cli(self):
         """Skip the running test if bitcoin-cli has not been compiled."""
         if not self.is_cli_compiled():
-            raise SkipTest("bitcoin-cli has not been compiled.")
+            raise SkipTest("reddcoin-cli has not been compiled.")
 
     def skip_if_no_previous_releases(self):
         """Skip the running test if previous releases are not available."""

@@ -74,7 +74,7 @@ class TestNode():
         self.index = i
         self.p2p_conn_index = 1
         self.datadir = datadir
-        self.bitcoinconf = os.path.join(self.datadir, "bitcoin.conf")
+        self.bitcoinconf = os.path.join(self.datadir, "reddcoin.conf")
         self.stdout_dir = os.path.join(self.datadir, "stdout")
         self.stderr_dir = os.path.join(self.datadir, "stderr")
         self.chain = chain
@@ -91,7 +91,7 @@ class TestNode():
         # Note that common args are set in the config file (see initialize_datadir)
         self.extra_args = extra_args
         self.version = version
-        # Configuration for logging is set as command-line args rather than in the bitcoin.conf file.
+        # Configuration for logging is set as command-line args rather than in the reddcoin.conf file.
         # This means that starting a bitcoind using the temp dir to debug a failed test won't
         # spam debug.log.
         self.args = [
@@ -134,22 +134,24 @@ class TestNode():
 
         self.p2ps = []
         self.timeout_factor = timeout_factor
+        self.mocktime = 0  # Track current mocktime for sync_time()
+        self.time_sync_callback = None  # Callback to sync time across nodes during generate()
 
     AddressKeyPair = collections.namedtuple('AddressKeyPair', ['address', 'key'])
     PRIV_KEYS = [
             # address , privkey
-            AddressKeyPair('mjTkW3DjgyZck4KbiRusZsqTgaYTxdSz6z', 'cVpF924EspNh8KjYsfhgY96mmxvT6DgdWiTYMtMjuM74hJaU5psW'),
-            AddressKeyPair('msX6jQXvxiNhx3Q62PKeLPrhrqZQdSimTg', 'cUxsWyKyZ9MAQTaAhUQWJmBbSvHMwSmuv59KgxQV7oZQU3PXN3KE'),
-            AddressKeyPair('mnonCMyH9TmAsSj3M59DsbH8H63U3RKoFP', 'cTrh7dkEAeJd6b3MRX9bZK8eRmNqVCMH3LSUkE3dSFDyzjU38QxK'),
-            AddressKeyPair('mqJupas8Dt2uestQDvV2NH3RU8uZh2dqQR', 'cVuKKa7gbehEQvVq717hYcbE9Dqmq7KEBKqWgWrYBa2CKKrhtRim'),
-            AddressKeyPair('msYac7Rvd5ywm6pEmkjyxhbCDKqWsVeYws', 'cQDCBuKcjanpXDpCqacNSjYfxeQj8G6CAtH1Dsk3cXyqLNC4RPuh'),
-            AddressKeyPair('n2rnuUnwLgXqf9kk2kjvVm8R5BZK1yxQBi', 'cQakmfPSLSqKHyMFGwAqKHgWUiofJCagVGhiB4KCainaeCSxeyYq'),
-            AddressKeyPair('myzuPxRwsf3vvGzEuzPfK9Nf2RfwauwYe6', 'cQMpDLJwA8DBe9NcQbdoSb1BhmFxVjWD5gRyrLZCtpuF9Zi3a9RK'),
-            AddressKeyPair('mumwTaMtbxEPUswmLBBN3vM9oGRtGBrys8', 'cSXmRKXVcoouhNNVpcNKFfxsTsToY5pvB9DVsFksF1ENunTzRKsy'),
-            AddressKeyPair('mpV7aGShMkJCZgbW7F6iZgrvuPHjZjH9qg', 'cSoXt6tm3pqy43UMabY6eUTmR3eSUYFtB2iNQDGgb3VUnRsQys2k'),
-            AddressKeyPair('mq4fBNdckGtvY2mijd9am7DRsbRB4KjUkf', 'cN55daf1HotwBAgAKWVgDcoppmUNDtQSfb7XLutTLeAgVc3u8hik'),
-            AddressKeyPair('mpFAHDjX7KregM3rVotdXzQmkbwtbQEnZ6', 'cT7qK7g1wkYEMvKowd2ZrX1E5f6JQ7TM246UfqbCiyF7kZhorpX3'),
-            AddressKeyPair('mzRe8QZMfGi58KyWCse2exxEFry2sfF2Y7', 'cPiRWE8KMjTRxH1MWkPerhfoHFn5iHPWVK5aPqjW8NxmdwenFinJ'),
+            AddressKeyPair('rABPLEVuVxfFjprYz3aNuFq7c8NqnR2H3X', 'cVpF924EspNh8KjYsfhgY96mmxvT6DgdWiTYMtMjuM74hJaU5psW'),
+            AddressKeyPair('rJEjZbp6mhULwow3Hzz9fmrMnPPnV2NoJ5', 'cUxsWyKyZ9MAQTaAhUQWJmBbSvHMwSmuv59KgxQV7oZQU3PXN3KE'),
+            AddressKeyPair('rDXR2ZFSxSrosDFzcgojCyGnCdsqv97qtd', 'cTrh7dkEAeJd6b3MRX9bZK8eRmNqVCMH3LSUkE3dSFDyzjU38QxK'),
+            AddressKeyPair('rG2Yen9J2s8YeeRMVY9Xhf35PgjwVdo28n', 'cVuKKa7gbehEQvVq717hYcbE9Dqmq7KEBKqWgWrYBa2CKKrhtRim'),
+            AddressKeyPair('rJGDSJi6S55aksMC3NQVJ5ar8sftkA3ZKM', 'cQDCBuKcjanpXDpCqacNSjYfxeQj8G6CAtH1Dsk3cXyqLNC4RPuh'),
+            AddressKeyPair('rTaRjg579fdUevHhJNQRq984zjPgpoYNvb', 'cQakmfPSLSqKHyMFGwAqKHgWUiofJCagVGhiB4KCainaeCSxeyYq'),
+            AddressKeyPair('rQiYE9i7ge9Zv3XCBc4AeXNJwyWKRmMWvW', 'cQMpDLJwA8DBe9NcQbdoSb1BhmFxVjWD5gRyrLZCtpuF9Zi3a9RK'),
+            AddressKeyPair('rLVaHme4QwL2UeUibnqsPJLoipGG3HaPrh', 'cSXmRKXVcoouhNNVpcNKFfxsTsToY5pvB9DVsFksF1ENunTzRKsy'),
+            AddressKeyPair('rFCkQTisAjPqZT8TNrmDu4rapw87TxSqjm', 'cSoXt6tm3pqy43UMabY6eUTmR3eSUYFtB2iNQDGgb3VUnRsQys2k'),
+            AddressKeyPair('rFnJ1ZunZFzZXoJg1Ep66VD5o9FYsdeb2P', 'cN55daf1HotwBAgAKWVgDcoppmUNDtQSfb7XLutTLeAgVc3u8hik'),
+            AddressKeyPair('rExo7R1gvJxHg7aomRZ8sNQRg9nGP1Pc5m', 'cT7qK7g1wkYEMvKowd2ZrX1E5f6JQ7TM246UfqbCiyF7kZhorpX3'),
+            AddressKeyPair('rR9GxbqXUFoi86WTUVJXzLwtBQoQca3zK6', 'cPiRWE8KMjTRxH1MWkPerhfoHFn5iHPWVK5aPqjW8NxmdwenFinJ'),
     ]
 
     def get_deterministic_priv_key(self):
@@ -210,7 +212,7 @@ class TestNode():
         self.process = subprocess.Popen(self.args + extra_args, env=subp_env, stdout=stdout, stderr=stderr, cwd=cwd, **kwargs)
 
         self.running = True
-        self.log.debug("bitcoind started, waiting for RPC to come up")
+        self.log.debug("reddcoind started, waiting for RPC to come up")
 
         if self.start_perf:
             self._start_perf()
@@ -222,7 +224,7 @@ class TestNode():
         for _ in range(poll_per_s * self.rpc_timeout):
             if self.process.poll() is not None:
                 raise FailedToStartError(self._node_msg(
-                    'bitcoind exited with status {} during initialization'.format(self.process.returncode)))
+                    'reddcoind exited with status {} during initialization'.format(self.process.returncode)))
             try:
                 rpc = get_rpc_proxy(
                     rpc_url(self.datadir, self.index, self.chain, self.rpchost),
@@ -297,17 +299,59 @@ class TestNode():
             time.sleep(1.0 / poll_per_s)
         self._raise_assertion_error("Unable to retrieve cookie credentials after {}s".format(self.rpc_timeout))
 
-    def generate(self, nblocks, maxtries=1000000):
+    def generate(self, nblocks, maxtries=1000000, pos_retry_attempts=10):
         self.log.debug("TestNode.generate() dispatches `generate` call to `generatetoaddress`")
-        return self.generatetoaddress(nblocks=nblocks, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+        # For PoS: Advance time before generating blocks to ensure sufficient coinage
+        # ReddCoin regtest nStakeMinAge = 10 seconds
+        POS_BLOCK_SPACING = 60  # 60 seconds between blocks for coinage
+        POS_RETRY_SPACING = 300  # Larger advance for PoS retry to widen search window
+
+        blocks = []
+        for i in range(nblocks):
+            # Advance mock time before each block
+            # Use max of current mocktime and block time to avoid resetting advanced time
+            try:
+                block_time = self.getblockheader(self.getbestblockhash())['time']
+                new_time = max(self.mocktime, block_time) + POS_BLOCK_SPACING
+                self.setmocktime(new_time)
+                self.mocktime = new_time  # Track for sync_time()
+            except JSONRPCException as e:
+                # Best-effort: no tip to read yet (e.g. empty chain). Continue anyway.
+                self.log.debug("generate: skipping PoS mocktime advance: %s" % e)
+
+            # PoS retry logic - retry with time advancement on staking failures
+            for attempt in range(pos_retry_attempts):
+                try:
+                    block = self.generatetoaddress(nblocks=1, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+                    blocks.extend(block)
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e) and attempt < pos_retry_attempts - 1:
+                        # Advance time aggressively to widen PoS search window
+                        try:
+                            new_time = self.mocktime + POS_RETRY_SPACING
+                            self.setmocktime(new_time)
+                            self.mocktime = new_time
+                        except JSONRPCException as e:
+                            self.log.debug("generate: PoS retry mocktime advance failed: %s" % e)
+                    else:
+                        raise
+
+            # Sync time across all nodes after every block to prevent mocktime
+            # drift that breaks P2P relay between nodes
+            if self.time_sync_callback:
+                self.time_sync_callback()
+
+        return blocks
 
     def get_wallet_rpc(self, wallet_name):
         if self.use_cli:
             return RPCOverloadWrapper(self.cli("-rpcwallet={}".format(wallet_name)), True, self.descriptors)
         else:
             assert self.rpc_connected and self.rpc, self._node_msg("RPC not connected")
+            base_rpc = self.__dict__.get('_base_rpc', self.rpc)
             wallet_path = "wallet/{}".format(urllib.parse.quote(wallet_name))
-            return RPCOverloadWrapper(self.rpc / wallet_path, descriptors=self.descriptors)
+            return RPCOverloadWrapper(base_rpc / wallet_path, descriptors=self.descriptors)
 
     def version_is_at_least(self, ver):
         return self.version is None or self.version >= ver
@@ -362,6 +406,8 @@ class TestNode():
         self.process = None
         self.rpc_connected = False
         self.rpc = None
+        if '_base_rpc' in self.__dict__:
+            del self._base_rpc
         self.log.debug("Node stopped")
         return True
 
@@ -439,7 +485,7 @@ class TestNode():
 
         if not test_success('readelf -S {} | grep .debug_str'.format(shlex.quote(self.binary))):
             self.log.warning(
-                "perf output won't be very useful without debug symbols compiled into bitcoind")
+                "perf output won't be very useful without debug symbols compiled into reddcoind")
 
         output_path = tempfile.NamedTemporaryFile(
             dir=self.datadir,
@@ -490,7 +536,7 @@ class TestNode():
             try:
                 self.start(extra_args, stdout=log_stdout, stderr=log_stderr, *args, **kwargs)
                 ret = self.process.wait(timeout=self.rpc_timeout)
-                self.log.debug(self._node_msg(f'bitcoind exited with status {ret} during initialization'))
+                self.log.debug(self._node_msg(f'reddcoind exited with status {ret} during initialization'))
                 assert ret != 0  # Exit code must indicate failure
                 self.running = False
                 self.process = None
@@ -514,7 +560,7 @@ class TestNode():
                 self.process.kill()
                 self.running = False
                 self.process = None
-                assert_msg = f'bitcoind should have exited within {self.rpc_timeout}s '
+                assert_msg = f'reddcoind should have exited within {self.rpc_timeout}s '
                 if expected_msg is None:
                     assert_msg += "with an error"
                 else:
@@ -678,10 +724,42 @@ class RPCOverloadWrapper():
     def __getattr__(self, name):
         return getattr(self.rpc, name)
 
-    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase='', avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None):
+    def __truediv__(self, relative_uri):
+        return self.rpc / relative_uri
+
+    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase=None, avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None, wallet_type=None, mnemonic=None, mnemonic_passphrase=None, language=None, entropy_bits=None):
         if descriptors is None:
             descriptors = self.descriptors
-        return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
+        bip39_args = [wallet_type, mnemonic, mnemonic_passphrase, language, entropy_bits]
+        has_bip39 = any(a is not None for a in bip39_args)
+        if not has_bip39:
+            # Original positional call for backward compatibility
+            return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
+        # Use named args to avoid CLI "null" string issues with sparse optional params
+        params = {'wallet_name': wallet_name, 'descriptors': descriptors}
+        if disable_private_keys is not None:
+            params['disable_private_keys'] = disable_private_keys
+        if blank is not None:
+            params['blank'] = blank
+        if passphrase is not None:
+            params['passphrase'] = passphrase
+        if avoid_reuse is not None:
+            params['avoid_reuse'] = avoid_reuse
+        if load_on_startup is not None:
+            params['load_on_startup'] = load_on_startup
+        if external_signer is not None:
+            params['external_signer'] = external_signer
+        if wallet_type is not None:
+            params['wallet_type'] = wallet_type
+        if mnemonic is not None:
+            params['mnemonic'] = mnemonic
+        if mnemonic_passphrase is not None:
+            params['mnemonic_passphrase'] = mnemonic_passphrase
+        if language is not None:
+            params['language'] = language
+        if entropy_bits is not None:
+            params['entropy_bits'] = entropy_bits
+        return self.__getattr__('createwallet')(**params)
 
     def importprivkey(self, privkey, label=None, rescan=None):
         wallet_info = self.getwalletinfo()
