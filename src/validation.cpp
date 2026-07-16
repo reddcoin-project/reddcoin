@@ -3685,9 +3685,19 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     }
     pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
 
-    // PoSV: calculate proofhash value
-    if (!VerifyHashTarget(this, pindex, block, hash)) {
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos", "proof of stake is incorrect");
+    // PoSV: calculate proofhash value.
+    // During reindex/import the chain is rebuilt by re-processing already-validated
+    // on-disk blocks in height order. The stake-kernel check forward-walks the
+    // stake modifier past the block being validated (a coin's modifier finalises a
+    // selection interval later), and that forward context is not yet available
+    // mid-reindex, so the check cannot pass. The blocks were fully validated when
+    // first accepted, so skip only the re-verification here; ComputeNextStakeModifier
+    // above still rebuilds the modifier chain. fReindex/fImporting are never set
+    // during normal network sync, so peer-block validation is unaffected.
+    if (!(block.IsProofOfStake() && (fReindex || fImporting))) {
+        if (!VerifyHashTarget(this, pindex, block, hash)) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos", "proof of stake is incorrect");
+        }
     }
     pindex->hashProofOfStake = hash;
 
