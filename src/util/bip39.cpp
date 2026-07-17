@@ -37,6 +37,61 @@
 #include <util/lang/bip39_korean.h>
 #include <util/lang/bip39_spanish.h>
 
+#include <vector>
+
+#include <utf8proc.h>
+
+namespace {
+// Normalize a mnemonic sentence or passphrase to Unicode NFKD, as required by
+// BIP39 before word matching and seed derivation. The shipped wordlists are
+// stored in NFKD form and word matching is byte-exact, so an otherwise valid
+// French, Spanish, Japanese or Korean phrase entered in NFC form (the default
+// on many platforms and input methods) would not match without this step. NFKD
+// also folds the separators wallets use interchangeably in Japanese: it maps the
+// ideographic space (U+3000) and the no-break space (U+00A0) to the ASCII space
+// (U+0020), so the existing "split on ASCII space" logic keeps working.
+//
+// Secret material is kept in secure-allocator memory throughout: utf8proc's
+// buffer-owning decompose/reencode API is used with a secure codepoint buffer,
+// rather than the convenience helpers that allocate the result on the general
+// heap. On any utf8proc error (e.g. malformed UTF-8) the input is returned
+// unchanged, so behaviour degrades to the pre-normalization path.
+SecureString NormalizeNFKD(const SecureString& in)
+{
+    if (in.empty()) {
+        return SecureString();
+    }
+
+    const utf8proc_option_t opt = static_cast<utf8proc_option_t>(
+        UTF8PROC_STABLE | UTF8PROC_DECOMPOSE | UTF8PROC_COMPAT);
+    const auto* str = reinterpret_cast<const utf8proc_uint8_t*>(in.data());
+    const auto len = static_cast<utf8proc_ssize_t>(in.size());
+
+    // First pass: count the decomposed codepoints.
+    const utf8proc_ssize_t n = utf8proc_decompose(str, len, nullptr, 0, opt);
+    if (n < 0) {
+        return in;
+    }
+
+    // Secure codepoint buffer. The extra slot leaves room for the terminating
+    // NUL that utf8proc_reencode writes after the UTF-8 output; sizing in
+    // codepoints (4 bytes each) always covers the reencoded UTF-8 byte length.
+    std::vector<utf8proc_int32_t, secure_allocator<utf8proc_int32_t>> cps(n + 1);
+
+    if (utf8proc_decompose(str, len, cps.data(), n, opt) != n) {
+        return in;
+    }
+
+    // Re-encode the codepoints to UTF-8 in place; returns the byte length.
+    const utf8proc_ssize_t m = utf8proc_reencode(cps.data(), n, opt);
+    if (m < 0) {
+        return in;
+    }
+
+    return SecureString(reinterpret_cast<const char*>(cps.data()), static_cast<size_t>(m));
+}
+} // namespace
+
 SecureString CMnemonic::Generate(int strength, int languageSelected)
 {
     if (strength % 32 || strength < 128 || strength > 256) {
@@ -91,6 +146,8 @@ bool CMnemonic::Check(SecureString mnemonic, int languageSelected)
     if (mnemonic.empty()) {
         return false;
     }
+
+    mnemonic = NormalizeNFKD(mnemonic);
 
     uint32_t nWordCount{};
 
@@ -186,6 +243,8 @@ const char* const* CMnemonic::GetLanguageWords(int lang)
 
 int CMnemonic::DetectLanguageSeed(SecureString mnemonic)
 {
+    mnemonic = NormalizeNFKD(mnemonic);
+
     SecureString ssCurrentWord;
     uint32_t nWordIndex;
 
@@ -249,6 +308,8 @@ int CMnemonic::getWordCount(SecureString mnemonic)
         return -1;
     }
 
+    mnemonic = NormalizeNFKD(mnemonic);
+
     uint32_t nWordCount{};
 
     for (size_t i = 0; i < mnemonic.size(); ++i) {
@@ -271,6 +332,8 @@ int CMnemonic::getStrength(SecureString mnemonic)
         return -1;
     }
 
+    mnemonic = NormalizeNFKD(mnemonic);
+
     uint32_t nWordCount{};
 
     for (size_t i = 0; i < mnemonic.size(); ++i) {
@@ -291,6 +354,12 @@ int CMnemonic::getStrength(SecureString mnemonic)
 
 void CMnemonic::ToSeed(SecureString mnemonic, SecureString passphrase, SecureVector& seedRet)
 {
+    // BIP39 requires NFKD normalization of both the mnemonic and the passphrase
+    // before PBKDF2, so a phrase and passphrase derive the same seed regardless
+    // of the Unicode form (NFC vs NFKD) or separator used to write them.
+    mnemonic = NormalizeNFKD(mnemonic);
+    passphrase = NormalizeNFKD(passphrase);
+
     SecureString ssSalt = SecureString("mnemonic") + passphrase;
     SecureVector vchSalt(ssSalt.begin(), ssSalt.end());
     seedRet.resize(64);
