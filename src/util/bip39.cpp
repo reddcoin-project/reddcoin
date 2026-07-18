@@ -363,13 +363,16 @@ int CMnemonic::getStrength(SecureString mnemonic)
 
 void CMnemonic::ToSeed(SecureString mnemonic, SecureString passphrase, SecureVector& seedRet)
 {
-    // BIP39 requires NFKD normalization of both the mnemonic and the passphrase
-    // before PBKDF2, so a phrase and passphrase derive the same seed regardless
-    // of the Unicode form (NFC vs NFKD) or separator used to write them.
+    // BIP39: seed = PBKDF2(password = NFKD(mnemonic),
+    //                      salt     = NFKD("mnemonic" + passphrase)).
+    // Normalize each side as a whole string in a single pass. NFKD folds the
+    // ideographic space (U+3000 -> U+0020) and decomposes compatibility and
+    // full-width forms, so the byte stream matches other BIP39 wallets
+    // regardless of the Unicode form or separator the phrase was written with.
+    // The salt is normalized as the complete "mnemonic"+passphrase string, not
+    // by normalizing the passphrase separately, to match the spec exactly.
     mnemonic = NormalizeNFKD(mnemonic);
-    passphrase = NormalizeNFKD(passphrase);
-
-    SecureString ssSalt = SecureString("mnemonic") + passphrase;
+    SecureString ssSalt = NormalizeNFKD(SecureString("mnemonic") + passphrase);
     SecureVector vchSalt(ssSalt.begin(), ssSalt.end());
     seedRet.resize(64);
     PKCS5_PBKDF2_HMAC_SHA512(mnemonic.c_str(), mnemonic.size(), vchSalt.data(), vchSalt.size(), 2048, 64, seedRet.data());
