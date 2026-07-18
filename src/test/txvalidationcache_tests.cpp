@@ -79,8 +79,10 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     spends.resize(2);
     for (int i = 0; i < 2; i++)
     {
-        spends[i].nVersion = 1;
-        spends[i].nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
+        // PoS-era blocks and mempool reject tx nVersion < 2 (bad-txns-version-pos);
+        // a v>=2 Reddcoin tx serializes a non-zero nTime.
+        spends[i].nVersion = 2;
+        spends[i].nTime = 1;
         spends[i].vin.resize(1);
         spends[i].vin[0].prevout.hash = unspent_coinbase->GetHash();
         spends[i].vin[0].prevout.n = 0;
@@ -269,8 +271,12 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     // coinbase tx.
     CMutableTransaction spend_tx;
 
-    spend_tx.nVersion = 1;
-    spend_tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
+    // spend_tx is included in a block below, so it must satisfy the PoS-era tx
+    // version floor (nVersion >= 2); a v>=2 Reddcoin tx serializes a non-zero
+    // nTime. The transactions derived from it further down are only exercised
+    // through CheckInputScripts (never block-included), so they may stay v1.
+    spend_tx.nVersion = 2;
+    spend_tx.nTime = 1;
     spend_tx.vin.resize(1);
     spend_tx.vin[0].prevout.hash = unspent_coinbase->GetHash();
     spend_tx.vin[0].prevout.n = 0;
