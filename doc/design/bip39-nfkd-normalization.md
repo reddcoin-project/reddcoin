@@ -1,8 +1,8 @@
 # BIP39 Unicode (NFKD) Normalization Design Document
 
 **Component:** `src/util/bip39` (CMnemonic)
-**Last Updated:** 2026-07-17
-**Status:** Proposed — supersedes the ideographic-space-only fix on branch `bip39/japanese-ideographic-space`
+**Last Updated:** 2026-07-18
+**Status:** Implemented on branch `bip39/nfkd-normalization` (dual-derivation fallback dropped — see Section 8)
 
 ---
 
@@ -16,19 +16,19 @@ Japanese, or Korean mnemonic entered in the more common **NFC** form (what
 macOS, iOS, and most IMEs emit) fails validation today, and mnemonics/passphrases
 that are not already normalized derive a non-interoperable seed.
 
-The recently merged ideographic-space fix (U+3000 -> U+0020) addresses one narrow
-instance of this defect for Japanese. This document proposes the general,
-spec-compliant fix: vendor `utf8proc` as a `src/` subtree, normalize the mnemonic
-and passphrase with NFKD at every parse and derivation point, switch Japanese
-mnemonic generation to the canonical ideographic-space separator, and add a
-dual-derivation fallback so any wallet created under the old, non-normalized
-rules remains recoverable.
+The interim ideographic-space fix (U+3000 -> U+0020) addressed one narrow
+instance of this defect for Japanese. This document describes the general,
+spec-compliant fix as implemented: vendor `utf8proc` as a `src/` subtree,
+normalize the mnemonic and passphrase with NFKD at every parse and derivation
+point, and switch Japanese mnemonic generation to the canonical ideographic-space
+separator. A dual-derivation fallback was designed and then dropped; the
+rationale is in Section 8.
 
 **Key outcomes:**
-- Valid fr/es/ja/ko mnemonics validate regardless of input normalization form (implemented: none yet; proposed).
-- Seeds match upstream BIP39 wallets for non-ASCII mnemonics and passphrases.
+- Valid fr/es/ja/ko mnemonics validate regardless of input normalization form.
+- Seeds match upstream BIP39 wallets (and ecosystem tooling such as
+  bitcore-mnemonics) for non-ASCII mnemonics and passphrases.
 - No change to ASCII-only wallets (NFKD is a no-op on ASCII).
-- Existing non-ASCII wallets protected by dual-derivation fallback.
 
 ---
 
@@ -41,13 +41,13 @@ rules remains recoverable.
 5. Dependency: Vendoring utf8proc
 6. Build Integration
 7. Detailed Changes
-8. Dual-Derivation Fallback
+8. Dual-Derivation Fallback (Considered and Dropped)
 9. Backward Compatibility and Migration
 10. Test Plan
 11. Security Considerations
 12. Rollout and Effort
 13. Alternatives Considered
-14. Open Questions
+14. Resolved Decisions
 
 ---
 
@@ -105,14 +105,15 @@ accents, decomposed jamo, or passphrase normalization.
 - Keep all secret material (mnemonic, passphrase, intermediate buffers) inside
   secure-allocator memory.
 - Emit the canonical `U+3000` separator when generating Japanese mnemonics.
-- Preserve recoverability of any wallet created under the previous
-  non-normalized behavior via a dual-derivation fallback.
 
 ### Non-Goals
 - Adding new BIP39 languages or changing wordlists.
 - Changing key derivation for ASCII-only wallets (NFKD is a no-op there and no
   behavior changes).
-- Reworking the wallet UI beyond what the fallback requires.
+- A dual-derivation (NFKD vs legacy) fallback on restore. Considered and dropped;
+  see Section 8.
+- Any wallet-code, keypool, rescan, or UI changes. The change is confined to
+  `CMnemonic` and its build wiring.
 - General-purpose Unicode support elsewhere in the codebase (utf8proc is scoped
   to BIP39 mnemonic handling).
 
@@ -274,79 +275,66 @@ utf8proc has no platform conditionals beyond `UTF8PROC_STATIC`.
 - **`Check`, `DetectLanguageSeed`, `getWordCount`, `getStrength`:** replace the
   `NormalizeMnemonicSpaces` call (or add one) with
   `mnemonic = NormalizeNFKD(mnemonic);` at the top, before any splitting.
-- **`ToSeed`:** normalize both inputs:
+- **`ToSeed`:** normalize the mnemonic and the whole salt string:
   ```cpp
-  mnemonic   = NormalizeNFKD(mnemonic);
-  passphrase = NormalizeNFKD(passphrase);
+  mnemonic = NormalizeNFKD(mnemonic);
+  SecureString ssSalt = NormalizeNFKD(SecureString("mnemonic") + passphrase);
   ```
-  (canonical derivation; see Section 8 for the legacy path).
+  This matches BIP39 exactly (`salt = NFKD("mnemonic" + passphrase)`); the salt
+  is normalized as a whole string, not by normalizing the passphrase separately.
 - **`FromData` (generation):** join Japanese words with `U+3000` instead of
   ASCII space. All other languages keep ASCII space. Output remains NFKD because
   the wordlists are NFKD. This is cosmetic for interop (import re-normalizes) but
   makes generated Japanese mnemonics spec-canonical.
 
-### 7.2 `src/util/bip39.h`
+### 7.2 Scope of the change
 
-- Add a derivation-mode parameter to `ToSeed` for the fallback (Section 8), e.g.:
-  ```cpp
-  enum class MnemonicNorm { NFKD, Legacy };
-  static void ToSeed(SecureString mnemonic, SecureString passphrase,
-                     SecureVector& seedRet, MnemonicNorm norm = MnemonicNorm::NFKD);
-  ```
-  `Legacy` skips normalization and reproduces the pre-change byte-for-byte
-  behavior.
-
-### 7.3 Wallet restore path
-
-`CHDChain::SetMnemonic` (`src/wallet/walletdb.cpp:68`) calls `ToSeed`. This is the
-single seed-derivation site and the anchor for the fallback (Section 8).
+The change is confined to `src/util/bip39.{cpp,h}` and the build wiring. No
+signature changes, no wallet-code, keypool, rescan, HD-chain-serialization, or UI
+changes. `CHDChain::SetMnemonic` (`src/wallet/walletdb.cpp:68`) calls `ToSeed`
+unchanged and transparently benefits from the normalization.
 
 ---
 
-## 8. Dual-Derivation Fallback
+## 8. Dual-Derivation Fallback (Considered and Dropped)
 
-### Rationale
+A dual-derivation fallback was designed to protect wallets created under the old,
+non-normalized code: on restore, derive both the NFKD seed and a "legacy"
+(non-normalized) seed, rescan for both, and adopt whichever holds on-chain
+history. It was **dropped** after weighing cost against the actual at-risk
+population.
 
-Moving to NFKD changes the derived seed for any wallet whose mnemonic or
-passphrase contains non-ASCII, non-normalized bytes. To avoid stranding funds in
-such a wallet, restore computes both derivations and adopts the one that actually
-holds history.
+### Why it was dropped
 
-### Behavior
+- **The legacy population is near-empty.** Under the pre-change `Check`, word
+  matching was byte-exact against the NFKD wordlists, so an NFC mnemonic (the
+  common case) could not validate and such a wallet could not be created in Core
+  at all. The only wallets whose seed actually changes under NFKD are those
+  created with an already-NFKD mnemonic **and** a non-ASCII, non-NFKD
+  *passphrase* - a vanishingly small set.
+- **Ecosystem tooling was already NFKD-correct.** The canonical mnemonic library
+  in the Reddcoin/BitPay ecosystem (`bitcore-mnemonics`) already performs NFKD
+  (`unorm.nfkd` / native `normalize('NFKD')`), so seeds produced by ecosystem
+  wallets already match the post-change Core derivation. There is no ecosystem
+  "legacy" seed to recover.
+- **The cost/risk is disproportionate.** `createwallet` is a create-not-restore
+  operation with no natural rescan hook; true auto-adoption would require deriving
+  lookahead scripts for both seeds, scanning the chain against both sets, and
+  rebuilding the keypool from the winner - a large, delicate change to core
+  keypool/rescan code and the HD-chain serialization, for that near-empty set.
 
-- **New wallet creation:** always canonical NFKD. No legacy seeds are ever
-  created going forward.
-- **Restore from mnemonic:**
-  1. Compute `seed_nfkd = ToSeed(m, p, NFKD)`.
-  2. Compute `seed_legacy = ToSeed(m, p, Legacy)`.
-  3. If `seed_nfkd == seed_legacy` (the ASCII-only common case), proceed with the
-     single seed; no fallback needed.
-  4. Otherwise derive addresses from `seed_nfkd` first. During the initial
-     rescan, if `seed_nfkd` shows no history but `seed_legacy` does, adopt
-     `seed_legacy` for that wallet, record the choice in the HD chain metadata so
-     subsequent loads are deterministic, and **surface a one-time user
-     notification** (GUI notification / RPC warning field / debug-log entry)
-     stating that the wallet was restored using the legacy (pre-normalization)
-     derivation. This makes the non-canonical derivation visible rather than
-     silent, so the user can migrate funds to a freshly created NFKD wallet if
-     desired.
-  5. Default when neither shows history (a genuinely new import): `seed_nfkd`
-     (canonical).
+### Consequence
 
-### Persistence
-
-Record the chosen normalization mode in the HD chain record so the wallet does
-not re-evaluate the fallback on every load and cannot silently switch derivations
-after funds arrive. This is an additive field; older wallets without it default
-to canonical NFKD, which is correct for the ASCII-only majority.
-
-### Scope note
-
-The fallback only diverges for non-ASCII input. Because the pre-change `Check`
-required input to already match the NFKD wordlist, the realistic legacy
-population is narrow (chiefly wallets with a non-ASCII passphrase, or Japanese
-wallets created via the interim ideographic-space fix). The fallback is cheap
-insurance rather than a mass-migration mechanism.
+- New wallets always use canonical NFKD (there is no other mode).
+- ASCII-only wallets are unaffected (NFKD is a no-op), which is the overwhelming
+  majority.
+- A user who genuinely created a pre-change Core wallet with a non-ASCII
+  passphrase and finds it empty after restore can recover it with the old binary;
+  this is documented in the release notes rather than automated. If demand for an
+  in-product path ever materializes, the smallest sufficient addition is an
+  opt-in `legacy_derivation` flag on `createwallet` (no rescan machinery, no
+  serialization change) - deliberately left as a possible follow-up, not built
+  here.
 
 ---
 
@@ -355,13 +343,15 @@ insurance rather than a mass-migration mechanism.
 - **ASCII mnemonic + ASCII passphrase:** `NFKD(x) == x`. Seeds are byte-for-byte
   identical. English and Italian wallets, and every all-ASCII wallet in any
   language, are unaffected. This is the overwhelming majority of wallets.
-- **Non-ASCII wallets created before this change:** protected by the
-  dual-derivation fallback (Section 8); recoverable without user action beyond a
-  normal rescan.
-- **Interim ideographic-space branch:** its Japanese seed behavior is a strict
-  subset of NFKD, so wallets validated under it derive the same canonical seed
-  here. The `japanese_ideographic` test vectors and the space-normalization test
-  are retained (Section 10).
+- **Non-ASCII wallets created before this change:** the only wallets whose seed
+  changes are those created in Core with an already-NFKD mnemonic and a
+  non-ASCII, non-NFKD passphrase (Section 8) - a near-empty set. No automated
+  fallback is provided; recovery via the old binary is documented in the release
+  notes.
+- **Interim ideographic-space fix:** its Japanese seed behavior is a strict
+  subset of NFKD, so anything validated under it derives the same canonical seed
+  here. Its vectors and the space-normalization test are folded into the main
+  `japanese` section and retained (Section 10).
 - **Chinese:** CJK ideographs in the Chinese wordlists are NFKD-stable, so
   Chinese wallets are unaffected in practice.
 
@@ -369,29 +359,24 @@ insurance rather than a mass-migration mechanism.
 
 ## 10. Test Plan
 
-Extend `src/test/bip39_tests.cpp` and `src/test/data/bip39_vectors.json`:
+Implemented in `src/test/bip39_tests.cpp` and `src/test/data/bip39_vectors.json`:
 
-1. **NFC-input regression (the headline fix).** For French, Spanish, and Korean:
-   take a valid vector mnemonic, re-encode it to NFC, and assert `Check` passes
-   and `ToSeed` equals the canonical vector seed. These cases fail on current
-   `master` and demonstrate the real-world defect.
-2. **NFKD passphrase vectors.** Import the canonical BIP39 Japanese vectors that
-   use the passphrase `㍍ガバヴァぱばぐゞちぬfぶぶちぬすぷぬゞ` (the historical
-   trezor Japanese test set; the current `vectors.json` only uses passphrase
-   `TREZOR`). These exercise NFKD of the passphrase specifically.
-3. **Ideographic-space subset.** Keep the existing
-   `bip39_japanese_ideographic_space` test (U+3000 / mixed separators) as a
-   regression guard; it now passes as a consequence of NFKD.
-4. **Idempotence / ASCII no-op.** Assert `NormalizeNFKD` is a no-op on ASCII and
-   is idempotent (`NFKD(NFKD(x)) == NFKD(x)`), and that all English/Italian seeds
-   are unchanged.
-5. **Dual-derivation unit test.** Construct a mnemonic+passphrase whose NFKD and
-   legacy seeds differ; assert `ToSeed(..., Legacy)` reproduces the pre-change
-   seed and `ToSeed(..., NFKD)` reproduces the upstream seed.
-6. **Malformed UTF-8.** Assert `NormalizeNFKD` degrades gracefully (returns input)
-   and does not crash.
-
-Vector sourcing (the passphrase-bearing Japanese set) is an explicit task item.
+1. **NFC-input regression (the headline fix).** `bip39_nfc_input`: for French,
+   Spanish, and Korean, compose a valid vector mnemonic to NFC (via utf8proc) and
+   assert `Check` passes and `ToSeed` equals the canonical vector seed. These
+   cases fail before the change and demonstrate the real-world defect.
+2. **NFKD passphrase vectors.** `bip39_nfkd_passphrase`: the canonical bip32JP /
+   `test_JP_BIP39` Japanese vectors (NFC mnemonics, passphrase
+   `㍍ガバヴァぱばぐゞちぢ十人十色`), added under a `japanese_nfkd` key. They
+   exercise NFKD of both the mnemonic and the passphrase.
+3. **Ideographic-space / mixed separators.** `bip39_japanese_ideographic_space`
+   over the `japanese` section (now `U+3000`), checking the ideographic, ASCII,
+   and mixed forms all validate and derive the same seed.
+4. **Malformed UTF-8.** `bip39_malformed_utf8`: invalid UTF-8 degrades gracefully
+   (no crash, 64-byte seed, `Check` returns false).
+5. **Existing vectors unchanged.** `bip39_vectors` / `bip44_tests` still pass;
+   ASCII seeds are byte-identical (NFKD no-op), and the Japanese sections were
+   realigned to `U+3000` to match canonical generation (seeds/keys unchanged).
 
 ---
 
@@ -409,26 +394,25 @@ Vector sourcing (the passphrase-bearing Japanese set) is an explicit task item.
   record the source hash. No local edits to utf8proc sources, so future subtree
   updates are auditable.
 - **Determinism.** NFKD for a fixed Unicode version is deterministic; the seed for
-  a given (mnemonic, passphrase, mode) is stable across platforms.
+  a given (mnemonic, passphrase) is stable across platforms.
 - **Consensus.** None. This is wallet-local key derivation; it does not touch
   block or transaction validation.
 
 ---
 
-## 12. Rollout and Effort
+## 12. Rollout
 
-Suggested phasing (each phase independently reviewable):
+Landed as an independently-reviewable commit series on `bip39/nfkd-normalization`:
 
-1. **Subtree + build** — vendor `src/utf8proc/`, add
-   `Makefile.utf8proc.include`, wire link lines; confirm a clean build links.
-2. **Normalization core** — `NormalizeNFKD`, remove `NormalizeMnemonicSpaces`,
-   wire into the five parse/derive functions; `U+3000` generation.
-3. **Fallback** — `MnemonicNorm` mode on `ToSeed`, restore-path dual derivation,
-   HD-chain metadata field.
-4. **Tests + vectors** — Section 10.
+1. **Subtree** — vendor `src/utf8proc/` v2.9.0.
+2. **Build** — `Makefile.utf8proc.include`, link wiring, `AC_PROG_CC`.
+3. **Normalization core** — `NormalizeNFKD` (secure-memory), wired into the parse
+   and derive functions; whole-salt normalization.
+4. **Design doc** (this document).
+5. **Tests + vectors + `U+3000` generation** — Section 10.
 
-Rough estimate: ~3 days including review (roughly 1 day subtree/build, 0.5 day
-normalization core, 1 day fallback + wallet metadata, 0.5 day tests/vectors).
+The dual-derivation fallback (former phase) was dropped (Section 8), so no
+wallet-code, keypool, rescan, or serialization work is part of this change.
 
 ---
 
@@ -440,18 +424,17 @@ normalization core, 1 day fallback + wallet metadata, 0.5 day tests/vectors).
   wordlists. Rejected: cannot correctly normalize arbitrary passphrases, and
   shipping a partial Unicode table in seed-derivation code is fragile and
   security-sensitive.
-- **Space-normalization only (the interim branch).** Correct but partial; does
-  not fix NFC accents, decomposed jamo, or passphrase normalization. Retained as
-  a subset and superseded by this design.
-- **No fallback (document-only migration).** Simpler, but risks stranding funds
-  for the narrow non-ASCII-passphrase population. Rejected in favor of the
-  dual-derivation fallback.
+- **Space-normalization only (the interim fix).** Correct but partial; does
+  not fix NFC accents, decomposed jamo, or passphrase normalization. Folded into
+  this change as a subset.
+- **Dual-derivation fallback (auto rescan-adopt / opt-in flag).** Designed and
+  dropped; the at-risk population is near-empty and ecosystem tooling was already
+  NFKD-correct (Section 8). Chosen path: document-only migration, with an opt-in
+  `legacy_derivation` flag left as a possible follow-up if demand appears.
 
 ---
 
-## 14. Resolved Decisions and Open Questions
-
-Resolved:
+## 14. Resolved Decisions
 
 1. **utf8proc pin — RESOLVED.** Pin to utf8proc **v2.9.0**. Record the tarball
    SHA256 in the subtree import commit for provenance.
@@ -460,11 +443,9 @@ Resolved:
    Include flags on `libbitcoin_util_a_CPPFLAGS`; `$(LIBUTF8PROC)` on the `LDADD`
    of binaries linking it (Section 6). This is the library exercised during
    wallet creation (`CHDChain::SetMnemonic` -> `CMnemonic::ToSeed`).
-3. **Fallback UX — RESOLVED.** Legacy-seed adoption **surfaces a one-time
-   notification** (plus a debug-log entry), not a silent switch (Section 8).
-
-Open:
-
-4. **Japanese generation.** Confirm switching `FromData` Japanese output to
-   `U+3000` is acceptable for any downstream consumers that currently expect
-   ASCII-separated generated phrases (import is unaffected; display/export may be).
+3. **Dual-derivation fallback — RESOLVED (dropped).** Not implemented; the
+   at-risk population is near-empty and ecosystem tooling was already
+   NFKD-correct (Section 8). New wallets are always canonical NFKD.
+4. **Japanese generation — RESOLVED.** `FromData` emits `U+3000` for Japanese.
+   Import re-normalizes either separator, so only generated/displayed phrases are
+   affected; the bip39/bip44 Japanese vectors were realigned accordingly.
