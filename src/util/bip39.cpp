@@ -125,6 +125,15 @@ SecureString CMnemonic::FromData(const SecureVector& data, int len, int language
     const char* const* wordlist;
     wordlist = CMnemonic::GetLanguageWords(languageSelected);
 
+    // BIP39 conventionally separates Japanese words with the ideographic space
+    // (U+3000) rather than the ASCII space. Import re-normalizes either form to
+    // the same seed (NFKD maps U+3000 to U+0020), so this only affects the
+    // canonical form of generated phrases.
+    const char* separator = " ";
+    if (languageSelected == CMnemonic::getLanguageIndex(JAPANESE)) {
+        separator = "\xe3\x80\x80"; // U+3000 IDEOGRAPHIC SPACE
+    }
+
     int i, j, idx;
     for (i = 0; i < mlen; i++) {
         idx = 0;
@@ -134,7 +143,7 @@ SecureString CMnemonic::FromData(const SecureVector& data, int len, int language
         }
         mnemonic.append(wordlist[idx]);
         if (i < mlen - 1) {
-            mnemonic += ' ';
+            mnemonic += separator;
         }
     }
 

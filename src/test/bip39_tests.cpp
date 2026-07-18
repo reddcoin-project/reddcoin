@@ -18,6 +18,11 @@
 
 #include <univalue.h>
 
+#include <utf8proc.h>
+
+#include <cstdlib>
+#include <string>
+
 // In script_tests.cpp
 extern UniValue read_json(const std::string& jsondata);
 
@@ -42,11 +47,9 @@ BOOST_AUTO_TEST_CASE(bip39_vectors)
 
 	// printf("Lang = %s (%i)\n", keys.at(i).c_str(), nLanguage);
 
-	// Skip keys that are not a supported language name. The
-	// "japanese_ideographic" variant uses the ideographic space (U+3000)
-	// between words and cannot be round-tripped through FromData (which
-	// emits ASCII spaces); it is exercised by the dedicated
-	// bip39_japanese_ideographic_space test below.
+	// Skip keys that are not a supported language name (e.g. the
+	// "japanese_nfkd" vectors, which carry a per-vector passphrase and are
+	// exercised by the dedicated bip39_nfkd_passphrase test below).
 	if (nLanguage == -1) {
 	    continue;
 	}
@@ -129,11 +132,10 @@ static SecureString ToMixedSpaces(const std::string& asciiPhrase)
     return SecureString(out.begin(), out.end());
 }
 
-// The canonical BIP39 Japanese vectors, imported verbatim from upstream
-// (trezor/python-mnemonic), separate words with the ideographic space (U+3000).
-// Wallets and users frequently substitute the ASCII space (U+0020). Exercise
-// that the authentic ideographic form, its ASCII-space equivalent, and a mix of
-// the two all validate and derive the same, correct seed.
+// The canonical BIP39 Japanese vectors separate words with the ideographic
+// space (U+3000), but wallets and users frequently substitute the ASCII space
+// (U+0020). Exercise that the ideographic form, its ASCII-space equivalent, and
+// a mix of the two all validate and derive the same, correct seed.
 BOOST_AUTO_TEST_CASE(bip39_japanese_ideographic_space)
 {
     UniValue json;
@@ -148,7 +150,7 @@ BOOST_AUTO_TEST_CASE(bip39_japanese_ideographic_space)
     int nLanguage = CMnemonic::getLanguageIndex("japanese");
     BOOST_REQUIRE(nLanguage != -1);
 
-    UniValue tests = find_value(json.get_obj(), "japanese_ideographic").get_array();
+    UniValue tests = find_value(json.get_obj(), "japanese").get_array();
     BOOST_REQUIRE(tests.size() > 0);
 
     SecureString passphrase("TREZOR");
@@ -200,6 +202,122 @@ BOOST_AUTO_TEST_CASE(bip39_japanese_ideographic_space)
         BOOST_CHECK(ideographicSeed == asciiSeed);
         BOOST_CHECK(mixedSeed == asciiSeed);
     }
+}
+
+// Compose a UTF-8 string to Unicode NFC, mimicking mnemonic text as most
+// platforms and input methods emit it. The shipped wordlists are stored in
+// NFKD, so NFC input only matches once CMnemonic normalizes it.
+static std::string ToNFC(const std::string& s)
+{
+    utf8proc_uint8_t* out = utf8proc_NFC(reinterpret_cast<const utf8proc_uint8_t*>(s.c_str()));
+    if (out == nullptr) {
+        return s;
+    }
+    std::string result(reinterpret_cast<char*>(out));
+    free(out);
+    return result;
+}
+
+// A valid mnemonic pasted in NFC form (the platform default) must validate and
+// derive the same seed as its stored NFKD form. The French, Spanish and Korean
+// wordlists are stored decomposed (NFKD), so without normalization an NFC phrase
+// fails validation outright; this is the headline defect the NFKD change fixes.
+BOOST_AUTO_TEST_CASE(bip39_nfc_input)
+{
+    UniValue json;
+    std::string json_data(json_tests::bip39_vectors,
+                          json_tests::bip39_vectors + sizeof(json_tests::bip39_vectors));
+    BOOST_REQUIRE(json.read(json_data) && json.isObject());
+
+    SecureString passphrase("TREZOR");
+    const char* langs[] = {"french", "spanish", "korean"};
+
+    for (const char* lang : langs) {
+        int nLanguage = CMnemonic::getLanguageIndex(lang);
+        BOOST_REQUIRE(nLanguage != -1);
+        UniValue tests = find_value(json.get_obj(), lang).get_array();
+        BOOST_REQUIRE(tests.size() > 0);
+
+        bool sawComposedDifference = false;
+        for (unsigned int i = 0; i < tests.size(); i++) {
+            UniValue test = tests[i].get_array();
+            std::string strNfkd = test[1].get_str();   // stored wordlist form (NFKD)
+            std::string strNfc = ToNFC(strNfkd);       // as a user would paste it
+
+            if (strNfc != strNfkd) {
+                sawComposedDifference = true;
+            }
+
+            SecureString nfcMnemonic(strNfc.begin(), strNfc.end());
+            BOOST_CHECK(CMnemonic::Check(nfcMnemonic, nLanguage));
+
+            SecureVector seed;
+            CMnemonic::ToSeed(nfcMnemonic, passphrase, seed);
+            BOOST_CHECK(HexStr(seed) == test[2].get_str());
+        }
+
+        // The NFC form must actually differ from the stored NFKD form for some
+        // vectors, otherwise the test would pass without exercising the fix.
+        BOOST_CHECK_MESSAGE(sawComposedDifference,
+                            std::string("NFC == NFKD for every ") + lang + " vector");
+    }
+}
+
+// The canonical BIP39 Japanese NFKD test vectors (bip32JP / test_JP_BIP39):
+// NFC-composed mnemonics with a passphrase containing compatibility characters
+// (e.g. U+338D SQUARE ME, which NFKD-decomposes to "メートル"). They exercise
+// NFKD of both the mnemonic and the passphrase.
+// Format: [entropy, mnemonic(U+3000, NFC), passphrase, seed, xprv].
+BOOST_AUTO_TEST_CASE(bip39_nfkd_passphrase)
+{
+    UniValue json;
+    std::string json_data(json_tests::bip39_vectors,
+                          json_tests::bip39_vectors + sizeof(json_tests::bip39_vectors));
+    BOOST_REQUIRE(json.read(json_data) && json.isObject());
+
+    int nLanguage = CMnemonic::getLanguageIndex("japanese");
+    BOOST_REQUIRE(nLanguage != -1);
+
+    UniValue tests = find_value(json.get_obj(), "japanese_nfkd").get_array();
+    BOOST_REQUIRE(tests.size() > 0);
+
+    for (unsigned int i = 0; i < tests.size(); i++) {
+        UniValue test = tests[i].get_array();
+        std::string strMnemonic = test[1].get_str();
+        std::string strPassphrase = test[2].get_str();
+
+        SecureString mnemonic(strMnemonic.begin(), strMnemonic.end());
+        SecureString passphrase(strPassphrase.begin(), strPassphrase.end());
+
+        // NFC mnemonic with ideographic spaces must validate.
+        BOOST_CHECK(CMnemonic::Check(mnemonic, nLanguage));
+
+        // The seed matches the vector only when the passphrase is NFKD-normalized
+        // too (the passphrase contains compatibility characters).
+        SecureVector seed;
+        CMnemonic::ToSeed(mnemonic, passphrase, seed);
+        BOOST_CHECK(HexStr(seed) == test[3].get_str());
+    }
+}
+
+// Malformed UTF-8 must degrade gracefully rather than crash: NormalizeNFKD
+// returns the input unchanged on a utf8proc error, so Check reports invalid and
+// ToSeed still produces a 64-byte seed.
+BOOST_AUTO_TEST_CASE(bip39_malformed_utf8)
+{
+    std::string bad;
+    for (int i = 0; i < 12; i++) {
+        if (i) bad += ' ';
+        bad += "\xff\xfe"; // invalid UTF-8
+    }
+    SecureString mnemonic(bad.begin(), bad.end());
+    SecureString passphrase("\xff");
+
+    BOOST_CHECK(!CMnemonic::Check(mnemonic));
+
+    SecureVector seed;
+    BOOST_CHECK_NO_THROW(CMnemonic::ToSeed(mnemonic, passphrase, seed));
+    BOOST_CHECK_EQUAL(seed.size(), 64U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
