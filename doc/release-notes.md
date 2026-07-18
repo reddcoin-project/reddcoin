@@ -228,6 +228,29 @@ m / purpose' / coin_type' / account' / change / address_index
 - Support for multilanguage in mnemonic creation. bip39 includes support for multiple languages when creating the Mnemonic sentence within the GUI
 Languages include [English (default), chinese_simplified, chinese_traditional, french, italian, japanese, korean, spanish]
 
+- BIP39 mnemonics and passphrases are now Unicode NFKD-normalized before
+  validation and seed derivation, as the BIP39 specification requires. This
+  fixes importing non-English mnemonics that were entered in composed (NFC) form,
+  which is what macOS, iOS and most input methods produce: a valid French,
+  Spanish, Japanese or Korean phrase that previously failed to validate (because
+  the built-in wordlists are stored in decomposed NFKD form) is now accepted and
+  derives the correct, interoperable seed. Japanese phrases may be entered with
+  either the ideographic space (U+3000) or a regular ASCII space, and generated
+  Japanese phrases now use the canonical ideographic space. Derived seeds are
+  byte-for-byte compatible with other BIP39 wallets and libraries.
+
+  ASCII-only mnemonics and passphrases (including all English phrases) are
+  unaffected: NFKD leaves ASCII unchanged, so existing wallets keep the same
+  seed and addresses.
+
+  Note for wallets restored from a very early Reddcoin Core BIP39 build: if a
+  wallet was created with a mnemonic passphrase that contained non-ASCII
+  characters, the corrected normalization can change the derived seed. If such a
+  wallet appears empty after restoring in this version, restore it once with the
+  older binary to recover the funds, then move them to a newly created wallet.
+  Wallets without a passphrase, or with an ASCII-only passphrase, are not
+  affected.
+
 - External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/external-signer.md) for details. (#16546)
 
 - A new `listdescriptors` RPC is available to inspect the contents of descriptor-enabled wallets.
