@@ -733,8 +733,12 @@ class RPCOverloadWrapper():
         bip39_args = [wallet_type, mnemonic, mnemonic_passphrase, language, entropy_bits]
         has_bip39 = any(a is not None for a in bip39_args)
         if not has_bip39:
-            # Original positional call for backward compatibility
-            return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
+            # Original positional call for backward compatibility. Pass an empty
+            # string (not None) for an unset passphrase: in --usecli mode a None
+            # positional arg is serialized to the literal string "null", and
+            # since createwallet's passphrase is a string param the CLI keeps it
+            # verbatim, encrypting the wallet with the passphrase "null".
+            return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase if passphrase is not None else '', avoid_reuse, descriptors, load_on_startup, external_signer)
         # Use named args to avoid CLI "null" string issues with sparse optional params
         params = {'wallet_name': wallet_name, 'descriptors': descriptors}
         if disable_private_keys is not None:
