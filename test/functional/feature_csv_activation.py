@@ -57,6 +57,7 @@ from test_framework.messages import (
     COIN,
     CTransaction,
     CTxOut,
+    tx_from_hex,
 )
 from test_framework.p2p import P2PDataStore
 from test_framework.script import (
@@ -215,11 +216,41 @@ class BIP68_112_113Test(BitcoinTestFramework):
                 else:
                     raise
 
+        # The template's coinstake collects the fees of the mempool transactions
+        # this template would mine (FinalizeCoinStakeReward, added in b4951959).
+        # We strip those transactions and mine only `txs`, so the coinstake must
+        # not keep their fees: otherwise it pays base + stripped_fees while the
+        # block only carries this block's fees, and ConnectBlock rejects it as
+        # bad-posv-amount (the check is nStakeReward > GetProofOfStakeReward(
+        # nCoinAge, nFees), an upper bound). Remove the stripped fees so the
+        # coinstake pays the base reward only, which is always <= base + the
+        # block's actual fees.
+        stripped_fees = sum(int(t.get('fee', 0)) for t in tmpl['transactions'][1:])
+
         # Strip template to coinstake only (avoid mempool conflicts after invalidateblock)
         tmpl['transactions'] = [tmpl['transactions'][0]]
 
         # Build block: create_block handles coinbase + coinstake from template, txlist adds test txs
         block = create_block(tmpl=tmpl, txlist=txs)
+
+        if stripped_fees > 0:
+            # The reward is split 92% staker / 8% dev (dev output is the last
+            # coinstake output; see FinalizeCoinStakeReward / ConnectBlock).
+            # Mirror that split when removing the stripped fees, and drop one
+            # extra satoshi from the dev output so it stays strictly under the
+            # validator's dev-credit ceiling regardless of integer rounding.
+            coinstake = block.vtx[1]
+            dev_cut = stripped_fees * 8 // 100 + 1
+            staker_cut = stripped_fees - stripped_fees * 8 // 100
+            coinstake.vout[-1].nValue -= dev_cut
+            coinstake.vout[1].nValue -= staker_cut
+            # Re-sign the coinstake input(s) over the new output amounts.
+            for txin in coinstake.vin:
+                txin.scriptSig = b""
+            signed = node.signrawtransactionwithwallet(coinstake.serialize().hex())
+            assert signed['complete'], "failed to re-sign adjusted coinstake"
+            block.vtx[1] = tx_from_hex(signed['hex'])
+
         block.hashMerkleRoot = block.calc_merkle_root()
         block.rehash()
         block.solve()
