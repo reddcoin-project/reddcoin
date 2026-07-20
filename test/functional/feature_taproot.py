@@ -1590,12 +1590,24 @@ class TaprootTest(BitcoinTestFramework):
         self.nodes[1].generate(ACTIVATION_HEIGHT + COINBASE_MATURITY + 1 - self.nodes[1].getblockcount())
         self.test_spenders(self.nodes[1], spenders_taproot_active(), input_counts=[1, 2, 2, 2, 2, 3])
 
-        # ReddCoin: connect nodes and sync so node0 receives its now-mature coins.
+        # ReddCoin: connect nodes and sync so node0 (previous release) validates
+        # node1's full post-activation taproot chain (the cross-version coverage
+        # this variant exists for) and receives its now-mature coins.
         # Sync mocktime first — node1's time is far ahead from block generation.
         from test_framework.util import set_node_times
         set_node_times(self.nodes, self.nodes[1].mocktime)
         self.connect_nodes(1, 0)
         self.sync_blocks()
+        # Disconnect before node0 stakes its own pre-activation blocks. Kept
+        # connected, node0 serves the test's rapid generate/sendrawtransaction
+        # calls *and* P2P block relay from node1 at once; under that combined
+        # load its RPC httpserver stops accepting connections (the persistent
+        # RPC connection desyncs and the reconnect is refused), aborting the
+        # test. node0 has already validated node1's chain by this point, so
+        # disconnecting loses no coverage; it just lets node0 run its own tests
+        # in isolation. This is a test-harness load artifact, not consensus:
+        # node0 accepts node1's entire chain with zero rejections.
+        self.disconnect_nodes(1, 0)
 
         # Pre-taproot activation tests.
         # Node0 uses -vbparams=taproot:-2:0 (NEVER_ACTIVE), so taproot rules
