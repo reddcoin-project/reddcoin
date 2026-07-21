@@ -2,6 +2,7 @@
 # Reddcoin Regtest Launch Procedure
 # This script launches regtest with proper PoW and PoS block generation including mock time handling
 
+export LC_ALL=C
 set -e
 
 REDDCOIN_CLI="./src/reddcoin-cli -regtest"

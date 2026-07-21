@@ -21,8 +21,10 @@ from test_framework.util import (
 )
 
 
-def generateblock_pos(node, output, transactions=[]):
+def generateblock_pos(node, output, transactions=None):
     """Wrapper with retry logic for PoS generateblock (coinstake is probabilistic)."""
+    if transactions is None:
+        transactions = []
     max_attempts = 5
     for attempt in range(max_attempts):
         try:

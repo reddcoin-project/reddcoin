@@ -129,7 +129,7 @@ def resolve_credentials(args):
         cookie = os.path.join(datadir, subdir, '.cookie')
     if not os.path.exists(cookie):
         raise RPCError(f'No RPC credentials: pass --rpcuser/--rpcpassword, or ensure the cookie exists ({cookie}).')
-    with open(cookie) as fh:
+    with open(cookie, encoding="utf8") as fh:
         user, _, password = fh.read().strip().partition(':')
     return user, password
 
@@ -186,7 +186,7 @@ def scan(args):
 
     vfile = None
     if args.out:
-        vfile = open(args.out, 'w')
+        vfile = open(args.out, 'w', encoding="utf8")
         vfile.write('height,tx_index,role,txid,version\n')
 
     def fetch_block_versions(height):

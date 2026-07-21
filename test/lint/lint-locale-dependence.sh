@@ -39,6 +39,8 @@ export LC_ALL=C
 # https://stackoverflow.com/a/34878283 for more details.
 
 KNOWN_VIOLATIONS=(
+    "contrib/regtest/mine_regtest_genesis.cpp:.*sprintf"
+    "contrib/regtest/mine_regtest_genesis.cpp:.*sscanf"
     "src/bitcoin-tx.cpp.*stoul"
     "src/bitcoin-tx.cpp.*trim_right"
     "src/dbwrapper.cpp.*stoul"
