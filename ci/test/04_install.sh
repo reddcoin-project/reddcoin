@@ -74,6 +74,25 @@ elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
   fi
 fi
 
+# ReddCoin uses scrypt for proof-of-work. The functional test framework mines
+# blocks in Python (test/functional/test_framework/messages.py) and imports the
+# `scrypt` module to compute valid solutions. Without it, CBlock.solve() falls
+# back to SHA256d and every framework-mined block is rejected by the node with
+# "CheckProofOfWork() : hash doesn't match nBits" (breaks feature_assumevalid.py,
+# example_test.py, p2p_unrequested_blocks.py, ...). Install it wherever the
+# functional tests run. The containers only ship python3, so pip and the headers
+# needed to build the scrypt C extension (when no wheel matches) are pulled in
+# here rather than added to every task's package list. DOCKER_EXEC targets the
+# build container, or the host itself on the DANGER_RUN_CI_ON_HOST (macOS) path.
+if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
+  if [[ $DOCKER_NAME_TAG == *centos* ]]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC dnf -y install python3-pip python3-devel openssl-devel
+  elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y python3-pip python3-dev libssl-dev
+  fi
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user scrypt
+fi
+
 if [ "$CI_OS_NAME" == "macos" ]; then
   top -l 1 -s 0 | awk ' /PhysMem/ {print}'
   echo "Number of CPUs: $(sysctl -n hw.logicalcpu)"
