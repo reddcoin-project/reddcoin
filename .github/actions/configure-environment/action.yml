@@ -1,0 +1,26 @@
+name: 'Configure environment'
+description: 'Export CONTAINER_NAME and depends cache-key hash from the selected FILE_ENV'
+
+# Adapted from upstream Bitcoin Core (bitcoin/bitcoin#32989,
+# .github/actions/configure-environment). Reddcoin keeps the older ci/ layer
+# whose caches live in-tree (depends/built, depends/sdk-sources, depends/sources,
+# releases) and whose ccache dir is /tmp/ccache_dir, so this action only needs to
+# resolve the per-task CONTAINER_NAME (used as the cache scope) and a hash of the
+# depends tree + the task's setup-env file. The runner.temp path juggling and
+# Docker-image plumbing of the upstream version do not apply here.
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Export container name and depends hash
+      shell: bash
+      run: |
+        # FILE_ENV points at this task's ci/test/00_setup_env_*.sh variant.
+        # Source it to learn CONTAINER_NAME; fall back to ci_unnamed for the
+        # native jobs (e.g. mac_host) that do not set one.
+        source "$FILE_ENV"
+        echo "CONTAINER_NAME=${CONTAINER_NAME:-ci_unnamed}" >> "$GITHUB_ENV"
+        # Hash the depends tree object plus the setup-env file so the depends
+        # caches invalidate whenever either changes.
+        file_env_rel="${FILE_ENV#./}"
+        echo "DEPENDS_HASH=$(git ls-tree HEAD depends "$file_env_rel" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"

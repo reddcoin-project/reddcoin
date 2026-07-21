@@ -1,0 +1,77 @@
+name: 'Save caches'
+description: 'Save ccache and depends caches on default-branch pushes'
+
+# Adapted from upstream Bitcoin Core (bitcoin/bitcoin#32989,
+# .github/actions/save-caches). actions/cache/save@v4 instead of
+# cirruslabs/cache. Caches are only written on a push to the default branch
+# (develop), so pull requests read the shared cache but never mutate it. The
+# ccache key embeds github.run_id and is therefore always fresh; the depends
+# caches are keyed by content hash and are only re-saved when the restore step
+# was not an exact hit (avoids "cache already exists" churn).
+#
+# Each save is additionally guarded on the cache path actually existing:
+# several Reddcoin tasks are NO_DEPENDS (asan, no-wallet, mac native, fuzz), so
+# depends/built is absent there and an unguarded save would fail with a path
+# validation error. Consumes CONTAINER_NAME / DEPENDS_HASH / *_CACHE_HIT from
+# the earlier actions.
+
+inputs:
+  sdk:
+    description: 'Save the depends/sdk-sources cache (macOS cross, Android)'
+    default: 'false'
+  sources:
+    description: 'Save the depends/sources cache (Android)'
+    default: 'false'
+  releases:
+    description: 'Save the previous-releases cache'
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine which cache paths exist
+      shell: bash
+      run: |
+        exists() { if [ -e "$1" ]; then echo true; else echo false; fi; }
+        {
+          echo "CCACHE_PATH_EXISTS=$(exists /tmp/ccache_dir)"
+          echo "DEPENDS_BUILT_PATH_EXISTS=$(exists depends/built)"
+          echo "DEPENDS_SDK_PATH_EXISTS=$(exists depends/sdk-sources)"
+          echo "DEPENDS_SOURCES_PATH_EXISTS=$(exists depends/sources)"
+          echo "RELEASES_PATH_EXISTS=$(exists releases)"
+        } >> "$GITHUB_ENV"
+
+    - name: Save ccache
+      if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && env.CCACHE_PATH_EXISTS == 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: /tmp/ccache_dir
+        key: ccache-${{ env.CONTAINER_NAME }}-${{ github.run_id }}
+
+    - name: Save depends/built
+      if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && env.DEPENDS_BUILT_PATH_EXISTS == 'true' && env.DEPENDS_BUILT_CACHE_HIT != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: depends/built
+        key: depends-built-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+
+    - name: Save depends/sdk-sources
+      if: ${{ inputs.sdk == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && env.DEPENDS_SDK_PATH_EXISTS == 'true' && env.DEPENDS_SDK_CACHE_HIT != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: depends/sdk-sources
+        key: depends-sdk-${{ env.CONTAINER_NAME }}
+
+    - name: Save depends/sources
+      if: ${{ inputs.sources == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && env.DEPENDS_SOURCES_PATH_EXISTS == 'true' && env.DEPENDS_SOURCES_CACHE_HIT != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: depends/sources
+        key: depends-sources-${{ env.CONTAINER_NAME }}
+
+    - name: Save previous releases
+      if: ${{ inputs.releases == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && env.RELEASES_PATH_EXISTS == 'true' && env.PREVIOUS_RELEASES_CACHE_HIT != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: releases
+        key: previous-releases-${{ env.CONTAINER_NAME }}
