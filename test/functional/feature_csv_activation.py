@@ -333,7 +333,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         # Inputs at height = CSV_ACTIVATION_HEIGHT - 4 (= 428)
         #
         # Put inputs for all tests in the chain (time increases by ~600s per block)
-        # Note we reuse inputs for v1 and v2 txs so must test these separately
+        # Note we reuse inputs for the below-threshold (v2) and above-threshold (v3) txs so must test these separately
         # 16 normal inputs
         bip68inputs = []
         for _ in range(16):
@@ -429,7 +429,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.log.info("TESTING")
 
         self.log.info("Pre-Soft Fork Tests. All txs should pass.")
-        self.log.info("Test version 1 txs")
+        self.log.info("Test version 2 txs")
 
         success_txs = []
         # BIP113 tx, -1 CSV tx and empty stack CSV tx should succeed
@@ -451,7 +451,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.send_blocks([self.create_test_block(success_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
-        self.log.info("Test version 2 txs")
+        self.log.info("Test version 3 txs")
 
         success_txs = []
         # BIP113 tx, -1 CSV tx and empty stack CSV tx should succeed
@@ -472,7 +472,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.send_blocks([self.create_test_block(success_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
-        self.log.info("Test version 3 txs")
+        self.log.info("Test version 3 txs (BIP113)")
         # BIP113 with nVersion=3 (ReddCoin standard tx version) should also pass pre-activation
         # BIP68/BIP112 v3 already tested above (v2 vars use nVersion=3)
         tip_mtp = node.getblockheader(node.getbestblockhash())['mediantime']
@@ -522,14 +522,14 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.generate_blocks(4)
 
         self.log.info("BIP 68 tests")
-        self.log.info("Test version 1 txs - all should still pass")
+        self.log.info("Test version 2 txs - all should still pass")
 
         success_txs = []
         success_txs.extend(all_rlt_txs(bip68txs_v1))
         self.send_blocks([self.create_test_block(success_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
-        self.log.info("Test version 2 txs")
+        self.log.info("Test version 3 txs")
 
         # All txs with SEQUENCE_LOCKTIME_DISABLE_FLAG set pass
         bip68success_txs = [tx['tx'] for tx in bip68txs_v2 if tx['sdf']]
@@ -564,21 +564,21 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
         self.log.info("BIP 112 tests")
-        self.log.info("Test version 1 txs")
+        self.log.info("Test version 2 txs")
 
         # -1 OP_CSV tx and (empty stack) OP_CSV tx should fail
         self.send_blocks([self.create_test_block([bip112tx_special_v1])], success=False,
                          reject_reason='non-mandatory-script-verify-flag (Negative locktime)')
         self.send_blocks([self.create_test_block([bip112tx_emptystack_v1])], success=False,
                          reject_reason='non-mandatory-script-verify-flag (Operation not valid with the current stack size)')
-        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is set in argument to OP_CSV, version 1 txs should still pass
+        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is set in argument to OP_CSV, version 2 txs should still pass
 
         success_txs = [tx['tx'] for tx in bip112txs_vary_OP_CSV_v1 if tx['sdf']]
         success_txs += [tx['tx'] for tx in bip112txs_vary_OP_CSV_9_v1 if tx['sdf']]
         self.send_blocks([self.create_test_block(success_txs)])
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
 
-        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is unset in argument to OP_CSV, version 1 txs should now fail
+        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is unset in argument to OP_CSV, version 2 txs should now fail
         fail_txs = all_rlt_txs(bip112txs_vary_nSequence_v1)
         fail_txs += all_rlt_txs(bip112txs_vary_nSequence_9_v1)
         fail_txs += [tx['tx'] for tx in bip112txs_vary_OP_CSV_v1 if not tx['sdf']]
@@ -587,7 +587,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
             self.send_blocks([self.create_test_block([tx])], success=False,
                              reject_reason='non-mandatory-script-verify-flag (Locktime requirement not satisfied)')
 
-        self.log.info("Test version 2 txs")
+        self.log.info("Test version 3 txs")
 
         # -1 OP_CSV tx and (empty stack) OP_CSV tx should fail
         self.send_blocks([self.create_test_block([bip112tx_special_v2])], success=False,
@@ -595,7 +595,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.send_blocks([self.create_test_block([bip112tx_emptystack_v2])], success=False,
                          reject_reason='non-mandatory-script-verify-flag (Operation not valid with the current stack size)')
 
-        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is set in argument to OP_CSV, version 2 txs should pass (all sequence locks are met)
+        # If SEQUENCE_LOCKTIME_DISABLE_FLAG is set in argument to OP_CSV, version 3 txs should pass (all sequence locks are met)
         success_txs = [tx['tx'] for tx in bip112txs_vary_OP_CSV_v2 if tx['sdf']]
         success_txs += [tx['tx'] for tx in bip112txs_vary_OP_CSV_9_v2 if tx['sdf']]
 
