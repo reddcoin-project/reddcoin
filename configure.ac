@@ -62,6 +62,9 @@ else
 fi
 AC_PROG_CXX
 
+dnl A C compiler is required for the vendored utf8proc subtree (src/utf8proc).
+AC_PROG_CC
+
 dnl By default, libtool for mingw refuses to link static libs into a dll for
 dnl fear of mixing pic/non-pic objects, and import/export complications. Since
 dnl we have those under control, re-enable that functionality.
