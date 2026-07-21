@@ -15,7 +15,6 @@ variants.
 - `test_address()` is called to call getaddressinfo for an address on node1
   and test the values returned."""
 
-from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.script import (
     CScript,
     OP_NOP,
@@ -593,7 +592,6 @@ class ImportMultiTest(BitcoinTestFramework):
             "rcrt1qfqeppuvj0ww98r6qghmdkj70tv8qpche0shx59",  # wpkh at m/0'/0'/1'
         ]
         desc = "sh(wpkh(" + xpriv + "/0'/0'/*'" + "))"
-        wpkh_desc = "wpkh(" + xpriv + "/0'/0'/*'" + ")"
         self.log.info("Ranged descriptor import should fail without a specified range")
         self.test_importmulti({"desc": descsum_create(desc),
                                "timestamp": "now"},

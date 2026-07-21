@@ -35,6 +35,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
 
         # Helper: create a spend of a specific UTXO, return {hex, txid, vout, value}
         fee = Decimal("0.01")
+
         def create_spend(utxo, locktime=0):
             addr = node.getnewaddress()
             out_value = utxo['value'] - fee

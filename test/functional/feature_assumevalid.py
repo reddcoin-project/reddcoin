@@ -221,7 +221,6 @@ class AssumeValidTest(BitcoinTestFramework):
 
         # Combine all headers for sending (PoW block headers + PoS fake headers)
         all_headers = [CBlockHeader(b) for b in self.blocks] + self.pos_headers
-        total_height = POW_HEIGHT + POS_HEADERS  # = 2289
 
         self.nodes[0].disconnect_p2ps()
 

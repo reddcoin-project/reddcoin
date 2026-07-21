@@ -31,14 +31,14 @@ from test_framework.script import (
     OP_NOP,
     OP_TRUE,
 )
-
-# OP_TRUE with NOP padding to ensure spends meet minimum tx size (82 bytes)
-OP_TRUE_SCRIPT = CScript([OP_TRUE] + [OP_NOP] * 50)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     advance_time_for_pos,
 )
+
+# OP_TRUE with NOP padding to ensure spends meet minimum tx size (82 bytes)
+OP_TRUE_SCRIPT = CScript([OP_TRUE] + [OP_NOP] * 50)
 
 # BIP9 activation: window=144, threshold=108 (75%)
 # Period 0 (0-143): DEFINED -> STARTED (block time > nStartTime=0)
@@ -187,7 +187,7 @@ class BIP65Test(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        peer = node.add_p2p_connection(P2PInterface())
+        node.add_p2p_connection(P2PInterface())
 
         self.test_cltv_info(is_active=False)
 

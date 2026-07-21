@@ -6,10 +6,8 @@
 
 from test_framework.blocktools import (
     COINBASE_MATURITY,
-    create_coinbase,
     create_block,
     add_witness_commitment,
-    MAX_BLOCK_SIGOPS_WEIGHT,
     NORMAL_GBT_REQUEST_PARAMS,
     WITNESS_SCALE_FACTOR,
     sign_block,
@@ -84,7 +82,7 @@ from test_framework.script_util import (
     script_to_p2wsh_script,
 )
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_raises_rpc_error, assert_equal
+from test_framework.util import assert_equal
 from test_framework.key import generate_privkey, compute_xonly_pubkey, sign_schnorr, tweak_add_privkey, ECKey
 from test_framework.address import (
     hash160,

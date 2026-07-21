@@ -12,7 +12,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
     create_tx_with_script,
-    get_legacy_sigopcount_block,
     MAX_BLOCK_SIGOPS,
     NORMAL_GBT_REQUEST_PARAMS,
     sign_block,
@@ -27,7 +26,6 @@ from test_framework.messages import (
     CTxOut,
     MAX_BLOCK_BASE_SIZE,
     tx_from_hex,
-    uint256_from_compact,
     uint256_from_str,
 )
 from test_framework.p2p import P2PDataStore
@@ -185,8 +183,6 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Don't reorg to a chain of the same length")
         self.move_tip(1)
         b3 = self.next_block(3, spend=out[1])
-        # PoS fork block: spend tx may be at vtx[2] if included, or vtx[1] (coinstake) if not
-        txout_b3 = b3.vtx[2] if len(b3.vtx) > 2 else b3.vtx[1]
         self.send_blocks([b3], False)
 
         # Now we add another block to make the alternative chain longer.
@@ -605,7 +601,6 @@ class FullBlockTest(BitcoinTestFramework):
         # push past the limit. Spend just enough P2SH outputs to get close, then
         # add a big padding sigops tx.
         p2sh_per_tx = 1
-        sigops_per_combined_tx = p2sh_per_tx * b39_sigops_per_output
         # Use only ~100 P2SH txs (fast validation), then pad with legacy sigops
         numTxes = min(100, b39_p2sh_count)
         p2sh_needed = numTxes * p2sh_per_tx
@@ -966,13 +961,13 @@ class FullBlockTest(BitcoinTestFramework):
         # None in PoS (coinbase is empty, BIP30 check skipped). Skip entire section.
         if duplicate_tx is not None:
             self.move_tip(57)
-            b_spend_dup_cb = self.next_block('spend_dup_cb')
+            self.next_block('spend_dup_cb')
             tx = CTransaction()
             tx.vin.append(CTxIn(COutPoint(duplicate_tx.sha256, 0)))
             tx.vout.append(CTxOut(0, CScript([OP_TRUE])))
             self.sign_tx(tx, duplicate_tx)
             tx.rehash()
-            b_spend_dup_cb = self.update_block('spend_dup_cb', [tx])
+            self.update_block('spend_dup_cb', [tx])
 
         # PoS: BIP30 continuation (b_spend_dup_cb, b_dup_2) skipped — duplicate_tx is None
         # because PoS coinbase is empty and BIP30 check is skipped for PoS.
@@ -1226,7 +1221,6 @@ class FullBlockTest(BitcoinTestFramework):
         assert_equal(len(self.nodes[0].getrawmempool()), 0)
 
         # Build competing fork from b77 using node.generate (needs 3 blocks to be longer)
-        main_tip = node.getbestblockhash()  # b79
         b78_hash = format(self.blocks[78].sha256, '064x')
         # Invalidate b78 to go back to b77
         node.invalidateblock(b78_hash)
@@ -1310,11 +1304,9 @@ class FullBlockTest(BitcoinTestFramework):
         LARGE_REORG_SIZE = 1088
 
         # Build main chain of 1088 blocks
-        main_tip_before = node.getbestblockhash()
         advance_time_for_pos(node, seconds=3600)
         self.log.info(f"  Generating {LARGE_REORG_SIZE} blocks for main chain...")
         main_hashes = node.generate(LARGE_REORG_SIZE)
-        chain1_tip_hash = node.getbestblockhash()
         chain1_height = node.getblockcount()
         self.log.info(f"  Main chain: {LARGE_REORG_SIZE} blocks, tip height={chain1_height}")
 
@@ -1323,7 +1315,6 @@ class FullBlockTest(BitcoinTestFramework):
         advance_time_for_pos(node, seconds=3600)
         self.log.info(f"  Generating {LARGE_REORG_SIZE} blocks for alt chain...")
         fork_hashes = node.generate(LARGE_REORG_SIZE)
-        fork_tip = node.getbestblockhash()
         self.log.info(f"  Alt chain: {LARGE_REORG_SIZE} blocks, same length")
 
         # Alt chain is same length — no reorg (first-seen wins, which is alt since main invalidated)

@@ -33,6 +33,7 @@ class MempoolSpendCoinbaseTest(BitcoinTestFramework):
 
         # Helper: create a raw spend of a UTXO, return {hex, txid}
         fee = Decimal("0.01")
+
         def create_spend(utxo):
             addr = node.getnewaddress()
             raw = node.createrawtransaction(

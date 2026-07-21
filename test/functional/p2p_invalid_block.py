@@ -21,7 +21,6 @@ import copy
 
 from test_framework.blocktools import (
     create_block,
-    create_tx_with_script,
     NORMAL_GBT_REQUEST_PARAMS,
     sign_block,
 )
@@ -179,10 +178,6 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         tx1_signed = node.signrawtransactionwithkey(tx1_raw, [privkey])['hex']
         tx1 = tx_from_hex(tx1_signed)
         tx1.calc_sha256()
-
-        # Create tx2 that chains from tx1
-        tx1_amount = int(tx1_output_amount * COIN)
-        tx2 = create_tx_with_script(tx1, 0, script_sig=b'', amount=tx1_amount - 100000)
 
         # Now build the block using the same template (same coinstake) + tx1
         block2 = create_block(tmpl=tmpl, txlist=[tx1])

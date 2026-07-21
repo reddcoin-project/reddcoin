@@ -24,7 +24,7 @@ import sys
 
 # Add test framework to path for segwit_addr
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'test_framework'))
-from segwit_addr import bech32_decode, bech32_encode
+from segwit_addr import bech32_decode, bech32_encode  # noqa: E402
 
 
 NTIME = 1609459200  # 2021-01-01 00:00:00 UTC
@@ -250,11 +250,10 @@ def _patch_raw_tx(tx_hex, ntime=NTIME):
     # Detect segwit
     pos = f.tell()
     marker = struct.unpack('B', f.read(1))[0]
-    is_segwit = False
     if marker == 0:
         flag = struct.unpack('B', f.read(1))[0]
         if flag != 0:
-            is_segwit = True
+            pass
         else:
             f.seek(pos)
     else:

@@ -9,7 +9,6 @@
 - submitblock"""
 
 import copy
-from decimal import Decimal
 from io import BytesIO
 
 from test_framework.blocktools import (
@@ -24,7 +23,6 @@ from test_framework.messages import (
     BLOCK_HEADER_SIZE,
 )
 from test_framework.script import CScript
-from test_framework.p2p import P2PDataStore
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,

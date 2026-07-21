@@ -57,7 +57,6 @@ Requires previous releases (v4.22.9 binary), see test/README.md.
 """
 
 import hashlib
-import time
 
 from test_framework.messages import (
     COIN,

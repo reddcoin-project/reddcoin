@@ -46,9 +46,6 @@ class MempoolWtxidTest(BitcoinTestFramework):
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
-    def skip_test_if_missing_module(self):
-        self.skip_if_no_wallet()
-
     def run_test(self):
         node = self.nodes[0]
 
