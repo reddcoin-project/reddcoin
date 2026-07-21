@@ -87,7 +87,10 @@ DOCKER_EXEC df -h
 
 if [ "$RUN_FUZZ_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
   if [ ! -d ${DIR_QA_ASSETS} ]; then
-    DOCKER_EXEC git clone --depth=1 https://github.com/bitcoin-core/qa-assets ${DIR_QA_ASSETS}
+    # Reddcoin qa-assets: unit_test_data/script_assets_test.json is regenerated
+    # for Reddcoin's nTime transaction format (the upstream Bitcoin vectors fail
+    # to deserialize). See the repo README for how it is produced.
+    DOCKER_EXEC git clone --depth=1 https://github.com/reddcoin-project/qa-assets ${DIR_QA_ASSETS}
   fi
 
   export DIR_FUZZ_IN=${DIR_QA_ASSETS}/fuzz_seed_corpus/
