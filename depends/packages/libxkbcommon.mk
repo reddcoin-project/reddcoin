@@ -8,6 +8,10 @@ $(package)_dependencies=libxcb
 define $(package)_set_vars
 $(package)_config_opts = --enable-option-checking --disable-dependency-tracking
 $(package)_config_opts += --disable-static --disable-docs
+# GCC 12 (debian:bookworm) raises a false-positive -Warray-bounds on
+# ExprCreate()'s deliberate over-allocation in src/xkbcomp/ast-build.c, and this
+# old release (0.8.4) builds with -Werror. Demote just that warning.
+$(package)_cflags += -Wno-error=array-bounds
 endef
 
 define $(package)_preprocess_cmds
