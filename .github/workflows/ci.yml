@@ -124,7 +124,7 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_win64.sh'
 
-          - name: '32-bit + dash, gui [CentOS 8]'
+          - name: '32-bit + dash, gui [CentOS 9]'
             runner: ubuntu-24.04
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_i686_centos.sh'
