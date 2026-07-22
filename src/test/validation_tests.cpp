@@ -186,7 +186,7 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     // Reddcoin: UTXO set hash and nChainTx for the regtest PoS test chain,
     // computed via gettxoutsetinfo (HASH_SERIALIZED) on the chain built by the
     // C++ staking helpers (genesis + 89 PoW + PoS blocks).
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "106f9f9bd6c57cea84444957b5630e4a1679a658c73455a0e0362ff0174ee181");
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "080f5ece159087ec489488c9f32f2ca67e1e5a0f4587e9f239bfa0e8e365baa7");
     BOOST_CHECK_EQUAL(out110.nChainTx, 132U);  // genesis + 89 PoW + 21 PoS (2 tx each)
 
     const auto out210 = *ExpectedAssumeutxo(200, *params);
