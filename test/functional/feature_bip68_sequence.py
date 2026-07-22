@@ -27,12 +27,9 @@ from test_framework.messages import (
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
-    assert_equal,
-    assert_greater_than,
     assert_raises_rpc_error,
     satoshi_round,
     softfork_active,
-    advance_time_for_pos,
 )
 from test_framework.script_util import DUMMY_P2WPKH_SCRIPT
 

@@ -36,7 +36,7 @@ class UTXOSetHashTest(BitcoinTestFramework):
 
         # Create a spending transaction using the node wallet and mine it
         addr = node.getnewaddress()
-        txid = node.sendtoaddress(addr, 1)
+        node.sendtoaddress(addr, 1)
         tx_block_hash = node.generate(1)[0]
         blocks.append(from_hex(CBlock(), node.getblock(tx_block_hash, False)))
 

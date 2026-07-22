@@ -12,7 +12,6 @@ Generate COINBASE_MATURITY (CB) more blocks to ensure the coinbases are mature.
 [Consensus] Check that the new NULLDUMMY rules are not enforced on block CB + 4.
 [Policy/Consensus] Check that the new NULLDUMMY rules are enforced on block CB + 5.
 """
-import time
 
 from test_framework.blocktools import (
     COINBASE_MATURITY,

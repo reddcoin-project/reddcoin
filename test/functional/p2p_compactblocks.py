@@ -42,7 +42,6 @@ from test_framework.messages import (
     MSG_CMPCT_BLOCK,
     MSG_WITNESS_FLAG,
     NODE_NETWORK,
-    NODE_WITNESS,
     P2PHeaderAndShortIDs,
     PrefilledTransaction,
     calculate_shortid,

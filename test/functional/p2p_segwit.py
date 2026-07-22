@@ -10,7 +10,7 @@ import random
 import struct
 import time
 
-from test_framework.blocktools import create_block, create_coinbase, add_witness_commitment, get_witness_script, WITNESS_COMMITMENT_HEADER, sign_block, NORMAL_GBT_REQUEST_PARAMS
+from test_framework.blocktools import create_block, add_witness_commitment, get_witness_script, WITNESS_COMMITMENT_HEADER, sign_block, NORMAL_GBT_REQUEST_PARAMS
 from test_framework.key import ECKey
 from test_framework.messages import (
     BIP125_SEQUENCE_NUMBER,
@@ -27,7 +27,6 @@ from test_framework.messages import (
     MSG_BLOCK,
     MSG_TX,
     MSG_WITNESS_FLAG,
-    MSG_WITNESS_TX,
     MSG_WTX,
     NODE_NETWORK,
     NODE_WITNESS,

@@ -19,7 +19,6 @@ import tempfile
 import time
 
 from typing import List
-from .address import ADDRESS_BCRT1_P2WSH_OP_TRUE
 from .authproxy import JSONRPCException
 from . import coverage
 from .p2p import NetworkThread

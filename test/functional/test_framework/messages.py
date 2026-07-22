@@ -32,8 +32,10 @@ import time
 from test_framework.siphash import siphash256
 from test_framework.util import hex_str_to_bytes, assert_equal
 
-# Try to import scrypt for ReddCoin PoW mining (similar to Litecoin's litecoin_scrypt)
-# If not available, solve() will fall back to SHA256 (which will fail validation)
+# Try to import scrypt for ReddCoin PoW mining (similar to Litecoin's litecoin_scrypt).
+# The module is required to mine PoW blocks: CBlock.solve() raises without it. The
+# SHA256d fallback in scrypt_hash() below exists only so that hashing PoS headers
+# (whose scrypt256 is never checked against a target) still works when it is absent.
 try:
     import scrypt as scrypt_module
     SCRYPT_AVAILABLE = True
@@ -46,7 +48,10 @@ def scrypt_hash(data):
     if SCRYPT_AVAILABLE:
         return scrypt_module.hash(data, data, N=1024, r=1, p=1, buflen=32)
     else:
-        # Fallback to SHA256 (will fail validation but useful for testing serialization)
+        # scrypt is unavailable. This value is NOT a valid PoW hash; it only keeps
+        # header serialization and PoS header hashing working. CBlock.solve()
+        # refuses to mine PoW blocks in this state rather than emit blocks the node
+        # will reject with "CheckProofOfWork() : hash doesn't match nBits".
         return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 MAX_LOCATOR_SZ = 101
@@ -836,6 +841,16 @@ class CBlock(CBlockHeader):
         # They are validated by block signature, so nonce stays at 0
         if self.nVersion > POW_BLOCK_VERSION:
             return
+        # Fail loudly instead of grinding a SHA256d nonce that the node validates
+        # with real scrypt and rejects as "hash doesn't match nBits". A missing
+        # module must not masquerade as a consensus/timeout failure at run time.
+        if not SCRYPT_AVAILABLE:
+            raise RuntimeError(
+                "ReddCoin PoW mining requires the 'scrypt' Python module, which is "
+                "not installed. CBlock.solve() cannot grind a valid proof-of-work "
+                "without it, so the node would reject every mined block with "
+                "'CheckProofOfWork() : hash doesn't match nBits'. Install it with "
+                "'pip3 install scrypt'.")
         target = uint256_from_compact(self.nBits)
         # ReddCoin: Use scrypt256 for PoW validation (computed in calc_sha256 like Litecoin)
         while self.scrypt256 > target:

@@ -14,11 +14,6 @@ from test_framework.blocktools import (
     sign_block,
 )
 from test_framework.messages import (
-    COIN,
-    COutPoint,
-    CTransaction,
-    CTxIn,
-    CTxOut,
     tx_from_hex,
 )
 from test_framework.p2p import P2PInterface
@@ -115,7 +110,7 @@ class BIP66Test(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        peer = node.add_p2p_connection(P2PInterface())
+        node.add_p2p_connection(P2PInterface())
 
         self.test_dersig_info(is_active=False)
 

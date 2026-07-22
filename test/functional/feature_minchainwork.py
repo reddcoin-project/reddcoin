@@ -99,12 +99,15 @@ class MinimumChainWorkTest(BitcoinTestFramework):
         time.sleep(5)
         assert ("headers" not in peer.last_message or len(peer.last_message["headers"].headers) == 0)
 
-        self.log.info("Generating one more block")
-        self.nodes[0].generate(1)
-
-        self.log.info("Verifying nodes are all synced")
-
-        # Sync mocktime from node0 to nodes 1/2 so P2P relay works
+        # Sync mocktime from node0 to nodes 1/2 so P2P relay works. This MUST run
+        # before generating the block that crosses node2's minimumchainwork: that
+        # block triggers relay and makes node2 start downloading. If node2's clock
+        # were jumped forward *after* the download had begun (as it was originally,
+        # just above sync_blocks), the leap past each in-flight block's download
+        # deadline trips the peer block-download stalling timeout, and node2
+        # disconnects node1 - its only block source - stranding it at height 3 so
+        # sync_blocks times out. Setting the offset first records the download
+        # deadlines in the same clock epoch the timeout is later evaluated in.
         if self.nodes[0].mocktime:
             # Keep node2's time offset (it's deliberately ahead for IBD testing)
             node2_offset = 24 * 60 * 60  # 24h ahead of nodes 0/1
@@ -112,6 +115,11 @@ class MinimumChainWorkTest(BitcoinTestFramework):
             self.nodes[1].mocktime = self.nodes[0].mocktime
             self.nodes[2].setmocktime(self.nodes[0].mocktime + node2_offset)
             self.nodes[2].mocktime = self.nodes[0].mocktime + node2_offset
+
+        self.log.info("Generating one more block")
+        self.nodes[0].generate(1)
+
+        self.log.info("Verifying nodes are all synced")
 
         self.sync_blocks(timeout=120)
         self.log.info("Blockcounts: %s", [n.getblockcount() for n in self.nodes])

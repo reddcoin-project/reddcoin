@@ -135,7 +135,8 @@ class FeeFilterTest(BitcoinTestFramework):
         conn.clear_invs()
 
         self.log.info("Test txs paying 0.00125 RDD/kB are no longer received by test connection (below filter)")
-        low_fee_txids = [miniwallet.send_self_transfer(fee_rate=Decimal('0.00125'), from_node=node1)['wtxid'] for _ in range(3)]
+        for _ in range(3):
+            miniwallet.send_self_transfer(fee_rate=Decimal('0.00125'), from_node=node1)
         advance_time_for_pos(self.nodes, seconds=10)  # Longer time to ensure trickle relay fires
         self.sync_mempools()  # must be sure node 0 has received all txs
 

@@ -18,7 +18,7 @@ from test_framework.p2p import (
     p2p_lock,
 )
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, advance_time_for_pos
+from test_framework.util import assert_equal
 import random
 import time
 

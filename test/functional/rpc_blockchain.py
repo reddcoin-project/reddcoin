@@ -36,7 +36,6 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
-    assert_greater_than_or_equal,
     assert_raises,
     assert_raises_rpc_error,
     assert_is_hex_string,

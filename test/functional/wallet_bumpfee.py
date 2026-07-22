@@ -16,7 +16,6 @@ make assumptions about execution order.
 from decimal import Decimal
 
 from test_framework.blocktools import (
-    COINBASE_MATURITY,
     send_to_witness,
 )
 from test_framework.messages import (

@@ -73,8 +73,7 @@ Part 5: Test handling of headers that don't connect (simplified for ReddCoin)
 - Tests that unconnecting headers trigger getheaders requests
 - Tests disconnect after too many unconnecting headers
 """
-from test_framework.blocktools import create_block, create_coinbase, NORMAL_GBT_REQUEST_PARAMS, sign_block
-from test_framework.messages import CInv, CBlock, CBlockHeader as MsgCBlockHeader, from_hex
+from test_framework.messages import CInv, CBlock, from_hex
 from test_framework.p2p import (
     CBlockHeader,
     NODE_WITNESS,
@@ -276,7 +275,6 @@ class SendHeadersTest(BitcoinTestFramework):
         tip_height = self.nodes[0].getblockcount()
         hash_to_invalidate = self.nodes[0].getblockhash(tip_height - (length - 1))
         fork_height = tip_height - length
-        original_tip = self.nodes[0].getbestblockhash()
 
         # Disconnect nodes to prevent automatic block relay during mining
         self.disconnect_nodes(1, 0)
