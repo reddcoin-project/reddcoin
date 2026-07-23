@@ -51,7 +51,7 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
 // former disk read (tx->nTime) provided. Returns false if the coin is absent or
 // spent in the view, or its creating block is not on the active chain.
 // Requires cs_main.
-bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, uint32_t& nTimeBlockFrom, uint32_t& nTimeTxPrev);
+bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, uint32_t& nTimeBlockFrom, uint32_t& nTimeTxPrev) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 // Function to calculate the coin age weight
 int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const Consensus::Params& consensusParams);
