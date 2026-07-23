@@ -641,6 +641,21 @@ public:
     std::string getName() const override { return m_wallet->GetName(); }
     bool isLocked() const override { return m_wallet->IsLocked(); }
     bool getEnableStaking() const override { return m_wallet->GetEnableStaking(); }
+    void setEnableStaking(bool enable) override { m_wallet->SetEnableStaking(enable); }
+
+    bool canStake(std::string& reason) override
+    {
+        if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+            reason = "Disable private keys flag set";
+            return false;
+        }
+        if (m_wallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+            reason = "Blank wallet flag set";
+            return false;
+        }
+        return true;
+    }
+
     void notifyStakingStatusChanged() override { m_wallet->NotifyWalletStakingStatusChanged(); }
     void abandonOrphanedCoinstakes() override { m_wallet->AbandonOrphanedCoinstakes(); }
 

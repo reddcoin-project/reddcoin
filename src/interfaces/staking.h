@@ -81,6 +81,15 @@ public:
     //! Return whether staking is enabled for this wallet.
     virtual bool getEnableStaking() const = 0;
 
+    //! Enable or disable staking for this wallet. Persists on the underlying
+    //! wallet, so it is visible through any StakingWallet wrapping it.
+    virtual void setEnableStaking(bool enable) = 0;
+
+    //! Whether this wallet is capable of staking at all. Returns false, and
+    //! fills reason for logging, when the wallet has no private keys or is
+    //! blank; such wallets are skipped rather than given a staking thread.
+    virtual bool canStake(std::string& reason) = 0;
+
     //! Emit the wallet's staking-status-changed notification.
     virtual void notifyStakingStatusChanged() = 0;
 
