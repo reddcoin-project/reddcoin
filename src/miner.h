@@ -29,13 +29,13 @@ class CConnman;
 class ChainstateManager;
 namespace interfaces {
 class Chain;
+class StakingWallet;
 } /* namespace interfaces */
 
 class CBlockIndex;
 class CChainParams;
 class CScheduler;
 class CScript;
-class CWallet;
 
 namespace Consensus { struct Params; };
 
@@ -177,8 +177,14 @@ public:
     explicit BlockAssembler(CChainState& chainstate, const CTxMemPool& mempool, const CChainParams& params);
     explicit BlockAssembler(CChainState& chainstate, const CTxMemPool& mempool, const CChainParams& params, const Options& options);
 
-    /** Construct a new block template with coinbase to scriptPubKeyIn */
-    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet=nullptr, bool* pfPoSCancel=nullptr);
+    /** Construct a new block template with coinbase to scriptPubKeyIn.
+     *
+     * Passing a staking wallet makes this assemble a proof-of-stake block: it
+     * searches for a kernel, and gives up (returning nullptr with *pfPoSCancel
+     * set) if none is found. The caller must hold staking_wallet->lock() for
+     * the whole call, since the coinstake is built, then re-signed against the
+     * block's fees, in separate trips into the wallet. */
+    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, interfaces::StakingWallet* staking_wallet=nullptr, bool* pfPoSCancel=nullptr);
 
     inline static std::optional<int64_t> m_last_block_num_txs{};
     inline static std::optional<int64_t> m_last_block_weight{};
@@ -224,7 +230,10 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+/** Staking loop for one wallet. The caller owns staking_wallet and must keep it
+ *  alive for the whole call: it holds the destination reserved for coinstake
+ *  rewards across every iteration. */
+void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
 
 void InitStakeWallet();
 void SetStakingActive(bool active);

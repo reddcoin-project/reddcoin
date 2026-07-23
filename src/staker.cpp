@@ -5,6 +5,7 @@
 #include <staker.h>
 
 #include <fs.h>
+#include <interfaces/staking.h>
 #include <interfaces/wallet.h>
 #include <logging.h>
 #include <miner.h>
@@ -15,6 +16,7 @@
 #include <util/thread.h>
 #include <util/translation.h>
 #include <validation.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 #include <wallet/walletutil.h>
 
@@ -218,7 +220,7 @@ void CStakeman::StakeWalletAdd(const std::string& walletname)
                 {
                     LOCK(cs_threadStakeMinterGroup);
                     threadStakeMinterGroup.push_back(
-                        std::thread(&util::TraceThread, "staker", [this, pwallet = wallet.get(), chainManager = chainManager, connManager = connManager, mempool = memPool]() {
+                        std::thread(&util::TraceThread, "staker", [this, pwallet = wallet, chainManager = chainManager, connManager = connManager, mempool = memPool]() {
                             tm_[pwallet->GetName()] = std::this_thread::get_id();
                             ThreadStaker(pwallet, chainManager, connManager, mempool, std::this_thread::get_id(), fStakingActive);
                         }));
@@ -250,12 +252,14 @@ void CStakeman::StakeWalletRemove(const std::string& walletname)
     }
 }
 
-void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
+void CStakeman::ThreadStaker(const std::shared_ptr<CWallet>& pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
 {
     LogPrintf("CStakeman::%s\n", __func__);
     LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
+    // Outlives PoSMiner, which keeps a coinstake destination reserved through it.
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet = MakeStakingWallet(pwallet);
     try {
-        PoSMiner(pwallet, chainman, connman, mempool, thread_id, running);
+        PoSMiner(*staking_wallet, chainman, connman, mempool, thread_id, running);
     } catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
     } catch (...) {

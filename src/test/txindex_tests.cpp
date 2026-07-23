@@ -61,7 +61,7 @@ BOOST_FIXTURE_TEST_CASE(txindex_initial_sync, TestChain100Setup)
     for (int i = 0; i < 10; i++) {
         CScript coinbase_script_pub_key = GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()));
         std::vector<CMutableTransaction> no_txns;
-        const CBlock& block = CreateAndProcessPoSBlock(no_txns, coinbase_script_pub_key, m_wallet.get());
+        const CBlock& block = CreateAndProcessPoSBlock(no_txns, coinbase_script_pub_key, m_wallet);
 
         // CRITICAL: Ensure wallet receives and processes block notifications before creating next block
         // 1. Sync validation interface queue to process all pending notifications

@@ -10,6 +10,7 @@
 #include <threadsafety.h>
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -58,7 +59,7 @@ public:
         LOCK(cs_threadStakeMinterGroup);
         return threadStakeMinterGroup.size();
     };
-    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+    void static ThreadStaker(const std::shared_ptr<CWallet>& pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
     void StakeWalletAdd(const std::string& walletname);
     void StakeWalletRemove(const std::string& walletname);
 

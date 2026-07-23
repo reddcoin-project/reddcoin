@@ -135,7 +135,7 @@ struct TestChain100Setup : public TestingSetup {
      */
     CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
                                      const CScript& scriptPubKey,
-                                     CWallet* pwallet);
+                                     const std::shared_ptr<CWallet>& pwallet);
 
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);

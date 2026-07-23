@@ -21,6 +21,12 @@ namespace Consensus {
 struct Params;
 }
 
+/** Default for -staketimio, the proof-of-stake kernel search timeout in ms.
+ *  Declared here rather than in the wallet because the staking loop that uses
+ *  it lives in libbitcoin_server, while the argument is registered by the
+ *  wallet. */
+static const unsigned int DEFAULT_STAKETIMIO = 500;
+
 namespace interfaces {
 
 //! Wallet-free description of a coin that can be staked.

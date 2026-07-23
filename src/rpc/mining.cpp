@@ -152,8 +152,9 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, CWallet* pwallet = nullptr)
+static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, const std::shared_ptr<CWallet>& wallet = {})
 {
+    CWallet* const pwallet = wallet.get();
     int nHeightEnd = 0;
     int nHeight = 0;
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -195,7 +196,8 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
             bool fPoSCancel = false;
             {
                 LOCK(pwallet->cs_wallet);
-                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+                auto staking_wallet = MakeStakingWallet(wallet);
+                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
             }
 
             if (!pblocktemplate.get()) {
@@ -322,13 +324,9 @@ static RPCHelpMan generatetodescriptor()
     ChainstateManager& chainman = EnsureChainman(node);
 
     // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
-    CWallet* pwallet = nullptr;
     std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (wallet) {
-        pwallet = wallet.get();
-    }
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet);
 },
     };
 }
@@ -527,13 +525,9 @@ static RPCHelpMan generatetoaddress()
     CScript coinbase_script = GetScriptForDestination(destination);
 
     // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
-    CWallet* pwallet = nullptr;
     std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (wallet) {
-        pwallet = wallet.get();
-    }
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet);
 },
     };
 }
@@ -642,9 +636,10 @@ static RPCHelpMan generateblock()
         {
             LOCK(pwallet->cs_wallet);
             CTxMemPool empty_mempool;
+            auto staking_wallet = MakeStakingWallet(wallet);
             auto blocktemplate = BlockAssembler(
                 chainman.ActiveChainstate(), empty_mempool, chainparams)
-                .CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+                .CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
             if (!blocktemplate) {
                 if (fPoSCancel)
                     throw JSONRPCError(RPC_MISC_ERROR,
@@ -1173,7 +1168,8 @@ static RPCHelpMan getblocktemplate()
                 bool fPoSCancel = false;
                 {
                     LOCK(wallet->cs_wallet);
-                    pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptPubKey, wallet.get(), &fPoSCancel);
+                    auto staking_wallet = MakeStakingWallet(wallet);
+                    pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
                 }
 
                 if (!pblocktemplate.get()) {

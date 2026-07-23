@@ -341,7 +341,7 @@ void TestChain100Setup::stakeBlocks(int num_blocks)
         std::vector<CMutableTransaction> noTxns;
         CBlock b;
         try {
-            b = CreateAndProcessPoSBlock(noTxns, scriptPubKey, m_wallet.get());
+            b = CreateAndProcessPoSBlock(noTxns, scriptPubKey, m_wallet);
             // Add coinstake (PoS block's primary transaction) to m_coinbase_txns for test compatibility
             m_coinbase_txns.push_back(b.vtx[1]);
 
@@ -408,7 +408,7 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
     return block;
 }
 
-CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, CWallet* pwallet)
+CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, const std::shared_ptr<CWallet>& pwallet)
 {
     const CChainParams& chainparams = Params();
 
@@ -423,7 +423,8 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
 
     {
         LOCK(pwallet->cs_wallet);
-        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+        auto staking_wallet = MakeStakingWallet(pwallet);
+        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams).CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
     }
 
     if (!pblocktemplate.get()) {
