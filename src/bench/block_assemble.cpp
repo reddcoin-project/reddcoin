@@ -20,8 +20,11 @@
 
 static void AssembleBlock(benchmark::Bench& bench)
 {
-    const CChainParams& chainparams = Params();
+    // TestingSetup calls SelectParams(), which populates globalChainParams; it
+    // must be constructed before Params() is read, or Params() aborts on the
+    // globalChainParams assertion when this benchmark runs first under `make check`.
     const auto test_setup = MakeNoLogFileContext<const TestingSetup>();
+    const CChainParams& chainparams = Params();
 
     CScriptWitness witness;
     witness.stack.push_back(WITNESS_STACK_ELEM_OP_TRUE);
