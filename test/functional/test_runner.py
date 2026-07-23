@@ -80,7 +80,11 @@ TEST_FRAMEWORK_MODULES = [
 EXTENDED_SCRIPTS = [
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
-    'feature_pruning.py',
+    # ReddCoin: prune mode is rejected at startup ("Prune mode is incompatible
+    # with Reddcoin and -txindex", init.cpp), because txindex is always on
+    # (DEFAULT_TXINDEX = true). feature_pruning.py can never pass; it is listed
+    # in NON_SCRIPTS instead of here.
+    # 'feature_pruning.py',
     'feature_dbcrash.py',
 ]
 
@@ -349,6 +353,7 @@ NON_SCRIPTS = [
     "wallet_upgradewallet.py",             # Group A: deferred until FEATURE_LATEST > v4.22.9
     "feature_signet.py",                   # signet chain type not yet supported in ReddCoin
     "feature_blockfilterindex_prune.py",   # prune mode incompatible with blockfilterindex
+    "feature_pruning.py",                  # prune mode rejected in ReddCoin (txindex is always on)
 ]
 
 def main():
