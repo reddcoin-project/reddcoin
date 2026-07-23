@@ -26,3 +26,9 @@ export PIP_PACKAGES="pyzmq"
 export GOAL="install"
 export BITCOIN_CONFIG="--enable-zmq --with-gui=qt5 --enable-reduce-exports"
 export CONFIG_SHELL="/bin/dash"
+# Don't build with -Werror, matching upstream's stream9 i686 task. gcc 11
+# (unlike the stream8 gcc 8) enables -Wsuggest-override, and the depends boost
+# 1.71 headers reach the compile via the plain -I depends include rather than
+# the -isystem BOOST_CPPFLAGS, so their unmarked virtual overrides would
+# otherwise fail the build with -Werror=suggest-override.
+export NO_WERROR=1
