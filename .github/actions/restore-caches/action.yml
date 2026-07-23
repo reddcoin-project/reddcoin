@@ -3,7 +3,7 @@ description: 'Restore ccache and depends caches, keyed by CONTAINER_NAME'
 
 # Adapted from upstream Bitcoin Core (bitcoin/bitcoin#32989,
 # .github/actions/restore-caches). Two Reddcoin deviations:
-#   * actions/cache/restore@v4 instead of cirruslabs/cache (we run on
+#   * actions/cache/restore@v5 instead of cirruslabs/cache (we run on
 #     GitHub-hosted runners, not Cirrus runners).
 #   * Reddcoin's in-tree cache paths, and the SDK/sources/releases caches are
 #     opt-in per task (only macOS-cross/Android/previous-releases use them), so
@@ -25,7 +25,7 @@ runs:
   using: 'composite'
   steps:
     - name: Restore ccache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: /tmp/ccache_dir
         key: ccache-${{ env.CONTAINER_NAME }}-${{ github.run_id }}
@@ -34,7 +34,7 @@ runs:
 
     - name: Restore depends/built
       id: depends-built
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: depends/built
         key: depends-built-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
@@ -44,7 +44,7 @@ runs:
     - name: Restore depends/sdk-sources
       id: depends-sdk
       if: ${{ inputs.sdk == 'true' }}
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: depends/sdk-sources
         key: depends-sdk-${{ env.CONTAINER_NAME }}
@@ -52,7 +52,7 @@ runs:
     - name: Restore depends/sources
       id: depends-sources
       if: ${{ inputs.sources == 'true' }}
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: depends/sources
         key: depends-sources-${{ env.CONTAINER_NAME }}
@@ -60,7 +60,7 @@ runs:
     - name: Restore previous releases
       id: previous-releases
       if: ${{ inputs.releases == 'true' }}
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: releases
         key: previous-releases-${{ env.CONTAINER_NAME }}

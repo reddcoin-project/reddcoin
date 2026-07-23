@@ -17,7 +17,7 @@
 #     that scaffolding is dropped, since leaving Cirrus is the whole point.
 #   * The Linux jobs run on the host with DANGER_RUN_CI_ON_HOST unset, so
 #     ci/test/04_install.sh spins up each task's own DOCKER_NAME_TAG container.
-#     This avoids the node20/glibc incompatibility that `container:` on old base
+#     This avoids the node24/glibc incompatibility that `container:` on old base
 #     images (bionic/centos) causes with actions/checkout, without needing
 #     upstream's buildx image-build cache (hence no configure-docker action).
 #   * Lint runs directly via ci/lint_run_all.sh (not upstream's Docker linter
@@ -63,7 +63,7 @@ env:
 jobs:
   # Lint (Cirrus 'lint [bionic]'). Runs in a focal (20.04) container: it still
   # carries clang-format-9 in apt (the version the lint scripts pin) while
-  # providing glibc 2.31 / python 3.8, so actions/checkout's bundled node20+
+  # providing glibc 2.31 / python 3.8, so actions/checkout's bundled node24
   # (glibc >= 2.28) runs. bionic (glibc 2.27) can no longer host it.
   lint:
     name: 'lint'
@@ -75,7 +75,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends git ca-certificates
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           # Check out the PR head (not the merge commit) so the commit range
@@ -176,7 +176,7 @@ jobs:
       # Default checkout: on a pull_request this is the base-merged-with-head
       # commit, so the build runs against the merge result and surfaces silent
       # merge conflicts (replaces the Cirrus merge_base_script).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Configure environment
@@ -211,7 +211,7 @@ jobs:
       CI_USE_APT_INSTALL: 'no'
       PACKAGE_MANAGER_INSTALL: 'echo'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Install build dependencies via Homebrew
@@ -241,7 +241,7 @@ jobs:
     env:
       FILE_ENV: './ci/test/00_setup_env_native_fuzz.sh'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Configure environment
