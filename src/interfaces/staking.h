@@ -96,6 +96,16 @@ public:
     //! Number of spendable coins, used to scale the stake search timeout.
     virtual size_t getAvailableCoinCount() = 0;
 
+    //! Block until the wallet has processed the current chain tip, so a staking
+    //! readout reflects blocks the caller could already have seen.
+    virtual void blockUntilSyncedToCurrentChain() = 0;
+
+    //! How far the last kernel search advanced, for getstakinginfo.
+    virtual int64_t getLastCoinStakeSearchInterval() = 0;
+
+    //! Average and total coin-age weight of this wallet's stakeable coins.
+    virtual bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) = 0;
+
     //! Reserve a destination to receive the coinstake, held until
     //! keepDestination() is called or this object is destroyed.
     virtual bool reserveDestination(CTxDestination& dest, std::string& error) = 0;

@@ -673,6 +673,14 @@ public:
         return coins.size();
     }
 
+    void blockUntilSyncedToCurrentChain() override { m_wallet->BlockUntilSyncedToCurrentChain(); }
+    int64_t getLastCoinStakeSearchInterval() override { return m_wallet->GetLastCoinStakeSearchInterval(); }
+
+    bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) override
+    {
+        return GetStakeWeight(m_wallet.get(), average_weight, total_weight, Params().GetConsensus());
+    }
+
     bool reserveDestination(CTxDestination& dest, std::string& error) override
     {
         if (!m_reservedest) {

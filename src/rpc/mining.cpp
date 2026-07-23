@@ -13,15 +13,13 @@
 #include <core_io.h>
 #include <deploymentinfo.h>
 #include <deploymentstatus.h>
+#include <interfaces/staking.h>
 #include <key_io.h>
 #include <miner.h>
 #include <net.h>
 #include <node/context.h>
-#include <outputtype.h>
 #include <policy/fees.h>
 #include <pos/kernel.h>
-#include <pos/signer.h>
-#include <pos/stake.h>
 #include <pow.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
@@ -43,9 +41,6 @@
 #include <validation.h>
 #include <validationinterface.h>
 #include <warnings.h>
-#include <wallet/rpcwallet.h>
-#include <wallet/staking.h>
-#include <wallet/wallet.h>
 
 #include <memory>
 #include <stdint.h>
@@ -152,9 +147,14 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, const std::shared_ptr<CWallet>& wallet = {})
+//! Staking support for this node, or nullptr in a --disable-wallet build.
+static interfaces::StakingSupport* GetStakingSupport(const JSONRPCRequest& request)
 {
-    CWallet* const pwallet = wallet.get();
+    return EnsureAnyNodeContext(request.context).staking_support;
+}
+
+static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, interfaces::StakingWallet* staking_wallet)
+{
     int nHeightEnd = 0;
     int nHeight = 0;
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -172,32 +172,29 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
         bool needPoS = (nHeight >= consensusParams.nLastPowHeight);
 
         std::unique_ptr<CBlockTemplate> pblocktemplate;
-        std::unique_ptr<ReserveDestination> reservedest;  // Declare outside so we can call KeepDestination later
         CBlockIndex* pindexPrev = nullptr;
 
-        if (needPoS && pwallet) {
+        if (needPoS && !staking_wallet) {
+            throw JSONRPCError(RPC_METHOD_NOT_FOUND,
+                "Proof-of-stake block generation requires a loaded wallet with staking support.");
+        }
+
+        if (needPoS) {
             // Create PoS block with wallet - follow miner.cpp PoSMiner() process exactly
             // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
             pindexPrev = chainman.ActiveChain().Tip();
 
-            OutputType output_type = pwallet->m_default_address_type;
-            reservedest = std::make_unique<ReserveDestination>(pwallet, output_type);
             CTxDestination dest;
             std::string strError;
-
-            {
-                LOCK(pwallet->cs_wallet);
-                if (!reservedest->GetReservedDestination(dest, true, strError)) {
-                    throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, strError);
-                }
+            if (!staking_wallet->reserveDestination(dest, strError)) {
+                throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, strError);
             }
 
             CScript scriptPubKey = GetScriptForDestination(dest);
             bool fPoSCancel = false;
             {
-                LOCK(pwallet->cs_wallet);
-                auto staking_wallet = MakeStakingWallet(wallet);
-                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
+                auto wallet_lock = staking_wallet->lock();
+                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptPubKey, staking_wallet, &fPoSCancel);
             }
 
             if (!pblocktemplate.get()) {
@@ -214,8 +211,8 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
 
             // Sign the PoS block
             if (pblock->IsProofOfStake()) {
-                LOCK(pwallet->cs_wallet);
-                if (!SignBlock(*pblock, *pwallet)) {
+                auto wallet_lock = staking_wallet->lock();
+                if (!staking_wallet->signBlock(*pblock)) {
                     throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to sign PoS block");
                 }
             }
@@ -228,7 +225,7 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
 
             uint256 block_hash = pblock->GetHash();
             if (!block_hash.IsNull()) {
-                reservedest->KeepDestination();
+                staking_wallet->keepDestination();
                 ++nHeight;
                 blockHashes.push_back(block_hash.GetHex());
             }
@@ -323,10 +320,13 @@ static RPCHelpMan generatetodescriptor()
     const CTxMemPool& mempool = EnsureMemPool(node);
     ChainstateManager& chainman = EnsureChainman(node);
 
-    // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
-    std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    // Resolve a staking wallet for PoS block generation (only needed after
+    // nLastPowHeight). Null in a --disable-wallet build or with no wallet loaded;
+    // generateBlocks throws if it turns out a PoS block is required.
+    interfaces::StakingSupport* support = GetStakingSupport(request);
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet = support ? support->getStakingWalletForRequest(request) : nullptr;
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, staking_wallet.get());
 },
     };
 }
@@ -361,17 +361,19 @@ static RPCHelpMan setstaking()
         },
         RPCExamples{HelpExampleCli("staking", "\"[\\\"all\\\"]\" \"[\\\"http\\\"]\"") + HelpExampleRpc("staking", "[\"all\"], [\"libevent\"]")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
-            std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+            NodeContext& node = EnsureAnyNodeContext(request.context);
+            interfaces::StakingSupport* support = node.staking_support;
+            if (!support) return NullUniValue;
+
+            std::unique_ptr<interfaces::StakingWallet> wallet = support->getStakingWalletForRequest(request);
             if (!wallet) return NullUniValue;
-            CWallet* const pwallet = wallet.get();
 
             if (request.params[0].isNull()) {
                 UniValue result(UniValue::VARR);
 
-                std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
-                for (const auto& wallet : m_stake_wallets) {
+                for (const auto& w : support->getStakingWallets()) {
                     UniValue entry(UniValue::VOBJ);
-                    entry.pushKV(wallet->GetName(), wallet->GetEnableStaking());
+                    entry.pushKV(w->getName(), w->getEnableStaking());
                     result.push_back(entry);
                 }
                 return result;
@@ -380,36 +382,29 @@ static RPCHelpMan setstaking()
             UniValue result(UniValue::VOBJ);
             std::vector<bilingual_str> warnings;
 
-            if (!request.params[0].isNull()) {
-                if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-                    result.pushKV("error", "Disable private keys flag set.");
-                } else if (pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
-                    result.pushKV("error", "Blank wallet flag set.");
-                } else {
-                    bool enable = request.params[0].getBool();
-                    pwallet->SetEnableStaking(enable);
+            std::string reason;
+            if (!wallet->canStake(reason)) {
+                result.pushKV("error", reason + ".");
+            } else {
+                bool enable = request.params[0].getBool();
+                wallet->setEnableStaking(enable);
 
-                    // Notify CStakeman to start/stop staking thread for this wallet
-                    NodeContext& node = EnsureAnyNodeContext(request.context);
-                    if (node.stakeman) {
-                        if (enable) {
-                            node.stakeman->StakeWalletAdd(pwallet->GetName());
-                        } else {
-                            node.stakeman->StakeWalletRemove(pwallet->GetName());
-                        }
+                // Notify CStakeman to start/stop the staking thread for this wallet
+                if (node.stakeman) {
+                    if (enable) {
+                        node.stakeman->StakeWalletAdd(wallet->getName());
+                    } else {
+                        node.stakeman->StakeWalletRemove(wallet->getName());
                     }
+                }
 
-                    if (!request.params[1].isNull()) {
-                        interfaces::Chain& chain = pwallet->chain();
-                        std::string name = pwallet->GetName();
-                        std::optional<bool> load_on_start = request.params[1].isNull() ? std::nullopt : std::optional<bool>(request.params[1].get_bool());
-
-                        StakeWallet(chain, name, load_on_start, warnings);
-                    }
+                if (!request.params[1].isNull()) {
+                    std::optional<bool> load_on_start{request.params[1].get_bool()};
+                    StakeWallet(*node.chain, wallet->getName(), load_on_start, warnings);
                 }
             }
 
-            result.pushKV("enabled", wallet->GetEnableStaking());
+            result.pushKV("enabled", wallet->getEnableStaking());
             result.pushKV("warning", Join(warnings, Untranslated("\n")).original);
             return result;
         },
@@ -448,19 +443,24 @@ static RPCHelpMan staking()
     UniValue result(UniValue::VOBJ);
     UniValue staking(UniValue::VARR);
 
-    std::vector<std::shared_ptr<CWallet>> m_stake_wallets = GetWallets();
-    for (const auto &wallet : m_stake_wallets) {
-        UniValue entry(UniValue::VOBJ);
-        entry.pushKV(wallet->GetName(), wallet->GetEnableStaking());
-        staking.push_back(entry);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
+    interfaces::StakingSupport* support = node.staking_support;
+
+    bool have_wallets = false;
+    if (support) {
+        for (const auto& wallet : support->getStakingWallets()) {
+            have_wallets = true;
+            UniValue entry(UniValue::VOBJ);
+            entry.pushKV(wallet->getName(), wallet->getEnableStaking());
+            staking.push_back(entry);
+        }
     }
 
-    NodeContext& node = EnsureAnyNodeContext(request.context);
     bool fGenerate = request.params[0].isNull() ? gArgs.GetBoolArg("-staking", true) : request.params[0].get_bool();
     if (!request.params[0].isNull()) {
         gArgs.ForceSetArg("-staking", fGenerate ? "1" : "0");
 
-        if (HasWallets() && GetWallets().size() > 0) {
+        if (have_wallets && node.stakeman) {
             node.stakeman->SetStakingActive(fGenerate);
             if (fGenerate) {
                 node.stakeman->Start();
@@ -471,8 +471,8 @@ static RPCHelpMan staking()
     }
 
     result.pushKV("enabled", gArgs.GetBoolArg("-staking",true));
-    result.pushKV("running", (node.stakeman->GetStakingThreadCount() > 0 ? true : false));
-    result.pushKV("thread_count", node.stakeman->GetStakingThreadCount());
+    result.pushKV("running", (node.stakeman && node.stakeman->GetStakingThreadCount() > 0 ? true : false));
+    result.pushKV("thread_count", node.stakeman ? node.stakeman->GetStakingThreadCount() : 0);
     result.pushKV("enabled_wallet", staking);
     return result;
 },
@@ -524,10 +524,13 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    // Get wallet for PoS block generation (optional, only needed after nLastPowHeight)
-    std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    // Resolve a staking wallet for PoS block generation (only needed after
+    // nLastPowHeight). Null in a --disable-wallet build or with no wallet loaded;
+    // generateBlocks throws if it turns out a PoS block is required.
+    interfaces::StakingSupport* support = GetStakingSupport(request);
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet = support ? support->getStakingWalletForRequest(request) : nullptr;
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, staking_wallet.get());
 },
     };
 }
@@ -609,34 +612,30 @@ static RPCHelpMan generateblock()
         needPoS = (chainman.ActiveChain().Height() >= chainparams.GetConsensus().nLastPowHeight);
     }
 
-    CWallet* pwallet = nullptr;
-    std::shared_ptr<CWallet> wallet;
-    std::unique_ptr<ReserveDestination> reservedest;
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet;
 
     if (needPoS) {
-        wallet = GetWalletForJSONRPCRequest(request);
-        if (!wallet) {
+        interfaces::StakingSupport* support = node.staking_support;
+        if (!support) {
+            throw JSONRPCError(RPC_METHOD_NOT_FOUND,
+                "Wallet support not compiled in; cannot create proof-of-stake blocks.");
+        }
+        staking_wallet = support->getStakingWalletForRequest(request);
+        if (!staking_wallet) {
             throw JSONRPCError(RPC_METHOD_NOT_FOUND,
                 "Wallet required for PoS block generation. Load a wallet first.");
         }
-        pwallet = wallet.get();
 
-        OutputType output_type = pwallet->m_default_address_type;
-        reservedest = std::make_unique<ReserveDestination>(pwallet, output_type);
         CTxDestination dest;
         std::string dest_error;
-        {
-            LOCK(pwallet->cs_wallet);
-            if (!reservedest->GetReservedDestination(dest, true, dest_error))
-                throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, dest_error);
-        }
+        if (!staking_wallet->reserveDestination(dest, dest_error))
+            throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, dest_error);
 
         CScript scriptPubKey = GetScriptForDestination(dest);
         bool fPoSCancel = false;
         {
-            LOCK(pwallet->cs_wallet);
+            auto wallet_lock = staking_wallet->lock();
             CTxMemPool empty_mempool;
-            auto staking_wallet = MakeStakingWallet(wallet);
             auto blocktemplate = BlockAssembler(
                 chainman.ActiveChainstate(), empty_mempool, chainparams)
                 .CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
@@ -677,15 +676,15 @@ static RPCHelpMan generateblock()
     uint256 block_hash;
     if (needPoS) {
         if (block.IsProofOfStake()) {
-            LOCK(pwallet->cs_wallet);
-            if (!SignBlock(block, *pwallet))
+            auto wallet_lock = staking_wallet->lock();
+            if (!staking_wallet->signBlock(block))
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to sign PoS block");
         }
         auto shared_pblock = std::make_shared<const CBlock>(block);
         if (!chainman.ProcessNewBlock(chainparams, shared_pblock, true, nullptr))
             throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
         block_hash = block.GetHash();
-        reservedest->KeepDestination();
+        staking_wallet->keepDestination();
     } else {
         uint64_t max_tries{DEFAULT_MAX_TRIES};
         unsigned int extra_nonce{0};
@@ -775,20 +774,21 @@ static RPCHelpMan getstakinginfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
 
-    CChainParams chainparams(Params());
     const Consensus::Params params = Params().GetConsensus();
 
-    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    interfaces::StakingSupport* support = GetStakingSupport(request);
+    if (!support) return NullUniValue;
+    std::unique_ptr<interfaces::StakingWallet> pwallet = support->getStakingWalletForRequest(request);
     if (!pwallet) return NullUniValue;
 
     // Make sure the results are valid at least up to the most recent block
     // the user could have gotten from another RPC command prior to now
-    pwallet->BlockUntilSyncedToCurrentChain();
+    pwallet->blockUntilSyncedToCurrentChain();
 
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
-    int64_t nLastCoinStakeSearchInterval = pwallet->GetLastCoinStakeSearchInterval();
+    int64_t nLastCoinStakeSearchInterval = pwallet->getLastCoinStakeSearchInterval();
 
-    GetStakeWeight(pwallet.get(), nAverageWeight, nTotalWeight, chainparams.GetConsensus());
+    pwallet->getStakeWeight(nAverageWeight, nTotalWeight);
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     const CTxMemPool& mempool = EnsureMemPool(node);
@@ -1145,30 +1145,28 @@ static RPCHelpMan getblocktemplate()
             // Must release cs_main before acquiring cs_wallet to avoid deadlock
             LEAVE_CRITICAL_SECTION(cs_main);
             {
-                std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
-                if (!wallet) {
+                interfaces::StakingSupport* support = EnsureAnyNodeContext(request.context).staking_support;
+                if (!support) {
+                    ENTER_CRITICAL_SECTION(cs_main);
+                    throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Wallet support not compiled in; cannot create proof-of-stake blocks");
+                }
+                std::unique_ptr<interfaces::StakingWallet> staking_wallet = support->getStakingWalletForRequest(request);
+                if (!staking_wallet) {
                     ENTER_CRITICAL_SECTION(cs_main);
                     throw JSONRPCError(RPC_WALLET_NOT_FOUND, "Wallet not found for PoS block creation");
                 }
 
-                OutputType output_type = wallet->m_default_address_type;
-                ReserveDestination reservedest(wallet.get(), output_type);
                 CTxDestination dest;
                 std::string strError;
-
-                {
-                    LOCK(wallet->cs_wallet);
-                    if (!reservedest.GetReservedDestination(dest, true, strError)) {
-                        ENTER_CRITICAL_SECTION(cs_main);
-                        throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, strError);
-                    }
+                if (!staking_wallet->reserveDestination(dest, strError)) {
+                    ENTER_CRITICAL_SECTION(cs_main);
+                    throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, strError);
                 }
 
                 CScript scriptPubKey = GetScriptForDestination(dest);
                 bool fPoSCancel = false;
                 {
-                    LOCK(wallet->cs_wallet);
-                    auto staking_wallet = MakeStakingWallet(wallet);
+                    auto wallet_lock = staking_wallet->lock();
                     pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
                 }
 
@@ -1181,7 +1179,7 @@ static RPCHelpMan getblocktemplate()
                 }
 
                 // Keep the reserved destination since we're using it for the template
-                reservedest.KeepDestination();
+                staking_wallet->keepDestination();
             }
             ENTER_CRITICAL_SECTION(cs_main);
         } else {
