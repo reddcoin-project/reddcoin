@@ -25,6 +25,7 @@ namespace interfaces {
 class Chain;
 class ChainClient;
 class Init;
+class StakingSupport;
 class WalletClient;
 } // namespace interfaces
 
@@ -55,6 +56,11 @@ struct NodeContext {
     //! Reference to chain client that should used to load or create wallets
     //! opened by the gui.
     interfaces::WalletClient* wallet_client{nullptr};
+    //! Access to the loaded wallets' staking capability, used by the staker,
+    //! the block assembler and the mining RPCs. Set by WalletInit::Construct(),
+    //! so it stays null in a --disable-wallet build and every staking entry
+    //! point degrades to "wallet support not compiled in".
+    interfaces::StakingSupport* staking_support{nullptr};
     std::unique_ptr<CScheduler> scheduler;
     std::function<void()> rpc_interruption_point = [] {};
     std::unique_ptr<CStakeman> stakeman;

@@ -49,6 +49,7 @@
 #include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
+#include <wallet/coinselection.h> // For CInputCoin, see NodeImpl::getStakeWeight
 #include <warnings.h>
 
 #if defined(HAVE_CONFIG_H)
@@ -259,7 +260,16 @@ public:
     }
     bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t& nTotalWeight) override
     {
-      return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);
+      // Translate to the wallet-free boundary type. This method, and the
+      // CInputCoin it leaks into interfaces::Node, are removed once the GUI
+      // asks its wallet for the weight directly instead of routing the coin
+      // set back through the node.
+      std::vector<interfaces::StakeCoin> coins;
+      coins.reserve(setCoins.size());
+      for (const CInputCoin& coin : setCoins) {
+          coins.push_back({coin.outpoint, coin.txout.nValue});
+      }
+      return GetStakeWeight(coins, nAverageWeight, nTotalWeight);
     }
     void setNodeStakingActive(bool active) override
     {

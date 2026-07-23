@@ -7,25 +7,22 @@
 #ifndef BITCOIN_POS_STAKE_H
 #define BITCOIN_POS_STAKE_H
 
-#include <consensus/params.h>
-#include <wallet/wallet.h>
+#include <interfaces/staking.h>
 
-class CChainState;
+#include <stdint.h>
+#include <vector>
 
 // logging defaults
 static const bool DEFAULT_PRINTCOINSTAKE = false;
 
-bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t& nTotalWeight, const Consensus::Params& consensusParams);
-bool GetStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t& nTotalWeight);
-bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams);
-
-// Recompute a coinstake's reward outputs to include the block's transaction fees
-// and re-sign it. CreateCoinStake builds the coinstake before the block's fees
-// are known (fees=0); the block assembler calls this after addPackageTxs so the
-// coinstake actually collects the fees, split 92/8, matching the validator's
-// fee-inclusive reward in ConnectBlock. Only output amounts and signatures
-// change; the kernel/inputs/nTime are untouched.
-bool FinalizeCoinStakeReward(const CWallet* pwallet, CChainState* chainstate, CMutableTransaction& txCoinStake, const CAmount& nFees, const Consensus::Params& consensusParams);
+// Sum the coin-age weight of a set of stakeable coins.
+//
+// Chain-side only: it reads each coin's originating block header through the
+// transaction index, so it belongs to libbitcoin_server and takes the
+// wallet-free interfaces::StakeCoin rather than CInputCoin. The wallet-side
+// staking operations that used to live here (CreateCoinStake,
+// FinalizeCoinStakeReward, GetStakeWeight over a wallet) are now declared in
+// src/wallet/staking.h.
+bool GetStakeWeight(const std::vector<interfaces::StakeCoin>& coins, uint64_t& nAverageWeight, uint64_t& nTotalWeight);
 
 #endif // BITCOIN_POS_STAKE_H
-

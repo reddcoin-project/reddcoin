@@ -44,6 +44,7 @@
 #include <validationinterface.h>
 #include <warnings.h>
 #include <wallet/rpcwallet.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 
 #include <memory>

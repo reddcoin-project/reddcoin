@@ -42,6 +42,7 @@
 #include <validation.h>
 #include <validationinterface.h>
 #include <wallet/coincontrol.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 #include <walletinitinterface.h>

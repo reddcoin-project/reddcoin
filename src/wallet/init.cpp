@@ -20,6 +20,7 @@
 #include <wallet/bdb.h>
 #endif
 #include <wallet/coincontrol.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 #include <walletinitinterface.h>
 
@@ -146,4 +147,9 @@ void WalletInit::Construct(NodeContext& node) const
     auto wallet_client = interfaces::MakeWalletClient(*node.chain, args);
     node.wallet_client = wallet_client.get();
     node.chain_clients.emplace_back(std::move(wallet_client));
+
+    // Hand the node the only implementation of the staking interfaces. Nothing
+    // registers it in a --disable-wallet build, where this file is not compiled
+    // and DummyWalletInit::Construct() runs instead.
+    node.staking_support = &GetWalletStakingSupport();
 }

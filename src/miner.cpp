@@ -46,6 +46,7 @@
 #include <versionbits.h>
 #include <wallet/coincontrol.h>
 #include <wallet/spend.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 #include <warnings.h>
 
