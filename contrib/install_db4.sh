@@ -54,7 +54,10 @@ http_get() {
   if [ -f "${2}" ]; then
     echo "File ${2} already exists; not downloading again"
   elif check_exists curl; then
-    curl --insecure --retry 5 "${1}" -o "${2}"
+    # --location: follow HTTP redirects (e.g. the BerkeleyDB tarball host), so a
+    # redirect body is not saved in place of the file and then failed by the
+    # sha256 check. wget, the fallback below, follows redirects by default.
+    curl --insecure --location --retry 5 "${1}" -o "${2}"
   else
     wget --no-check-certificate "${1}" -O "${2}"
   fi
@@ -221,9 +224,13 @@ EOF
 # The packaged config.guess and config.sub are ancient (2009) and can cause build issues.
 # Replace them with modern versions.
 # See https://github.com/bitcoin/bitcoin/issues/16064
-CONFIG_GUESS_URL='https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
+# Fetch from savannah's cgit "plain" endpoint. The older gitweb blob_plain URLs
+# now 301-redirect to a gitweb. subdomain that is slow and returns HTTP errors
+# (the download saved the redirect body, failing the sha256 check). cgit serves
+# the raw file directly (HTTP 200); the pinned commit and hashes are unchanged.
+CONFIG_GUESS_URL='https://git.savannah.gnu.org/cgit/config.git/plain/config.guess?id=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
 CONFIG_GUESS_HASH='2d1ff7bca773d2ec3c6217118129220fa72d8adda67c7d2bf79994b3129232c1'
-CONFIG_SUB_URL='https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
+CONFIG_SUB_URL='https://git.savannah.gnu.org/cgit/config.git/plain/config.sub?id=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
 CONFIG_SUB_HASH='3a4befde9bcdf0fdb2763fc1bfa74e8696df94e1ad7aac8042d133c8ff1d2e32'
 
 rm -f "dist/config.guess"
