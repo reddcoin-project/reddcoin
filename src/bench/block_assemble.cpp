@@ -39,7 +39,7 @@ static void AssembleBlock(benchmark::Bench& bench)
         tx.vin.back().scriptWitness = witness;
         tx.vout.emplace_back(1337, P2WSH_OP_TRUE);
         if (NUM_BLOCKS - b >= COINBASE_MATURITY)
-            txs.at(b) = MakeTransactionRef(tx);
+            txs.push_back(MakeTransactionRef(tx));
     }
     {
         LOCK(::cs_main); // Required for ::AcceptToMemoryPool.
