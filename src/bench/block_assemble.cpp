@@ -16,6 +16,7 @@
 #include <txmempool.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <vector>
 
 static void AssembleBlock(benchmark::Bench& bench)
@@ -29,8 +30,13 @@ static void AssembleBlock(benchmark::Bench& bench)
     CScriptWitness witness;
     witness.stack.push_back(WITNESS_STACK_ELEM_OP_TRUE);
 
-    // Collect some loose transactions that spend the coinbases of our mined blocks
-    const int NUM_BLOCKS{200};
+    // Collect some loose transactions that spend the coinbases of our mined blocks.
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest); a PoW CreateNewBlock
+    // above that height is rejected with "pow-ended". MineBlock advances the tip and
+    // the benchmarked PrepareBlock assembles one more block on top of it, so cap the
+    // mined count at nLastPowHeight - 1 to keep every template within the PoW range.
+    // Chains where PoW does not end early (nLastPowHeight is large) still mine 200.
+    const int NUM_BLOCKS{std::min(200, chainparams.GetConsensus().nLastPowHeight - 1)};
     const int COINBASE_MATURITY = chainparams.GetConsensus().GetCoinbaseMaturity();
     std::vector<CTransactionRef> txs;
     for (int b{0}; b < NUM_BLOCKS; ++b) {
