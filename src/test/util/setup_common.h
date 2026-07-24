@@ -116,7 +116,11 @@ class CScript;
  * (89 PoW + 11 PoS). Enables txindex for PoS staking support.
  */
 struct TestChain100Setup : public TestingSetup {
-    TestChain100Setup();
+    // extra_args are appended after the mandatory -txindex=1 (PoS staking needs
+    // the tx index). Defaulted so BOOST_FIXTURE_TEST_CASE default-constructs it,
+    // and so MakeNoLogFileContext<TestChain100Setup>() can pass -nodebuglogfile.
+    explicit TestChain100Setup(const std::string& chain_name = CBaseChainParams::REGTEST,
+                               const std::vector<const char*>& extra_args = {});
 
     /**
      * Create a new block with just given transactions, coinbase paying to
