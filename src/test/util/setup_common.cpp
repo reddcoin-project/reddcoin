@@ -216,8 +216,12 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     }
 }
 
-TestChain100Setup::TestChain100Setup()
-    : TestingSetup(CBaseChainParams::REGTEST, {"-txindex=1"})
+TestChain100Setup::TestChain100Setup(const std::string& chain_name, const std::vector<const char*>& extra_args)
+    : TestingSetup(chain_name, [&extra_args] {
+          std::vector<const char*> args{"-txindex=1"};
+          args.insert(args.end(), extra_args.begin(), extra_args.end());
+          return args;
+      }())
 {
     // Set mock time to be after genesis block time
     SetMockTime(Params().GenesisBlock().nTime + 1);

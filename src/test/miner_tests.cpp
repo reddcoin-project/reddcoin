@@ -9,6 +9,7 @@
 #include <consensus/tx_verify.h>
 #include <miner.h>
 #include <policy/policy.h>
+#include <pos/signer.h>
 #include <pow.h>
 #include <script/standard.h>
 #include <txmempool.h>
@@ -554,6 +555,35 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     TestPackageSelection(chainparams, scriptPubKey, txFirst);
 
     fCheckpointsEnabled = true;
+}
+
+// ReddCoin: once PoW ends (consensus.nLastPowHeight) blocks are produced by
+// staking. TestChain100Setup pre-stakes into the PoS phase (89 PoW + 11 PoS), so
+// the tip is already past nLastPowHeight; assemble one more block through the real
+// CreateNewBlock -> coinstake -> SignBlock path and assert it is a valid, signed
+// proof-of-stake block that connects.
+BOOST_FIXTURE_TEST_CASE(CreateNewBlock_PoS_validity, TestChain100Setup)
+{
+    const int nLastPowHeight{Params().GetConsensus().nLastPowHeight};
+    const int start_height{m_node.chainman->ActiveChain().Height()};
+    BOOST_CHECK_GT(start_height, nLastPowHeight);
+
+    // Advance mocktime so the coinstake kernel search has a non-empty window,
+    // matching how stakeBlocks() advances time between blocks.
+    SetMockTime(GetTime() + 60);
+
+    const CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+    const CBlock block{CreateAndProcessPoSBlock(/*txns=*/{}, scriptPubKey, m_wallet.get())};
+
+    // The chain advanced by one proof-of-stake block.
+    BOOST_CHECK_EQUAL(m_node.chainman->ActiveChain().Height(), start_height + 1);
+    BOOST_CHECK(block.IsProofOfStake());
+    BOOST_REQUIRE_GE(block.vtx.size(), 2U);
+    BOOST_CHECK(block.vtx[1]->IsCoinStake());  // coinstake sits at index 1
+    BOOST_CHECK(!block.vchBlockSig.empty());   // the block was signed
+    BOOST_CHECK(CheckBlockSignature(block));    // and the signature verifies
+
+    SetMockTime(0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
