@@ -49,7 +49,7 @@ def parse_conf(conf_path):
     section = None
     if not conf_path or not os.path.exists(conf_path):
         return {}
-    with open(conf_path) as f:
+    with open(conf_path, encoding="utf8") as f:
         for raw in f:
             line = raw.strip()
             if not line or line.startswith("#"):
@@ -77,7 +77,7 @@ def resolve_auth(args):
     # Fall back to cookie auth.
     cookie = Path(args.datadir) / ".cookie"
     if cookie.exists():
-        token = base64.b64encode(cookie.read_text().strip().encode()).decode()
+        token = base64.b64encode(cookie.read_text(encoding="utf8").strip().encode()).decode()
         return "Basic " + token, f"cookie ({cookie})"
     sys.exit(
         "No RPC credentials found. Pass --rpcuser/--rpcpassword, set them in "
@@ -219,7 +219,7 @@ def main():
         print(f"{height:>10}  {size:>10}  {bh}")
 
     if corpus is not None:
-        (corpus / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        (corpus / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf8")
         print(f"\nSaved {len(manifest)} raw blocks + manifest.json to {corpus}")
 
     if args.dump and topn:
