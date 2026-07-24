@@ -199,6 +199,9 @@ CreateAndActivateUTXOSnapshot(NodeContext& node, const fs::path root, F malleati
 }
 
 //! Test basic snapshot activation.
+//! Builds the chain past the PoW cutoff with stakeBlocks(), which needs a
+//! wallet; excluded from a --disable-wallet build.
+#ifdef ENABLE_WALLET
 BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, TestChain100Setup)
 {
     ChainstateManager& chainman = *Assert(m_node.chainman);
@@ -387,5 +390,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, TestChain100Setup)
         *chainman.ActiveChainstate().m_from_snapshot_blockhash,
         loaded_snapshot_blockhash);
 }
+#endif // ENABLE_WALLET
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -53,6 +53,9 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
     // Check that CoinStatsIndex updates with new blocks.
     coin_stats_index.LookUpStats(block_index, coin_stats);
 
+#ifdef ENABLE_WALLET
+    // Extending the chain past nLastPowHeight needs a PoS block, which needs a
+    // wallet; skip this portion in a --disable-wallet build.
     const CScript script_pub_key{CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG};
     std::vector<CMutableTransaction> noTxns;
     // Use PoS block since we're past PoW end (100 blocks)
@@ -70,6 +73,7 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
     coin_stats_index.LookUpStats(new_block_index, new_coin_stats);
 
     BOOST_CHECK(block_index != new_block_index);
+#endif // ENABLE_WALLET
 
     // Shutdown sequence (c.f. Shutdown() in init.cpp)
     coin_stats_index.Stop();

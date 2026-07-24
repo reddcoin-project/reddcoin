@@ -9,7 +9,9 @@
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
+#ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
+#endif // ENABLE_WALLET
 
 #include <boost/test/unit_test.hpp>
 
@@ -57,7 +59,10 @@ BOOST_FIXTURE_TEST_CASE(txindex_initial_sync, TestChain100Setup)
 
     // Check that new transactions in new blocks make it into the index.
     // Note: TestChain100Setup creates blocks up to height 100, with PoW ending at block 89
-    // So we must use PoS blocks for additional blocks
+    // So we must use PoS blocks for additional blocks. Extending the chain past
+    // nLastPowHeight needs a staking wallet, so this is skipped in a
+    // --disable-wallet build.
+#ifdef ENABLE_WALLET
     for (int i = 0; i < 10; i++) {
         CScript coinbase_script_pub_key = GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()));
         std::vector<CMutableTransaction> no_txns;
@@ -91,6 +96,7 @@ BOOST_FIXTURE_TEST_CASE(txindex_initial_sync, TestChain100Setup)
         // Increment mock time by 60 seconds to allow coins to gain stake age for next block
         SetMockTime(GetTime() + 60);
     }
+#endif // ENABLE_WALLET
 
     // shutdown sequence (c.f. Shutdown() in init.cpp)
     txindex.Stop();

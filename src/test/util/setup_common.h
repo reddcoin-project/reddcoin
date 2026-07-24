@@ -129,19 +129,24 @@ struct TestChain100Setup : public TestingSetup {
     CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
                                  const CScript& scriptPubKey);
 
+#ifdef ENABLE_WALLET
     /**
      * Create a new Proof-of-Stake block with coinstake and given transactions.
-     * Requires mature coins to stake from m_coinbase_txns.
+     * Requires mature coins to stake from m_coinbase_txns. Wallet-only: a
+     * --disable-wallet build cannot produce coinstakes.
      */
     CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
                                      const CScript& scriptPubKey,
                                      const std::shared_ptr<CWallet>& pwallet);
+#endif // ENABLE_WALLET
 
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);
 
+#ifdef ENABLE_WALLET
     //! Stake a series of PoS blocks using coinbaseKey
     void stakeBlocks(int num_blocks);
+#endif // ENABLE_WALLET
 
     /**
      * Create a transaction and submit to the mempool.
@@ -166,8 +171,10 @@ struct TestChain100Setup : public TestingSetup {
 
     std::vector<CTransactionRef> m_coinbase_txns; // For convenience, coinbase transactions
     CKey coinbaseKey; // private/public key needed to spend coinbase transactions
+#ifdef ENABLE_WALLET
     std::shared_ptr<CWallet> m_wallet; // Staking wallet kept alive for PoS operations
     std::unique_ptr<interfaces::Handler> m_wallet_notifications; // Keep wallet notifications active
+#endif // ENABLE_WALLET
 };
 
 /**

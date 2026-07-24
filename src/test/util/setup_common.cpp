@@ -41,10 +41,12 @@
 #include <util/vector.h>
 #include <validation.h>
 #include <validationinterface.h>
+#ifdef ENABLE_WALLET
 #include <wallet/coincontrol.h>
 #include <wallet/staking.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
+#endif // ENABLE_WALLET
 #include <walletinitinterface.h>
 
 #include <functional>
@@ -257,6 +259,7 @@ TestChain100Setup::TestChain100Setup(const std::string& chain_name, const std::v
     // In regtest, nStakeMinAge = 10 seconds, but we add extra time for safety
     SetMockTime(GetTime() + 600);  // Add 10 minutes of extra age
 
+#ifdef ENABLE_WALLET
     this->stakeBlocks(11);  // PoS blocks 90-100 inclusive (11 blocks)
 
     {
@@ -267,6 +270,15 @@ TestChain100Setup::TestChain100Setup(const std::string& chain_name, const std::v
         }
         assert(actual_height == 100);
     }
+#else
+    // A --disable-wallet build cannot stake (coinstake creation needs a wallet),
+    // so the chain stops at the last PoW block. Tests that need the PoS tail are
+    // themselves guarded out under ENABLE_WALLET.
+    {
+        LOCK(::cs_main);
+        assert(m_node.chainman->ActiveChain().Height() == 89);
+    }
+#endif // ENABLE_WALLET
 }
 
 void TestChain100Setup::mineBlocks(int num_blocks)
@@ -283,6 +295,7 @@ void TestChain100Setup::mineBlocks(int num_blocks)
     }
 }
 
+#ifdef ENABLE_WALLET
 void TestChain100Setup::stakeBlocks(int num_blocks)
 {
     CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
@@ -371,6 +384,7 @@ void TestChain100Setup::stakeBlocks(int num_blocks)
 
     // Keep wallet alive for subsequent PoS operations - it will be cleaned up in destructor
 }
+#endif // ENABLE_WALLET
 
 CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
 {
@@ -408,6 +422,7 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
     return block;
 }
 
+#ifdef ENABLE_WALLET
 CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey, const std::shared_ptr<CWallet>& pwallet)
 {
     const CChainParams& chainparams = Params();
@@ -481,6 +496,7 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
 
     return *pblock;
 }
+#endif // ENABLE_WALLET
 
 
 CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(CTransactionRef input_transaction,
@@ -534,11 +550,13 @@ CMutableTransaction TestChain100Setup::CreateValidMempoolTransaction(CTransactio
 
 TestChain100Setup::~TestChain100Setup()
 {
+#ifdef ENABLE_WALLET
     // Clean up wallet if it exists
     if (m_wallet) {
         RemoveWallet(m_wallet, std::nullopt);
         m_wallet.reset();
     }
+#endif // ENABLE_WALLET
 
     // Stop and clean up txindex
     if (g_txindex) {
