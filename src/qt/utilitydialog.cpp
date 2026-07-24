@@ -16,7 +16,7 @@
 
 #include <clientversion.h>
 #include <init.h>
-#include <rpc/server.h>
+#include <interfaces/node.h>
 #include <univalue.h>
 #include <util/system.h>
 #include <util/strencodings.h>
@@ -32,7 +32,7 @@
 #include <QVBoxLayout>
 
 /** "Help message" or "About" dialog box */
-HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networkStyle, bool about, bool checkUpdates) :
+HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networkStyle, bool about, bool checkUpdates, interfaces::Node* node) :
     QDialog(parent, GUIUtil::dialog_flags),
     ui(new Ui::HelpMessageDialog)
 {
@@ -77,9 +77,12 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             text = "Checking for updates. Please wait...";
             ui->aboutMessage->setText(text);
 
-            // Get checkforupdatesinfo from rpc server
+            // Let the node perform the update check rather than reaching into
+            // server code from the GUI.
             UniValue result(UniValue::VOBJ);
-            checkforupdatesinfo(result);
+            if (node) {
+                result = node->checkForUpdates();
+            }
 
             //json_spirit::Object jsonObject = result.get_obj();
             QString localversion = "";

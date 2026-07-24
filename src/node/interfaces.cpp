@@ -292,6 +292,12 @@ public:
     }
     bool getNetworkActive() override { return m_context->connman && m_context->connman->GetNetworkActive(); }
     CFeeRate getDustRelayFee() override { return ::dustRelayFee; }
+    UniValue checkForUpdates() override
+    {
+        UniValue result(UniValue::VOBJ);
+        checkforupdatesinfo(result);
+        return result;
+    }
     UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) override
     {
         JSONRPCRequest req;

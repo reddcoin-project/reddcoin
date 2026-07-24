@@ -38,7 +38,6 @@
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
-#include <rpc/server.h>
 #include <univalue.h>
 #include <util/system.h>
 #include <util/translation.h>
@@ -271,13 +270,11 @@ BitcoinGUI::~BitcoinGUI()
 
 void BitcoinGUI::checkUpdates()
 {
-#ifdef ENABLE_WALLET
-
     QSettings settings;
     if (settings.value("bCheckGithub").toBool()) {
-        // Get checkforupdatesinfo from rpc server
-        UniValue result(UniValue::VOBJ);
-        checkforupdatesinfo(result);
+        // Let the node perform the update check rather than reaching into
+        // server code from the GUI.
+        UniValue result = m_node.checkForUpdates();
 
         std::string localversion = "";
         std::string remoteversion = "";
@@ -305,7 +302,6 @@ void BitcoinGUI::checkUpdates()
             labelCheckUpdate->setText(QString(""));
         }
     }
-#endif
 }
 
 void BitcoinGUI::createActions()
@@ -1047,7 +1043,7 @@ void BitcoinGUI::showUpdatesClicked()
     if(!clientModel)
         return;
 
-    HelpMessageDialog dlg(this, m_network_style, false, true);
+    HelpMessageDialog dlg(this, m_network_style, false, true, &m_node);
     dlg.exec();
 }
 

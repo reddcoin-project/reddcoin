@@ -11,6 +11,10 @@
 
 class NetworkStyle;
 
+namespace interfaces {
+class Node;
+} // namespace interfaces
+
 QT_BEGIN_NAMESPACE
 class QMainWindow;
 QT_END_NAMESPACE
@@ -25,7 +29,9 @@ class HelpMessageDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates);
+    //! node is only needed when checkUpdates is set, since the update check is
+    //! performed by the node rather than by the GUI.
+    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates, interfaces::Node* node = nullptr);
     ~HelpMessageDialog();
 
     void printToConsole();
