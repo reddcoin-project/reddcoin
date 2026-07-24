@@ -4,6 +4,7 @@
 
 #include <bench/bench.h>
 #include <chainparams.h>
+#include <interfaces/staking.h>
 #include <miner.h>
 #include <script/script.h>
 #include <sync.h>
@@ -12,10 +13,12 @@
 #include <util/strencodings.h>
 #include <util/time.h>
 #include <validation.h>
+#include <wallet/staking.h>
 #include <wallet/wallet.h>
 
 #include <cassert>
 #include <cstdint>
+#include <memory>
 
 // ReddCoin: benchmark proof-of-stake block assembly, the counterpart to the
 // proof-of-work AssembleBlock benchmark. TestChain100Setup pre-stakes 11 PoS
@@ -24,8 +27,8 @@
 static void AssemblePoSBlock(benchmark::Bench& bench)
 {
     const auto test_setup = MakeNoLogFileContext<const TestChain100Setup>();
-    CWallet* const pwallet = test_setup->m_wallet.get();
-    assert(pwallet);
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet = MakeStakingWallet(test_setup->m_wallet);
+    assert(staking_wallet);
 
     const CChainParams& chainparams = Params();
     CChainState& chainstate = test_setup->m_node.chainman->ActiveChainstate();
@@ -45,8 +48,8 @@ static void AssemblePoSBlock(benchmark::Bench& bench)
         t += 64;
         SetMockTime(t);
         bool fPoSCancel{false};
-        LOCK(pwallet->cs_wallet);
-        BlockAssembler{chainstate, mempool, chainparams}.CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+        auto wallet_lock = staking_wallet->lock();
+        BlockAssembler{chainstate, mempool, chainparams}.CreateNewBlock(scriptPubKey, staking_wallet.get(), &fPoSCancel);
     });
 
     SetMockTime(0);

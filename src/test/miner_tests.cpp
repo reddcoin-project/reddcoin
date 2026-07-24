@@ -561,7 +561,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 // staking. TestChain100Setup pre-stakes into the PoS phase (89 PoW + 11 PoS), so
 // the tip is already past nLastPowHeight; assemble one more block through the real
 // CreateNewBlock -> coinstake -> SignBlock path and assert it is a valid, signed
-// proof-of-stake block that connects.
+// proof-of-stake block that connects. Needs a staking wallet, so it is excluded
+// from a --disable-wallet build.
+#ifdef ENABLE_WALLET
 BOOST_FIXTURE_TEST_CASE(CreateNewBlock_PoS_validity, TestChain100Setup)
 {
     const int nLastPowHeight{Params().GetConsensus().nLastPowHeight};
@@ -573,7 +575,7 @@ BOOST_FIXTURE_TEST_CASE(CreateNewBlock_PoS_validity, TestChain100Setup)
     SetMockTime(GetTime() + 60);
 
     const CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
-    const CBlock block{CreateAndProcessPoSBlock(/*txns=*/{}, scriptPubKey, m_wallet.get())};
+    const CBlock block{CreateAndProcessPoSBlock(/*txns=*/{}, scriptPubKey, m_wallet)};
 
     // The chain advanced by one proof-of-stake block.
     BOOST_CHECK_EQUAL(m_node.chainman->ActiveChain().Height(), start_height + 1);
@@ -585,5 +587,6 @@ BOOST_FIXTURE_TEST_CASE(CreateNewBlock_PoS_validity, TestChain100Setup)
 
     SetMockTime(0);
 }
+#endif // ENABLE_WALLET
 
 BOOST_AUTO_TEST_SUITE_END()
