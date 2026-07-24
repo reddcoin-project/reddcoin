@@ -946,6 +946,26 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
     // After rescan completes, sync with validation interface queue to process any pending notifications
     SyncWithValidationInterfaceQueue();
 
+    // mempool_tx was broadcast before this wallet registered for notifications.
+    // Its transactionAddedToMempool notification is dispatched asynchronously, so
+    // whether the wallet is registered in time to receive it depends on when the
+    // scheduler thread drains the queue. That race made this case fail
+    // intermittently on slower runners, with mempool_tx missing from mapWallet.
+    // Request the current mempool contents explicitly instead, exactly as
+    // CWallet::postInitProcess does when a wallet is loaded for real (this test
+    // builds the CWallet directly, so that step is otherwise skipped). Delivery is
+    // synchronous, and re-notifying an already added transaction is expected and
+    // handled by AddToWallet.
+    //
+    // Hold cs_wallet across the call like postInitProcess does. requestMempoolTransactions
+    // takes cs_main internally, so acquiring it here first keeps the cs_wallet ->
+    // cs_main order this test already uses above, instead of inverting it. cs_wallet
+    // is recursive, so the nested lock in transactionAddedToMempool is fine.
+    {
+        LOCK(wallet->cs_wallet);
+        m_node.chain->requestMempoolTransactions(*wallet);
+    }
+
     // Verify both target transactions are in the wallet
     {
         LOCK(wallet->cs_wallet);
