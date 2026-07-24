@@ -1424,7 +1424,10 @@ void BitcoinGUI::changeEvent(QEvent *e)
         receiveCoinsAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/receiving_addresses")));
         historyAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/history")));
         mintingAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/staking")));
-        imageLogo->setPixmap(createLogo());
+        // imageLogo lives on the wallet toolbar, which is only built when
+        // walletFrame exists; it is null in a --disable-wallet GUI. Match the
+        // guarded use in updateTheme().
+        if (imageLogo) imageLogo->setPixmap(createLogo());
     }
 
     QMainWindow::changeEvent(e);
