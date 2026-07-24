@@ -22,7 +22,7 @@ struct TestBlockAndIndex {
 
     TestBlockAndIndex()
     {
-        CDataStream stream(benchmark::data::block413567, SER_NETWORK, PROTOCOL_VERSION);
+        CDataStream stream(benchmark::data::block4953811, SER_NETWORK, PROTOCOL_VERSION);
         char a = '\0';
         stream.write(&a, 1); // Prevent compaction
 
@@ -30,7 +30,7 @@ struct TestBlockAndIndex {
 
         blockHash = block.GetHash();
         blockindex.phashBlock = &blockHash;
-        blockindex.nBits = 403014710;
+        blockindex.nBits = 470004588;
     }
 };
 
