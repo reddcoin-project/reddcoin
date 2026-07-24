@@ -13,9 +13,7 @@
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
-#ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
-#endif // ENABLE_WALLET
 
 #include <boost/test/unit_test.hpp>
 
@@ -27,8 +25,8 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
 BOOST_AUTO_TEST_SUITE(txvalidationcache_tests)
 
 // Every case here confirms transactions in PoS blocks, which needs a staking
-// wallet, so the whole suite is excluded from a --disable-wallet build.
-#ifdef ENABLE_WALLET
+// wallet, so the whole file is compiled only under ENABLE_WALLET (see
+// Makefile.test.include).
 
 // Helper to create and process PoS blocks that may be invalid (for testing)
 // Unlike CreateAndProcessPoSBlock, this doesn't throw if the block is rejected
@@ -494,6 +492,5 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
         BOOST_CHECK_EQUAL(scriptchecks.size(), 2U);
     }
 }
-#endif // ENABLE_WALLET
 
 BOOST_AUTO_TEST_SUITE_END()
