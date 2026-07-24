@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <bench/bench.h>
+#include <chainparams.h>
 #include <interfaces/chain.h>
 #include <node/context.h>
 #include <test/util/mining.h>
@@ -17,7 +18,7 @@ static void WalletBalance(benchmark::Bench& bench, const bool set_dirty, const b
 {
     const auto test_setup = MakeNoLogFileContext<const TestingSetup>();
 
-    const auto& ADDRESS_WATCHONLY = ADDRESS_BCRT1_UNSPENDABLE;
+    const auto& ADDRESS_WATCHONLY = ADDRESS_RCRT1_UNSPENDABLE;
 
     CWallet wallet{test_setup->m_node.chain.get(), "", CreateMockWalletDatabase()};
     {
@@ -29,7 +30,15 @@ static void WalletBalance(benchmark::Bench& bench, const bool set_dirty, const b
     const std::optional<std::string> address_mine{add_mine ? std::optional<std::string>{getnewaddress(wallet)} : std::nullopt};
     if (add_watchonly) importaddress(wallet, ADDRESS_WATCHONLY);
 
-    for (int i = 0; i < 100; ++i) {
+    // Reddcoin: proof-of-work ends at nLastPowHeight (89 on regtest), so the
+    // setup mines within the PoW range rather than the upstream fixed 200
+    // blocks (which would trip the "pow-ended" consensus check). Each iteration
+    // mines two blocks (one to the mine address, one to the watch-only one);
+    // cap the count below nLastPowHeight. Regtest coinbase maturity is 60, so
+    // this still matures coinbases for both addresses, keeping the
+    // m_mine_trusted / m_watchonly_trusted asserts below valid.
+    const int iters{(Params().GetConsensus().nLastPowHeight - 1) / 2};
+    for (int i = 0; i < iters; ++i) {
         generatetoaddress(test_setup->m_node, address_mine.value_or(ADDRESS_WATCHONLY));
         generatetoaddress(test_setup->m_node, ADDRESS_WATCHONLY);
     }
