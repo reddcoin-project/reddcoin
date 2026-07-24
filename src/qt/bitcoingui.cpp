@@ -1130,7 +1130,11 @@ void BitcoinGUI::gotoLoadPSBT(bool from_clipboard)
 {
     if (walletFrame) walletFrame->gotoLoadPSBT(from_clipboard);
 }
+#endif // ENABLE_WALLET
 
+// The web/social shortcuts just open external URLs; they are declared and wired
+// up unconditionally, so their definitions must be available without wallet
+// support too.
 void BitcoinGUI::openWebReddcoin() {
     QDesktopServices::openUrl(QUrl("https://reddcoin.com"));
 }
@@ -1150,7 +1154,6 @@ void BitcoinGUI::openChatroom() {
 void BitcoinGUI::openForum() {
     QDesktopServices::openUrl(QUrl("https://reddcointalk.org/"));
 }
-#endif // ENABLE_WALLET
 
 void BitcoinGUI::updateNetworkState()
 {
