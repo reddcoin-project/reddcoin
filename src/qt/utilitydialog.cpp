@@ -13,11 +13,11 @@
 
 #include <qt/guiutil.h>
 #include <qt/networkstyle.h>
+#include <qt/updatecheckworker.h>
 
 #include <clientversion.h>
 #include <init.h>
 #include <interfaces/node.h>
-#include <univalue.h>
 #include <util/system.h>
 #include <util/strencodings.h>
 
@@ -77,56 +77,10 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             text = "Checking for updates. Please wait...";
             ui->aboutMessage->setText(text);
 
-            // Let the node perform the update check rather than reaching into
-            // server code from the GUI.
-            UniValue result(UniValue::VOBJ);
-            if (node) {
-                result = node->checkForUpdates();
-            }
-
-            //json_spirit::Object jsonObject = result.get_obj();
-            QString localversion = "";
-            QString remoteversion = "";
-            QString message = "";
-            QString warning = "";
-            QString officialDownloadLink = "";
-            QString errors = "";
-
-            if (result.exists("localversion")) {
-                localversion = QString::fromStdString(result["localversion"].get_str());
-            }
-            if (result.exists("remoteversion")) {
-                remoteversion = QString::fromStdString(result["remoteversion"].get_str());
-            }
-            if (result.exists("message")) {
-                message = QString::fromStdString(result["message"].get_str());
-            }
-            if (result.exists("warning")) {
-                warning = QString::fromStdString(result["warning"].get_str());
-            }
-            if (result.exists("officialDownloadLink")) {
-                officialDownloadLink = QString::fromStdString(result["officialDownloadLink"].get_str());
-            }
-            if (result.exists("error")) {
-                errors = QString::fromStdString(result["error"].get_str());
-            }
-
-            if (!errors.isEmpty()) {
-                text = "<font color = 'red'>Error: </font>";
-                text += errors;
-            } else if (localversion == remoteversion) {
-                text = "Installed version: <b>" + localversion  + "</b><br>";
-                text += message;
-            } else {
-                QString url = "<a href=\""+ officialDownloadLink +"\">"+ officialDownloadLink +"</a>";
-
-                text = "Installed version: <b>" + localversion  + "</b><br>";
-                text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
-                text += "Please download the latest version from our official website <br>(" + url + ").";
-            }
-
-            ui->aboutMessage->setText(text);
-
+            // The node performs a network request for this, so it runs on a
+            // worker thread and showUpdateInfo() fills the dialog in once the
+            // answer arrives. Until then the "please wait" text above stands.
+            if (node) startUpdateCheck(*node);
         }
 
 
@@ -183,8 +137,48 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
     GUIUtil::handleCloseWindowShortcut(this);
 }
 
+void HelpMessageDialog::startUpdateCheck(interfaces::Node& node)
+{
+    UpdateCheckWorker* worker = new UpdateCheckWorker(node);
+    worker->moveToThread(&m_update_check_thread);
+
+    connect(worker, &UpdateCheckWorker::checked, this, &HelpMessageDialog::showUpdateInfo);
+    connect(&m_update_check_thread, &QThread::finished, worker, &UpdateCheckWorker::deleteLater);
+    connect(&m_update_check_thread, &QThread::started, worker, &UpdateCheckWorker::check);
+
+    m_update_check_thread.start();
+}
+
+void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
+{
+    const QString localversion{info.value("localversion").toString()};
+    const QString remoteversion{info.value("remoteversion").toString()};
+    const QString errors{info.value("errors").toString()};
+
+    if (!errors.isEmpty()) {
+        text = "<font color = 'red'>Error: </font>";
+        text += errors;
+    } else if (localversion == remoteversion) {
+        text = "Installed version: <b>" + localversion + "</b><br>";
+        text += info.value("message").toString();
+    } else {
+        const QString link{info.value("officialDownloadLink").toString()};
+        QString url = "<a href=\"" + link + "\">" + link + "</a>";
+
+        text = "Installed version: <b>" + localversion + "</b><br>";
+        text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
+        text += "Please download the latest version from our official website <br>(" + url + ").";
+    }
+
+    ui->aboutMessage->setText(text);
+}
+
 HelpMessageDialog::~HelpMessageDialog()
 {
+    // An in flight request must not outlive the widgets its reply updates.
+    m_update_check_thread.quit();
+    m_update_check_thread.wait();
+
     delete ui;
 }
 

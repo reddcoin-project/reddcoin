@@ -21,6 +21,8 @@
 #include <QMenu>
 #include <QPoint>
 #include <QSystemTrayIcon>
+#include <QThread>
+#include <QVariantMap>
 
 #ifdef Q_OS_MAC
 #include <qt/macos_appnap.h>
@@ -202,6 +204,8 @@ private:
     MintingView* mintingView = nullptr;
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
+    /** Thread the update check runs on, so its network request cannot stall the GUI */
+    QThread m_update_check_thread;
     ModalOverlay* modalOverlay = nullptr;
 
     QMenu* m_network_context_menu = new QMenu(this);
@@ -253,6 +257,8 @@ Q_SIGNALS:
     /** Signal raised when RPC console shown */
     void consoleShown(RPCConsole* console);
     void setPrivacy(bool privacy);
+    /** Ask the update check worker, which lives on its own thread, to run */
+    void updateCheckRequested();
 
 public Q_SLOTS:
     /** Set number of connections shown in the UI */
@@ -333,8 +339,12 @@ public Q_SLOTS:
     /** Show open dialog */
     void openClicked();
 #endif // ENABLE_WALLET
-    /** Check github version */
+    /** Create the update check worker and start the thread it runs on */
+    void startUpdateCheckWorker();
+    /** Start a github version check on the worker thread */
     void checkUpdates();
+    /** Show the outcome of a version check in the status bar */
+    void updateCheckFinished(const QVariantMap& info);
     /** Show configuration dialog */
     void optionsClicked();
     /** Show about dialog with update details*/

@@ -7,6 +7,8 @@
 #define BITCOIN_QT_UTILITYDIALOG_H
 
 #include <QDialog>
+#include <QThread>
+#include <QVariantMap>
 #include <QWidget>
 
 class NetworkStyle;
@@ -38,11 +40,18 @@ public:
     void showOrPrint();
 
 private:
+    /** Create the update check worker and start the thread it runs on */
+    void startUpdateCheck(interfaces::Node& node);
+
     Ui::HelpMessageDialog *ui;
     QString text;
+    /** Thread the update check runs on, so its network request cannot stall the GUI */
+    QThread m_update_check_thread;
 
 private Q_SLOTS:
     void on_okButton_accepted();
+    /** Replace the "please wait" text once the check has an answer */
+    void showUpdateInfo(const QVariantMap& info);
 };
 
 
