@@ -179,6 +179,9 @@ public:
     //! Get dust relay fee.
     virtual CFeeRate getDustRelayFee() = 0;
 
+    //! Version of the TLS library the node is running against.
+    virtual std::string getSslVersion() = 0;
+
     //! Check whether a newer release is available.
     //! The node performs the request to the update server, so callers do not
     //! need to reach into server code themselves. Note that the request is

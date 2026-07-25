@@ -220,6 +220,11 @@ QString ClientModel::formatSubVersion() const
     return QString::fromStdString(strSubVersion);
 }
 
+QString ClientModel::formatSslVersion() const
+{
+    return QString::fromStdString(m_node.getSslVersion());
+}
+
 bool ClientModel::isReleaseVersion() const
 {
     return CLIENT_VERSION_IS_RELEASE;

@@ -5,9 +5,22 @@
 #ifndef BITCOIN_NODE_UPDATE_CHECK_H
 #define BITCOIN_NODE_UPDATE_CHECK_H
 
+#include <string>
+
 class UniValue;
 
 namespace node {
+/**
+ * Version of the TLS library this build is running against, for display and
+ * logging, for example "OpenSSL 3.5.7 30 Sep 2025".
+ *
+ * It lives here because the update check is the only thing in the tree that
+ * uses TLS, and so the only reason the library is linked at all. Reported at
+ * run time rather than from the headers, so a build against a shared library
+ * names what is actually loaded.
+ */
+std::string SslVersion();
+
 /**
  * Ask the release server which version is current and report how it compares
  * with this build.

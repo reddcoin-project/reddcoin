@@ -293,6 +293,7 @@ public:
     }
     bool getNetworkActive() override { return m_context->connman && m_context->connman->GetNetworkActive(); }
     CFeeRate getDustRelayFee() override { return ::dustRelayFee; }
+    std::string getSslVersion() override { return SslVersion(); }
     UniValue checkForUpdates() override
     {
         UniValue result(UniValue::VOBJ);
