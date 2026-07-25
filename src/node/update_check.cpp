@@ -13,12 +13,162 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
 
+#include <chrono>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
 static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
+
+namespace {
+const std::string UPDATE_CHECK_HOST{"api.github.com"};
+
+//! Budget for the whole exchange, from name resolution to the last byte of the
+//! response. The update check is a background nicety, so it gives up rather
+//! than holding anything up for long.
+constexpr std::chrono::seconds UPDATE_CHECK_TIMEOUT{10};
+
+/**
+ * Minimal one-shot HTTPS GET with an overall deadline.
+ *
+ * Boost's synchronous socket calls accept no timeout, which is why every step
+ * here is issued asynchronously and driven by a bounded run of the io_context.
+ * A stalled or unreachable server therefore costs UPDATE_CHECK_TIMEOUT rather
+ * than however long the operating system takes to abandon the connection.
+ */
+class HttpsFetcher
+{
+public:
+    HttpsFetcher(std::string host, std::chrono::steady_clock::duration timeout)
+        : m_host{std::move(host)},
+          m_timeout{timeout},
+          m_ssl_ctx{boost::asio::ssl::context::tls_client},
+          m_stream{m_ioc, m_ssl_ctx}
+    {
+    }
+
+    //! Fetch target and return the response body. Throws std::runtime_error on
+    //! any failure, including timeout and a non-200 status.
+    std::string Get(const std::string& target);
+
+private:
+    //! Pump the io_context until the outstanding operation reports back or the
+    //! deadline passes, then rethrow whatever it reported.
+    void Await(const std::string& what);
+
+    std::string m_host;
+    std::chrono::steady_clock::duration m_timeout;
+    std::chrono::steady_clock::time_point m_deadline{};
+    boost::asio::io_context m_ioc;
+    boost::asio::ssl::context m_ssl_ctx;
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> m_stream;
+    bool m_done{false};
+    boost::system::error_code m_ec{};
+};
+
+void HttpsFetcher::Await(const std::string& what)
+{
+    m_ioc.restart();
+    while (!m_done) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= m_deadline) {
+            // An outstanding asynchronous operation cannot simply be abandoned:
+            // its handler holds references to objects owned by this class. Close
+            // the socket so the operation fails, then let the handler run before
+            // unwinding.
+            boost::system::error_code ignored_error;
+            m_stream.lowest_layer().close(ignored_error);
+            m_ioc.run();
+            throw std::runtime_error("Timed out while " + what);
+        }
+        m_ioc.run_one_for(m_deadline - now);
+    }
+    m_done = false;
+    if (m_ec) throw std::runtime_error("Failed while " + what + ": " + m_ec.message());
+}
+
+std::string HttpsFetcher::Get(const std::string& target)
+{
+    m_deadline = std::chrono::steady_clock::now() + m_timeout;
+
+    boost::asio::ip::tcp::resolver resolver{m_ioc};
+    boost::asio::ip::tcp::resolver::results_type endpoints;
+    resolver.async_resolve(m_host, "https",
+        [&](const boost::system::error_code& ec, const boost::asio::ip::tcp::resolver::results_type& results) {
+            m_ec = ec;
+            endpoints = results;
+            m_done = true;
+        });
+    Await("resolving " + m_host);
+
+    boost::asio::async_connect(m_stream.lowest_layer(), endpoints,
+        [&](const boost::system::error_code& ec, const boost::asio::ip::tcp::endpoint&) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("connecting to " + m_host);
+
+    m_stream.async_handshake(boost::asio::ssl::stream_base::client,
+        [&](const boost::system::error_code& ec) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("performing the TLS handshake with " + m_host);
+
+    boost::asio::streambuf request;
+    std::ostream request_stream(&request);
+    request_stream << "GET " << target << " HTTP/1.1\r\n";
+    request_stream << "Host: " << m_host << "\r\n";
+    request_stream << "User-Agent: " << PACKAGE_NAME << "/" << PACKAGE_VERSION << "\r\n";
+    request_stream << "Accept: */*\r\n";
+    request_stream << "Connection: close\r\n\r\n";
+
+    boost::asio::async_write(m_stream, request,
+        [&](const boost::system::error_code& ec, std::size_t) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("sending the request to " + m_host);
+
+    // The server was asked to close when done, so read to the end of the
+    // stream. Both a clean end of file and a connection dropped without a TLS
+    // shutdown mean the response is complete.
+    boost::asio::streambuf response;
+    boost::asio::async_read(m_stream, response, boost::asio::transfer_all(),
+        [&](const boost::system::error_code& ec, std::size_t) {
+            m_ec = (ec == boost::asio::error::eof || ec == boost::asio::ssl::error::stream_truncated)
+                       ? boost::system::error_code{}
+                       : ec;
+            m_done = true;
+        });
+    Await("reading the response from " + m_host);
+
+    std::ostringstream raw;
+    raw << &response;
+    const std::string str_raw{raw.str()};
+
+    // Status line.
+    const std::string::size_type eol{str_raw.find("\r\n")};
+    if (eol == std::string::npos) throw std::runtime_error("Invalid response");
+    std::istringstream status_stream{str_raw.substr(0, eol)};
+    std::string http_version;
+    unsigned int status_code{0};
+    status_stream >> http_version >> status_code;
+    if (!status_stream || http_version.substr(0, 5) != "HTTP/") {
+        throw std::runtime_error("Invalid response");
+    }
+    if (status_code != 200) {
+        throw std::runtime_error("Response returned with status code " + std::to_string(status_code));
+    }
+
+    // Headers are terminated by a blank line; everything after it is the body.
+    const std::string::size_type body{str_raw.find("\r\n\r\n")};
+    if (body == std::string::npos) throw std::runtime_error("Invalid response");
+    return str_raw.substr(body + 4);
+}
+} // namespace
 
 void node::CheckForUpdates(UniValue& result)
 {
@@ -33,86 +183,11 @@ void node::CheckForUpdates(UniValue& result)
     std::string errors = "";
 
     try {
-        boost::asio::io_service svc;
-        boost::asio::ssl::context ctx(boost::asio::ssl::context::method::sslv23_client);
-        boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssock(svc, ctx);
-        boost::asio::ip::tcp::resolver resolver(svc);
-        boost::asio::ip::tcp::resolver::query query("api.github.com", "https");
-        boost::asio::ip::tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
+        HttpsFetcher fetcher{UPDATE_CHECK_HOST, UPDATE_CHECK_TIMEOUT};
+        const std::string str_response{fetcher.Get(strGithubLink)};
 
-        // Establish a connection.
-        boost::asio::connect(ssock.lowest_layer(), endpoint_iterator);
-        ssock.handshake(boost::asio::ssl::stream_base::handshake_type::client);
-
-        // Send request
-        boost::asio::streambuf request;
-        std::ostream request_stream(&request);
-        request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n"; // note that you can change it if you wish to HTTP/1.0
-        request_stream << "Host: api.github.com\r\n";
-        request_stream << "User-Agent: C/1.0\r\n";
-        request_stream << "Content-Type: application/json; charset=utf-8\r\n";
-        request_stream << "Accept: */*\r\n";
-        request_stream << "Connection: close\r\n\r\n";
-
-        boost::asio::write(ssock, request);
-
-        // Read the response status line. The response streambuf will automatically
-        // grow to accommodate the entire line. The growth may be limited by passing
-        // a maximum size to the streambuf constructor.
-        boost::asio::streambuf response;
-        boost::asio::read_until(ssock, response, "\r\n");
-
-        // Check that response is OK.
-        std::istream response_stream(&response);
-        std::string http_version;
-        response_stream >> http_version;
-        unsigned int status_code;
-        response_stream >> status_code;
-        std::string status_message;
-        std::getline(response_stream, status_message);
-        if (!response_stream || http_version.substr(0, 5) != "HTTP/") {
-            errors = "Invalid response";
-        }
-        if (status_code != 200) {
-            errors = "Response returned with status code " + std::to_string(status_code);
-        }
-
-        // Read the response headers, which are terminated by a blank line.
-        boost::asio::read_until(ssock, response, "\r\n\r\n");
-
-        std::string header;
-        while (std::getline(response_stream, header) && header != "\r") {
-            // cout << header << endl;
-        }
-
-        // Write whatever content we already have to output.
-        std::ostringstream ostringstream_content;
-        if (response.size() > 0) {
-            ostringstream_content << &response;
-        }
-
-        // Read until EOF, writing data to output as we go.
-        boost::system::error_code error;
-        while (true) {
-            size_t n = boost::asio::read(ssock, response, boost::asio::transfer_at_least(1), error);
-            if (!error) {
-                if (n) {
-                    ostringstream_content << &response;
-                }
-            }
-            if (error == boost::asio::error::eof) {
-                break;
-            }
-            if (error) {
-                std::string errorMsg = error.message();
-                errors = errorMsg + " " + std::to_string(error.value());
-                break;
-            }
-        }
         // read response into Univalue Obj
         UniValue obj_response(UniValue::VOBJ);
-
-        auto str_response = ostringstream_content.str();
 
         auto success = obj_response.read(str_response);
 
