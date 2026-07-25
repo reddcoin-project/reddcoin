@@ -9,9 +9,24 @@
 
 #include <univalue.h>
 
+// boost 1.71 predates OpenSSL 3.0 and its ssl wrapper still calls functions the
+// 3.x series deprecated, such as RSA_free and SSL_CTX_use_RSAPrivateKey. The
+// warnings come from boost rather than from anything here, and depends headers
+// are reached with -I rather than -isystem, so they would otherwise break any
+// build using -Werror.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <boost/asio.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
+#include <openssl/crypto.h>
+#include <openssl/opensslv.h>
 
 #include <chrono>
 #include <regex>
@@ -169,6 +184,14 @@ std::string HttpsFetcher::Get(const std::string& target)
     return str_raw.substr(body + 4);
 }
 } // namespace
+
+std::string node::SslVersion()
+{
+    // OpenSSL_version has been available since 1.1.0, which predates every
+    // version this can be built against.
+    const char* version{OpenSSL_version(OPENSSL_VERSION)};
+    return version ? version : "unknown";
+}
 
 void node::CheckForUpdates(UniValue& result)
 {
