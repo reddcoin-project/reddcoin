@@ -24,6 +24,7 @@
 #include <node/context.h>
 #include <node/transaction.h>
 #include <node/ui_interface.h>
+#include <node/update_check.h>
 #include <policy/feerate.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
@@ -295,7 +296,7 @@ public:
     UniValue checkForUpdates() override
     {
         UniValue result(UniValue::VOBJ);
-        checkforupdatesinfo(result);
+        CheckForUpdates(result);
         return result;
     }
     UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) override
