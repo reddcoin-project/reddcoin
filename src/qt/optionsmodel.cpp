@@ -20,7 +20,6 @@
 #include <txdb.h>       // for -dbcache defaults
 #include <util/string.h>
 #include <validation.h> // For DEFAULT_SCRIPTCHECK_THREADS
-#include <wallet/wallet.h> // for DEFAULT_CHECK_GITHUB
 
 #include <QDebug>
 #include <QLatin1Char>
@@ -136,11 +135,13 @@ void OptionsModel::Init(bool resetSettings)
     if (!gArgs.SoftSetArg("-signer", settings.value("external_signer_path").toString().toStdString())) {
         addOverriddenOption("-signer");
     }
+#endif
+
+    // Update check
     if (!settings.contains("bCheckGithub"))
         settings.setValue("bCheckGithub", DEFAULT_CHECK_GITHUB);
-    if (!gArgs.SoftSetBoolArg("-checkupdates", settings.value("bcheckgithub").toBool()))
+    if (!gArgs.SoftSetBoolArg("-checkupdates", settings.value("bCheckGithub").toBool()))
         addOverriddenOption("-checkupdates");
-#endif
 
     // Network
     if (!settings.contains("fUseUPnP"))

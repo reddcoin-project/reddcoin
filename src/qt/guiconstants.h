@@ -17,6 +17,9 @@ static const int MINTING_UPDATE_DELAY = 30 * 1000;
 /* Milliseconds between new update checks */
 static const int CHECK_UPDATE_DELAY = 86400000; // 24 hours
 
+/* Whether to check github for a newer release by default */
+static const bool DEFAULT_CHECK_GITHUB = true;
+
 /* AskPassphraseDialog -- Maximum passphrase length */
 static const int MAX_PASSPHRASE_SIZE = 1024;
 

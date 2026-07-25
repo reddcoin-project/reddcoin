@@ -445,6 +445,7 @@ WId BitcoinApplication::getMainWinId() const
 
 static void SetupUIArgs(ArgsManager& argsman)
 {
+    argsman.AddArg("-checkupdates", strprintf("Check github for a newer version (default: %u)", DEFAULT_CHECK_GITHUB), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-choosedatadir", strprintf("Choose data directory on startup (default: %u)", DEFAULT_CHOOSE_DATADIR), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-lang=<lang>", "Set language, for example \"de_DE\" (default: system locale)", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-min", "Start minimized", ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
