@@ -30,10 +30,13 @@
 #include <openssl/opensslv.h>
 
 #include <chrono>
+#include <cstddef>
+#include <ostream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
 static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
