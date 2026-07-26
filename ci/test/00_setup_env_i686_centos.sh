@@ -17,11 +17,14 @@ export CONTAINER_NAME=ci_i686_centos
 # python3-pip + util-linux. TEST_RUNNER_ENV's en_US.UTF-8 is dropped because that
 # locale is not generated in the stream9 image; the tests run under C.UTF-8.
 # The stream9 base perl is minimal and splits several core modules into their own
-# packages; the depends OpenSSL 1.1.1 ./Configure and build need FindBin,
-# IPC::Cmd, Data::Dumper and File::Copy/Compare, so pull those in explicitly
-# (otherwise Configure dies with "Can't locate FindBin.pm in @INC").
+# packages; the depends OpenSSL ./Configure and build need FindBin, IPC::Cmd,
+# Data::Dumper and File::Copy/Compare, so pull those in explicitly (otherwise
+# Configure dies with "Can't locate FindBin.pm in @INC"). The 3.x series also
+# uses Time::Piece from its Makefile template, to parse the release date, so
+# that is needed as well or Configure fails right after writing Makefile.in
+# with "Can't locate Time/Piece.pm in @INC".
 export DOCKER_NAME_TAG=quay.io/centos/centos:stream9
-export DOCKER_PACKAGES="gcc-c++ glibc-devel.x86_64 libstdc++-devel.x86_64 glibc-devel.i686 libstdc++-devel.i686 ccache libtool make git python3 python3-pip which patch lbzip2 xz procps-ng dash rsync coreutils bison util-linux perl-FindBin perl-IPC-Cmd perl-Data-Dumper perl-File-Compare perl-File-Copy"
+export DOCKER_PACKAGES="gcc-c++ glibc-devel.x86_64 libstdc++-devel.x86_64 glibc-devel.i686 libstdc++-devel.i686 ccache libtool make git python3 python3-pip which patch lbzip2 xz procps-ng dash rsync coreutils bison util-linux perl-FindBin perl-IPC-Cmd perl-Data-Dumper perl-File-Compare perl-File-Copy perl-Time-Piece"
 export PIP_PACKAGES="pyzmq"
 export GOAL="install"
 export BITCOIN_CONFIG="--enable-zmq --with-gui=qt5 --enable-reduce-exports"
