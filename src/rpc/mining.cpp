@@ -1327,7 +1327,11 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("transactions", transactions);
     result.pushKV("coinbaseaux", aux);
     result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0]->vout[0].nValue);
-    result.pushKV("coinstakevalue", (int64_t)pblock->vtx[0]->vout[1].nValue);
+    // The coinstake is vtx[1], and its first output is the empty marker, so the
+    // staked value is in vout[1]. IsProofOfStake() guarantees both exist: it
+    // requires vtx[1] to be a coinstake, and a coinstake has at least two
+    // outputs. The coinbase itself only ever has one output.
+    result.pushKV("coinstakevalue", pblock->IsProofOfStake() ? (int64_t)pblock->vtx[1]->vout[1].nValue : 0);
     result.pushKV("longpollid", active_chain.Tip()->GetBlockHash().GetHex() + ToString(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
     result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
