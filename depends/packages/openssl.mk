@@ -37,6 +37,11 @@ $(package)_config_opts+=no-tests
 $(package)_config_opts+=no-unit-test
 $(package)_config_opts+=no-weak-ssl-ciphers
 $(package)_config_opts+=no-whirlpool
+# The 3.x series added a store backed by the Windows certificate store, which
+# calls into crypt32 and so does not link unless that library is added to every
+# Windows target. Nothing here uses it, and capieng above is already disabled
+# for the same reason.
+$(package)_config_opts+=no-winstore
 $(package)_config_opts+=no-zlib
 $(package)_config_opts+=no-zlib-dynamic
 $(package)_config_opts+=$($(package)_cflags) $($(package)_cppflags)
