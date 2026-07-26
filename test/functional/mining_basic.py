@@ -132,6 +132,14 @@ class MiningTest(BitcoinTestFramework):
         coinstake_tx.deserialize(BytesIO(bytes.fromhex(tmpl['transactions'][0]['data'])))
         coinstake_tx.rehash()
 
+        # The reported values must come from the transactions they name. The
+        # coinstake pays out through its first real output, vout[0] being the
+        # empty marker, and a proof-of-stake coinbase carries a single empty
+        # output. The coinbase has only ever one output, so reading a coinstake
+        # value from it used to run off the end of its output vector.
+        assert_equal(tmpl['coinstakevalue'], coinstake_tx.vout[1].nValue)
+        assert_equal(tmpl['coinbasevalue'], 0)
+
         block = CBlock()
         block.nVersion = tmpl["version"]
         block.hashPrevBlock = int(tmpl["previousblockhash"], 16)
