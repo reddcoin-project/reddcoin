@@ -6,6 +6,7 @@
 
 #include <clientversion.h>
 #include <util/semver.h>
+#include <util/string.h>
 
 #include <univalue.h>
 
@@ -175,7 +176,7 @@ std::string HttpsFetcher::Get(const std::string& target)
         throw std::runtime_error("Invalid response");
     }
     if (status_code != 200) {
-        throw std::runtime_error("Response returned with status code " + std::to_string(status_code));
+        throw std::runtime_error("Response returned with status code " + ToString(status_code));
     }
 
     // Headers are terminated by a blank line; everything after it is the body.

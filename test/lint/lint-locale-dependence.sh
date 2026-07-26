@@ -59,9 +59,8 @@ KNOWN_VIOLATIONS=(
     "src/util/strencodings.cpp:.*strtoul"
     "src/util/strencodings.h:.*atoi"
     "src/util/system.cpp:.*atoi"
-    "src/rpc/server.cpp:.*to_string"
-    "src/rpc/semver.h:.*stoul"
-    "src/rpc/semver.h:.*to_string"
+    "src/util/semver.h:.*stoul"
+    "src/util/semver.h:.*to_string"
 )
 
 REGEXP_IGNORE_EXTERNAL_DEPENDENCIES="^src/(crypto/ctaes/|leveldb/|secp256k1/|tinyformat.h|univalue/)"

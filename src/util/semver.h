@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef BITCOIN_RPC_SEMVER_H
-#define BITCOIN_RPC_SEMVER_H
+#ifndef BITCOIN_UTIL_SEMVER_H
+#define BITCOIN_UTIL_SEMVER_H
 
 #include <string>
 #include <regex>
@@ -374,4 +374,4 @@ namespace semver
     }
 }
 
-#endif // BITCOIN_RPC_SEMVER_H
+#endif // BITCOIN_UTIL_SEMVER_H
