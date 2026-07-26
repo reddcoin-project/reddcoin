@@ -19,6 +19,7 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
+#include <qt/updatecheckworker.h>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -38,9 +39,8 @@
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
-#include <rpc/server.h>
-#include <univalue.h>
 #include <util/system.h>
+#include <util/threadnames.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <warnings.h>
@@ -237,6 +237,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     connect(progressBar, &GUIUtil::ClickableProgressBar::clicked, this, &BitcoinGUI::showModalOverlay);
     connect(labelCheckUpdate, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showUpdatesClicked);
 
+    startUpdateCheckWorker();
+
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &BitcoinGUI::checkUpdates);
     timer->start(CHECK_UPDATE_DELAY);
@@ -256,6 +258,11 @@ BitcoinGUI::~BitcoinGUI()
     // Unsubscribe from notifications from core
     unsubscribeFromCoreSignals();
 
+    // Stop the update check worker and wait for it, so an in flight request
+    // cannot outlive the objects its reply refers to.
+    m_update_check_thread.quit();
+    m_update_check_thread.wait();
+
     QSettings settings;
     settings.setValue("MainWindowGeometry", saveGeometry());
     if(trayIcon) // Hide tray icon, as deleting will let it linger until quit (on Ubuntu)
@@ -269,43 +276,46 @@ BitcoinGUI::~BitcoinGUI()
     delete rpcConsole;
 }
 
+void BitcoinGUI::startUpdateCheckWorker()
+{
+    UpdateCheckWorker* worker = new UpdateCheckWorker(m_node);
+    worker->moveToThread(&m_update_check_thread);
+
+    // Requests from this object must go to the worker, and its answers must come
+    // back here. Both connections cross threads, so Qt queues them.
+    connect(this, &BitcoinGUI::updateCheckRequested, worker, &UpdateCheckWorker::check);
+    connect(worker, &UpdateCheckWorker::checked, this, &BitcoinGUI::updateCheckFinished);
+
+    // Make sure the worker is deleted in its own thread.
+    connect(&m_update_check_thread, &QThread::finished, worker, &UpdateCheckWorker::deleteLater);
+
+    // The default QThread::run() spins up an event loop, which is what is needed
+    // here so the worker can receive queued calls.
+    m_update_check_thread.start();
+    QTimer::singleShot(0, worker, []() {
+        util::ThreadRename("qt-updatecheck");
+    });
+}
+
 void BitcoinGUI::checkUpdates()
 {
-#ifdef ENABLE_WALLET
-
     QSettings settings;
     if (settings.value("bCheckGithub").toBool()) {
-        // Get checkforupdatesinfo from rpc server
-        UniValue result(UniValue::VOBJ);
-        checkforupdatesinfo(result);
-
-        std::string localversion = "";
-        std::string remoteversion = "";
-        bool updateavailable = false;
-        std::string message = "";
-        std::string warning = "";
-        std::string officialDownloadLink = "";
-        std::string errors = "";
-
-        if (result.exists("localversion")) {
-            localversion = result["localversion"].get_str();
-        }
-        if (result.exists("remoteversion")) {
-            remoteversion = result["remoteversion"].get_str();
-        }
-        if (result.exists("updateavailable")) {
-            updateavailable = result["updateavailable"].get_bool();
-        }
-
-        if (updateavailable) {
-            labelCheckUpdate->setText(tr("Update to %1 is available.").arg(QString::fromStdString(localversion)));
-            labelCheckUpdate->setVisible(true);
-        } else {
-            labelCheckUpdate->setVisible(false);
-            labelCheckUpdate->setText(QString(""));
-        }
+        // The check performs a network request, so hand it to the worker thread
+        // and pick the answer up in updateCheckFinished().
+        Q_EMIT updateCheckRequested();
     }
-#endif
+}
+
+void BitcoinGUI::updateCheckFinished(const QVariantMap& info)
+{
+    if (info.value("updateavailable").toBool()) {
+        labelCheckUpdate->setText(tr("Update to %1 is available.").arg(info.value("localversion").toString()));
+        labelCheckUpdate->setVisible(true);
+    } else {
+        labelCheckUpdate->setVisible(false);
+        labelCheckUpdate->setText(QString(""));
+    }
 }
 
 void BitcoinGUI::createActions()
@@ -1047,7 +1057,7 @@ void BitcoinGUI::showUpdatesClicked()
     if(!clientModel)
         return;
 
-    HelpMessageDialog dlg(this, m_network_style, false, true);
+    HelpMessageDialog dlg(this, m_network_style, false, true, &m_node);
     dlg.exec();
 }
 

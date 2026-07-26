@@ -725,6 +725,7 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
 
         // Provide initial values
         ui->clientVersion->setText(model->formatFullVersion());
+        ui->sslVersion->setText(model->formatSslVersion());
         ui->clientUserAgent->setText(model->formatSubVersion());
         ui->dataDir->setText(model->dataDir());
         ui->blocksDir->setText(model->blocksDir());

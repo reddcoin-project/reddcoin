@@ -7,9 +7,15 @@
 #define BITCOIN_QT_UTILITYDIALOG_H
 
 #include <QDialog>
+#include <QThread>
+#include <QVariantMap>
 #include <QWidget>
 
 class NetworkStyle;
+
+namespace interfaces {
+class Node;
+} // namespace interfaces
 
 QT_BEGIN_NAMESPACE
 class QMainWindow;
@@ -25,18 +31,27 @@ class HelpMessageDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates);
+    //! node is only needed when checkUpdates is set, since the update check is
+    //! performed by the node rather than by the GUI.
+    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates, interfaces::Node* node = nullptr);
     ~HelpMessageDialog();
 
     void printToConsole();
     void showOrPrint();
 
 private:
+    /** Create the update check worker and start the thread it runs on */
+    void startUpdateCheck(interfaces::Node& node);
+
     Ui::HelpMessageDialog *ui;
     QString text;
+    /** Thread the update check runs on, so its network request cannot stall the GUI */
+    QThread m_update_check_thread;
 
 private Q_SLOTS:
     void on_okButton_accepted();
+    /** Replace the "please wait" text once the check has an answer */
+    void showUpdateInfo(const QVariantMap& info);
 };
 
 

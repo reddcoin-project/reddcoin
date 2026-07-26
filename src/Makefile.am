@@ -190,6 +190,7 @@ BITCOIN_CORE_H = \
   node/psbt.h \
   node/transaction.h \
   node/ui_interface.h \
+  node/update_check.h \
   node/utxo_snapshot.h \
   noui.h \
   outputtype.h \
@@ -218,7 +219,6 @@ BITCOIN_CORE_H = \
   rpc/rawtransaction_util.h \
   rpc/register.h \
   rpc/request.h \
-  rpc/semver.h \
   rpc/server.h \
   rpc/util.h \
   scheduler.h \
@@ -263,6 +263,7 @@ BITCOIN_CORE_H = \
   util/moneystr.h \
   util/rbf.h \
   util/readwritefile.h \
+  util/semver.h \
   util/serfloat.h \
   util/settings.h \
   util/sock.h \
@@ -366,6 +367,7 @@ libbitcoin_server_a_SOURCES = \
   node/interfaces.cpp \
   node/psbt.cpp \
   node/transaction.cpp \
+  node/update_check.cpp \
   node/ui_interface.cpp \
   noui.cpp \
   policy/fees.cpp \

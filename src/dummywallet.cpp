@@ -29,7 +29,6 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
         "-addresstype",
         "-avoidpartialspends",
         "-changetype",
-        "-checkupdates",
         "-disablewallet",
         "-discardfee=<amt>",
         "-fallbackfee=<amt>",
