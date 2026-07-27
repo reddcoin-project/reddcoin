@@ -152,6 +152,14 @@ class P2PEvict(BitcoinTestFramework):
             current_peer += 1
             self.wait_until(lambda: "ping" in fastpeer.last_message, timeout=10)
 
+        # Wait until the node has timed a ping for every peer. Waiting on the
+        # ping being sent, as above, does not mean the pong is back and counted,
+        # and a peer the node has not yet timed still ranks as infinitely slow.
+        # The snapshot below would then record an order the node is about to
+        # revise, and it evicts against its own, so a peer taken here to be
+        # protected can be the one that goes.
+        self.wait_until(lambda: all('minping' in peer for peer in node.getpeerinfo()), timeout=60)
+
         # Make sure by asking the node what the actual min pings are
         peerinfo = node.getpeerinfo()
         pings = {}
