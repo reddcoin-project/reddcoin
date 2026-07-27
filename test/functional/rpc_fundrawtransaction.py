@@ -1006,11 +1006,21 @@ class RawTransactionsTest(BitcoinTestFramework):
         # each other, so a run of them leaves the wallet holding coins none of
         # which can be staked. Leaving a gap wider than the interval between
         # blocks means each one makes its predecessor's coinstake usable.
+        #
+        # The payment itself is made from a wallet of its own. Blocks are staked
+        # by the default wallet, and a payment this size takes the very coins it
+        # would otherwise stake with, which left it unable to make the blocks
+        # needed to confirm that payment. Fund the payer first so the transfer
+        # confirms in the run below.
+        wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
+        self.nodes[0].createwallet("payer")
+        payer = self.nodes[0].get_wallet_rpc("payer")
+        wallet.sendtoaddress(payer.getnewaddress(), 200)
+
         self.generate_spaced_for_pos(10)
         self.sync_blocks()
 
         self.nodes[0].createwallet("large")
-        wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
         recipient = self.nodes[0].get_wallet_rpc("large")
         outputs = {}
         rawtx = recipient.createrawtransaction([], {wallet.getnewaddress(): 147.99899260})
@@ -1022,12 +1032,10 @@ class RawTransactionsTest(BitcoinTestFramework):
         # is not implemented yet. For now we just check that we get an error.
         for _ in range(1500):
             outputs[recipient.getnewaddress()] = 0.1
-        wallet.sendmany("", outputs)
-        # Confirm the sendmany. The spacing matters here for the same reason as
-        # above: the wallet is now holding 1500 outputs it has just been sent,
-        # none of which can be staked, so the blocks have to come from coins the
-        # earlier run left old enough.
-        self.generate_spaced_for_pos(10)
+        payer.sendmany("", outputs)
+        # Confirm the payment. One block is enough to make the outputs spendable,
+        # and asking for fewer blocks asks less of the wallet staking them.
+        self.generate_spaced_for_pos(1)
         assert_raises_rpc_error(-4, "Transaction too large", recipient.fundrawtransaction, rawtx)
 
     def test_include_unsafe(self):
