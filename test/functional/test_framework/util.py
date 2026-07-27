@@ -342,6 +342,17 @@ def rpc_port(n):
     return PORT_MIN + PORT_RANGE + n + (MAX_NODES * PortSeed.n) % (PORT_RANGE - 1 - MAX_NODES)
 
 
+def zmq_port(n):
+    """Port for a ZMQ publisher, assigned like the p2p and rpc ones.
+
+    ZMQ has no default port: a publisher is given a whole address, so tests used
+    to name one themselves. A fixed port collides with any node already running
+    on the machine, and with another test run using a different port seed, so
+    take these from the same allocation as everything else instead.
+    """
+    return PORT_MIN + 2 * PORT_RANGE + n + (MAX_NODES * PortSeed.n) % (PORT_RANGE - 1 - MAX_NODES)
+
+
 def rpc_url(datadir, i, chain, rpchost):
     rpc_u, rpc_p = get_auth_cookie(datadir, chain)
     host = '127.0.0.1'

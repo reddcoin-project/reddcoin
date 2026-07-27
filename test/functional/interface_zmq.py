@@ -23,6 +23,7 @@ from test_framework.util import (
     advance_time_for_pos,
     assert_equal,
     assert_raises_rpc_error,
+    zmq_port,
 )
 from io import BytesIO
 from time import sleep
@@ -250,7 +251,7 @@ class ZMQTest (BitcoinTestFramework):
         # Invalid zmq arguments don't take down the node, see #17185.
         self.restart_node(0, ["-zmqpubrawtx=foo", "-zmqpubhashtx=bar"])
 
-        address = 'tcp://127.0.0.1:28332'
+        address = 'tcp://127.0.0.1:%d' % zmq_port(0)
         subs = self.setup_zmq_test([(topic, address) for topic in ["hashblock", "hashtx", "rawblock", "rawtx"]])
 
         hashblock = subs[0]
@@ -333,7 +334,7 @@ class ZMQTest (BitcoinTestFramework):
             self.log.info("Skipping reorg test because wallet is disabled")
             return
 
-        address = 'tcp://127.0.0.1:28333'
+        address = 'tcp://127.0.0.1:%d' % zmq_port(1)
 
         # Should only notify the tip if a reorg occurs
         hashblock, hashtx = self.setup_zmq_test(
@@ -395,7 +396,7 @@ class ZMQTest (BitcoinTestFramework):
         <32-byte hash>A<8-byte LE uint> : Transactionhash added mempool
         """
         self.log.info("Testing 'sequence' publisher")
-        [seq] = self.setup_zmq_test([("sequence", "tcp://127.0.0.1:28333")])
+        [seq] = self.setup_zmq_test([("sequence", "tcp://127.0.0.1:%d" % zmq_port(1))])
         self.disconnect_nodes(0, 1)
 
         # Mempool sequence number starts at 1
@@ -551,7 +552,7 @@ class ZMQTest (BitcoinTestFramework):
             return
 
         self.log.info("Testing 'mempool sync' usage of sequence notifier")
-        [seq] = self.setup_zmq_test([("sequence", "tcp://127.0.0.1:28333")])
+        [seq] = self.setup_zmq_test([("sequence", "tcp://127.0.0.1:%d" % zmq_port(1))])
 
         # In-memory counter, should always start at 1
         next_mempool_seq = self.nodes[0].getrawmempool(mempool_sequence=True)["mempool_sequence"]
@@ -655,8 +656,8 @@ class ZMQTest (BitcoinTestFramework):
         # chain lengths on node0 and node1; for this test we only need node0, so
         # we can disable syncing blocks on the setup)
         subscribers = self.setup_zmq_test([
-            ("hashblock", "tcp://127.0.0.1:28334"),
-            ("hashblock", "tcp://127.0.0.1:28335"),
+            ("hashblock", "tcp://127.0.0.1:%d" % zmq_port(2)),
+            ("hashblock", "tcp://127.0.0.1:%d" % zmq_port(3)),
         ], sync_blocks=False)
 
         # Generate 1 block in nodes[0] and receive all notifications
