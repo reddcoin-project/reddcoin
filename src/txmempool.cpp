@@ -532,7 +532,13 @@ void CTxMemPool::removeForReorg(CChainState& active_chainstate, int flags)
                 const Coin &coin = active_chainstate.CoinsTip().AccessCoin(txin.prevout);
                 if (m_check_ratio != 0) assert(!coin.IsSpent());
                 unsigned int nMemPoolHeight = active_chainstate.m_chain.Tip()->nHeight + 1;
-                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < params.GetCoinbaseMaturity())) {
+                // Coinstake outputs mature exactly as coinbase outputs do, and
+                // CheckTxInputs rejects a spend of either before then. Both have
+                // to be considered here, or a transaction spending a coinstake
+                // that a reorg has made immature again stays in the mempool, is
+                // taken into the next template, and fails TestBlockValidity with
+                // bad-txns-premature-spend-of-coinbase/coinstake.
+                if (coin.IsSpent() || ((coin.IsCoinBase() || coin.IsCoinStake()) && ((signed long)nMemPoolHeight) - coin.nHeight < params.GetCoinbaseMaturity())) {
                     txToRemove.insert(it);
                     break;
                 }
