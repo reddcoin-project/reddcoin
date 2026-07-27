@@ -117,7 +117,13 @@ def split_inputs(from_node, txins, txouts, initial_split=False):
 def check_raw_estimates(node, fees_seen):
     """Call estimaterawfee and verify that the estimates meet certain invariants."""
 
-    delta = 1.0e-6  # account for rounding error
+    # Account for rounding error. Reddcoin's fee rates are orders of magnitude
+    # larger than Bitcoin's, and the estimator works in relative buckets, so a
+    # fixed tolerance of a millionth no longer covers the rounding: rates around
+    # 0.42 per kvB have been seen to invert by 4.2e-5 between neighbouring
+    # confirmation targets. Scale with the rate instead. A thousandth stays far
+    # below the bucket spacing that a real inversion would show.
+    delta = max(1.0e-6, 1.0e-3 * float(max(fees_seen)))
     for i in range(1, 26):
         raw = node.estimaterawfee(i)
         for bucket_name, e in raw.items():
@@ -134,7 +140,13 @@ def check_raw_estimates(node, fees_seen):
 def check_smart_estimates(node, fees_seen):
     """Call estimatesmartfee and verify that the estimates meet certain invariants."""
 
-    delta = 1.0e-6  # account for rounding error
+    # Account for rounding error. Reddcoin's fee rates are orders of magnitude
+    # larger than Bitcoin's, and the estimator works in relative buckets, so a
+    # fixed tolerance of a millionth no longer covers the rounding: rates around
+    # 0.42 per kvB have been seen to invert by 4.2e-5 between neighbouring
+    # confirmation targets. Scale with the rate instead. A thousandth stays far
+    # below the bucket spacing that a real inversion would show.
+    delta = max(1.0e-6, 1.0e-3 * float(max(fees_seen)))
     last_feerate = float(max(fees_seen))
     all_smart_estimates = [node.estimatesmartfee(i) for i in range(1, 26)]
     for i, e in enumerate(all_smart_estimates):  # estimate is for i+1
