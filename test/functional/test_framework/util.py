@@ -464,6 +464,20 @@ def set_node_times(nodes, t):
         node.mocktime = t  # Track for sync_time()
 
 
+# Mirrors GetStakeModifierSelectionInterval() in src/pos/kernel.cpp for regtest,
+# where consensus.nModifierInterval is 60 seconds and MODIFIER_INTERVAL_RATIO is
+# 3, giving a little under 35 minutes.
+#
+# A coin cannot be staked until the chain holds a block whose timestamp is at
+# least this far after the block that created it, because the kernel walks
+# forward from that block looking for one. Moving mock time on is not enough on
+# its own: the blocks themselves have to carry the later timestamps. Tests that
+# stake coins they have just created need to advance by more than this between
+# blocks.
+STAKE_MODIFIER_SELECTION_INTERVAL = sum(
+    60 * 63 // (63 + (63 - section) * (3 - 1)) for section in range(64))
+
+
 def advance_time_for_pos(nodes, seconds=60):
     """Advance mock time on all nodes to age coins for PoS staking.
 

@@ -11,6 +11,7 @@ from itertools import product
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    STAKE_MODIFIER_SELECTION_INTERVAL,
     advance_time_for_pos,
     assert_approx,
     assert_equal,
@@ -992,8 +993,17 @@ class RawTransactionsTest(BitcoinTestFramework):
         for _ in range(1500):
             outputs[recipient.getnewaddress()] = 0.1
         wallet.sendmany("", outputs)
-        advance_time_for_pos(self.nodes, seconds=600)
-        self.generate(10)
+        # The sendmany leaves the wallet holding little besides the coins it
+        # just created, and a coin cannot be staked until the chain holds a
+        # block at least a stake modifier selection interval after the one that
+        # created it, which is about 35 minutes on regtest. Move the clock on by
+        # more than that between blocks, so each block makes the previous
+        # block's coinstake usable, rather than running out of coins old enough
+        # to stake partway through. The confirmations themselves are what the
+        # funding call below needs.
+        for _ in range(10):
+            advance_time_for_pos(self.nodes, seconds=2 * STAKE_MODIFIER_SELECTION_INTERVAL)
+            self.generate(1)
         assert_raises_rpc_error(-4, "Transaction too large", recipient.fundrawtransaction, rawtx)
 
     def test_include_unsafe(self):
