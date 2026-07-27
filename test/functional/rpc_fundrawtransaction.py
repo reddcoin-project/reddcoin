@@ -972,11 +972,32 @@ class RawTransactionsTest(BitcoinTestFramework):
         signedtx = self.nodes[0].signrawtransactionwithwallet(fundedtx['hex'])
         self.nodes[0].sendrawtransaction(signedtx['hex'])
 
+    def generate_spaced_for_pos(self, nblocks):
+        """Generate blocks far enough apart in time to be stakeable in turn.
+
+        A coin cannot be staked until the chain holds a block at least a stake
+        modifier selection interval after the one that created it, and mock time
+        alone does not satisfy that: the blocks themselves have to carry the
+        later timestamps. Blocks generated back to back therefore leave a wallet
+        holding coinstakes that never become usable. Move the clock on by more
+        than the interval between each one instead.
+        """
+        for _ in range(nblocks):
+            advance_time_for_pos(self.nodes, seconds=2 * STAKE_MODIFIER_SELECTION_INTERVAL)
+            self.generate(1)
+
     def test_transaction_too_large(self):
         self.log.info("Test fundrawtx where BnB solution would result in a too large transaction, but Knapsack would not")
-        # Build up staking UTXOs before the large sendmany consumes coins
-        advance_time_for_pos(self.nodes, seconds=600)
-        self.generate(10)
+        # Build up staking UTXOs before the large sendmany consumes coins.
+        #
+        # These have to be spaced out in time, not just generated. A coin only
+        # becomes stakeable once the chain holds a block at least a stake
+        # modifier selection interval, about 35 minutes on regtest, after the
+        # one that created it. Blocks made back to back never satisfy that for
+        # each other, so a run of them leaves the wallet holding coins none of
+        # which can be staked. Leaving a gap wider than the interval between
+        # blocks means each one makes its predecessor's coinstake usable.
+        self.generate_spaced_for_pos(10)
         self.sync_blocks()
 
         self.nodes[0].createwallet("large")
@@ -993,17 +1014,11 @@ class RawTransactionsTest(BitcoinTestFramework):
         for _ in range(1500):
             outputs[recipient.getnewaddress()] = 0.1
         wallet.sendmany("", outputs)
-        # The sendmany leaves the wallet holding little besides the coins it
-        # just created, and a coin cannot be staked until the chain holds a
-        # block at least a stake modifier selection interval after the one that
-        # created it, which is about 35 minutes on regtest. Move the clock on by
-        # more than that between blocks, so each block makes the previous
-        # block's coinstake usable, rather than running out of coins old enough
-        # to stake partway through. The confirmations themselves are what the
-        # funding call below needs.
-        for _ in range(10):
-            advance_time_for_pos(self.nodes, seconds=2 * STAKE_MODIFIER_SELECTION_INTERVAL)
-            self.generate(1)
+        # Confirm the sendmany. The spacing matters here for the same reason as
+        # above: the wallet is now holding 1500 outputs it has just been sent,
+        # none of which can be staked, so the blocks have to come from coins the
+        # earlier run left old enough.
+        self.generate_spaced_for_pos(10)
         assert_raises_rpc_error(-4, "Transaction too large", recipient.fundrawtransaction, rawtx)
 
     def test_include_unsafe(self):
