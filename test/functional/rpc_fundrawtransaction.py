@@ -11,7 +11,6 @@ from itertools import product
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
-    STAKE_MODIFIER_SELECTION_INTERVAL,
     advance_time_for_pos,
     assert_approx,
     assert_equal,
@@ -975,15 +974,25 @@ class RawTransactionsTest(BitcoinTestFramework):
     def generate_spaced_for_pos(self, nblocks):
         """Generate blocks far enough apart in time to be stakeable in turn.
 
-        A coin cannot be staked until the chain holds a block at least a stake
-        modifier selection interval after the one that created it, and mock time
-        alone does not satisfy that: the blocks themselves have to carry the
-        later timestamps. Blocks generated back to back therefore leave a wallet
-        holding coinstakes that never become usable. Move the clock on by more
-        than the interval between each one instead.
+        Blocks generated back to back leave a wallet holding coins it can never
+        stake, for two separate reasons, and the gap has to satisfy both.
+
+        A coin is not eligible until the chain holds a block at least a stake
+        modifier selection interval after the one that created it, about 35
+        minutes here. Moving mock time on is not enough by itself: the blocks
+        have to carry the later timestamps, so the gap has to be left as they
+        are generated.
+
+        The coin also has to be worth at least one whole coin-day, because
+        GetCoinAge works in integer coin-days and CreateCoinStake treats zero as
+        a failure, reporting "failed to calculate coin age". Coin-days are
+        roughly value times age in days, so a ten coin stake needs about two and
+        a half hours and a one coin stake a full day.
+
+        A day covers both comfortably.
         """
         for _ in range(nblocks):
-            advance_time_for_pos(self.nodes, seconds=2 * STAKE_MODIFIER_SELECTION_INTERVAL)
+            advance_time_for_pos(self.nodes, seconds=24 * 60 * 60)
             self.generate(1)
 
     def test_transaction_too_large(self):
