@@ -88,12 +88,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         # the test have reliable PoS staking (builds up coinstake UTXO pool
         # and advances the staking search time window).
         advance_time_for_pos(self.nodes, seconds=600)
-        self.nodes[0].generate(20)
+        self.generate(20)
         self.sync_all()
 
         # Fund node2 with a 50-coin UTXO to match test expectations
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 50)
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_all()
 
         self.test_change_position()
@@ -155,7 +155,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 1.0)
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 5.0)
 
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_all()
 
         wwatch.unloadwallet()
@@ -529,7 +529,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         # Send 1.2 BTC to msig addr.
         self.nodes[0].sendtoaddress(mSigObj, 1.2)
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_all()
 
         oldBalance = self.nodes[1].getbalance()
@@ -541,7 +541,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         final_psbt = w2.finalizepsbt(signed_psbt['psbt'])
         self.nodes[2].sendrawtransaction(final_psbt['hex'])
         self.nodes[0].sendrawtransaction(final_psbt['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         # Make sure funds are received at node1.
@@ -605,7 +605,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         signedTx = self.nodes[1].signrawtransactionwithwallet(fundedTx['hex'])
         self.nodes[1].sendrawtransaction(signedTx['hex'])
         self.nodes[0].sendrawtransaction(signedTx['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         # On ReddCoin PoS, balance checks are unreliable because coinstake
@@ -622,12 +622,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         # Empty node1, send some small coins from node0 to node1.
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), self.nodes[1].getbalance(), "", "", True)
         self.nodes[0].sendrawtransaction(self.nodes[1].gettransaction(txid)['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         for _ in range(20):
             self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 0.01)
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         # Fund a tx with ~20 small inputs.
@@ -646,7 +646,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         # Confirm the sendmany tx so the next test starts with a clean slate.
         self.nodes[0].sendrawtransaction(self.nodes[1].gettransaction(txId)['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
     def test_many_inputs_send(self):
@@ -656,12 +656,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         # Again, empty node1, send some small coins from node0 to node1.
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), self.nodes[1].getbalance(), "", "", True)
         self.nodes[0].sendrawtransaction(self.nodes[1].gettransaction(txid)['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         for _ in range(20):
             self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 0.01)
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
 
         # Fund a tx with ~20 small inputs.
@@ -672,7 +672,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         fundedAndSignedTx = self.nodes[1].signrawtransactionwithwallet(fundedTx['hex'])
         self.nodes[1].sendrawtransaction(fundedAndSignedTx['hex'])
         self.nodes[0].sendrawtransaction(fundedAndSignedTx['hex'])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_blocks()
         # Verify the tx was confirmed (balance checks unreliable with PoS coinstake)
         txid = self.nodes[0].decoderawtransaction(fundedAndSignedTx['hex'])['txid']
@@ -756,7 +756,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         signedtx = self.nodes[0].signrawtransactionwithwallet(signedtx["hex"])
         assert signedtx["complete"]
         self.nodes[0].sendrawtransaction(signedtx["hex"])
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_all()
 
         wwatch.unloadwallet()
@@ -975,7 +975,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.log.info("Test fundrawtx where BnB solution would result in a too large transaction, but Knapsack would not")
         # Build up staking UTXOs before the large sendmany consumes coins
         advance_time_for_pos(self.nodes, seconds=600)
-        self.nodes[0].generate(10)
+        self.generate(10)
         self.sync_blocks()
 
         self.nodes[0].createwallet("large")
@@ -993,7 +993,7 @@ class RawTransactionsTest(BitcoinTestFramework):
             outputs[recipient.getnewaddress()] = 0.1
         wallet.sendmany("", outputs)
         advance_time_for_pos(self.nodes, seconds=600)
-        self.nodes[0].generate(10)
+        self.generate(10)
         assert_raises_rpc_error(-4, "Transaction too large", recipient.fundrawtransaction, rawtx)
 
     def test_include_unsafe(self):
@@ -1022,7 +1022,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         wallet.sendrawtransaction(signedtx['hex'])
 
         # And we can also use them once they're confirmed.
-        self.nodes[0].generate(1)
+        self.generate(1)
         rawtx = wallet.createrawtransaction([], [{self.nodes[2].getnewaddress(): 3}])
         fundedtx = wallet.fundrawtransaction(rawtx, {"include_unsafe": True})
         tx_dec = wallet.decoderawtransaction(fundedtx['hex'])
@@ -1047,7 +1047,7 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         addr = w.getnewaddress(address_type="bech32")
         self.nodes[0].sendtoaddress(addr, 1)
-        self.nodes[0].generate(1)
+        self.generate(1)
         self.sync_all()
 
         # A P2WPKH input costs 68 vbytes; With a single P2WPKH output, the rest of the tx is 42 vbytes for a total of 110 vbytes.
