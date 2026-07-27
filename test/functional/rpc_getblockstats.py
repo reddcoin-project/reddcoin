@@ -33,7 +33,18 @@ class GetblockstatsTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
-        self.setup_clean_chain = False  # Use cache with 199 blocks (90 PoW + 109 PoS)
+        # The recorded data holds the whole chain from genesis, not just the
+        # blocks this test adds, so replaying it wants a node with nothing in it.
+        # Starting from the cache instead only works while the cache reproduces
+        # the recorded chain exactly, and its proof-of-stake half does not: a
+        # staking attempt that has to be retried moves the timestamps of every
+        # block after it, so the chain a machine builds depends on how fast it
+        # is. Anything recorded then becomes a competing chain from the point
+        # the two disagree, and gets rejected.
+        #
+        # Generating fresh data is the one path that does want the cache, for a
+        # wallet with coins to spend. Options are parsed before this runs.
+        self.setup_clean_chain = not self.options.gen_test_data
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
