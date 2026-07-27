@@ -4,7 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """RPCs that handle raw transaction packages."""
 
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 import random
 
 from test_framework.address import ADDRESS_BCRT1_P2WSH_OP_TRUE
@@ -204,7 +204,12 @@ class RPCPackagesTest(BitcoinTestFramework):
 
         self.log.info("Testmempoolaccept a package in which a transaction has two children within the package")
         first_coin = self.coins.pop()
-        value = (first_coin["amount"] - Decimal("0.002")) / 2 # Deduct reasonable fee and make 2 outputs
+        # Deduct reasonable fee and make 2 outputs. The coins come from
+        # listunspent, so an amount can be any number of satoshis, including the
+        # coin age derived value of a coinstake output. Halving an odd one
+        # leaves half a satoshi, which createrawtransaction rejects as an
+        # invalid amount, so round down to something payable.
+        value = ((first_coin["amount"] - Decimal("0.002")) / 2).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
         inputs = [{"txid": first_coin["txid"], "vout": first_coin["vout"]}]
         outputs = [{self.address : value}, {ADDRESS_BCRT1_P2WSH_OP_TRUE : value}]
         rawtx = node.createrawtransaction(inputs, outputs)
