@@ -53,7 +53,7 @@ the chains intentionally divergent):
 v1 transactions are not tested because Reddcoin wallets do not produce v1
 (PoSV requires nTime → every Reddcoin wallet tx is v2+ by design).
 
-Requires previous releases (v4.22.9 binary), see test/README.md.
+Requires previous releases (the v4.22.9.3 binary), see test/README.md.
 """
 
 import hashlib
@@ -88,7 +88,7 @@ RELATIVE_LOCK_10_BLOCKS = 10
 NOT_FINAL_ERROR = "non-BIP68-final"
 
 # Version numbers
-VERSION_OLD = 4220900  # v4.22.9
+VERSION_OLD = 4220903  # v4.22.9.3
 VERSION_NEW = None     # v4.22.10 (current build)
 
 
