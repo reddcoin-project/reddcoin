@@ -971,15 +971,56 @@ class RawTransactionsTest(BitcoinTestFramework):
         signedtx = self.nodes[0].signrawtransactionwithwallet(fundedtx['hex'])
         self.nodes[0].sendrawtransaction(signedtx['hex'])
 
+    def generate_spaced_for_pos(self, nblocks):
+        """Generate blocks far enough apart in time to be stakeable in turn.
+
+        Blocks generated back to back leave a wallet holding coins it can never
+        stake, for two separate reasons, and the gap has to satisfy both.
+
+        A coin is not eligible until the chain holds a block at least a stake
+        modifier selection interval after the one that created it, about 35
+        minutes here. Moving mock time on is not enough by itself: the blocks
+        have to carry the later timestamps, so the gap has to be left as they
+        are generated.
+
+        The coin also has to be worth at least one whole coin-day, because
+        GetCoinAge works in integer coin-days and CreateCoinStake treats zero as
+        a failure, reporting "failed to calculate coin age". Coin-days are
+        roughly value times age in days, so a ten coin stake needs about two and
+        a half hours and a one coin stake a full day.
+
+        A day covers both comfortably.
+        """
+        for _ in range(nblocks):
+            advance_time_for_pos(self.nodes, seconds=24 * 60 * 60)
+            self.generate(1)
+
     def test_transaction_too_large(self):
         self.log.info("Test fundrawtx where BnB solution would result in a too large transaction, but Knapsack would not")
-        # Build up staking UTXOs before the large sendmany consumes coins
-        advance_time_for_pos(self.nodes, seconds=600)
-        self.generate(10)
+        # Build up staking UTXOs before the large sendmany consumes coins.
+        #
+        # These have to be spaced out in time, not just generated. A coin only
+        # becomes stakeable once the chain holds a block at least a stake
+        # modifier selection interval, about 35 minutes on regtest, after the
+        # one that created it. Blocks made back to back never satisfy that for
+        # each other, so a run of them leaves the wallet holding coins none of
+        # which can be staked. Leaving a gap wider than the interval between
+        # blocks means each one makes its predecessor's coinstake usable.
+        #
+        # The payment itself is made from a wallet of its own. Blocks are staked
+        # by the default wallet, and a payment this size takes the very coins it
+        # would otherwise stake with, which left it unable to make the blocks
+        # needed to confirm that payment. Fund the payer first so the transfer
+        # confirms in the run below.
+        wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
+        self.nodes[0].createwallet("payer")
+        payer = self.nodes[0].get_wallet_rpc("payer")
+        wallet.sendtoaddress(payer.getnewaddress(), 200)
+
+        self.generate_spaced_for_pos(10)
         self.sync_blocks()
 
         self.nodes[0].createwallet("large")
-        wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
         recipient = self.nodes[0].get_wallet_rpc("large")
         outputs = {}
         rawtx = recipient.createrawtransaction([], {wallet.getnewaddress(): 147.99899260})
@@ -991,9 +1032,10 @@ class RawTransactionsTest(BitcoinTestFramework):
         # is not implemented yet. For now we just check that we get an error.
         for _ in range(1500):
             outputs[recipient.getnewaddress()] = 0.1
-        wallet.sendmany("", outputs)
-        advance_time_for_pos(self.nodes, seconds=600)
-        self.generate(10)
+        payer.sendmany("", outputs)
+        # Confirm the payment. One block is enough to make the outputs spendable,
+        # and asking for fewer blocks asks less of the wallet staking them.
+        self.generate_spaced_for_pos(1)
         assert_raises_rpc_error(-4, "Transaction too large", recipient.fundrawtransaction, rawtx)
 
     def test_include_unsafe(self):
