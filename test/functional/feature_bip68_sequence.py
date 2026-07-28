@@ -49,7 +49,16 @@ class BIP68Test(BitcoinTestFramework):
                 "-acceptnonstdtxn=1",
                 "-peertimeout=9999",  # bump because mocktime might cause a disconnect otherwise
             ],
-            ["-acceptnonstdtxn=0"],
+            [
+                "-acceptnonstdtxn=0",
+                # node1 is only here to relay from, and must not make blocks of
+                # its own. The reorg test below has node0 permanently invalidate
+                # a branch and build a replacement, and node0 can never accept
+                # the original back. A block staked by node1 onto that original
+                # leaves the two on chains neither will give up, which no amount
+                # of waiting resolves. Staking is on by default in every node.
+                "-staking=0",
+            ],
         ]
 
     def skip_test_if_missing_module(self):
@@ -358,7 +367,19 @@ class BIP68Test(BitcoinTestFramework):
         # Reconsider the invalidated blocks to restore the chain, then reset
         self.nodes[0].reconsiderblock(tx2_block_hash)
         self.nodes[0].invalidateblock(self.nodes[0].getblockhash(cur_height+1))
-        self.nodes[0].generate(10)
+
+        # Build the replacement branch longer than the one being replaced.
+        #
+        # That last invalidateblock is never reconsidered, so node0 rejects the
+        # original branch from here on. node1 has no such opinion and still
+        # holds it, all 11 blocks of it: tx2's block, the 9 that advance MTP,
+        # and tx3's block. node1 only gives it up for something with more work,
+        # and node0 can never accept it back, so a replacement of 10 leaves the
+        # two on chains neither will drop and no later sync can succeed.
+        #
+        # It only reached CI as a failure because node1 has to have caught up
+        # for its branch to be the longer one, which locally it often has not.
+        self.nodes[0].generate(12)
 
     def activateCSV(self):
         # ReddCoin CSV activation via BIP9:
