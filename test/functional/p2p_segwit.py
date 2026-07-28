@@ -357,14 +357,17 @@ class SegWitTest(BitcoinTestFramework):
         for _ in range(nblocks):
             for attempt in range(10):
                 try:
-                    advance_time_for_pos(node, seconds=60)
+                    # Advance every node, not just this one. Under mocktime a
+                    # node whose clock runs ahead of its peers gets dropped, and
+                    # this is called repeatedly on the same node.
+                    advance_time_for_pos(self.nodes, seconds=60)
                     result = node.generate(1)
                     blocks.extend(result)
                     break
                 except Exception as e:
                     if "no valid coinstake found" in str(e):
                         if attempt < 9:
-                            advance_time_for_pos(node, seconds=120)
+                            advance_time_for_pos(self.nodes, seconds=120)
                         else:
                             raise
                     else:
@@ -388,7 +391,7 @@ class SegWitTest(BitcoinTestFramework):
         self.utxo = []
 
         # ReddCoin: Advance time to ensure coins have sufficient age for PoS
-        advance_time_for_pos(self.nodes[0], seconds=600)
+        advance_time_for_pos(self.nodes, seconds=600)
 
         # ReddCoin: Verify SegWit is NOT active yet (starting from cache at height 199)
         self.segwit_active = False
