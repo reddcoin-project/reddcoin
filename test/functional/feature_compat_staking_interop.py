@@ -72,7 +72,7 @@ class CompatStakingInteropTest(BitcoinTestFramework):
         self.add_nodes(
             self.num_nodes,
             extra_args=self.extra_args,
-            versions=[4220900, None, None],
+            versions=[4220903, None, None],
         )
         self.start_nodes()
         self.init_wallet(0)

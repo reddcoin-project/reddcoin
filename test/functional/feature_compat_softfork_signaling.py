@@ -46,7 +46,7 @@ from test_framework.util import (
 )
 
 # Version numbers
-VERSION_OLD = 4220900  # v4.22.9
+VERSION_OLD = 4220903  # v4.22.9.3
 VERSION_NEW = None     # v4.22.10 (current)
 
 # BIP9 regtest parameters

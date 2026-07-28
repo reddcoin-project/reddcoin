@@ -56,7 +56,7 @@ class CompatPosBlocksTest(BitcoinTestFramework):
         mocktime drift that would cause peers to disconnect each other.
         """
         self.add_nodes(self.num_nodes, extra_args=self.extra_args, versions=[
-            4220900,  # node0 — v4.22.9 (follower)
+            4220903,  # node0 - v4.22.9.3 (follower)
             None,     # node1 — v4.22.10 (lead staker)
         ])
         self.start_nodes()
