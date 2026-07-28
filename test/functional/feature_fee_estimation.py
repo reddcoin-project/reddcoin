@@ -118,17 +118,22 @@ def check_raw_estimates(node, fees_seen):
     """Call estimaterawfee and verify that the estimates meet certain invariants."""
 
     # Account for rounding error. Reddcoin's fee rates are orders of magnitude
-    # larger than Bitcoin's, and the estimator works in relative buckets, so a
-    # fixed tolerance of a millionth no longer covers the rounding: rates around
-    # 0.42 per kvB have been seen to invert by 4.2e-5 between neighbouring
-    # confirmation targets. Scale with the rate instead. A thousandth stays far
-    # below the bucket spacing that a real inversion would show.
-    delta = max(1.0e-6, 1.0e-3 * float(max(fees_seen)))
+    # larger than Bitcoin's, so a fixed tolerance of a millionth is far below
+    # the rounding they carry and neighbouring confirmation targets invert by
+    # more than it: inversions of 4.2e-5 at rates around 0.42 per kvB, and of
+    # 3.6e-3 at 0.44, have both been seen.
+    #
+    # Scale with the rate instead, and bound the scale by what the estimator
+    # can actually resolve. It works in buckets spaced by FEE_SPACING, 5% apart,
+    # so anything it could call a real inversion is at least that far. Two
+    # percent stays inside a single bucket, well short of one step, while
+    # covering the observed rounding several times over.
+    delta = max(1.0e-6, 2.0e-2 * float(max(fees_seen)))
     for i in range(1, 26):
         raw = node.estimaterawfee(i)
         for bucket_name, e in raw.items():
             if "feerate" not in e:
-                # Insufficient data for this confirmation target — skip
+                # Insufficient data for this confirmation target, skip
                 continue
             feerate = float(e["feerate"])
             assert_greater_than(feerate, 0)
@@ -141,18 +146,23 @@ def check_smart_estimates(node, fees_seen):
     """Call estimatesmartfee and verify that the estimates meet certain invariants."""
 
     # Account for rounding error. Reddcoin's fee rates are orders of magnitude
-    # larger than Bitcoin's, and the estimator works in relative buckets, so a
-    # fixed tolerance of a millionth no longer covers the rounding: rates around
-    # 0.42 per kvB have been seen to invert by 4.2e-5 between neighbouring
-    # confirmation targets. Scale with the rate instead. A thousandth stays far
-    # below the bucket spacing that a real inversion would show.
-    delta = max(1.0e-6, 1.0e-3 * float(max(fees_seen)))
+    # larger than Bitcoin's, so a fixed tolerance of a millionth is far below
+    # the rounding they carry and neighbouring confirmation targets invert by
+    # more than it: inversions of 4.2e-5 at rates around 0.42 per kvB, and of
+    # 3.6e-3 at 0.44, have both been seen.
+    #
+    # Scale with the rate instead, and bound the scale by what the estimator
+    # can actually resolve. It works in buckets spaced by FEE_SPACING, 5% apart,
+    # so anything it could call a real inversion is at least that far. Two
+    # percent stays inside a single bucket, well short of one step, while
+    # covering the observed rounding several times over.
+    delta = max(1.0e-6, 2.0e-2 * float(max(fees_seen)))
     last_feerate = float(max(fees_seen))
     all_smart_estimates = [node.estimatesmartfee(i) for i in range(1, 26)]
     for i, e in enumerate(all_smart_estimates):  # estimate is for i+1
         feerate = float(e["feerate"])
         if feerate < 0:
-            # Insufficient data for this confirmation target — skip
+            # Insufficient data for this confirmation target, skip
             continue
         assert_greater_than(feerate, 0)
 
