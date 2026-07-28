@@ -20,6 +20,7 @@
 #include <policy/fees.h>
 #include <pos/kernel.h>
 #include <pos/stake.h>
+#include <pos/signer.h>
 #include <pow.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
@@ -145,10 +146,11 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries)
+static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, CWallet* pwallet = nullptr)
 {
     int nHeightEnd = 0;
     int nHeight = 0;
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
     {   // Don't keep cs_main locked
         LOCK(cs_main);
@@ -159,19 +161,61 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
     UniValue blockHashes(UniValue::VARR);
     while (nHeight < nHeightEnd && !ShutdownRequested())
     {
-        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(coinbase_script));
-        if (!pblocktemplate.get())
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
-        CBlock *pblock = &pblocktemplate->block;
+        // ReddCoin: after nLastPowHeight the chain is PoS-only, so generate a signed
+        // PoS block (coinstake from the wallet) instead of a PoW (nonce-search) block.
+        bool needPoS = (nHeight >= consensusParams.nLastPowHeight);
 
-        uint256 block_hash;
-        if (!GenerateBlock(chainman, *pblock, nMaxTries, nExtraNonce, block_hash)) {
-            break;
-        }
+        if (needPoS && pwallet) {
+            CBlockIndex* pindexPrev = chainman.ActiveChain().Tip();
+            bool fPoSCancel = false;
+            // For a PoS block the coinbase is emptied, so scriptPubKeyIn is unused.
+            CScript scriptDummy = CScript() << OP_TRUE;
+            std::unique_ptr<CBlockTemplate> pblocktemplate;
+            {
+                LOCK(pwallet->cs_wallet);
+                pblocktemplate = BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(scriptDummy, pwallet, &fPoSCancel);
+            }
+            if (!pblocktemplate.get()) {
+                if (fPoSCancel) {
+                    throw JSONRPCError(RPC_MISC_ERROR, strprintf("Could not create PoS block at height %d: no valid coinstake found (wallet may need more coin age)", nHeight + 1));
+                }
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new PoS block");
+            }
+            CBlock *pblock = &pblocktemplate->block;
+            IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
-        if (!block_hash.IsNull()) {
-            ++nHeight;
-            blockHashes.push_back(block_hash.GetHex());
+            if (pblock->IsProofOfStake()) {
+                LOCK(pwallet->cs_wallet);
+                if (!SignBlock(*pblock, *pwallet)) {
+                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to sign PoS block");
+                }
+            }
+
+            std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
+            if (!chainman.ProcessNewBlock(Params(), shared_pblock, true, nullptr)) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+            }
+
+            uint256 block_hash = pblock->GetHash();
+            if (!block_hash.IsNull()) {
+                ++nHeight;
+                blockHashes.push_back(block_hash.GetHex());
+            }
+        } else {
+            std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler(chainman.ActiveChainstate(), mempool, Params()).CreateNewBlock(coinbase_script));
+            if (!pblocktemplate.get())
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
+            CBlock *pblock = &pblocktemplate->block;
+
+            uint256 block_hash;
+            if (!GenerateBlock(chainman, *pblock, nMaxTries, nExtraNonce, block_hash)) {
+                break;
+            }
+
+            if (!block_hash.IsNull()) {
+                ++nHeight;
+                blockHashes.push_back(block_hash.GetHex());
+            }
         }
     }
     return blockHashes;
@@ -429,7 +473,20 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    // ReddCoin: after nLastPowHeight generateBlocks needs a wallet to source the
+    // coinstake. Fetch it without throwing (GetWalletForJSONRPCRequest throws when
+    // none is loaded, which is fine for PoW heights). Use the single loaded wallet.
+    CWallet* pwallet = nullptr;
+    std::shared_ptr<CWallet> wallet;
+    if (HasWallets()) {
+        std::vector<std::shared_ptr<CWallet>> wallets = GetWallets();
+        if (wallets.size() == 1) {
+            wallet = wallets[0];
+            pwallet = wallet.get();
+        }
+    }
+
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
 },
     };
 }
@@ -980,8 +1037,36 @@ static RPCHelpMan getblocktemplate()
         nStart = GetTime();
 
         // Create new block
+        // ReddCoin: after nLastPowHeight the chain is PoS-only, so the template must
+        // include a coinstake. CreateNewBlock(scriptPubKey, wallet, &fPoSCancel) sources
+        // it from the wallet (same path as the staking RPCs); for a PoS block the
+        // coinbase is emptied, so the dummy scriptPubKey is unused.
+        int nHeight = pindexPrevNew->nHeight + 1;
+        bool needPoS = (nHeight > consensusParams.nLastPowHeight);
         CScript scriptDummy = CScript() << OP_TRUE;
-        pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptDummy);
+        if (needPoS) {
+            // Resolve the wallet while still holding cs_main: GetWalletForJSONRPCRequest
+            // throws when no wallet is loaded, and throwing after LEAVE_CRITICAL_SECTION
+            // would leave cs_main inconsistent.
+            std::shared_ptr<CWallet> wallet = GetWalletForJSONRPCRequest(request);
+            bool fPoSCancel = false;
+            // Release cs_main before taking cs_wallet (lock order) and re-acquire after,
+            // mirroring the longpoll wait above.
+            LEAVE_CRITICAL_SECTION(cs_main);
+            {
+                LOCK(wallet->cs_wallet);
+                pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptDummy, wallet.get(), &fPoSCancel);
+            }
+            ENTER_CRITICAL_SECTION(cs_main);
+            if (!pblocktemplate.get()) {
+                if (fPoSCancel) {
+                    throw JSONRPCError(RPC_MISC_ERROR, "Could not create PoS block template: no valid coinstake found (wallet may need more coin age)");
+                }
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new PoS block template");
+            }
+        } else {
+            pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptDummy);
+        }
         if (!pblocktemplate)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
