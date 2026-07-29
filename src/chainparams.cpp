@@ -661,20 +661,27 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nStartTime = 0; // Can start signaling immediately
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_CLTV].min_activation_height = 0; // No minimum activation height
-        // CSV (BIP68/112/113) - Set to activate via BIP9 signaling during PoS phase
-        // With window=144, activation occurs at height 432 (3 periods) if 75% signal
+        // CSV (BIP68/112/113), SegWit (BIP141/143/147) and Taproot (BIP340/341/342)
+        // are NEVER_ACTIVE on mainnet in every release up to and including v4.22.9.
+        // This node stands in for the existing network in compatibility tests, so it
+        // must not enforce them either; activating them here would mean both sides of
+        // the test share the same rule state and the upgrade path is never exercised.
+        // A test that needs them active on this node passes them explicitly, e.g.
+        // -vbparams=segwit:0:9223372036854775807:0
+        // The bit assignments stay aligned with develop so that signalling from an
+        // upgraded peer lands on the bits this node reports as unknown.
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0; // Can start signaling immediately
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].min_activation_height = 0; // No minimum activation height
+        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].min_activation_height = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 3;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].min_activation_height = 0; // No minimum activation height
+        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].min_activation_height = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 4;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = 0; // Can start signaling immediately
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation for NEVER_ACTIVE
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0;
 
         consensus.nMinimumChainWork = uint256{}; // Regtest: accept any chainwork for testing
         consensus.defaultAssumeValid = uint256{}; // Regtest: always validate for testing
