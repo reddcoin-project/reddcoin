@@ -1234,6 +1234,15 @@ class TaprootTest(BitcoinTestFramework):
         # instead of treated as anyone-can-spend.
         self.extra_args[0].append("-vbparams=taproot:-2:0")
         if self.options.previous_release:
+            # ced15b87da gave the v4.22.9.3 build mainnet's deployment state, so
+            # SegWit is NEVER_ACTIVE on its regtest as well. Every block this test
+            # submits to node0 carries witness data, and ContextualCheckBlock
+            # rejects all of it as unexpected-witness while SegWit is inactive.
+            # Schedule SegWit explicitly and leave Taproot off: that pairing is
+            # what the inactive spenders are written against, and it matches the
+            # current build's regtest defaults (nStartTime=0, nTimeout=NO_TIMEOUT)
+            # so both binaries run node0 the same way.
+            self.extra_args[0].append("-vbparams=segwit:0:9223372036854775807")
             self.wallet_names = [None, self.default_wallet_name]
 
     def setup_network(self):
