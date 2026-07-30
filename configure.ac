@@ -3,7 +3,14 @@ define(_CLIENT_VERSION_MAJOR, 4)
 define(_CLIENT_VERSION_MINOR, 22)
 define(_CLIENT_VERSION_BUILD, 9)
 define(_CLIENT_VERSION_RC, 0)
-define(_CLIENT_VERSION_IS_RELEASE, true)
+dnl This branch is a test artifact, not a release. It carries the same version
+dnl numerics as v4.22.9 but deliberately differs in consensus behaviour, so a
+dnl bare "v4.22.9" version string is indistinguishable from the real release.
+dnl Marking it not-a-release appends the git commit to the build description
+dnl (see BUILD_SUFFIX in src/clientversion.cpp), which fingerprints the binary
+dnl in -version, logs and the P2P subversion field. CLIENT_VERSION itself is
+dnl unchanged at 42209, so nothing that compares version integers is affected.
+define(_CLIENT_VERSION_IS_RELEASE, false)
 define(_COPYRIGHT_YEAR, 2025)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
 define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Reddcoin Core]])
