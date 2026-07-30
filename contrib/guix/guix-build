@@ -236,9 +236,22 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -c log.showSignature=false log --f
 
 # Execute "$@" in a pinned, possibly older version of Guix, for reproducibility
 # across time.
+#
+# GUIX_TIME_MACHINE_URL overrides where the pinned Guix is fetched from. The
+# default is the canonical Savannah repository. An override is occasionally
+# needed because Savannah can serve a malformed redirect, sending
+# git.savannah.gnu.org to the host https.git.savannah.gnu.org, with the scheme
+# glued onto the hostname. Plain git follows it with a warning, but libgit2,
+# which Guix uses via Guile-Git, rejects it as a cross-host redirect and the
+# build dies before it starts. Pointing straight at the redirect target avoids
+# it:
+#
+#   GUIX_TIME_MACHINE_URL=https://https.git.savannah.gnu.org/git/guix.git
+#
+# The pinned commit must exist in whatever repository this names.
 time-machine() {
     # shellcheck disable=SC2086
-    guix time-machine --url=https://git.savannah.gnu.org/git/guix.git \
+    guix time-machine --url="${GUIX_TIME_MACHINE_URL:-https://git.savannah.gnu.org/git/guix.git}" \
                       --commit=aa34d4d28dfe25ba47d5800d05000fb7221788c0 \
                       --cores="$JOBS" \
                       --keep-failed \
