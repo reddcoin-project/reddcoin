@@ -54,6 +54,19 @@ class MinimumChainWorkTest(BitcoinTestFramework):
         self.nodes[1].setmocktime(self.mocktime)
         self.nodes[2].setmocktime(genesis_time + 72 * 60 * 60)
 
+        # Opt out of the framework's automatic mocktime sync. setup_nodes()
+        # installs time_sync_callback on every node whenever there is more than
+        # one, and TestNode.generate() calls it after each block. That callback
+        # is sync_time(), which sets every node to the *maximum* mocktime it
+        # finds, so once node2's deliberate 24h lead is recorded in
+        # node2.mocktime it gets propagated straight back onto nodes 0 and 1.
+        # Their own tips then look 24h old, IsInitialBlockDownload() stays true,
+        # node1 never relays, and node2 never syncs. A test that wants nodes on
+        # deliberately different clocks cannot also have them levelled after
+        # every block, so this one manages mocktime itself throughout.
+        for n in self.nodes:
+            n.time_sync_callback = None
+
         for i in range(self.num_nodes-1):
             self.connect_nodes(i+1, i)
 
