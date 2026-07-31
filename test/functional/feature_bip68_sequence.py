@@ -366,20 +366,25 @@ class BIP68Test(BitcoinTestFramework):
 
         # Reconsider the invalidated blocks to restore the chain, then reset
         self.nodes[0].reconsiderblock(tx2_block_hash)
-        self.nodes[0].invalidateblock(self.nodes[0].getblockhash(cur_height+1))
 
-        # Build the replacement branch longer than the one being replaced.
+        # Measure the branch about to be disowned, then replace it with a longer
+        # one.
         #
-        # That last invalidateblock is never reconsidered, so node0 rejects the
-        # original branch from here on. node1 has no such opinion and still
-        # holds it, all 11 blocks of it: tx2's block, the 9 that advance MTP,
-        # and tx3's block. node1 only gives it up for something with more work,
-        # and node0 can never accept it back, so a replacement of 10 leaves the
-        # two on chains neither will drop and no later sync can succeed.
+        # The invalidateblock below is never reconsidered, so node0 rejects that
+        # branch from here on. node1 has no such opinion and still holds it, and
+        # gives it up only for something with more work, so unless the
+        # replacement is longer the two sit on chains neither will drop and no
+        # later sync can succeed.
         #
-        # It only reached CI as a failure because node1 has to have caught up
-        # for its branch to be the longer one, which locally it often has not.
-        self.nodes[0].generate(12)
+        # How long it is cannot be assumed. The blocks this test asks for come
+        # to 11 above cur_height, but node0 stakes on its own account as well,
+        # so under load it can be carrying considerably more than that. Ask both
+        # nodes instead: node1 because it may have seen blocks node0 has since
+        # rolled back, node0 for its own tip.
+        disowned_height = max(self.nodes[0].getblockcount(),
+                              self.nodes[1].getblockcount())
+        self.nodes[0].invalidateblock(self.nodes[0].getblockhash(cur_height+1))
+        self.nodes[0].generate(disowned_height - cur_height + 1)
 
     def activateCSV(self):
         # ReddCoin CSV activation via BIP9:
