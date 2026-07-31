@@ -299,6 +299,20 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
     // pindexPrev - this is a block that is previous to PoS block that we are checking, you can think of it as tip of our chain
     std::vector<CBlockIndex*> tmpChain;
     int32_t nDepth = pindexPrev->nHeight - (pindexFrom->nHeight - 1); // -1 is used to also include pindexFrom
+    if (nDepth < 0) {
+        // pindexFrom is above the tip we are building on, so it cannot be an
+        // ancestor of pindexPrev and there is no chain between them to walk. A
+        // staking wallet reaches this after a reorg, while it still holds coins
+        // confirmed on the branch that was just disowned.
+        //
+        // nDepth is signed but reserve() takes an unsigned size_type, so a
+        // negative depth became an enormous allocation and threw
+        // std::length_error, surfacing to callers as "vector::reserve". The loop
+        // below already treats a non-positive depth as nothing to walk; only the
+        // reserve was unguarded.
+        return error("GetKernelStakeModifier() : block %s at height %d is above pindexPrev at height %d",
+                     hashBlockFrom.ToString(), pindexFrom->nHeight, pindexPrev->nHeight);
+    }
     tmpChain.reserve(nDepth);
     CBlockIndex* it = pindexPrev;
     for (int i = 1; i <= nDepth && !active_chainstate->m_chain.Contains(it); i++) {
