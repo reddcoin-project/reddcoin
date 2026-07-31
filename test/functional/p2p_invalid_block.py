@@ -276,7 +276,10 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         privkey2 = node.dumpprivkey(unspent2['address'])
         tx3_raw = node.createrawtransaction(
             [{"txid": unspent2['txid'], "vout": unspent2['vout']}],
-            [{node.getnewaddress(): float(unspent2['amount']) - 0.01}]
+            # Keep this in Decimal. The amount is a coinstake output, so it is
+            # an arbitrary number of satoshis, and going through float leaves a
+            # value the node will not accept.
+            [{node.getnewaddress(): unspent2['amount'] - Decimal('0.01')}]
         )
         tx3_signed = node.signrawtransactionwithkey(tx3_raw, [privkey2])['hex']
         tx3 = tx_from_hex(tx3_signed)
