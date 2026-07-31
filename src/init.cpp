@@ -1608,18 +1608,16 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
-    if (chainparams.GetConsensus().vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout != 0) {
-        // Only advertise witness capabilities if segwit has a defined activation window.
-        // This allows deploying segwit code before scheduling activation by setting nTimeout=0.
-        // Once activation is scheduled (nTimeout != 0), nodes will advertise NODE_WITNESS.
+    if (DeploymentEnabled(chainparams.GetConsensus(), Consensus::DEPLOYMENT_SEGWIT)) {
+        // Only advertise witness capabilities once SegWit is scheduled, that is once
+        // nStartTime is something other than NEVER_ACTIVE. A node that does not enforce
+        // SegWit must not claim to serve witness data: if it advertises NODE_WITNESS it
+        // will also request witness blocks (GetFetchFlags), and ContextualCheckBlock
+        // then rejects every one of them as unexpected-witness because fHaveWitness is
+        // false while the deployment is inactive.
         //
         // Note: setting NODE_WITNESS is never strictly required. The only downside from not
         // doing so is that after activation, upgraded nodes won't fetch witness blocks from you.
-        //
-        // ReddCoin: Using nTimeout check (pre-buried style) instead of DeploymentEnabled()
-        // because segwit is not yet activated on mainnet. DeploymentEnabled() returns true
-        // for any nStartTime != NEVER_ACTIVE, which would incorrectly advertise NODE_WITNESS
-        // before segwit activation is scheduled.
         nLocalServices = ServiceFlags(nLocalServices | NODE_WITNESS);
     }
 

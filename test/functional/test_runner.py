@@ -132,10 +132,12 @@ BASE_SCRIPTS = [
     'wallet_address_types.py --legacy-wallet',
     'wallet_address_types.py --descriptors',
     'feature_bip68_sequence.py',
+    'feature_segwit_nonupgraded_sync.py',
     'p2p_feefilter.py',
     'feature_reindex.py',
     'feature_abortnode.py',
     # vv Tests less than 30s vv
+    'feature_segwit_service_bit.py',
     'wallet_keypool_topup.py --legacy-wallet',
     'wallet_keypool_topup.py --descriptors',
     'feature_fee_estimation.py',

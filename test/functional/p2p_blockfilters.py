@@ -45,9 +45,14 @@ class CompactFiltersTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.rpc_timeout = 480
         self.num_nodes = 2
+        # SegWit starts in 2033, so the deployment never leaves DEFINED and never
+        # activates over the life of this test. It is still scheduled, though,
+        # because nStartTime is not NEVER_ACTIVE, so both nodes advertise
+        # NODE_WITNESS as upstream expects. nTimeout is not consulted from
+        # DEFINED and its value here is immaterial.
         self.extra_args = [
-            ["-whitelist=127.0.0.1", "-blockfilterindex", "-peerblockfilters", "-vbparams=segwit:2000000000:1"],  # Far future start, nTimeout=1 → NODE_WITNESS],
-            ["-whitelist=127.0.0.1", "-blockfilterindex","-vbparams=segwit:2000000000:1"],
+            ["-whitelist=127.0.0.1", "-blockfilterindex", "-peerblockfilters", "-vbparams=segwit:2000000000:1"],
+            ["-whitelist=127.0.0.1", "-blockfilterindex", "-vbparams=segwit:2000000000:1"],
         ]
 
     def skip_test_if_missing_module(self):
