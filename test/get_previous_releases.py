@@ -47,6 +47,47 @@ def pushd(new_dir) -> None:
         os.chdir(previous_dir)
 
 
+def release_urls(tag, tarball) -> list:
+    """Where to look for a release archive, in order of preference.
+
+    Reddcoin publishes on download.reddcoin.com under bin/reddcoin-core-<version>/,
+    which is the layout bitcoincore.org uses, named for the version rather than
+    the tag. GitHub release assets are a second source, with their own layout,
+    and are worth trying because download.reddcoin.com sits behind a proxy whose
+    bot protection turns some CI runners away: this fetch once received a 5552
+    byte challenge page with a 200 status where a browser got the archive.
+
+    PREVIOUS_RELEASES_URL replaces the list with a single mirror, using the
+    download.reddcoin.com layout.
+    """
+    version = tag[1:]
+    override = os.environ.get('PREVIOUS_RELEASES_URL')
+    if override:
+        return ['{base}/reddcoin-core-{version}/{tarball}'.format(
+            base=override.rstrip('/'), version=version, tarball=tarball)]
+    return [
+        'https://download.reddcoin.com/bin/reddcoin-core-{version}/{tarball}'.format(
+            version=version, tarball=tarball),
+        'https://github.com/reddcoin-project/reddcoin/releases/download/{tag}/{tarball}'.format(
+            tag=tag, tarball=tarball),
+    ]
+
+
+def describe_payload(tarball) -> str:
+    """Summarise what actually arrived, for when it is not the archive.
+
+    A bare "checksum did not match" gives no clue whether the file is truncated,
+    a redirect, or an HTML error page, which is the difference between a stale
+    checksum and a host that is refusing to serve us.
+    """
+    size = Path(tarball).stat().st_size
+    with open(tarball, 'rb') as f:
+        head = f.read(200)
+    preview = head.decode('utf-8', 'replace').replace('\n', ' ').replace('\r', '')
+    return '{size} bytes, begins: {preview}'.format(
+        size=size, preview=preview.strip()[:150])
+
+
 def download_binary(tag, args) -> int:
     if Path(tag).is_dir():
         if not args.remove_dir:
@@ -56,42 +97,41 @@ def download_binary(tag, args) -> int:
     Path(tag).mkdir()
     tarball = 'reddcoin-{tag}-{platform}.tar.gz'.format(
         tag=tag[1:], platform=args.platform)
-    # Releases live on download.reddcoin.com, one directory per version, named
-    # for the version rather than the tag: v4.22.9.3 is under
-    # bin/reddcoin-core-4.22.9.3/. Override the base for a mirror or a staging
-    # location; the version directory and archive name are still appended.
-    baseUrl = os.environ.get(
-        'PREVIOUS_RELEASES_URL', 'https://download.reddcoin.com/bin')
-    tarballUrl = '{baseUrl}/reddcoin-core-{version}/{tarball}'.format(
-        baseUrl=baseUrl.rstrip('/'), version=tag[1:], tarball=tarball)
 
-    print('Fetching: {tarballUrl}'.format(tarballUrl=tarballUrl))
+    for tarballUrl in release_urls(tag, tarball):
+        print('Fetching: {tarballUrl}'.format(tarballUrl=tarballUrl))
 
-    header, status = subprocess.Popen(
-        ['curl', '--location', '--head', tarballUrl],
-        stdout=subprocess.PIPE).communicate()
-    if re.search("404 Not Found", header.decode("utf-8")):
-        print("Binary tag was not found")
+        header, status = subprocess.Popen(
+            ['curl', '--location', '--head', tarballUrl],
+            stdout=subprocess.PIPE).communicate()
+        if re.search("404 Not Found", header.decode("utf-8")):
+            print("  not published here")
+            continue
+
+        if subprocess.run(
+                ['curl', '--location', '--remote-name', tarballUrl]).returncode:
+            print("  download failed")
+            continue
+
+        hasher = hashlib.sha256()
+        with open(tarball, "rb") as afile:
+            hasher.update(afile.read())
+        tarballHash = hasher.hexdigest()
+
+        if tarballHash not in SHA256_SUMS or SHA256_SUMS[tarballHash] != tarball:
+            # Either the archive changed and SHA256_SUMS is stale, or something
+            # other than the archive was served. describe_payload says which.
+            print("  checksum did not match")
+            print("  got sha256 {}".format(tarballHash))
+            print("  {}".format(describe_payload(tarball)))
+            Path(tarball).unlink()
+            continue
+
+        print("Checksum matched")
+        break
+    else:
+        print("No source served a matching {tarball}".format(tarball=tarball))
         return 1
-
-    curlCmds = [
-        ['curl', '--location', '--remote-name', tarballUrl]
-    ]
-
-    for cmd in curlCmds:
-        ret = subprocess.run(cmd).returncode
-        if ret:
-            return ret
-
-    hasher = hashlib.sha256()
-    with open(tarball, "rb") as afile:
-        hasher.update(afile.read())
-    tarballHash = hasher.hexdigest()
-
-    if tarballHash not in SHA256_SUMS or SHA256_SUMS[tarballHash] != tarball:
-        print("Checksum did not match")
-        return 1
-    print("Checksum matched")
 
     # Extract tarball
     ret = subprocess.run(['tar', '-zxf', tarball, '-C', tag,
