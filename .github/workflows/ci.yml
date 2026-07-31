@@ -189,6 +189,22 @@ jobs:
           releases: ${{ matrix.releases || 'false' }}
       - name: CI script
         run: ./ci/test_run_all.sh
+      # make check runs one test_reddcoin per source file and sends its output to
+      # <source>.cpp.log rather than the console, printing the log only when that
+      # suite fails (src/Makefile.test.include). A suite that hangs is therefore
+      # killed before anything cats its log, and the console shows only the
+      # "Running tests:" line echoed before the binary started. Keep the logs so
+      # the next hang can be read rather than guessed at. Note MAKEJOBS runs four
+      # suites at once, so the one still running is not necessarily the one last
+      # announced.
+      - name: Upload unit test logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs-${{ matrix.name }}
+          path: ci/scratch/build/*/src/**/*.cpp.log
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Save caches
         if: always()
         uses: ./.github/actions/save-caches
@@ -226,6 +242,16 @@ jobs:
         uses: ./.github/actions/restore-caches
       - name: CI script
         run: ./ci/test_run_all.sh
+      # See the matching step in ci-matrix: make check hides each suite's output
+      # in a log file, so a hang leaves nothing on the console to read.
+      - name: Upload unit test logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs-macos-native
+          path: ci/scratch/build/*/src/**/*.cpp.log
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Save caches
         if: always()
         uses: ./.github/actions/save-caches
