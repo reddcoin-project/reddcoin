@@ -16,22 +16,25 @@ This produces a coherent version-version delta:
   - Mempool delta on v2 unsatisfied-lock txs: v4.22.10 ACCEPTS (>= 3
     exempts v2 from BIP68), v4.22.9 REJECTS (>= 2 enforces v2). Observable
     pre-CSV too — STANDARD flags don't depend on CSV state.
-  - Consensus delta on v2 unsatisfied-lock blocks: only fires post-CSV
-    (block-validation gates LOCKTIME_VERIFY_SEQUENCE on CSV deployment).
-    Then v4.22.10 accepts the block, v4.22.9 rejects it. Chain split.
+  - No consensus delta on v2 unsatisfied-lock blocks. Block validation gates
+    LOCKTIME_VERIFY_SEQUENCE on DeploymentActiveAt(DEPLOYMENT_CSV), and CSV
+    is NEVER_ACTIVE in every release up to and including v4.22.9, so that
+    node never enforces BIP68 in blocks and cannot be made to by network
+    signalling. It accepts what v4.22.10 mines. Relay diverges, chains do not.
   - No divergence on v3 sends (the v4.22.10 wallet default after RED-13):
     v3 meets both thresholds; both versions enforce BIP68 identically.
 
-Test phases (execution order: A, B, C, E, D; D is last because it leaves
-the chains intentionally divergent):
+Test phases (execution order: A, B, C, E, D):
 
   Phase A — Pre-CSV: mempool delta on v2 unsat
     node1 (v4.22.10) accepts v2 unsat into mempool; node0 (v4.22.9) rejects.
     Chain stays in sync — block-validation BIP68 isn't active yet.
 
-  Phase B — Activate CSV via BIP9 signalling on v4.22.10 (also v4.22.9-regtest)
-    Node1 restarts with CSV signalling enabled, generates blocks through
-    BIP9 activation. Node0 follows; v4.22.9-regtest also signals CSV.
+  Phase B — Activate CSV via BIP9 signalling on v4.22.10 only
+    Node1 restarts with CSV signalling enabled and generates blocks through
+    BIP9 activation. Node0 follows the chain, but CSV stays NEVER_ACTIVE on
+    it: since ced15b87da the v4.22.9.3 build carries mainnet's deployment
+    state, so there is no BIP9 window for CSV to move through there.
 
   Phase C — v2 satisfied lock — both accept
     Different reasoning per version (v4.22.10 exempts v2; v4.22.9 enforces
@@ -43,17 +46,18 @@ the chains intentionally divergent):
       - v3 unsatisfied-lock: both reject from mempool
       - v3 satisfied-lock:   both accept; mined block syncs
 
-  Phase D — v2 unsatisfied lock post-CSV: consensus divergence
+  Phase D — v2 unsatisfied lock post-CSV: relay divergence only
     Mempool delta from Phase A re-asserted. node1 mines a block that
     naturally includes the v2 unsat tx (its mempool accepted it — no
-    generateblock force-include needed). node0 receives the block, rejects
-    it at consensus (BIP68 enforced post-CSV). Documented chain split —
-    RED-8. This phase intentionally leaves the chains divergent.
+    generateblock force-include needed). node0 will not relay that tx, but
+    it ACCEPTS the block, because BIP68 is not a consensus rule on a node
+    with CSV NEVER_ACTIVE. The chains converge. RED-8's residual risk is to
+    propagation, not to consensus.
 
 v1 transactions are not tested because Reddcoin wallets do not produce v1
 (PoSV requires nTime → every Reddcoin wallet tx is v2+ by design).
 
-Requires previous releases (v4.22.9 binary), see test/README.md.
+Requires previous releases (the v4.22.9.3 binary), see test/README.md.
 """
 
 import hashlib
@@ -88,7 +92,7 @@ RELATIVE_LOCK_10_BLOCKS = 10
 NOT_FINAL_ERROR = "non-BIP68-final"
 
 # Version numbers
-VERSION_OLD = 4220900  # v4.22.9
+VERSION_OLD = 4220903  # v4.22.9.3
 VERSION_NEW = None     # v4.22.10 (current build)
 
 
@@ -363,20 +367,27 @@ class CompatTxVersionsTest(BitcoinTestFramework):
     # ------------------------------------------------------------------
 
     def phase_d_v2_unsatisfied_lock_divergence(self):
-        """Documented consensus divergence (RED-8). Under Path B, v4.22.10's
-        BIP68 threshold is >= 3 in both mempool AND consensus (HEAD's
-        hardcoded tx_verify.cpp from pr/core-fixes). v4.22.9's threshold is
-        >= 2 in both layers. So for a v2 unsatisfied-lock tx:
+        """Documented divergence (RED-8), which is relay-only. Under Path B,
+        v4.22.10's BIP68 threshold is >= 3 in both mempool AND consensus
+        (HEAD's hardcoded tx_verify.cpp from pr/core-fixes). v4.22.9's
+        threshold is >= 2 in both layers. So for a v2 unsatisfied-lock tx:
 
           mempool:    node1 accepts (>= 3 exempts v2); node0 rejects (>= 2 enforces)
-          block-val:  node1 accepts a block containing it; node0 rejects (post-CSV)
+          block-val:  node1 accepts a block containing it; so does node0
+
+        The block-validation halves agree for a reason that has nothing to do
+        with the threshold: LOCKTIME_VERIFY_SEQUENCE is set only when
+        DeploymentActiveAt(DEPLOYMENT_CSV) holds, and CSV is NEVER_ACTIVE on
+        the released node, so BIP68 is not among the rules it applies to
+        blocks at all. Its stricter threshold governs relay and nothing else.
 
         Node1's block template naturally picks the tx from its mempool — no
-        generateblock force-include is needed. Disconnecting node0 first
-        prevents auto-sync of the divergent block via P2P, so the chain-split
-        assertion is observable.
+        generateblock force-include is needed. node0 is disconnected first so
+        that its acceptance of the block is an observable event on reconnect
+        rather than something that happened during mining.
 
-        This phase is run LAST and intentionally leaves the chains divergent.
+        This phase is run LAST because it is the destructive one: it leaves a
+        transaction on the chain that node0 would never have relayed.
         """
         self.log.info("=== Phase D: v2 tx with unsatisfied lock — documented divergence ===")
         node0 = self.nodes[0]
@@ -439,44 +450,49 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         assert_equal(node0.getbestblockhash(), common_tip)
         self.log.info("node0 (v4.22.9) still at common tip %s" % common_tip)
 
-        # Reconnect — expect node0 to reject the divergent block at consensus
-        self.log.info("Reconnecting nodes — node0 (v4.22.9) should reject the divergent block...")
+        # Reconnect. node0 has no BIP68 consensus rule to break, so it follows
+        # the chain rather than splitting from it.
+        self.log.info("Reconnecting nodes — node0 (v4.22.9) should accept the block...")
         set_node_times([node0, node1], node1.mocktime)
         self.connect_nodes(0, 1)
+        self.sync_blocks(timeout=60)
 
-        from test_framework.util import wait_until_helper
-        try:
-            wait_until_helper(
-                lambda: new_block_hash in [t["hash"] for t in node0.getchaintips()],
-                timeout=30,
-            )
-            tip = next(
-                (t for t in node0.getchaintips() if t["hash"] == new_block_hash),
-                None,
-            )
-            assert tip is not None
-            assert tip["status"] == "invalid", (
-                "Expected node0 to mark the block as invalid; got status=%s" % tip["status"]
-            )
-            self.log.info(
-                "node0 received the block and rejected it as invalid (status=%s)" % tip["status"]
-            )
-        except Exception:
-            self.log.info("node0 did not adopt the divergent block (rejected or not received)")
-
-        # Confirm chain-split persists — this is the test's documented outcome
-        assert_equal(node0.getbestblockhash(), common_tip)
+        # The chains converge. Block validation gates LOCKTIME_VERIFY_SEQUENCE on
+        # DeploymentActiveAt(DEPLOYMENT_CSV) (validation.cpp), and CSV is
+        # NEVER_ACTIVE on the released node, so BIP68 is simply not a consensus
+        # rule there. It cannot reject the block whatever its mempool thinks of
+        # the transaction.
+        assert_equal(node0.getbestblockhash(), new_block_hash)
         assert_equal(node1.getbestblockhash(), new_block_hash)
+
+        # Verbosity 1, not 2. Verbosity 2 makes TxToUniv compute a fee per
+        # transaction, and v4.22.9 asserts MoneyRange on it (core_write.cpp:268)
+        # without allowing for the negative fee a coinstake necessarily has. So
+        # getblock(hash, 2) fails on this node for any PoS block, which is every
+        # block past the PoW phase. develop guards that case; the released binary
+        # does not, and it is not this test's business to exercise it. Verbosity
+        # 1 gives the txid list with no fee computation.
+        node0_block_txids = node0.getblock(new_block_hash, 1)["tx"]
+        assert v2_txid in node0_block_txids, (
+            "node0 accepted the block but does not report the v2 unsat tx in it"
+        )
+        assert not self._csv_is_active(node0), (
+            "CSV became active on the old node; this phase assumes the released "
+            "node's NEVER_ACTIVE deployment state"
+        )
+
         self.log.info(
-            "Phase D PASSED: divergence confirmed. "
-            "node0 (v4.22.9) tip=%s ; node1 (v4.22.10) tip=%s."
-            % (common_tip, new_block_hash)
+            "Phase D passed: node0 (v4.22.9) accepted the block and both nodes are at %s"
+            % new_block_hash
         )
         self.log.warning(
-            "Known consensus divergence: post-CSV-activation, v4.22.10 accepts v2 unsatisfied-lock "
-            "txs in BOTH mempool and blocks (threshold >= 3 exempts v2 entirely); v4.22.9 rejects "
-            "in both layers (threshold >= 2 enforces v2). The split materialises whenever a "
-            "v4.22.10 node mines such a tx into a block. See RED-8 for mitigation."
+            "Known divergence (RED-8) is relay-only, not consensus. v4.22.10 accepts v2 "
+            "unsatisfied-lock txs into its mempool (threshold >= 3 exempts v2); v4.22.9 rejects "
+            "them (threshold >= 2 enforces v2), so it will neither hold nor forward such a tx. "
+            "It still accepts any block containing one, because CSV is NEVER_ACTIVE in every "
+            "release up to v4.22.9 and BIP68 is gated on that deployment. A v4.22.9 node cannot "
+            "be made to enforce BIP68 by network signalling, so activating CSV on mainnet does "
+            "not split these two versions apart. The cost is propagation, not consensus."
         )
 
     # ------------------------------------------------------------------

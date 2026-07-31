@@ -26,7 +26,7 @@ the node falls back to a PoW template which is rejected past nLastPowHeight).
     Disconnect, node1 mines 50 PoS blocks, reconnect, node0 catches up.
     Repeat once more to test repeated long-gap sync.
 
-Requires previous releases (v4.22.9 binary), see test/README.md.
+Requires previous releases (the v4.22.9.3 binary), see test/README.md.
 """
 
 from test_framework.test_framework import BitcoinTestFramework
@@ -71,7 +71,7 @@ class CompatP2PSyncTest(BitcoinTestFramework):
         self.add_nodes(
             self.num_nodes,
             extra_args=self.extra_args,
-            versions=[4220900, None],
+            versions=[4220903, None],
         )
         self.start_nodes()
         self.import_deterministic_coinbase_privkeys()

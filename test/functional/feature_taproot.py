@@ -1234,6 +1234,15 @@ class TaprootTest(BitcoinTestFramework):
         # instead of treated as anyone-can-spend.
         self.extra_args[0].append("-vbparams=taproot:-2:0")
         if self.options.previous_release:
+            # ced15b87da gave the v4.22.9.3 build mainnet's deployment state, so
+            # SegWit is NEVER_ACTIVE on its regtest as well. Every block this test
+            # submits to node0 carries witness data, and ContextualCheckBlock
+            # rejects all of it as unexpected-witness while SegWit is inactive.
+            # Schedule SegWit explicitly and leave Taproot off: that pairing is
+            # what the inactive spenders are written against, and it matches the
+            # current build's regtest defaults (nStartTime=0, nTimeout=NO_TIMEOUT)
+            # so both binaries run node0 the same way.
+            self.extra_args[0].append("-vbparams=segwit:0:9223372036854775807")
             self.wallet_names = [None, self.default_wallet_name]
 
     def setup_network(self):
@@ -1241,9 +1250,9 @@ class TaprootTest(BitcoinTestFramework):
         be connected during initial block generation — mocktime drift causes
         header rejection. Connect after syncing mocktime."""
         self.add_nodes(self.num_nodes, self.extra_args, versions=[
-            # ReddCoin: use the v4.22.9 previous release (encoded 4220900), not
+            # ReddCoin: use the v4.22.9.3 previous release (encoded 4220903), not
             # upstream's pre-Taproot v0.20.1 (200100) which ReddCoin doesn't ship.
-            4220900 if self.options.previous_release else None,
+            4220903 if self.options.previous_release else None,
             None,
         ])
         self.start_nodes()

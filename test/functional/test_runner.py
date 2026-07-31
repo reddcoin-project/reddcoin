@@ -211,12 +211,12 @@ BASE_SCRIPTS = [
     'example_test.py',
     'wallet_txn_doublespend.py --legacy-wallet',
     'wallet_txn_doublespend.py --descriptors',
-    # Group-A wallet-evolution tests are deferred: the v4.22.9 previous release is
-    # already at FEATURE_LATEST (169900) — identical to the current wallet version —
+    # Group-A wallet-evolution tests are deferred: the v4.22.9.3 previous release is
+    # already at FEATURE_LATEST (169900), identical to the current wallet version,
     # so there is no upgrade/cross-version delta to test yet. Re-enable and adapt them
-    # to use the v4.22.9 release (4220900) once FEATURE_LATEST is bumped past 169900
-    # (then v4.22.9 becomes a genuine old wallet). Until then they only fail (they
-    # request nonexistent Bitcoin Core v0.1x binaries).
+    # to use that release (4220903) once FEATURE_LATEST is bumped past 169900 (then
+    # it becomes a genuine old wallet). Until then they only fail (they request
+    # nonexistent Bitcoin Core v0.1x binaries).
     # 'feature_backwards_compatibility.py --legacy-wallet',
     # 'feature_backwards_compatibility.py --descriptors',
     'wallet_txn_clone.py --mineblock',
@@ -249,7 +249,7 @@ BASE_SCRIPTS = [
     'wallet_import_with_label.py --legacy-wallet',
     'wallet_importdescriptors.py --descriptors',
     # Deferred group-A wallet-evolution test (see note above); no cross-version
-    # delta until FEATURE_LATEST is bumped past v4.22.9's 169900.
+    # delta until FEATURE_LATEST is bumped past v4.22.9.3's 169900.
     # 'wallet_upgradewallet.py --legacy-wallet',
     'rpc_bind.py --ipv4',
     'rpc_bind.py --ipv6',
@@ -259,7 +259,10 @@ BASE_SCRIPTS = [
     'feature_pos_coinstake_fees.py',
     'feature_pos_sync.py',
     'feature_pos_tx_version_floor.py',
-    # v4.22.9 ↔ v4.22.10 compatibility tests (require releases/v4.22.9/bin/)
+    # Compatibility tests against the previous release (require
+    # releases/v4.22.9.3/bin/). That is v4.22.9 plus the commits that let it run
+    # regtest, which the released v4.22.9 cannot; the fourth version component
+    # is what distinguishes the two.
     'feature_compat_p2p_sync.py',
     'feature_compat_pos_blocks.py',
     'feature_pos_coinstake_fees.py --previous_release',
