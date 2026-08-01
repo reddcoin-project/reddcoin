@@ -20,45 +20,20 @@ import sys
 import hashlib
 
 
+# Checksums of the release archives this script downloads, keyed by hash.
+#
+# Reddcoin publishes these on download.reddcoin.com under the same layout
+# bitcoincore.org uses, bin/reddcoin-core-<version>/. Add an entry per platform
+# as each is uploaded; only the hosts actually published need to be here.
+#
+# The archives are the ones Guix produces, unchanged: contrib/guix/guix-build
+# writes guix-build-<version>/output/<host>/reddcoin-<version>-<host>.tar.gz,
+# which is already the name and the layout this expects. Pass FORCE_VERSION to
+# name it for the release rather than for the commit built. Guix also builds
+# Linux hosts against glibc 2.24, which matters here: the job that uses these
+# runs in ubuntu:18.04, and a host build wants far newer than it has.
 SHA256_SUMS = {
-    "d40f18b4e43c6e6370ef7db9131f584fbb137276ec2e3dba67a4b267f81cb644": "bitcoin-0.15.2-aarch64-linux-gnu.tar.gz",
-    "54fb877a148a6ad189a1e1ab1ff8b11181e58ff2aaf430da55b3fd46ae549a6b": "bitcoin-0.15.2-arm-linux-gnueabihf.tar.gz",
-    "2b843506c3f1af0eeca5854a920264f9a829f02d0d50328005950ddcbe88874d": "bitcoin-0.15.2-i686-pc-linux-gnu.tar.gz",
-    "87e9340ff3d382d543b2b69112376077f0c8b4f7450d372e83b68f5a1e22b2df": "bitcoin-0.15.2-osx64.tar.gz",
-    "566be44190fd76daa01f13d428939dadfb8e3daacefc8fa17f433cad28f73bd5": "bitcoin-0.15.2-x86_64-linux-gnu.tar.gz",
-    #
-    "0768c6c15caffbaca6524824c9563b42c24f70633c681c2744649158aa3fd484": "bitcoin-0.16.3-aarch64-linux-gnu.tar.gz",
-    "fb2818069854a6ad20ea03b28b55dbd35d8b1f7d453e90b83eace5d0098a2a87": "bitcoin-0.16.3-arm-linux-gnueabihf.tar.gz",
-    "75a537844313b0a84bdb61ffcdc5c4ce19a738f7ddf71007cd2edf664efd7c37": "bitcoin-0.16.3-i686-pc-linux-gnu.tar.gz",
-    "78c3bff3b619a19aed575961ea43cc9e142959218835cf51aede7f0b764fc25d": "bitcoin-0.16.3-osx64.tar.gz",
-    "5d422a9d544742bc0df12427383f9c2517433ce7b58cf672b9a9b17c2ef51e4f": "bitcoin-0.16.3-x86_64-linux-gnu.tar.gz",
-    #
-    "5a6b35d1a348a402f2d2d6ab5aed653a1a1f13bc63aaaf51605e3501b0733b7a": "bitcoin-0.17.2-aarch64-linux-gnu.tar.gz",
-    "d1913a5d19c8e8da4a67d1bd5205d03c8614dfd2e02bba2fe3087476643a729e": "bitcoin-0.17.2-arm-linux-gnueabihf.tar.gz",
-    "d295fc93f39bbf0fd937b730a93184899a2eb6c3a6d53f3d857cbe77ef89b98c": "bitcoin-0.17.2-i686-pc-linux-gnu.tar.gz",
-    "a783ba20706dbfd5b47fbedf42165fce70fbbc7d78003305d964f6b3da14887f": "bitcoin-0.17.2-osx64.tar.gz",
-    "943f9362b9f11130177839116f48f809d83478b4c28591d486ee9a7e35179da6": "bitcoin-0.17.2-x86_64-linux-gnu.tar.gz",
-    #
-    "88f343af72803b851c7da13874cc5525026b0b55e63e1b5e1298390c4688adc6": "bitcoin-0.18.1-aarch64-linux-gnu.tar.gz",
-    "cc7d483e4b20c5dabd4dcaf304965214cf4934bcc029ca99cbc9af00d3771a1f": "bitcoin-0.18.1-arm-linux-gnueabihf.tar.gz",
-    "989e847b3e95fc9fedc0b109cae1b4fa43348f2f712e187a118461876af9bd16": "bitcoin-0.18.1-i686-pc-linux-gnu.tar.gz",
-    "b7bbcee7a7540f711b171d6981f939ca8482005fde22689bc016596d80548bb1": "bitcoin-0.18.1-osx64.tar.gz",
-    "425ee5ec631ae8da71ebc1c3f5c0269c627cf459379b9b030f047107a28e3ef8": "bitcoin-0.18.1-riscv64-linux-gnu.tar.gz",
-    "600d1db5e751fa85903e935a01a74f5cc57e1e7473c15fd3e17ed21e202cfe5a": "bitcoin-0.18.1-x86_64-linux-gnu.tar.gz",
-    #
-    "3a80431717842672df682bdb619e66523b59541483297772a7969413be3502ff": "bitcoin-0.19.1-aarch64-linux-gnu.tar.gz",
-    "657f28213823d240dd3324d14829702f9ad6f0710f8bdd1c379cb3c447197f48": "bitcoin-0.19.1-arm-linux-gnueabihf.tar.gz",
-    "10d1e53208aa7603022f4acc084a046299ab4ccf25fe01e81b3fb6f856772589": "bitcoin-0.19.1-i686-pc-linux-gnu.tar.gz",
-    "1ae1b87de26487075cd2fd22e0d4ead87d969bd55c44f2f1d873ecdc6147ebb3": "bitcoin-0.19.1-osx64.tar.gz",
-    "aa7a9563b48aa79252c8e7b6a41c07a5441bd9f14c5e4562cc72720ea6cb0ee5": "bitcoin-0.19.1-riscv64-linux-gnu.tar.gz",
-    "5fcac9416e486d4960e1a946145566350ca670f9aaba99de6542080851122e4c": "bitcoin-0.19.1-x86_64-linux-gnu.tar.gz",
-    #
-    "60c93e3462c303eb080be7cf623f1a7684b37fd47a018ad3848bc23e13c84e1c": "bitcoin-0.20.1-aarch64-linux-gnu.tar.gz",
-    "55b577e0fb306fb429d4be6c9316607753e8543e5946b542d75d876a2f08654c": "bitcoin-0.20.1-arm-linux-gnueabihf.tar.gz",
-    "b9024dde373ea7dad707363e07ec7e265383204127539ae0c234bff3a61da0d1": "bitcoin-0.20.1-osx64.tar.gz",
-    "c378d4e21109f09e8829f3591e015c66632dff2925a60b64d259be05a334c30b": "bitcoin-0.20.1-osx.dmg",
-    "fa71cb52ee5e0459cbf5248cdec72df27995840c796f58b304607a1ed4c165af": "bitcoin-0.20.1-riscv64-linux-gnu.tar.gz",
-    "376194f06596ecfa40331167c39bc70c355f960280bd2a645fdbf18f66527397": "bitcoin-0.20.1-x86_64-linux-gnu.tar.gz",
+    'f58a9d42b56f0d0392bc0008db2be8b0705c68c9d86d21431f1fdeca52f90e62': 'reddcoin-4.22.9.3-x86_64-linux-gnu.tar.gz',
 }
 
 
@@ -72,6 +47,47 @@ def pushd(new_dir) -> None:
         os.chdir(previous_dir)
 
 
+def release_urls(tag, tarball) -> list:
+    """Where to look for a release archive, in order of preference.
+
+    Reddcoin publishes on download.reddcoin.com under bin/reddcoin-core-<version>/,
+    which is the layout bitcoincore.org uses, named for the version rather than
+    the tag. GitHub release assets are a second source, with their own layout,
+    and are worth trying because download.reddcoin.com sits behind a proxy whose
+    bot protection turns some CI runners away: this fetch once received a 5552
+    byte challenge page with a 200 status where a browser got the archive.
+
+    PREVIOUS_RELEASES_URL replaces the list with a single mirror, using the
+    download.reddcoin.com layout.
+    """
+    version = tag[1:]
+    override = os.environ.get('PREVIOUS_RELEASES_URL')
+    if override:
+        return ['{base}/reddcoin-core-{version}/{tarball}'.format(
+            base=override.rstrip('/'), version=version, tarball=tarball)]
+    return [
+        'https://download.reddcoin.com/bin/reddcoin-core-{version}/{tarball}'.format(
+            version=version, tarball=tarball),
+        'https://github.com/reddcoin-project/reddcoin/releases/download/{tag}/{tarball}'.format(
+            tag=tag, tarball=tarball),
+    ]
+
+
+def describe_payload(tarball) -> str:
+    """Summarise what actually arrived, for when it is not the archive.
+
+    A bare "checksum did not match" gives no clue whether the file is truncated,
+    a redirect, or an HTML error page, which is the difference between a stale
+    checksum and a host that is refusing to serve us.
+    """
+    size = Path(tarball).stat().st_size
+    with open(tarball, 'rb') as f:
+        head = f.read(200)
+    preview = head.decode('utf-8', 'replace').replace('\n', ' ').replace('\r', '')
+    return '{size} bytes, begins: {preview}'.format(
+        size=size, preview=preview.strip()[:150])
+
+
 def download_binary(tag, args) -> int:
     if Path(tag).is_dir():
         if not args.remove_dir:
@@ -79,47 +95,48 @@ def download_binary(tag, args) -> int:
             return 0
         shutil.rmtree(tag)
     Path(tag).mkdir()
-    bin_path = 'bin/bitcoin-core-{}'.format(tag[1:])
-    match = re.compile('v(.*)(rc[0-9]+)$').search(tag)
-    if match:
-        bin_path = 'bin/bitcoin-core-{}/test.{}'.format(
-            match.group(1), match.group(2))
-    tarball = 'bitcoin-{tag}-{platform}.tar.gz'.format(
+    tarball = 'reddcoin-{tag}-{platform}.tar.gz'.format(
         tag=tag[1:], platform=args.platform)
-    tarballUrl = 'https://bitcoincore.org/{bin_path}/{tarball}'.format(
-        bin_path=bin_path, tarball=tarball)
 
-    print('Fetching: {tarballUrl}'.format(tarballUrl=tarballUrl))
+    for tarballUrl in release_urls(tag, tarball):
+        print('Fetching: {tarballUrl}'.format(tarballUrl=tarballUrl))
 
-    header, status = subprocess.Popen(
-        ['curl', '--head', tarballUrl], stdout=subprocess.PIPE).communicate()
-    if re.search("404 Not Found", header.decode("utf-8")):
-        print("Binary tag was not found")
+        header, status = subprocess.Popen(
+            ['curl', '--location', '--head', tarballUrl],
+            stdout=subprocess.PIPE).communicate()
+        if re.search("404 Not Found", header.decode("utf-8")):
+            print("  not published here")
+            continue
+
+        if subprocess.run(
+                ['curl', '--location', '--remote-name', tarballUrl]).returncode:
+            print("  download failed")
+            continue
+
+        hasher = hashlib.sha256()
+        with open(tarball, "rb") as afile:
+            hasher.update(afile.read())
+        tarballHash = hasher.hexdigest()
+
+        if tarballHash not in SHA256_SUMS or SHA256_SUMS[tarballHash] != tarball:
+            # Either the archive changed and SHA256_SUMS is stale, or something
+            # other than the archive was served. describe_payload says which.
+            print("  checksum did not match")
+            print("  got sha256 {}".format(tarballHash))
+            print("  {}".format(describe_payload(tarball)))
+            Path(tarball).unlink()
+            continue
+
+        print("Checksum matched")
+        break
+    else:
+        print("No source served a matching {tarball}".format(tarball=tarball))
         return 1
-
-    curlCmds = [
-        ['curl', '--remote-name', tarballUrl]
-    ]
-
-    for cmd in curlCmds:
-        ret = subprocess.run(cmd).returncode
-        if ret:
-            return ret
-
-    hasher = hashlib.sha256()
-    with open(tarball, "rb") as afile:
-        hasher.update(afile.read())
-    tarballHash = hasher.hexdigest()
-
-    if tarballHash not in SHA256_SUMS or SHA256_SUMS[tarballHash] != tarball:
-        print("Checksum did not match")
-        return 1
-    print("Checksum matched")
 
     # Extract tarball
     ret = subprocess.run(['tar', '-zxf', tarball, '-C', tag,
                           '--strip-components=1',
-                          'bitcoin-{tag}'.format(tag=tag[1:])]).returncode
+                          'reddcoin-{tag}'.format(tag=tag[1:])]).returncode
     if ret:
         return ret
 
@@ -128,7 +145,7 @@ def download_binary(tag, args) -> int:
 
 
 def build_release(tag, args) -> int:
-    githubUrl = "https://github.com/bitcoin/bitcoin"
+    githubUrl = "https://github.com/reddcoin-project/reddcoin"
     if args.remove_dir:
         if Path(tag).is_dir():
             shutil.rmtree(tag)

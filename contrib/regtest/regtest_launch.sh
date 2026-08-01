@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Reddcoin Regtest Launch Procedure
 # This script launches regtest with proper PoW and PoS block generation including mock time handling
 

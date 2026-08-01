@@ -1,0 +1,281 @@
+# Copyright (c) 2023-2026 The Bitcoin Core / Reddcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#
+# GitHub Actions CI for Reddcoin Core.
+#
+# Ported from .cirrus.yml after Cirrus CI stopped running on 2026-06-01. The
+# structure deliberately mirrors upstream Bitcoin Core v28's workflow
+# (bitcoin/bitcoin#32989): a single matrix job for the homogeneous Linux tasks,
+# dedicated lint and native-macOS jobs, and reusable composite actions under
+# .github/actions/ for environment + cache wiring.
+#
+# Reddcoin-specific deviations from that upstream template, all driven by the
+# fact that Reddcoin still uses the older (v22/v23-era) ci/ script layer:
+#   * GitHub-hosted runners only. Upstream's ci.yml is built around Cirrus
+#     *Runners* (the `runners:` job + cirrus-runner/fallback-runner columns);
+#     that scaffolding is dropped, since leaving Cirrus is the whole point.
+#   * The Linux jobs run on the host with DANGER_RUN_CI_ON_HOST unset, so
+#     ci/test/04_install.sh spins up each task's own DOCKER_NAME_TAG container.
+#     This avoids the node24/glibc incompatibility that `container:` on old base
+#     images (bionic/centos) causes with actions/checkout, without needing
+#     upstream's buildx image-build cache (hence no configure-docker action).
+#   * Lint runs directly via ci/lint_run_all.sh (not upstream's Docker linter
+#     image), inside a focal container that still carries clang-format-9.
+#
+# Windows is handled independently by .appveyor.yml and is out of scope here.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+  schedule:
+    # Nightly verify-commits run (parity with the old Cirrus CIRRUS_CRON path;
+    # gated inside ci/lint/06_script.sh by RUN_COMMIT_VERIFY). Upstream v28
+    # replaced this with a per-commit build job instead; see the test-each-commit
+    # follow-up noted in RED-43.
+    - cron: '0 4 * * *'
+
+# For pushes, group by run id so historical develop builds are never cancelled;
+# for pull requests, group by ref so a new push supersedes the in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+# CI only needs to read the repository contents.
+permissions:
+  contents: read
+
+# Provider-agnostic defaults consumed by the ci/ scripts (mirrors the Cirrus
+# "Global defaults" env block). No CIRRUS_*/Cirrus-specific variables remain.
+env:
+  MAKEJOBS: "-j4"
+  TEST_RUNNER_PORT_MIN: "14000"
+  CCACHE_SIZE: "200M"
+  CCACHE_DIR: "/tmp/ccache_dir"
+  CCACHE_NOHASHDIR: "1"
+
+jobs:
+  # Lint (Cirrus 'lint [bionic]'). Runs in a focal (20.04) container: it still
+  # carries clang-format-9 in apt (the version the lint scripts pin) while
+  # providing glibc 2.31 / python 3.8, so actions/checkout's bundled node24
+  # (glibc >= 2.28) runs. bionic (glibc 2.27) can no longer host it.
+  lint:
+    name: 'lint'
+    runs-on: ubuntu-24.04
+    container: ubuntu:focal
+    timeout-minutes: 20
+    steps:
+      - name: Install git for checkout
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Check out the PR head (not the merge commit) so the commit range
+          # passed to commit-script-check.sh covers only the PR's own commits.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Mark workspace as a safe git directory
+        # The container runs as root but the checked-out tree is owned by the
+        # host runner uid, so bare git commands otherwise abort with "detected
+        # dubious ownership" (exit 128).
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Fetch base branch for lint commit range
+        # Unconditional: on a branch push github.base_ref is empty, but the lint
+        # scripts still need origin/<base> present to compute the commit range.
+        env:
+          CI_BASE_REF: ${{ github.base_ref || 'develop' }}
+        run: git fetch --no-tags origin "+refs/heads/$CI_BASE_REF:refs/remotes/origin/$CI_BASE_REF"
+      - name: Run linters
+        run: ./ci/lint_run_all.sh
+        env:
+          CI_PR: ${{ github.event.pull_request.number }}
+          CI_BASE_REF: ${{ github.base_ref }}
+          CI_REPO_FULL_NAME: ${{ github.repository }}
+          RUN_COMMIT_VERIFY: ${{ github.event_name == 'schedule' }}
+
+  # All homogeneous Linux build/test tasks. Each runs on the host and builds
+  # inside its own DOCKER_NAME_TAG container via ci/test/04_install.sh, so the
+  # only per-task inputs are FILE_ENV, the runner, and which extra caches apply.
+  ci-matrix:
+    name: ${{ matrix.name }}
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout-minutes }}
+    env:
+      FILE_ENV: ${{ matrix.file-env }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'ARM, unit tests, no functional tests'
+            runner: ubuntu-24.04-arm
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_arm64.sh'
+
+          - name: 'Win64, unit tests, no gui tests, no functional tests'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_win64.sh'
+
+          - name: '32-bit + dash, gui [CentOS 9]'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_i686_centos.sh'
+
+          - name: 'previous releases, qt5, DEBUG'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_qt5.sh'
+            releases: true
+
+          - name: 'ASan + LSan + UBSan + integer, no depends'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_asan.sh'
+
+          - name: 'TSan, depends, no gui'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_tsan.sh'
+
+          - name: 'MSan, depends'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_msan.sh'
+
+          - name: 'multiprocess, DEBUG'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_multiprocess.sh'
+
+          - name: 'no wallet'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_nowallet.sh'
+
+          - name: 'macOS 10.14 cross, gui, no tests'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_mac.sh'
+            sdk: true
+
+          - name: 'ARM64 Android APK'
+            runner: ubuntu-24.04
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_android.sh'
+            sdk: true
+            sources: true
+    steps:
+      # Default checkout: on a pull_request this is the base-merged-with-head
+      # commit, so the build runs against the merge result and surfaces silent
+      # merge conflicts (replaces the Cirrus merge_base_script).
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+        with:
+          sdk: ${{ matrix.sdk || 'false' }}
+          sources: ${{ matrix.sources || 'false' }}
+          releases: ${{ matrix.releases || 'false' }}
+      - name: CI script
+        run: ./ci/test_run_all.sh
+      # make check runs one test_reddcoin per source file and sends its output to
+      # <source>.cpp.log rather than the console, printing the log only when that
+      # suite fails (src/Makefile.test.include). A suite that hangs is therefore
+      # killed before anything cats its log, and the console shows only the
+      # "Running tests:" line echoed before the binary started. Keep the logs so
+      # the next hang can be read rather than guessed at. Note MAKEJOBS runs four
+      # suites at once, so the one still running is not necessarily the one last
+      # announced.
+      - name: Upload unit test logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs-${{ matrix.name }}
+          path: ci/scratch/build/*/src/**/*.cpp.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save caches
+        if: always()
+        uses: ./.github/actions/save-caches
+        with:
+          sdk: ${{ matrix.sdk || 'false' }}
+          sources: ${{ matrix.sources || 'false' }}
+          releases: ${{ matrix.releases || 'false' }}
+
+  # macOS 11 native [gui] (Cirrus osx_instance). Free on public repos. Runs
+  # natively (DANGER_RUN_CI_ON_HOST=1); HOST is x86_64-apple-darwin18, so use
+  # the Intel macos-13 image.
+  macos-native:
+    name: 'macOS 11 native, gui'
+    if: github.event_name != 'schedule'
+    runs-on: macos-13
+    timeout-minutes: 120
+    env:
+      FILE_ENV: './ci/test/00_setup_env_mac_host.sh'
+      DANGER_RUN_CI_ON_HOST: '1'
+      CI_USE_APT_INSTALL: 'no'
+      PACKAGE_MANAGER_INSTALL: 'echo'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies via Homebrew
+        # berkeley-db@4 is the versioned formula name; the old bare berkeley-db4
+        # no longer resolves on current Homebrew.
+        run: >
+          brew install boost libevent berkeley-db@4 qt@5 miniupnpc libnatpmp
+          ccache zeromq qrencode sqlite libtool automake pkg-config gnu-getopt
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: CI script
+        run: ./ci/test_run_all.sh
+      # See the matching step in ci-matrix: make check hides each suite's output
+      # in a log file, so a hang leaves nothing on the console to read.
+      - name: Upload unit test logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs-macos-native
+          path: ci/scratch/build/*/src/**/*.cpp.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save caches
+        if: always()
+        uses: ./.github/actions/save-caches
+
+  # Fuzzer (Cirrus only_if default-branch). Kept as its own job, gated to
+  # develop, because running the fuzz build/run on every PR is too expensive on
+  # free GitHub-hosted runners (upstream runs it in-matrix on Cirrus runners).
+  fuzzer:
+    name: 'fuzzer, address, undefined, integer, no depends'
+    if: github.event_name != 'schedule' && (github.ref == 'refs/heads/develop' || github.base_ref == 'develop')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      FILE_ENV: './ci/test/00_setup_env_native_fuzz.sh'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: CI script
+        run: ./ci/test_run_all.sh
+      - name: Save caches
+        if: always()
+        uses: ./.github/actions/save-caches

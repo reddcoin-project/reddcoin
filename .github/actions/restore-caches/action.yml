@@ -1,0 +1,78 @@
+name: 'Restore caches'
+description: 'Restore ccache and depends caches, keyed by CONTAINER_NAME'
+
+# Adapted from upstream Bitcoin Core (bitcoin/bitcoin#32989,
+# .github/actions/restore-caches). Two Reddcoin deviations:
+#   * actions/cache/restore@v5 instead of cirruslabs/cache (we run on
+#     GitHub-hosted runners, not Cirrus runners).
+#   * Reddcoin's in-tree cache paths, and the SDK/sources/releases caches are
+#     opt-in per task (only macOS-cross/Android/previous-releases use them), so
+#     they are gated by inputs rather than restored unconditionally.
+# Consumes CONTAINER_NAME and DEPENDS_HASH exported by configure-environment.
+
+inputs:
+  sdk:
+    description: 'Restore the depends/sdk-sources cache (macOS cross, Android)'
+    default: 'false'
+  sources:
+    description: 'Restore the depends/sources cache (Android)'
+    default: 'false'
+  releases:
+    description: 'Restore the previous-releases cache'
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Restore ccache
+      uses: actions/cache/restore@v5
+      with:
+        path: /tmp/ccache_dir
+        key: ccache-${{ env.CONTAINER_NAME }}-${{ github.run_id }}
+        restore-keys: |
+          ccache-${{ env.CONTAINER_NAME }}-
+
+    - name: Restore depends/built
+      id: depends-built
+      uses: actions/cache/restore@v5
+      with:
+        path: depends/built
+        key: depends-built-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+        restore-keys: |
+          depends-built-${{ env.CONTAINER_NAME }}-
+
+    - name: Restore depends/sdk-sources
+      id: depends-sdk
+      if: ${{ inputs.sdk == 'true' }}
+      uses: actions/cache/restore@v5
+      with:
+        path: depends/sdk-sources
+        key: depends-sdk-${{ env.CONTAINER_NAME }}
+
+    - name: Restore depends/sources
+      id: depends-sources
+      if: ${{ inputs.sources == 'true' }}
+      uses: actions/cache/restore@v5
+      with:
+        path: depends/sources
+        key: depends-sources-${{ env.CONTAINER_NAME }}
+
+    - name: Restore previous releases
+      id: previous-releases
+      if: ${{ inputs.releases == 'true' }}
+      uses: actions/cache/restore@v5
+      with:
+        path: releases
+        key: previous-releases-${{ env.CONTAINER_NAME }}
+
+    - name: Export cache-hit flags
+      shell: bash
+      run: |
+        # save-caches reads these to avoid re-uploading a cache that was an exact
+        # key hit (mirrors upstream's "export cache hits" step).
+        {
+          echo "DEPENDS_BUILT_CACHE_HIT=${{ steps.depends-built.outputs.cache-hit }}"
+          echo "DEPENDS_SDK_CACHE_HIT=${{ steps.depends-sdk.outputs.cache-hit }}"
+          echo "DEPENDS_SOURCES_CACHE_HIT=${{ steps.depends-sources.outputs.cache-hit }}"
+          echo "PREVIOUS_RELEASES_CACHE_HIT=${{ steps.previous-releases.outputs.cache-hit }}"
+        } >> "$GITHUB_ENV"

@@ -12,4 +12,11 @@ export DOCKER_NAME_TAG=ubuntu:22.04
 export PACKAGES="clang llvm libc++abi-dev libc++-dev python3-zmq"
 export DEP_OPTS="CC=clang CXX='clang++ -stdlib=libc++'"
 export GOAL="install"
+# Don't build with -Werror. clang enables -Wsuggest-override, and the depends
+# boost 1.71 headers reach the compile through the plain -I depends include
+# rather than the -isystem BOOST_CPPFLAGS, so their unmarked virtual overrides
+# (against libc++'s std::error_category) would otherwise fail the build with
+# -Werror=suggest-override. TSan's coverage is the runtime thread sanitizer,
+# not compile-time -Werror, which the 64-bit non-libc++ tasks still carry.
+export NO_WERROR=1
 export BITCOIN_CONFIG="--enable-zmq --with-gui=no CPPFLAGS='-DARENA_DEBUG -DDEBUG_LOCKORDER' CXXFLAGS='-g' --with-sanitizers=thread CC=clang CXX='clang++ -stdlib=libc++'"

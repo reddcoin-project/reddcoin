@@ -66,12 +66,42 @@ fi
 if [[ $DOCKER_NAME_TAG == *centos* ]]; then
   ${CI_RETRY_EXE} DOCKER_EXEC dnf -y install epel-release
   ${CI_RETRY_EXE} DOCKER_EXEC dnf -y --allowerasing install $DOCKER_PACKAGES $PACKAGES
+  if [ -n "$PIP_PACKAGES" ]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user $PIP_PACKAGES
+  fi
 elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
   ${CI_RETRY_EXE} DOCKER_EXEC apt-get update
   ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y $PACKAGES $DOCKER_PACKAGES
   if [ -n "$PIP_PACKAGES" ]; then
     ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
   fi
+fi
+
+# ReddCoin uses scrypt for proof-of-work. The functional test framework mines
+# blocks in Python (test/functional/test_framework/messages.py) and imports the
+# `scrypt` module to compute valid solutions. Without it, CBlock.solve() falls
+# back to SHA256d and every framework-mined block is rejected by the node with
+# "CheckProofOfWork() : hash doesn't match nBits" (breaks feature_assumevalid.py,
+# example_test.py, p2p_unrequested_blocks.py, ...). Install it wherever the
+# functional tests run. The containers only ship python3, so pip and the headers
+# needed to build the scrypt C extension (when no wheel matches) are pulled in
+# here rather than added to every task's package list. DOCKER_EXEC targets the
+# build container, or the host itself on the DANGER_RUN_CI_ON_HOST (macOS) path.
+# The scrypt package ships no Linux wheels, so pip always builds the sdist,
+# which needs setuptools + wheel plus the C-extension headers (python3-dev /
+# openssl). Install the distro pip and headers, then get setuptools + wheel from
+# pip (PyPI) rather than distro packages: the names diverge across apt/dnf (e.g.
+# python3-wheel does not exist on centos:stream9), and the container's pip
+# otherwise fails the sdist's `setup.py egg_info` with "No module named
+# 'setuptools'".
+if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
+  if [[ $DOCKER_NAME_TAG == *centos* ]]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC dnf -y install python3-pip python3-devel openssl-devel
+  elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y python3-pip python3-dev libssl-dev
+  fi
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user setuptools wheel
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user scrypt
 fi
 
 if [ "$CI_OS_NAME" == "macos" ]; then
@@ -87,7 +117,10 @@ DOCKER_EXEC df -h
 
 if [ "$RUN_FUZZ_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
   if [ ! -d ${DIR_QA_ASSETS} ]; then
-    DOCKER_EXEC git clone --depth=1 https://github.com/bitcoin-core/qa-assets ${DIR_QA_ASSETS}
+    # Reddcoin qa-assets: unit_test_data/script_assets_test.json is regenerated
+    # for Reddcoin's nTime transaction format (the upstream Bitcoin vectors fail
+    # to deserialize). See the repo README for how it is produced.
+    DOCKER_EXEC git clone --depth=1 https://github.com/reddcoin-project/qa-assets ${DIR_QA_ASSETS}
   fi
 
   export DIR_FUZZ_IN=${DIR_QA_ASSETS}/fuzz_seed_corpus/
