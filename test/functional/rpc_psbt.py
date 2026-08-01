@@ -92,6 +92,19 @@ class PSBTTest(BitcoinTestFramework):
         assert_equal(decoded_psbt["tx"]["vout"][changepos]["scriptPubKey"]["type"], expected_type)
 
     def run_test(self):
+        # This test advances mocktime by 600 seconds before each generate, to
+        # age coins for staking. Each of those jumps is preceded by sync_all().
+        #
+        # That is not tidiness: a block still in flight when the clock jumps
+        # makes the next stall check see ten minutes of elapsed download time,
+        # so the peer is dropped with "Timeout downloading block ...
+        # disconnecting" although no real time has passed. The sync_all after
+        # the generate then asserts, because a node has no peers left. Settling
+        # relay first means nothing is in flight when the clock moves.
+        #
+        # Seen in CI under TSan, whose slowdown widens the window; the race is
+        # not specific to it.
+
         # Create and fund a raw tx for sending 10 BTC
         psbtx1 = self.nodes[0].walletcreatefundedpsbt([], {self.nodes[2].getnewaddress():10})['psbt']
 
@@ -152,6 +165,7 @@ class PSBTTest(BitcoinTestFramework):
         txid = self.nodes[0].sendrawtransaction(signed_tx)
         # Unlock any locked UTXOs before generating (locked UTXOs can't be staked)
         self.nodes[0].lockunspent(True)
+        self.sync_all()  # settle relay first, see note at the top of run_test
         advance_time_for_pos(self.nodes, seconds=600)
         self.nodes[0].generate(6)
         self.sync_all()
@@ -314,6 +328,7 @@ class PSBTTest(BitcoinTestFramework):
         node2_addr = self.nodes[2].getnewaddress()
         txid1 = self.nodes[0].sendtoaddress(node1_addr, 13)
         txid2 = self.nodes[0].sendtoaddress(node2_addr, 13)
+        self.sync_all()  # settle relay first, see note at the top of run_test
         advance_time_for_pos(self.nodes, seconds=600)
         blockhash = self.nodes[0].generate(6)[0]
         self.sync_all()
@@ -343,6 +358,7 @@ class PSBTTest(BitcoinTestFramework):
         combined = self.nodes[0].combinepsbt([psbt1, psbt2])
         finalized = self.nodes[0].finalizepsbt(combined)['hex']
         self.nodes[0].sendrawtransaction(finalized)
+        self.sync_all()  # settle relay first, see note at the top of run_test
         advance_time_for_pos(self.nodes, seconds=600)
         self.nodes[0].generate(6)
         self.sync_all()
@@ -550,6 +566,7 @@ class PSBTTest(BitcoinTestFramework):
         addr4 = self.nodes[1].getnewaddress("", "p2sh-segwit")
         txid4 = self.nodes[0].sendtoaddress(addr4, 5)
         vout4 = find_output(self.nodes[0], txid4, 5)
+        self.sync_all()  # settle relay first, see note at the top of run_test
         advance_time_for_pos(self.nodes, seconds=600)
         self.nodes[0].generate(6)
         self.sync_all()
@@ -575,6 +592,7 @@ class PSBTTest(BitcoinTestFramework):
         addr = self.nodes[1].getnewaddress("", "p2sh-segwit")
         txid = self.nodes[0].sendtoaddress(addr, 7)
         addrinfo = self.nodes[1].getaddressinfo(addr)
+        self.sync_all()  # settle relay first, see note at the top of run_test
         advance_time_for_pos(self.nodes, seconds=600)
         blockhash = self.nodes[0].generate(6)[0]
         self.sync_all()
