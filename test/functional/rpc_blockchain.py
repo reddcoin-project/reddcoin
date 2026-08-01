@@ -458,7 +458,13 @@ class BlockchainTest(BitcoinTestFramework):
         block = node.getblock(blockhash, 1)
         # Find the wallet tx in the block by txid
         tx_idx = block['tx'].index(txid)
-        assert 'fee' not in block['tx'][tx_idx]
+        # Verbosity 1 lists each transaction as a plain txid string, so there is
+        # no fee field to find. Assert that shape rather than writing
+        # `'fee' not in block['tx'][tx_idx]`: against a string that is a
+        # substring test, and about 1.5% of txids contain "fee" as hex, so it
+        # fails at random. One did in CI:
+        # a4d5f4b2265d81b6bfbb3b8221af7e1ad01665fee5a6e431fa5a84451d6f834e
+        assert isinstance(block['tx'][tx_idx], str)
 
         self.log.info('Test that getblock with verbosity 2 includes expected fee')
         block = node.getblock(blockhash, 2)
