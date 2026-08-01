@@ -195,8 +195,31 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     CBlockIndex* pindexTip = chainstate->m_chain.Tip();
     bool fSegwitActive = DeploymentActiveAfter(pindexTip, consensusParams, Consensus::DEPLOYMENT_SEGWIT);
 
+    // Height the coinstake being built would be spent at.
+    const int nSpendHeight = pindexTip->nHeight + 1;
+
     for (const auto& pcoin : setCoins)
     {
+        // Re-check maturity against the UTXO set rather than trusting the
+        // wallet's cached confirmation depth. BlockDisconnected reaches the
+        // wallet through the validation interface queue and nothing on the
+        // staking path drains it first, so for a short window after a reorg
+        // AvailableCoins still offers coinstake outputs that the rollback has
+        // made immature again: their cached depth predates the disconnect.
+        // Staking one produces a block that fails TestBlockValidity with
+        // bad-txns-premature-spend-of-coinbase/coinstake, which is the same
+        // rule CheckTxInputs applies. The chainstate is authoritative and
+        // current, so ask it instead.
+        //
+        // Background staking runs off its own thread, so draining the queue in
+        // the RPC path alone would not cover this.
+        const Coin& coin = chainstate->CoinsTip().AccessCoin(pcoin.outpoint);
+        if (coin.IsSpent())
+            continue;
+        if ((coin.IsCoinBase() || coin.IsCoinStake()) &&
+            nSpendHeight - coin.nHeight < consensusParams.GetCoinbaseMaturity())
+            continue;
+
         // Skip witness UTXOs if SegWit is not yet active — including them in a
         // coinstake would produce a block with witness data that gets rejected
         // with "unexpected witness data" during ContextualCheckBlock.
