@@ -12,3 +12,11 @@ export PACKAGES="python3-zmq clang-5.0 llvm-5.0"  # Use clang-5 to test C++17 co
 export DEP_OPTS="NO_WALLET=1"
 export GOAL="install"
 export BITCOIN_CONFIG="--enable-glibc-back-compat --enable-reduce-exports CC=clang-5.0 CXX=clang++-5.0"
+# The functional suite needs a staked chain: the shared test cache is built with
+# createwallet / importprivkey / staked generatetoaddress, and regtest caps PoW
+# at nLastPowHeight so any chain past it must be produced by proof-of-stake. A
+# --disable-wallet node cannot stake (that is the point of this build: it
+# validates PoS blocks but does not produce them), so the cache cannot be built
+# here. This job covers the build, the link and the unit tests (make check);
+# the functional suite runs in the wallet-enabled jobs.
+export RUN_FUNCTIONAL_TESTS=false
