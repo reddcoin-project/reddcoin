@@ -155,6 +155,16 @@ static interfaces::StakingSupport* GetStakingSupport(const JSONRPCRequest& reque
 
 static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, interfaces::StakingWallet* staking_wallet)
 {
+    // Generation requires a loaded wallet. Past nLastPowHeight it stakes, which
+    // needs one directly; in the PoW range Reddcoin has always gated
+    // generatetoaddress on a wallet too (the pre-seam path resolved one
+    // unconditionally via GetWalletForJSONRPCRequest, which raises this same
+    // error when none is loaded). A -disablewallet or --disable-wallet node
+    // therefore refuses here rather than silently mining without one.
+    if (!staking_wallet) {
+        throw JSONRPCError(RPC_WALLET_NOT_FOUND, "No wallet is loaded");
+    }
+
     int nHeightEnd = 0;
     int nHeight = 0;
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -173,11 +183,6 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
 
         std::unique_ptr<CBlockTemplate> pblocktemplate;
         CBlockIndex* pindexPrev = nullptr;
-
-        if (needPoS && !staking_wallet) {
-            throw JSONRPCError(RPC_METHOD_NOT_FOUND,
-                "Proof-of-stake block generation requires a loaded wallet with staking support.");
-        }
 
         if (needPoS) {
             // Create PoS block with wallet - follow miner.cpp PoSMiner() process exactly
