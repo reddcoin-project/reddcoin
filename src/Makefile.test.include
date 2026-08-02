@@ -146,7 +146,6 @@ BITCOIN_TESTS =\
   test/txindex_tests.cpp \
   test/txrequest_tests.cpp \
   test/txvalidation_tests.cpp \
-  test/txvalidationcache_tests.cpp \
   test/uint256_tests.cpp \
   test/uint512_tests.cpp \
   test/util_tests.cpp \
@@ -159,6 +158,7 @@ BITCOIN_TESTS =\
 
 if ENABLE_WALLET
 BITCOIN_TESTS += \
+  test/txvalidationcache_tests.cpp \
   wallet/test/psbt_wallet_tests.cpp \
   wallet/test/wallet_tests.cpp \
   wallet/test/walletdb_tests.cpp \

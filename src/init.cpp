@@ -1831,6 +1831,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     stakeOptions.chainman = node.chainman.get();
     stakeOptions.connman = node.connman.get();
     stakeOptions.mempool = node.mempool.get();
+    // Null in a --disable-wallet build, so the staker has no wallets and no-ops.
+    stakeOptions.staking_support = node.staking_support;
 
     assert(!node.stakeman);
     node.stakeman = std::make_unique<CStakeman>(args.GetBoolArg("-staking", true));

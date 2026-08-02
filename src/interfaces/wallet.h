@@ -8,6 +8,7 @@
 
 #include <amount.h>                    // For CAmount
 #include <interfaces/chain.h>          // For ChainClient
+#include <interfaces/staking.h>        // For StakeCoin
 #include <pubkey.h>                    // For CKeyID and CScriptID (definitions needed in CTxDestination instantiation)
 #include <script/standard.h>           // For CTxDestination
 #include <support/allocators/secure.h> // For SecureString
@@ -25,7 +26,6 @@
 
 class CCoinControl;
 class CFeeRate;
-class CInputCoin;
 class CKey;
 class CWallet;
 enum class FeeReason;
@@ -90,8 +90,9 @@ public:
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
 
-    //! Get set of input coins to calculate average and total weight.
-    virtual bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) = 0;
+    //! Collect the wallet's stakeable coins, wallet-free, for weight reporting.
+    //! The node turns these into average/total weight via Node::getStakeWeight.
+    virtual bool getStakeCoins(std::vector<StakeCoin>& coins) = 0;
 
     //! Get wallet staking enabled.
     virtual bool getEnableStaking() = 0;

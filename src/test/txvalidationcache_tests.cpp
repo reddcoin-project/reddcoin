@@ -24,12 +24,16 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
 
 BOOST_AUTO_TEST_SUITE(txvalidationcache_tests)
 
+// Every case here confirms transactions in PoS blocks, which needs a staking
+// wallet, so the whole file is compiled only under ENABLE_WALLET (see
+// Makefile.test.include).
+
 // Helper to create and process PoS blocks that may be invalid (for testing)
 // Unlike CreateAndProcessPoSBlock, this doesn't throw if the block is rejected
 static CBlock CreateAndProcessPoSBlockNoThrow(TestChain100Setup& test, const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
 {
     try {
-        return test.CreateAndProcessPoSBlock(txns, scriptPubKey, test.m_wallet.get());
+        return test.CreateAndProcessPoSBlock(txns, scriptPubKey, test.m_wallet);
     } catch (const std::runtime_error& e) {
         // Block was rejected - return empty block
         // The test will check if it was added to the chain
@@ -170,7 +174,7 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     std::vector<CMutableTransaction> oneSpend;
     oneSpend.push_back(fresh_spend);
     BOOST_CHECK(ToMemPool(spends[1]));
-    block = CreateAndProcessPoSBlock(oneSpend, scriptPubKey, m_wallet.get());
+    block = CreateAndProcessPoSBlock(oneSpend, scriptPubKey, m_wallet);
     SyncWithValidationInterfaceQueue();
     m_wallet->BlockUntilSyncedToCurrentChain();
     SetMockTime(GetTime() + 60);
@@ -329,7 +333,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     // enabled yet), even though there's no cache entry.
     CBlock block;
 
-    block = CreateAndProcessPoSBlock({spend_tx}, p2pk_scriptPubKey, m_wallet.get());
+    block = CreateAndProcessPoSBlock({spend_tx}, p2pk_scriptPubKey, m_wallet);
     SyncWithValidationInterfaceQueue();
     m_wallet->BlockUntilSyncedToCurrentChain();
     SetMockTime(GetTime() + 60);

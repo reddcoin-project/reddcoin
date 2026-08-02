@@ -90,8 +90,6 @@ static const bool DEFAULT_SPEND_ZEROCONF_CHANGE = true;
 static const CAmount DEFAULT_RESERVEBALANCE = 0;
 //! Default for -staking
 static const bool DEFAULT_ENABLE_STAKING = true;
-/** Default for -stake time out, Set proof-of-stake timeout in ms */
-static const unsigned int DEFAULT_STAKETIMIO = 500;
 //! Default for -walletrejectlongchains
 static const bool DEFAULT_WALLET_REJECT_LONG_CHAINS = false;
 //! -txconfirmtarget default

@@ -144,13 +144,16 @@ public:
         }
         return false;
     }
-    bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) override
+    bool getStakeCoins(std::vector<interfaces::StakeCoin>& coins) override
     {
-        if (!m_wallet->GetStakeWeightSet(setCoins))
-          return false;
-        if (setCoins.empty())
-          return false;
-
+        std::set<CInputCoin> set_coins;
+        if (!m_wallet->GetStakeWeightSet(set_coins)) return false;
+        if (set_coins.empty()) return false;
+        coins.clear();
+        coins.reserve(set_coins.size());
+        for (const CInputCoin& coin : set_coins) {
+            coins.push_back({coin.outpoint, coin.txout.nValue});
+        }
         return true;
     }
     void setEnableStaking(bool enableStaking) override

@@ -10,6 +10,7 @@
 #include <threadsafety.h>
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -18,11 +19,14 @@
 class CConnman;
 class ChainstateManager;
 class CTxMemPool;
-class CWallet;
 
 class CClientUIInterface;
 class CChainParams;
 class CScheduler;
+namespace interfaces {
+class StakingSupport;
+class StakingWallet;
+} // namespace interfaces
 
 // logging defaults
 static const bool DEFAULT_PRINTFEE = false;
@@ -36,6 +40,9 @@ public:
         ChainstateManager* chainman = nullptr;
         CConnman* connman = nullptr;
         CTxMemPool* mempool = nullptr;
+        //! Access to the loaded wallets' staking capability. Null in a
+        //! --disable-wallet build, in which case the staker no-ops.
+        interfaces::StakingSupport* staking_support = nullptr;
     };
 
     CStakeman(bool stake_active = true);
@@ -58,7 +65,7 @@ public:
         LOCK(cs_threadStakeMinterGroup);
         return threadStakeMinterGroup.size();
     };
-    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+    void static ThreadStaker(std::shared_ptr<interfaces::StakingWallet> staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
     void StakeWalletAdd(const std::string& walletname);
     void StakeWalletRemove(const std::string& walletname);
 
@@ -73,6 +80,10 @@ private:
     std::vector<std::thread> threadStakeMinterGroup GUARDED_BY(cs_threadStakeMinterGroup);
     mutable RecursiveMutex cs_threadStakeMinterGroup;
 
+    //! Launch a staking thread for each loaded, staking-enabled, stake-capable
+    //! wallet. Shared by both Start() overloads.
+    void LaunchStakingThreads();
+
     typedef std::unordered_map<std::string, std::thread::id> ThreadMap;
     ThreadMap tm_;
 
@@ -80,6 +91,7 @@ private:
     ChainstateManager* chainManager;
     CConnman* connManager;
     CTxMemPool* memPool;
+    interfaces::StakingSupport* stakingSupport{nullptr};
 };
 
 #endif // BITCOIN_STAKER_H

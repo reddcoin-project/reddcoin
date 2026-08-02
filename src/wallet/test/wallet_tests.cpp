@@ -540,7 +540,7 @@ public:
     {
         // Use PoS block since PoW ended at height 90
         stakeBlocks(1);
-        wallet = std::make_unique<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
+        wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
         {
             LOCK2(wallet->cs_wallet, ::cs_main);
             wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
@@ -579,7 +579,7 @@ public:
             blocktx = CMutableTransaction(*wallet->mapWallet.at(tx->GetHash()).tx);
         }
         // Use PoS block since PoW ended at height 90
-        CreateAndProcessPoSBlock({CMutableTransaction(blocktx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), wallet.get());
+        CreateAndProcessPoSBlock({CMutableTransaction(blocktx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), wallet);
 
         LOCK(wallet->cs_wallet);
         wallet->SetLastBlockProcessed(wallet->GetLastBlockHeight() + 1, m_node.chainman->ActiveChain().Tip()->GetBlockHash());
@@ -590,7 +590,7 @@ public:
         return it->second;
     }
 
-    std::unique_ptr<CWallet> wallet;
+    std::shared_ptr<CWallet> wallet;
 };
 
 BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup)
@@ -812,7 +812,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
     // Create first PoS block (block 101) with coinstake only
     m_coinbase_txns.push_back(
         CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()),
-                                 temp_staking_wallet.get()).vtx[0]
+                                 temp_staking_wallet).vtx[0]
     );
 
     // Create a transaction spending from block 101's coinstake
@@ -892,7 +892,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
     CMutableTransaction block_tx;
 
     // Create PoS block 102 (coinstake only) BEFORE loading wallet
-    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet.get()).vtx[0]);
+    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet).vtx[0]);
 
     // Advance 1 minute to age coins
     SetMockTime(GetTime() + 60);
@@ -904,7 +904,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
     block_tx = TestSimpleSpend(*m_coinbase_txns[40], 0, coinbaseKey, GetScriptForRawPubKey(key.GetPubKey()));
 
     // Create PoS block 103 with block_tx
-    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({block_tx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet.get()).vtx[0]);
+    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({block_tx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet).vtx[0]);
 
     // Advance 1 minute for mempool tx
     SetMockTime(GetTime() + 60);
@@ -1055,7 +1055,7 @@ BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
     SetMockTime(GetTime() + 60);
 
     LogPrintf("ZapSelectTx: Creating first PoS block\n");
-    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet.get()).vtx[0]);
+    m_coinbase_txns.push_back(CreateAndProcessPoSBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet).vtx[0]);
     LogPrintf("ZapSelectTx: First PoS block created\n");
 
     // Advance 1 minute for second block
@@ -1066,7 +1066,7 @@ BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
     LogPrintf("ZapSelectTx: block_tx created\n");
 
     LogPrintf("ZapSelectTx: Creating second PoS block with block_tx\n");
-    CreateAndProcessPoSBlock({block_tx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet.get());
+    CreateAndProcessPoSBlock({block_tx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), temp_staking_wallet);
     LogPrintf("ZapSelectTx: Second PoS block created\n");
 
     LogPrintf("ZapSelectTx: Syncing with validation queue\n");

@@ -7,9 +7,10 @@
 
 #include <primitives/block.h>
 #include <primitives/transaction.h>
-#include <wallet/wallet.h>
 
-bool SignBlock(CBlock& block, const CWallet& keystore);
+// Block signature verification is consensus (see ContextualCheckBlock) and is
+// wallet-free. Block *signing* needs wallet keys and lives in
+// src/wallet/staking.h.
 bool CheckBlockSignature(const CBlock& block);
 
 #endif // BITCOIN_POS_SIGNER_H

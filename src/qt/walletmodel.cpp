@@ -172,16 +172,13 @@ bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeigh
     if (isSyncing)
         return false;
 
-    std::set<CInputCoin> setCoins;
-    if (!m_wallet->GetStakeWeightSet(setCoins))
+    std::vector<interfaces::StakeCoin> coins;
+    if (!m_wallet->getStakeCoins(coins))
         return false;
-    if (setCoins.empty())
-        return false;
-
-    if (!m_node.getStakeWeight(setCoins, nAverageWeight, nTotalWeight))
+    if (coins.empty())
         return false;
 
-    return true;
+    return m_node.getStakeWeight(coins, nAverageWeight, nTotalWeight);
 }
 
 WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransaction &transaction, const CCoinControl& coinControl)

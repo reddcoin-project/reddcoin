@@ -167,6 +167,7 @@ BITCOIN_CORE_H = \
   interfaces/init.h \
   interfaces/ipc.h \
   interfaces/node.h \
+  interfaces/staking.h \
   interfaces/wallet.h \
   key.h \
   key_io.h \
@@ -309,6 +310,7 @@ BITCOIN_CORE_H = \
   wallet/scriptpubkeyman.h \
   wallet/spend.h \
   wallet/sqlite.h \
+  wallet/staking.h \
   wallet/transaction.h \
   wallet/wallet.h \
   wallet/walletdb.h \
@@ -441,6 +443,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/rpcwallet.cpp \
   wallet/scriptpubkeyman.cpp \
   wallet/spend.cpp \
+  wallet/staking.cpp \
   wallet/transaction.cpp \
   wallet/wallet.cpp \
   wallet/walletdb.cpp \
