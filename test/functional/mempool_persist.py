@@ -174,14 +174,25 @@ class MempoolPersistTest(BitcoinTestFramework):
 
         # shutdown, then startup with wallet disabled
         self.stop_nodes()
-        # Use -mocktime so LoadMempool doesn't expire the tx (created at old
-        # mocktime). Then advance mocktime via RPC so SendMessages timing works.
-        self.start_node(0, extra_args=["-disablewallet", "-mocktime={}".format(mock_time)])
+        # Use -mocktime so LoadMempool doesn't expire the tx, which was created at
+        # the old mocktime.
+        #
+        # noban gives the peer below immediate tx relay. Without it the inv waits
+        # on the trickle deadline, which SendMessages takes from GetTime(); that
+        # honours mocktime, and mocktime is frozen here, so the deadline can only
+        # be reached by stepping the clock. Doing that is a race the test cannot
+        # win reliably: mockscheduler only bumps the scheduler and returns, so
+        # ReattemptInitialBroadcast runs asynchronously and may queue the txid
+        # after a SendMessages pass has already recomputed the deadline against
+        # the stepped time. The deadline then sits past a clock that never moves
+        # again and the inv is stranded until the test times out. Granting noban
+        # makes fSendTrickle unconditional, so the inv goes out on the first pass
+        # after the relay is queued, whenever that happens to be.
+        self.start_node(0, extra_args=["-disablewallet", "-mocktime={}".format(mock_time),
+                                       "-whitelist=noban@127.0.0.1"])
 
         # check that txn gets broadcast due to unbroadcast logic
         conn = node0.add_p2p_connection(P2PTxInvStore())
-        # Advance mocktime so SendMessages inv timing triggers
-        node0.setmocktime(mock_time + 16 * 60 + 60)
         node0.mockscheduler(16*60) # 15 min + 1 for buffer
         self.wait_until(lambda: len(conn.get_invs()) == 1)
 
