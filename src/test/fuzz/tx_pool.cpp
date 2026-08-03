@@ -15,11 +15,17 @@
 #include <validation.h>
 #include <validationinterface.h>
 
+#include <algorithm>
+
 namespace {
 
 const TestingSetup* g_setup;
 std::vector<COutPoint> g_outpoints_coinbase_init_mature;
 std::vector<COutPoint> g_outpoints_coinbase_init_immature;
+// Summed value of the mature coinbases above. ReddCoin's block subsidy varies with
+// height (premine, then descending bonus tiers), so it cannot be derived from a flat
+// per-block reward the way it can upstream.
+CAmount g_supply_total_mature{0};
 
 struct MockedTxPool : public CTxMemPool {
     void RollingFeeUpdate() EXCLUSIVE_LOCKS_REQUIRED(!cs)
@@ -33,15 +39,32 @@ struct MockedTxPool : public CTxMemPool {
 void initialize_tx_pool()
 {
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
-    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
+    const Consensus::Params& consensus = Params().GetConsensus();
+    const int COINBASE_MATURITY = consensus.GetCoinbaseMaturity();
     g_setup = testing_setup.get();
 
-    for (int i = 0; i < 2 * COINBASE_MATURITY; ++i) {
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest). Above that height
+    // CreateNewBlock's TestBlockValidity rejects the PoW template with "pow-ended"
+    // and MineBlock throws, so cap the mined count. Chains where PoW does not end
+    // early (nLastPowHeight is large) still mine the full 2 * COINBASE_MATURITY.
+    const int num_blocks{std::min(2 * COINBASE_MATURITY, consensus.nLastPowHeight - 1)};
+    // A coinbase is only spendable once COINBASE_MATURITY blocks are buried on top of
+    // it, so of the num_blocks mined only the first (num_blocks - COINBASE_MATURITY)
+    // have matured. Upstream mines exactly 2 * COINBASE_MATURITY, which makes that
+    // count COINBASE_MATURITY; deriving it keeps the split correct once capped.
+    const int num_mature{num_blocks - COINBASE_MATURITY};
+    Assert(num_mature > 0);
+
+    for (int i = 0; i < num_blocks; ++i) {
         CTxIn in = MineBlock(g_setup->m_node, P2WSH_OP_TRUE);
         // Remember the txids to avoid expensive disk access later on
-        auto& outpoints = i < COINBASE_MATURITY ?
+        const bool is_mature{i < num_mature};
+        auto& outpoints = is_mature ?
                               g_outpoints_coinbase_init_mature :
                               g_outpoints_coinbase_init_immature;
+        if (is_mature) {
+            g_supply_total_mature += GetBlockSubsidy(i + 1, consensus);
+        }
         outpoints.push_back(in.prevout);
     }
     SyncWithValidationInterfaceQueue();
@@ -117,7 +140,6 @@ FUZZ_TARGET_INIT(tx_pool_standard, initialize_tx_pool)
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     const auto& node = g_setup->m_node;
     auto& chainstate = node.chainman->ActiveChainstate();
-    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
 
     MockTime(fuzzed_data_provider, chainstate);
     SetMempoolConstraints(*node.args, fuzzed_data_provider);
@@ -131,8 +153,9 @@ FUZZ_TARGET_INIT(tx_pool_standard, initialize_tx_pool)
     }
     outpoints_rbf = outpoints_supply;
 
-    // The sum of the values of all spendable outpoints
-    const CAmount SUPPLY_TOTAL{COINBASE_MATURITY * 50 * COIN};
+    // The sum of the values of all spendable outpoints. ReddCoin pays a height-dependent
+    // subsidy rather than a flat 50 per block, so this is accumulated while mining.
+    const CAmount SUPPLY_TOTAL{g_supply_total_mature};
 
     CTxMemPool tx_pool_{/* estimator */ nullptr, /* check_ratio */ 1};
     MockedTxPool& tx_pool = *static_cast<MockedTxPool*>(&tx_pool_);
