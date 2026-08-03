@@ -7,6 +7,7 @@
 #include <net.h>
 #include <net_processing.h>
 #include <protocol.h>
+#include <sync.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
@@ -47,7 +48,13 @@ FUZZ_TARGET_INIT(process_messages, initialize_process_messages)
 
     ConnmanTestMsg& connman = *static_cast<ConnmanTestMsg*>(g_setup->m_node.connman.get());
     TestChainState& chainstate = *static_cast<TestChainState*>(&g_setup->m_node.chainman->ActiveChainstate());
-    SetMockTime(1610000000); // any time to successfully reset ibd
+    // ResetIbd() asserts that we are back in IBD, which requires the tip to look
+    // stale, i.e. tip time < mocktime - nMaxTipAge. Upstream hardcodes 1610000000,
+    // but ReddCoin's regtest genesis is 1642570147 - newer than that constant - so
+    // the tip never looks stale and the assert fires. Derive the mocktime from the
+    // tip instead, which stays correct if either value moves.
+    const int64_t tip_time{WITH_LOCK(::cs_main, return chainstate.m_chain.Tip()->GetBlockTime())};
+    SetMockTime(tip_time + nMaxTipAge + 1);
     chainstate.ResetIbd();
 
     std::vector<CNode*> peers;

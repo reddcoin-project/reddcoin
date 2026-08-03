@@ -12,6 +12,7 @@
 #include <scheduler.h>
 #include <script/script.h>
 #include <streams.h>
+#include <sync.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
@@ -20,6 +21,7 @@
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
 #include <txorphanage.h>
+#include <validation.h>
 #include <validationinterface.h>
 #include <version.h>
 
@@ -79,7 +81,13 @@ void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE
 
     ConnmanTestMsg& connman = *static_cast<ConnmanTestMsg*>(g_setup->m_node.connman.get());
     TestChainState& chainstate = *static_cast<TestChainState*>(&g_setup->m_node.chainman->ActiveChainstate());
-    SetMockTime(1610000000); // any time to successfully reset ibd
+    // ResetIbd() asserts that we are back in IBD, which requires the tip to look
+    // stale, i.e. tip time < mocktime - nMaxTipAge. Upstream hardcodes 1610000000,
+    // but ReddCoin's regtest genesis is 1642570147 - newer than that constant - so
+    // the tip never looks stale and the assert fires. Derive the mocktime from the
+    // tip instead, which stays correct if either value moves.
+    const int64_t tip_time{WITH_LOCK(::cs_main, return chainstate.m_chain.Tip()->GetBlockTime())};
+    SetMockTime(tip_time + nMaxTipAge + 1);
     chainstate.ResetIbd();
 
     const std::string random_message_type{fuzzed_data_provider.ConsumeBytesAsString(CMessageHeader::COMMAND_SIZE).c_str()};
