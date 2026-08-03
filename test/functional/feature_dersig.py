@@ -8,6 +8,7 @@ Test that the DERSIG soft-fork activates at (regtest) block height 500.
 ReddCoin uses BIP66Height=500 as a buried deployment.
 """
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
     create_block,
     NORMAL_GBT_REQUEST_PARAMS,
@@ -82,6 +83,13 @@ class BIP66Test(BitcoinTestFramework):
                 addresses = script_pubkey.get('addresses', [])
                 if addresses:
                     addr = addresses[0]
+            if not addr and script_pubkey.get('type') == 'pubkey':
+                # A coinstake output is P2PK, and decoderawtransaction reports no
+                # address for it, so derive the P2PKH address from the pubkey.
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    addr = key_to_p2pkh(parts[0], main=False)
             if addr:
                 signing_key = node.dumpprivkey(addr)
         except Exception as e:

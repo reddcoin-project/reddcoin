@@ -13,6 +13,7 @@ Generate COINBASE_MATURITY (CB) more blocks to ensure the coinbases are mature.
 [Policy/Consensus] Check that the new NULLDUMMY rules are enforced on block CB + 5.
 """
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
     COINBASE_MATURITY,
     NORMAL_GBT_REQUEST_PARAMS,
@@ -158,11 +159,21 @@ class NULLDUMMYTest(BitcoinTestFramework):
                 addresses = script_pubkey.get('addresses', [])
                 if addresses:
                     addr = addresses[0]
+            if not addr and script_pubkey.get('type') == 'pubkey':
+                # A coinstake output is P2PK, and decoderawtransaction reports no
+                # address for it, so derive the P2PKH address from the pubkey.
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    addr = key_to_p2pkh(parts[0], main=False)
             if addr:
                 signing_key = node.dumpprivkey(addr)
         except Exception as e:
             self.log.debug("coinstake key lookup failed: %s" % e)
         if not signing_key:
+            # Only correct when the coinstake happens to be staked by the
+            # deterministic key; the block is rejected bad-blk-sign otherwise.
+            self.log.warning("coinstake key not found, falling back to the deterministic key")
             signing_key = node.get_deterministic_priv_key().key
         sign_block(block, signing_key)
 
