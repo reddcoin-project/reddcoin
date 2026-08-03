@@ -127,11 +127,16 @@ class P2PEvict(BitcoinTestFramework):
 
         self.log.info("Create 4 peers and protect them from eviction by sending us a block")
         for _ in range(4):
+            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing.
+            # Built before the peer connects, not after. It cannot be lifted out of the loop,
+            # since each block comes from a template on the current tip and the tip only moves
+            # when the previous one is accepted, but building it first keeps its RPCs, which
+            # now include a dumpprivkey for the coinstake key, out of the window in which this
+            # peer's ping is being timed.
+            block = self.build_block_on_tip(node)
             block_peer = node.add_p2p_connection(SlowP2PDataStore())
             current_peer += 1
             block_peer.sync_with_ping()
-            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing
-            block = self.build_block_on_tip(node)
             block_peer.send_blocks_and_test([block], node, success=True)
             protected_peers.add(current_peer)
 
