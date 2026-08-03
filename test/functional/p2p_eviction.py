@@ -189,10 +189,31 @@ class P2PEvict(BitcoinTestFramework):
             pings[i] = peerinfo[i]['minping'] if 'minping' in peerinfo[i] else 1000000
         sorted_pings = sorted(pings.items(), key=lambda x: x[1])
 
-        # Usually the 8 fast peers are protected. In rare case of unreliable pings,
-        # one of the slower peers might have a faster min ping though.
-        for i in range(8):
-            protected_peers.add(sorted_pings[i][0])
+        # The node protects the 8 lowest-minping peers. Unlike the two protections
+        # above, which are earned by work only those peers do and so are known
+        # here, this one has to be inferred from the pings, and it is the only
+        # place this test can be wrong about a node that behaved correctly.
+        #
+        # It is currently not inferable at all. The node times a ping with
+        # GetTime(), at both ends (net_processing.cpp:4511 and net.cpp:628), and
+        # that honours mocktime, which this test freezes so it can build PoS
+        # blocks. The SlowP2P classes sleep in real time, which the frozen clock
+        # cannot see, so every peer reports a minping of 0 and the ordering below
+        # is meaningless. The node is ranking 21 equal values too, and neither
+        # side's choice of 8 has anything to do with the other's.
+        #
+        # So claim this protection only where the ordering is unambiguous: a peer
+        # has to beat the 9th by a clear margin. Today nothing does, and the
+        # assertion falls back to the protections the test actually knows. If
+        # ping timing is ever made to work under mocktime, the fast peers will
+        # clear the margin on their own and the check tightens again with no
+        # change here. See RED-63.
+        PING_MARGIN = 0.05
+        assert len(sorted_pings) > 8
+        ninth_ping = sorted_pings[8][1]
+        ping_protected = [peer for peer, ping in sorted_pings[:8] if ping < ninth_ping - PING_MARGIN]
+        protected_peers.update(ping_protected)
+        self.log.debug("{} of the 8 fastest peers had an unambiguous min ping".format(len(ping_protected)))
 
         self.log.info("Create peer that triggers the eviction mechanism")
         node.add_p2p_connection(SlowP2PInterface())
