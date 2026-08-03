@@ -67,17 +67,22 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "addnode",        // avoid DNS lookups
     "addpeeraddress", // avoid DNS lookups
     "analyzepsbt",    // avoid signed integer overflow in CFeeRate::GetFee(unsigned long) (https://github.com/bitcoin/bitcoin/issues/20607)
+    "checkupdates",   // avoid outbound network access (queries the release feed over TLS)
     "dumptxoutset",   // avoid writing to disk
     "dumpwallet", // avoid writing to disk
     "echoipc",              // avoid assertion failure (Assertion `"EnsureAnyNodeContext(request.context).init" && check' failed.)
+    "enumeratesigners",     // avoid running external signer commands
     "generatetoaddress",    // avoid prohibitively slow execution (when `num_blocks` is large)
     "generatetodescriptor", // avoid prohibitively slow execution (when `nblocks` is large)
+    "getstakinginfo",       // avoid disk access (stake weight walks the UTXO set via the tx index)
     "gettxoutproof",        // avoid prohibitively slow execution
     "importwallet", // avoid reading from disk
     "loadwallet",   // avoid reading from disk
     "prioritisetransaction", // avoid signed integer overflow in CTxMemPool::PrioritiseTransaction(uint256 const&, long const&) (https://github.com/bitcoin/bitcoin/issues/20626)
     "savemempool",           // disabled as a precautionary measure: may take a file path argument in the future
     "setban",                // avoid DNS lookups
+    "setstaking",            // avoid mutating node staking state
+    "staking",               // avoid mutating node staking state
     "stop",                  // avoid shutdown state
 };
 
@@ -118,6 +123,8 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getdescriptorinfo",
     "getdifficulty",
     "getindexinfo",
+    "getinflation",
+    "getinflationmultiplier",
     "getmemoryinfo",
     "getmempoolancestors",
     "getmempooldescendants",

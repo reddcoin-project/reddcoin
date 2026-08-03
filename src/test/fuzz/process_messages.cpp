@@ -7,6 +7,7 @@
 #include <net.h>
 #include <net_processing.h>
 #include <protocol.h>
+#include <sync.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
@@ -18,6 +19,8 @@
 #include <validation.h>
 #include <validationinterface.h>
 
+#include <algorithm>
+
 namespace {
 const TestingSetup* g_setup;
 } // namespace
@@ -25,9 +28,15 @@ const TestingSetup* g_setup;
 void initialize_process_messages()
 {
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
-    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
+    const Consensus::Params& consensus = Params().GetConsensus();
+    const int COINBASE_MATURITY = consensus.GetCoinbaseMaturity();
     g_setup = testing_setup.get();
-    for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest). Above that height
+    // CreateNewBlock's TestBlockValidity rejects the PoW template with "pow-ended"
+    // and MineBlock throws, so cap the mined count. Chains where PoW does not end
+    // early (nLastPowHeight is large) still mine the full 2 * COINBASE_MATURITY.
+    const int num_blocks{std::min(2 * COINBASE_MATURITY, consensus.nLastPowHeight - 1)};
+    for (int i = 0; i < num_blocks; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);
     }
     SyncWithValidationInterfaceQueue();
@@ -39,7 +48,13 @@ FUZZ_TARGET_INIT(process_messages, initialize_process_messages)
 
     ConnmanTestMsg& connman = *static_cast<ConnmanTestMsg*>(g_setup->m_node.connman.get());
     TestChainState& chainstate = *static_cast<TestChainState*>(&g_setup->m_node.chainman->ActiveChainstate());
-    SetMockTime(1610000000); // any time to successfully reset ibd
+    // ResetIbd() asserts that we are back in IBD, which requires the tip to look
+    // stale, i.e. tip time < mocktime - nMaxTipAge. Upstream hardcodes 1610000000,
+    // but ReddCoin's regtest genesis is 1642570147 - newer than that constant - so
+    // the tip never looks stale and the assert fires. Derive the mocktime from the
+    // tip instead, which stays correct if either value moves.
+    const int64_t tip_time{WITH_LOCK(::cs_main, return chainstate.m_chain.Tip()->GetBlockTime())};
+    SetMockTime(tip_time + nMaxTipAge + 1);
     chainstate.ResetIbd();
 
     std::vector<CNode*> peers;

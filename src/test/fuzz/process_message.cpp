@@ -12,6 +12,7 @@
 #include <scheduler.h>
 #include <script/script.h>
 #include <streams.h>
+#include <sync.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
@@ -20,9 +21,11 @@
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
 #include <txorphanage.h>
+#include <validation.h>
 #include <validationinterface.h>
 #include <version.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -58,9 +61,15 @@ void initialize_process_message()
     Assert(GetNumMsgTypes() == getAllNetMessageTypes().size()); // If this fails, add or remove the message type below
 
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
-    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
+    const Consensus::Params& consensus = Params().GetConsensus();
+    const int COINBASE_MATURITY = consensus.GetCoinbaseMaturity();
     g_setup = testing_setup.get();
-    for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest). Above that height
+    // CreateNewBlock's TestBlockValidity rejects the PoW template with "pow-ended"
+    // and MineBlock throws, so cap the mined count. Chains where PoW does not end
+    // early (nLastPowHeight is large) still mine the full 2 * COINBASE_MATURITY.
+    const int num_blocks{std::min(2 * COINBASE_MATURITY, consensus.nLastPowHeight - 1)};
+    for (int i = 0; i < num_blocks; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);
     }
     SyncWithValidationInterfaceQueue();
@@ -72,7 +81,13 @@ void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE
 
     ConnmanTestMsg& connman = *static_cast<ConnmanTestMsg*>(g_setup->m_node.connman.get());
     TestChainState& chainstate = *static_cast<TestChainState*>(&g_setup->m_node.chainman->ActiveChainstate());
-    SetMockTime(1610000000); // any time to successfully reset ibd
+    // ResetIbd() asserts that we are back in IBD, which requires the tip to look
+    // stale, i.e. tip time < mocktime - nMaxTipAge. Upstream hardcodes 1610000000,
+    // but ReddCoin's regtest genesis is 1642570147 - newer than that constant - so
+    // the tip never looks stale and the assert fires. Derive the mocktime from the
+    // tip instead, which stays correct if either value moves.
+    const int64_t tip_time{WITH_LOCK(::cs_main, return chainstate.m_chain.Tip()->GetBlockTime())};
+    SetMockTime(tip_time + nMaxTipAge + 1);
     chainstate.ResetIbd();
 
     const std::string random_message_type{fuzzed_data_provider.ConsumeBytesAsString(CMessageHeader::COMMAND_SIZE).c_str()};
