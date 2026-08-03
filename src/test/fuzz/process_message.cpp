@@ -23,6 +23,7 @@
 #include <validationinterface.h>
 #include <version.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -58,9 +59,15 @@ void initialize_process_message()
     Assert(GetNumMsgTypes() == getAllNetMessageTypes().size()); // If this fails, add or remove the message type below
 
     static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>();
-    const int COINBASE_MATURITY = Params().GetConsensus().GetCoinbaseMaturity();
+    const Consensus::Params& consensus = Params().GetConsensus();
+    const int COINBASE_MATURITY = consensus.GetCoinbaseMaturity();
     g_setup = testing_setup.get();
-    for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest). Above that height
+    // CreateNewBlock's TestBlockValidity rejects the PoW template with "pow-ended"
+    // and MineBlock throws, so cap the mined count. Chains where PoW does not end
+    // early (nLastPowHeight is large) still mine the full 2 * COINBASE_MATURITY.
+    const int num_blocks{std::min(2 * COINBASE_MATURITY, consensus.nLastPowHeight - 1)};
+    for (int i = 0; i < num_blocks; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);
     }
     SyncWithValidationInterfaceQueue();
