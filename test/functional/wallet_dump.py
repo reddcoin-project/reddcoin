@@ -5,6 +5,7 @@
 """Test the dumpwallet RPC."""
 import datetime
 import os
+import time
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -208,11 +209,23 @@ class WalletDumpTest(BitcoinTestFramework):
         assert result['ismine']
 
         self.log.info('Check that wallet is flushed')
+        # MaybeCompactWalletDB runs on a 500ms scheduler tick. The first tick that
+        # sees the write stamps nLastWalletUpdate with GetTime(), and a later tick
+        # flushes once GetTime() - nLastWalletUpdate >= 2. Both readings honour
+        # mocktime, so a single jump taken straight after the write is a race: if
+        # the tick lands after the jump then the stamp is the frozen post-jump time,
+        # the difference is pinned at 0, and no amount of waiting can satisfy it.
+        # Step the clock repeatedly instead. Once a tick has observed the write,
+        # nothing bumps the update counter again, so the stamp stops moving and the
+        # next step outruns it.
+        flush_time = dump_time
         with self.nodes[0].assert_debug_log(['Flushing wallet.dat'], timeout=20):
             w2.getnewaddress()
-            # Advance mocktime so periodic flush condition (2s since last update) triggers
-            self.nodes[0].setmocktime(dump_time + 10)
-            self.nodes[0].mocktime = dump_time + 10
+            for _ in range(3):
+                time.sleep(1)
+                flush_time += 10
+                self.nodes[0].setmocktime(flush_time)
+                self.nodes[0].mocktime = flush_time
 
         # Make sure that dumpwallet doesn't have a lock order issue when there is an unconfirmed tx and it is reloaded
         # See https://github.com/bitcoin/bitcoin/issues/22489
