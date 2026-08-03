@@ -273,12 +273,17 @@ def run_once(*, fuzz_pool, corpus, test_list, src_dir, build_dir, use_valgrind):
                 universal_newlines=True,
             )
             output += result.stderr
-            return output, result
+            return t, output, result
 
         jobs.append(fuzz_pool.submit(job, t, args))
 
+    # Collect every failure rather than exiting on the first one. All jobs are
+    # submitted to the pool up front, so bailing out early still paid the cost of
+    # running the remaining targets while discarding their results, which hid every
+    # failure but one behind whichever target happened to finish first.
+    failures = []
     for future in as_completed(jobs):
-        output, result = future.result()
+        target, output, result = future.result()
         logging.debug(output)
         try:
             result.check_returncode()
@@ -288,7 +293,13 @@ def run_once(*, fuzz_pool, corpus, test_list, src_dir, build_dir, use_valgrind):
             if e.stderr:
                 logging.info(e.stderr)
             logging.info("Target \"{}\" failed with exit code {}".format(" ".join(result.args), e.returncode))
-            sys.exit(1)
+            failures.append((target, e.returncode))
+
+    if failures:
+        logging.error("{} of {} target(s) failed:".format(len(failures), len(jobs)))
+        for target, returncode in sorted(failures):
+            logging.error("  {} (exit code {})".format(target, returncode))
+        sys.exit(1)
 
 
 def parse_test_list(*, fuzz_bin):
