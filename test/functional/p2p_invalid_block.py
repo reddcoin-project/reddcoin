@@ -19,6 +19,7 @@ ReddCoin adaptation notes:
 """
 import copy
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
     create_block,
     NORMAL_GBT_REQUEST_PARAMS,
@@ -89,6 +90,13 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
                 addresses = script_pubkey.get('addresses', [])
                 if addresses:
                     coinstake_address = addresses[0]
+            if not coinstake_address and script_pubkey.get('type') == 'pubkey':
+                # A coinstake output is P2PK, and decoderawtransaction reports no
+                # address for it, so derive the P2PKH address from the pubkey.
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    coinstake_address = key_to_p2pkh(parts[0], main=False)
             if coinstake_address:
                 signing_key = node.dumpprivkey(coinstake_address)
         except Exception as e:

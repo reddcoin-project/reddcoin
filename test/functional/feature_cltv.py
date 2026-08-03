@@ -9,6 +9,7 @@ ReddCoin uses BIP9 for CLTV (bit 1), activating at height 433 on regtest
 (window=144, 75% threshold, 3 periods from genesis).
 """
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
     create_block,
     NORMAL_GBT_REQUEST_PARAMS,
@@ -168,6 +169,13 @@ class BIP65Test(BitcoinTestFramework):
                 addresses = script_pubkey.get('addresses', [])
                 if addresses:
                     addr = addresses[0]
+            if not addr and script_pubkey.get('type') == 'pubkey':
+                # A coinstake output is P2PK, and decoderawtransaction reports no
+                # address for it, so derive the P2PKH address from the pubkey.
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    addr = key_to_p2pkh(parts[0], main=False)
             if addr:
                 signing_key = node.dumpprivkey(addr)
         except Exception as e:

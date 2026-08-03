@@ -15,6 +15,7 @@ Therefore, this test is limited to the remaining protection criteria.
 
 import time
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
     add_witness_commitment,
     COINBASE_MATURITY,
@@ -86,13 +87,29 @@ class P2PEvict(BitcoinTestFramework):
             coinstake_hex = coinstake.serialize().hex()
             decoded_tx = node.decoderawtransaction(coinstake_hex)
 
+            signing_key = None
             try:
-                coinstake_addresses = decoded_tx['vout'][1]['scriptPubKey'].get('addresses', [])
-                if coinstake_addresses:
-                    signing_key = node.dumpprivkey(coinstake_addresses[0])
-                else:
-                    signing_key = node.get_deterministic_priv_key().key
-            except:
+                script_pubkey = decoded_tx['vout'][1]['scriptPubKey']
+                addr = script_pubkey.get('address')
+                if not addr:
+                    addresses = script_pubkey.get('addresses', [])
+                    if addresses:
+                        addr = addresses[0]
+                if not addr and script_pubkey.get('type') == 'pubkey':
+                    # A coinstake output is P2PK, and decoderawtransaction reports no
+                    # address for it, so derive the P2PKH address from the pubkey.
+                    asm = script_pubkey.get('asm', '')
+                    parts = asm.split()
+                    if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                        addr = key_to_p2pkh(parts[0], main=False)
+                if addr:
+                    signing_key = node.dumpprivkey(addr)
+            except Exception as e:
+                self.log.debug("coinstake key lookup failed: %s" % e)
+            if not signing_key:
+                # Only correct when the coinstake happens to be staked by the
+                # deterministic key; the block is rejected bad-blk-sign otherwise.
+                self.log.warning("coinstake key not found, falling back to the deterministic key")
                 signing_key = node.get_deterministic_priv_key().key
 
             sign_block(block, signing_key)
