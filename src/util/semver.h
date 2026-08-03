@@ -25,6 +25,7 @@ SOFTWARE.
 #ifndef BITCOIN_UTIL_SEMVER_H
 #define BITCOIN_UTIL_SEMVER_H
 
+#include <cstdint>
 #include <ostream>
 #include <string>
 #include <regex>
