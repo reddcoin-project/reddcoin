@@ -127,11 +127,16 @@ class P2PEvict(BitcoinTestFramework):
 
         self.log.info("Create 4 peers and protect them from eviction by sending us a block")
         for _ in range(4):
+            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing.
+            # Built before the peer connects, not after. It cannot be lifted out of the loop,
+            # since each block comes from a template on the current tip and the tip only moves
+            # when the previous one is accepted, but building it first keeps its RPCs, which
+            # now include a dumpprivkey for the coinstake key, out of the window in which this
+            # peer's ping is being timed.
+            block = self.build_block_on_tip(node)
             block_peer = node.add_p2p_connection(SlowP2PDataStore())
             current_peer += 1
             block_peer.sync_with_ping()
-            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing
-            block = self.build_block_on_tip(node)
             block_peer.send_blocks_and_test([block], node, success=True)
             protected_peers.add(current_peer)
 
@@ -169,12 +174,15 @@ class P2PEvict(BitcoinTestFramework):
             current_peer += 1
             self.wait_until(lambda: "ping" in fastpeer.last_message, timeout=10)
 
-        # Wait until the node has timed a ping for every peer. Waiting on the
-        # ping being sent, as above, does not mean the pong is back and counted,
-        # and a peer the node has not yet timed still ranks as infinitely slow.
-        # The snapshot below would then record an order the node is about to
-        # revise, and it evicts against its own, so a peer taken here to be
-        # protected can be the one that goes.
+        # Wait until the node has timed a ping for every peer. Waiting on the ping
+        # being sent, as above, does not mean the pong is back and counted, and a
+        # peer the node has not yet timed reports no minping at all.
+        #
+        # This is the only sample any peer will get. The node re-pings on
+        # "now > m_ping_start + PING_INTERVAL" (net_processing.cpp:4500) with now
+        # taken from GetTime(), so once it has recorded m_ping_start under a frozen
+        # mocktime that condition can never come true again. One ping per peer,
+        # measured as 0, and no revision to wait for. See RED-63.
         self.wait_until(lambda: all('minping' in peer for peer in node.getpeerinfo()), timeout=60)
 
         # Make sure by asking the node what the actual min pings are
@@ -184,10 +192,31 @@ class P2PEvict(BitcoinTestFramework):
             pings[i] = peerinfo[i]['minping'] if 'minping' in peerinfo[i] else 1000000
         sorted_pings = sorted(pings.items(), key=lambda x: x[1])
 
-        # Usually the 8 fast peers are protected. In rare case of unreliable pings,
-        # one of the slower peers might have a faster min ping though.
-        for i in range(8):
-            protected_peers.add(sorted_pings[i][0])
+        # The node protects the 8 lowest-minping peers. Unlike the two protections
+        # above, which are earned by work only those peers do and so are known
+        # here, this one has to be inferred from the pings, and it is the only
+        # place this test can be wrong about a node that behaved correctly.
+        #
+        # It is currently not inferable at all. The node times a ping with
+        # GetTime(), at both ends (net_processing.cpp:4511 and net.cpp:628), and
+        # that honours mocktime, which this test freezes so it can build PoS
+        # blocks. The SlowP2P classes sleep in real time, which the frozen clock
+        # cannot see, so every peer reports a minping of 0 and the ordering below
+        # is meaningless. The node is ranking 21 equal values too, and neither
+        # side's choice of 8 has anything to do with the other's.
+        #
+        # So claim this protection only where the ordering is unambiguous: a peer
+        # has to beat the 9th by a clear margin. Today nothing does, and the
+        # assertion falls back to the protections the test actually knows. If
+        # ping timing is ever made to work under mocktime, the fast peers will
+        # clear the margin on their own and the check tightens again with no
+        # change here. See RED-63.
+        PING_MARGIN = 0.05
+        assert len(sorted_pings) > 8
+        ninth_ping = sorted_pings[8][1]
+        ping_protected = [peer for peer, ping in sorted_pings[:8] if ping < ninth_ping - PING_MARGIN]
+        protected_peers.update(ping_protected)
+        self.log.debug("{} of the 8 fastest peers had an unambiguous min ping".format(len(ping_protected)))
 
         self.log.info("Create peer that triggers the eviction mechanism")
         node.add_p2p_connection(SlowP2PInterface())
