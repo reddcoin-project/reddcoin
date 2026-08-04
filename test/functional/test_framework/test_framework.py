@@ -709,9 +709,18 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                         r.syncwithvalidationinterfacequeue()
                 return
             # Check that each peer has at least one connection
-            assert (all([len(x.getpeerinfo()) for x in rpc_connections]))
-            # Advance mocktime so outbound trickle relay timers can fire
-            if hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
+            peer_info = [x.getpeerinfo() for x in rpc_connections]
+            assert (all([len(info) for info in peer_info]))
+            # Advance mocktime so outbound trickle relay timers can fire, but never
+            # while a node is still waiting on a block. The block-download stall
+            # timer is measured against GetTime(), which honours mocktime, so a step
+            # taken here makes an in-flight download look like it has taken that long
+            # and the peer is dropped. The next sync_blocks then asserts on a node
+            # with no peers, which reads as an unrelated failure somewhere later in
+            # the test. Skipping the step costs nothing: the download completes on
+            # its own and the clock moves on the following iteration. See RED-58.
+            blocks_in_flight = any(peer.get('inflight') for info in peer_info for peer in info)
+            if not blocks_in_flight and hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
                 for node in rpc_connections:
                     node.mocktime += 5
                     node.setmocktime(node.mocktime)
