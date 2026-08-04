@@ -1068,8 +1068,18 @@ const AssumeutxoData* ExpectedAssumeutxo(const int height, const CChainParams& p
 CAmount GetProofOfWorkReward(unsigned int nBits);
 CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees);
 CAmount GetProofOfStakeReward(int64_t nCoinAge, const CAmount& nFees, double fInflationAdjustment);
-double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams);
-double GetInflation(CChainState* active_chainstate, const Consensus::Params& consensusParams);
+/**
+ * Inflation rate, and the reward multiplier derived from it, measured over the
+ * month of blocks ending at pindex. Passing nullptr measures at the tip.
+ *
+ * Both return a neutral value (no inflation, an unchanged multiplier) when the
+ * chain is too short to hold a full measurement interval. Block validation
+ * never sees that case: it consults the multiplier only for v5 blocks, which
+ * exist only above nLastPowHeight, where the interval is clamped to a height
+ * the chain is guaranteed to have.
+ */
+double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams, const CBlockIndex* pindex = nullptr);
+double GetInflation(CChainState* active_chainstate, const Consensus::Params& consensusParams, const CBlockIndex* pindex = nullptr);
 bool VerifyHashTarget(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProof);
 
 #endif // BITCOIN_VALIDATION_H
