@@ -757,7 +757,20 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         # Only sync if at least one node has mocktime set
         max_time = max(times)
         if max_time > 0:
-            set_node_times(rpc_connections, max_time)
+            for node in rpc_connections:
+                try:
+                    node.setmocktime(max_time)
+                    node.mocktime = max_time  # Track for the next sync_time()
+                except (JSONRPCException, ConnectionError, OSError) as e:
+                    # A node can be on its way down while we align clocks, and
+                    # feature_abortnode crashes one deliberately. Its HTTP server
+                    # then answers 503 or refuses the connection, while the flags
+                    # filtered on above still say it is up, because the framework
+                    # has not noticed yet. Alignment is best effort and is invoked
+                    # implicitly from every TestNode.generate, so it must not be the
+                    # thing that fails a test. set_node_times stays strict for the
+                    # tests that call it directly and do want to hear about this.
+                    self.log.debug("sync_time: skipping unreachable node %d: %s" % (node.index, e))
 
     def sync_all(self, nodes=None):
         self.sync_time(nodes)
