@@ -860,9 +860,9 @@ static RPCHelpMan getunconfirmedbalance()
 static RPCHelpMan getinterest()
 {
     return RPCHelpMan{"getinterest",
-                "\nReturns the total available balance.\n"
-                "The available balance is what the wallet considers currently spendable, and is\n"
-                "thus affected by options which limit spendability such as -spendzeroconfchange.\n",
+                "\nReturns the total interest this wallet has earned from staking.\n"
+                "Interest is the amount each coinstake credited above what it spent, summed\n"
+                "over every coinstake in the wallet within the given time range.\n",
                 {
 					{"start", RPCArg::Type::NUM, RPCArg::Default{0}, "Start time (unixtime)."},
 					{"end", RPCArg::Type::NUM, RPCArg::Default{-1}, "End time (unixtime)."},
@@ -895,10 +895,12 @@ static RPCHelpMan getinterest()
     if (!request.params[0].isNull()) {
     	nTimeStart = (unsigned int)request.params[0].get_int();
     }
-    unsigned int nTimeEnd = -1;
+    // No end given means no upper bound. Spelled out rather than assigned from
+    // -1, whose implicit sign change UndefinedBehaviorSanitizer objects to.
+    unsigned int nTimeEnd = std::numeric_limits<unsigned int>::max();
     if (!request.params[1].isNull()) {
-        	nTimeStart = (unsigned int)request.params[1].get_int();
-	}
+        nTimeEnd = (unsigned int)request.params[1].get_int();
+    }
 
     isminefilter filter = ISMINE_SPENDABLE;
 
