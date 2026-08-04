@@ -272,6 +272,11 @@ BASE_SCRIPTS = [
     'wallet_descriptor_staking.py',
     'wallet_descriptor_staking_witness.py',
     'feature_descriptor_legacy_staking.py',
+    # Reddcoin-specific RPCs that the --coverage gate reported as untested.
+    'rpc_staking.py',
+    'wallet_interest.py',
+    'rpc_inflation.py',
+    'rpc_checkupdates.py',
     # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin
     'wallet_bumpfee.py --legacy-wallet',
     'wallet_bumpfee.py --descriptors',
