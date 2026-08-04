@@ -5577,9 +5577,13 @@ void ChainstateManager::MaybeRebalanceCaches()
 
 // PoSV2 determine the inflation adjustment to apply
 // look back over the last month of rewards (365.2424 / 12)
-double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams)
+double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::Params& consensusParams, const CBlockIndex* pindex)
 {
-    CBlockIndex* pindex = active_chainstate->m_chain.Tip();
+    if (!pindex) pindex = active_chainstate->m_chain.Tip();
+
+    // Genesis has no predecessor to read a money supply from. See the header
+    // for why block validation never reaches this.
+    if (!pindex || !pindex->pprev) return 1;
 
     int64_t nStart = GetTimeMicros();
     float nInflationTarget = 0.05;
@@ -5602,7 +5606,9 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
     }
 
     // get previous block interval
-    std::string strHash = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
+    const CBlockIndex* pindexInterval = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth];
+    if (!pindexInterval) return 1; // chain shorter than the measurement interval
+    std::string strHash = pindexInterval->GetBlockHash().GetHex();
     uint256 hash = uint256S(strHash);
 
     int64_t nMoneySupplyPrev;
@@ -5610,11 +5616,14 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
 
     {
         LOCK(cs_main);
-        if (!active_chainstate->m_blockman.m_block_index.count(hash))
+        const auto it = active_chainstate->m_blockman.m_block_index.find(hash);
+        if (it == active_chainstate->m_blockman.m_block_index.end() || !it->second) {
             LogPrintf("- Hash block missing\n");
+            return 1;
+        }
 
-        nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
-        nHeightPrev = active_chainstate->m_blockman.m_block_index[hash]->nHeight;
+        nMoneySupplyPrev = it->second->nMoneySupply;
+        nHeightPrev = it->second->nHeight;
     }
 
     nPoSVRewards = nMoneySupply - nMoneySupplyPrev;
@@ -5637,9 +5646,13 @@ double GetInflationAdjustment(CChainState* active_chainstate, const Consensus::P
 /**
  * PoSV2 determine the current inflation rate
  */
-double GetInflation(CChainState* active_chainstate, const Consensus::Params& consensusParams)
+double GetInflation(CChainState* active_chainstate, const Consensus::Params& consensusParams, const CBlockIndex* pindex)
 {
-    CBlockIndex* pindex = active_chainstate->m_chain.Tip();
+    if (!pindex) pindex = active_chainstate->m_chain.Tip();
+
+    // Genesis has no predecessor to read a money supply from. See the header
+    // for why block validation never reaches this.
+    if (!pindex || !pindex->pprev) return 0;
 
     int64_t nMoneySupply = pindex->pprev->nMoneySupply;
     int64_t nMoneySupplyPrev;
@@ -5659,15 +5672,20 @@ double GetInflation(CChainState* active_chainstate, const Consensus::Params& con
     }
 
     // get previous block interval
-    std::string strHash = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth]->GetBlockHash().GetHex();
+    const CBlockIndex* pindexInterval = active_chainstate->m_chain[pindex->nHeight - nBlocksPerMonth];
+    if (!pindexInterval) return 0; // chain shorter than the measurement interval
+    std::string strHash = pindexInterval->GetBlockHash().GetHex();
     uint256 hash = uint256S(strHash);
 
     {
       LOCK(cs_main);
-      if (!active_chainstate->m_blockman.m_block_index.count(hash))
-	LogPrint(BCLog::STAKE, "%s: Hash block missing\n", __func__);
+      const auto it = active_chainstate->m_blockman.m_block_index.find(hash);
+      if (it == active_chainstate->m_blockman.m_block_index.end() || !it->second) {
+        LogPrint(BCLog::STAKE, "%s: Hash block missing\n", __func__);
+        return 0;
+      }
 
-      nMoneySupplyPrev = active_chainstate->m_blockman.m_block_index[hash]->nMoneySupply;
+      nMoneySupplyPrev = it->second->nMoneySupply;
     }
 
 
