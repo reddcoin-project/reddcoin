@@ -452,18 +452,21 @@ static RPCHelpMan getinflation()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
             ChainstateManager& chainman = EnsureAnyChainman(request.context);
 
-            int height;
             LOCK(cs_main);
+            const CChain& active_chain = chainman.ActiveChain();
 
-            if (!request.params[1].isNull() && request.params[1].get_int() > 0) {
+            // A height of 0, the documented default, measures at the tip.
+            int height = active_chain.Height();
+            if (!request.params[0].isNull() && request.params[0].get_int() > 0) {
                 height = request.params[0].get_int();
-            } else {
-                height = chainman.ActiveChain().Height();
+                if (height > active_chain.Height()) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Target block height %d after current tip %d", height, active_chain.Height()));
+                }
             }
 
             UniValue ret(UniValue::VOBJ);
-            ret.pushKV("height", chainman.ActiveChain().Height());
-            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus()));
+            ret.pushKV("height", height);
+            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus(), active_chain[height]));
             return ret;
         },
     };
@@ -487,19 +490,23 @@ static RPCHelpMan getinflationmultiplier()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
             ChainstateManager& chainman = EnsureAnyChainman(request.context);
 
-            int height;
             LOCK(cs_main);
+            const CChain& active_chain = chainman.ActiveChain();
 
-            if (!request.params[1].isNull() && request.params[1].get_int() > 0) {
+            // A height of 0, the documented default, measures at the tip.
+            int height = active_chain.Height();
+            if (!request.params[0].isNull() && request.params[0].get_int() > 0) {
                 height = request.params[0].get_int();
-            } else {
-                height = chainman.ActiveChain().Height();
+                if (height > active_chain.Height()) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Target block height %d after current tip %d", height, active_chain.Height()));
+                }
             }
 
+            const CBlockIndex* pindex = active_chain[height];
             UniValue ret(UniValue::VOBJ);
-            ret.pushKV("height", chainman.ActiveChain().Height());
-            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus()));
-            ret.pushKV("multiplier", GetInflationAdjustment(&chainman.ActiveChainstate(), Params().GetConsensus()));
+            ret.pushKV("height", height);
+            ret.pushKV("inflation", GetInflation(&chainman.ActiveChainstate(), Params().GetConsensus(), pindex));
+            ret.pushKV("multiplier", GetInflationAdjustment(&chainman.ActiveChainstate(), Params().GetConsensus(), pindex));
             return ret;
         },
     };
