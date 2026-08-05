@@ -15,13 +15,22 @@ import sys
 
 
 def get_fuzz_env(*, target, source_dir):
-    return {
+    env = {
         'FUZZ': target,
         'UBSAN_OPTIONS':
         f'suppressions={source_dir}/test/sanitizer_suppressions/ubsan:print_stacktrace=1:halt_on_error=1:report_error_type=1',
         'ASAN_OPTIONS':  # symbolizer disabled due to https://github.com/google/sanitizers/issues/1364#issuecomment-761072085
         'symbolize=0:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1',
     }
+    # Targets built on BasicTestingSetup create a datadir under the system
+    # temp directory, and libFuzzer writes its merge control file there too.
+    # Neither is small: a merge across the whole suite can leave several GB
+    # behind, which fills a modest /tmp and fails the run. This environment
+    # replaces the caller's wholesale, so TMPDIR has to be passed through
+    # explicitly for it to be honoured.
+    if 'TMPDIR' in os.environ:
+        env['TMPDIR'] = os.environ['TMPDIR']
+    return env
 
 
 def main():

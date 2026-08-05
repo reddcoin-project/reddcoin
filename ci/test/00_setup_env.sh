@@ -68,5 +68,9 @@ export SDK_URL=${SDK_URL:-https://bitcoincore.org/depends-sources/sdks}
 export DOCKER_PACKAGES=${DOCKER_PACKAGES:-build-essential libtool autotools-dev automake pkg-config bsdmainutils curl ca-certificates ccache python3 rsync git procps bison}
 export GOAL=${GOAL:-install}
 export DIR_QA_ASSETS=${DIR_QA_ASSETS:-${BASE_SCRATCH_DIR}/qa-assets}
+# Pinned so a run is reproducible and an unrelated push to qa-assets cannot
+# silently change what CI tests. This governs the unit test vectors as well as
+# the fuzz seed corpus, so bump it deliberately.
+export QA_ASSETS_COMMIT=${QA_ASSETS_COMMIT:-bf5168493bbee26b28490cdbfc3e85ceb4832793}
 export PATH=${BASE_ROOT_DIR}/ci/retry:$PATH
 export CI_RETRY_EXE=${CI_RETRY_EXE:-"retry --"}

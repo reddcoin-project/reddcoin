@@ -119,9 +119,22 @@ if [ "$RUN_FUZZ_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS" = "true" ] || [ "$RUN_U
   if [ ! -d ${DIR_QA_ASSETS} ]; then
     # Reddcoin qa-assets: unit_test_data/script_assets_test.json is regenerated
     # for Reddcoin's nTime transaction format (the upstream Bitcoin vectors fail
-    # to deserialize). See the repo README for how it is produced.
-    DOCKER_EXEC git clone --depth=1 https://github.com/reddcoin-project/qa-assets ${DIR_QA_ASSETS}
+    # to deserialize), and fuzz_seed_corpus is minimised against the Reddcoin
+    # fuzz binary. See the repo README for how both are produced.
+    #
+    # Fetch the pinned commit rather than the branch tip. A shallow fetch of a
+    # single revision keeps this as cheap as the previous --depth=1 clone while
+    # making the run reproducible.
+    DOCKER_EXEC mkdir -p ${DIR_QA_ASSETS}
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} init -q
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} remote add origin https://github.com/reddcoin-project/qa-assets
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} fetch -q --depth=1 origin ${QA_ASSETS_COMMIT}
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} checkout -q FETCH_HEAD
   fi
+  # DOCKER_EXEC passes its arguments through "$*", which drops quoting, so a
+  # format string containing spaces would reach git as separate arguments.
+  DOCKER_EXEC echo "qa-assets pinned at:"
+  DOCKER_EXEC git -C ${DIR_QA_ASSETS} log -1 --format=%H
 
   export DIR_FUZZ_IN=${DIR_QA_ASSETS}/fuzz_seed_corpus/
   export DIR_UNIT_TEST_DATA=${DIR_QA_ASSETS}/unit_test_data/
