@@ -98,6 +98,20 @@ public:
 
     //! Block until the wallet has processed the current chain tip, so a staking
     //! readout reflects blocks the caller could already have seen.
+    //!
+    //! Every caller that is about to build a proof-of-stake block must take this
+    //! first. createCoinStake() draws its kernel candidates from the wallet's
+    //! coin view, which measures confirmation depth against the last block the
+    //! wallet processed, and blocks reach the wallet asynchronously through the
+    //! validation interface queue. Building straight off a tip the wallet has
+    //! not caught up with hides coins that have just reached maturity, so a
+    //! different UTXO wins the kernel search and, since the PoSV reward follows
+    //! coin age, the block pays a different amount. The maturity re-check inside
+    //! createCoinStake() already reads the chainstate and treats the tip as
+    //! authoritative; this makes the candidate set agree with it.
+    //!
+    //! Must be called before cs_main or the wallet lock is taken: draining the
+    //! queue needs both.
     virtual void blockUntilSyncedToCurrentChain() = 0;
 
     //! How far the last kernel search advanced, for getstakinginfo.

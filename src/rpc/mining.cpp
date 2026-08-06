@@ -185,6 +185,10 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
         CBlockIndex* pindexPrev = nullptr;
 
         if (needPoS) {
+            // Let the wallet catch up with the block this loop just connected
+            // before picking coins for the next one. See StakingWallet.
+            staking_wallet->blockUntilSyncedToCurrentChain();
+
             // Create PoS block with wallet - follow miner.cpp PoSMiner() process exactly
             // Get pindexPrev BEFORE CreateNewBlock, without lock (matching miner.cpp line 650)
             pindexPrev = chainman.ActiveChain().Tip();
@@ -630,6 +634,10 @@ static RPCHelpMan generateblock()
             throw JSONRPCError(RPC_METHOD_NOT_FOUND,
                 "Wallet required for PoS block generation. Load a wallet first.");
         }
+
+        // Pick coins against the tip, not against whatever the wallet has
+        // processed so far. See StakingWallet.
+        staking_wallet->blockUntilSyncedToCurrentChain();
 
         CTxDestination dest;
         std::string dest_error;
@@ -1160,6 +1168,10 @@ static RPCHelpMan getblocktemplate()
                     ENTER_CRITICAL_SECTION(cs_main);
                     throw JSONRPCError(RPC_WALLET_NOT_FOUND, "Wallet not found for PoS block creation");
                 }
+
+                // Safe here only because cs_main is released for this block; a
+                // queue drain needs it. See StakingWallet.
+                staking_wallet->blockUntilSyncedToCurrentChain();
 
                 CTxDestination dest;
                 std::string strError;

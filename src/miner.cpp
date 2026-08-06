@@ -673,6 +673,13 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             //
             // Create new block
             //
+            // Take the tip and the wallet's coin view from the same point in
+            // time. A block that arrived while this thread was sleeping reaches
+            // the wallet asynchronously, and staking off the newer tip with the
+            // older coin view drops coins that have just matured. See
+            // StakingWallet. No lock is held here, which is what this needs.
+            staking_wallet.blockUntilSyncedToCurrentChain();
+
             CBlockIndex* pindexPrev = chainman->ActiveChain().Tip();
             bool fPoSCancel = false;
             CScript scriptPubKey = GetScriptForDestination(dest);
