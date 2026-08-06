@@ -657,7 +657,6 @@ public:
     }
 
     void notifyStakingStatusChanged() override { m_wallet->NotifyWalletStakingStatusChanged(); }
-    void abandonOrphanedCoinstakes() override { m_wallet->AbandonOrphanedCoinstakes(); }
 
     void setLastCoinStakeSearchInterval(int64_t interval) override
     {
