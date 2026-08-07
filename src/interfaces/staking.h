@@ -57,9 +57,9 @@ public:
     //!
     //! The node holds cs_wallet across whole operations that call back into the
     //! wallet several times (most importantly BlockAssembler::CreateNewBlock,
-    //! which invokes abandonOrphanedCoinstakes, createCoinStake,
-    //! setLastCoinStakeSearchInterval and finalizeCoinStakeReward in turn), so
-    //! per-method locking inside the implementation cannot reproduce the span.
+    //! which invokes createCoinStake, setLastCoinStakeSearchInterval and
+    //! finalizeCoinStakeReward in turn), so per-method locking inside the
+    //! implementation cannot reproduce the span.
     //! Callers keep the original scope by holding one of these.
     //!
     //! Lock order: cs_wallet is acquired *before* cs_main on the staking path.
@@ -112,9 +112,6 @@ public:
 
     //! Keep the destination reserved by reserveDestination().
     virtual void keepDestination() = 0;
-
-    //! Abandon coinstakes left behind by a reorg.
-    virtual void abandonOrphanedCoinstakes() = 0;
 
     //! Record how far the last kernel search advanced, for getstakinginfo.
     virtual void setLastCoinStakeSearchInterval(int64_t interval) = 0;

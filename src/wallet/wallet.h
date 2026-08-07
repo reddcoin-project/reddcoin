@@ -253,6 +253,10 @@ private:
     bool fBroadcastTransactions = false;
     // Local time that the tip block was received. Used to schedule wallet rebroadcasts.
     std::atomic<int64_t> m_best_block_time {0};
+    /** Whether the startup sweep for orphaned coinstakes has run. postInitProcess()
+     * skips it during initial block download, in which case updatedBlockTip()
+     * runs it once IBD ends. See AbandonOrphanedCoinstakes(). */
+    std::atomic<bool> m_orphaned_coinstakes_swept{false};
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
      * provides no real security */
@@ -818,6 +822,12 @@ public:
     /* Mark a transaction (and it in-wallet descendants) as abandoned so its inputs may be respent. */
     bool AbandonTransaction(const uint256& hashTx);
 
+    /* As above, but writing through a caller-supplied batch so several
+     * transactions can be abandoned in a single database transaction. Abandoning
+     * N transactions one at a time costs N commits, and on BDB each commit can
+     * involve a log write and flush. */
+    bool AbandonTransaction(WalletBatch& batch, const uint256& hashTx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
     /** Mark a transaction as replaced by another transaction (e.g., BIP 125). */
     bool MarkReplaced(const uint256& originalHash, const uint256& newHash);
 
@@ -844,7 +854,10 @@ public:
     /* Returns true if the wallet can give out new addresses. This means it has keys in the keypool or can generate new keys */
     bool CanGetAddresses(bool internal = false) const;
 
-    /* Function that will remove potentially abandoned coinstakes, returning the input to the wallet. */
+    /* Sweep the whole wallet for orphaned coinstakes, returning their inputs to
+     * the wallet. Coinstakes left behind by a reorg are normally abandoned as
+     * the disconnect arrives, in blockDisconnected(); this covers the ones a
+     * wallet loads already orphaned, having been offline across the reorg. */
     void AbandonOrphanedCoinstakes();
 
     /**

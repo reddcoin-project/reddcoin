@@ -8,6 +8,18 @@
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
+
+def is_abandoned(node, txid):
+    """Whether every spend recorded for txid is marked abandoned.
+
+    gettransaction reports "abandoned" on the "send" side of a transaction, which
+    for a coinstake is the coin it staked.
+    """
+    details = [d for d in node.gettransaction(txid)["details"] if "abandoned" in d]
+    assert details, f"gettransaction {txid} reported no spend details to check"
+    return all(d["abandoned"] for d in details)
+
+
 class OrphanedBlockRewardTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = False
@@ -57,23 +69,26 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
         self.nodes[1].setmocktime(self.nodes[0].mocktime)
         self.sync_all()
 
-        # Without the following abandontransaction call, the coins are
-        # not considered available yet.
-        balances_before = self.nodes[1].getbalances()["mine"]
-        assert_equal(balances_before["trusted"], 0)
-        assert_equal(balances_before["untrusted_pending"], 0)
-        assert_equal(balances_before["immature"], 0)
+        # A coinstake orphaned by a disconnect is abandoned by the wallet as the
+        # disconnect arrives, in blockDisconnected(). Until it is, IsSpent still
+        # counts it as spending its input, holding that coin out of the wallet.
+        #
+        # This used to be done by a full mapWallet sweep run before every block
+        # template, so it only took effect once this node next tried to stake,
+        # and the test had to call abandontransaction by hand to get there.
+        assert is_abandoned(self.nodes[1], coinstake_txid), \
+            "orphaned coinstake should have been abandoned by the disconnect"
 
-        # The following abandontransaction calls are necessary to make the
-        # later lines succeed, and probably should not be needed; see
-        # https://github.com/bitcoin/bitcoin/issues/14148.
-        # In PoS, we must also abandon the coinstake from the orphaned block
-        # to free the UTXO it consumed.
-        self.nodes[1].abandontransaction(coinstake_txid)
-        self.nodes[1].abandontransaction(txid)
+        # AbandonTransaction also abandons the in-wallet descendants of what it
+        # abandons, so the spend of the coinstake output goes with it. No manual
+        # abandontransaction call is needed for either; see
+        # https://github.com/bitcoin/bitcoin/issues/14148 for why one used to be.
+        assert is_abandoned(self.nodes[1], txid), \
+            "spend of the orphaned coinstake should have been abandoned with it"
+
         balances_after = self.nodes[1].getbalances()["mine"]
-        # After orphaning the staked block and abandoning the send tx,
-        # the wallet should recover the pre-staking balance.
+        # With the coinstake and its spend abandoned, the staked input is back
+        # in the wallet and the pre-staking balance is recovered.
         assert_equal(balances_after["trusted"], pre_stake_balance)
         assert_equal(balances_after["untrusted_pending"], 0)
         assert_equal(balances_after["immature"], 0)
