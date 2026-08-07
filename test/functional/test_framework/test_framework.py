@@ -47,6 +47,11 @@ TEST_EXIT_SKIPPED = 77
 
 TMPDIR_PREFIX = "reddcoin_func_test_"
 
+# How many consecutive sync_mempools polls may defer the mocktime step because a
+# block is in flight. Deferring lets a download in progress finish before the
+# clock moves under it; deferring without limit deadlocks. See sync_mempools.
+MAX_INFLIGHT_MOCKTIME_SKIPS = 10
+
 
 class SkipTest(Exception):
     """This exception is raised to skip a test"""
@@ -701,6 +706,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         rpc_connections = nodes or self.nodes
         timeout = int(timeout * self.options.timeout_factor)
         stop_time = time.time() + timeout
+        inflight_skips = 0
         while time.time() <= stop_time:
             pool = [set(r.getrawmempool()) for r in rpc_connections]
             if pool.count(pool[0]) == len(rpc_connections):
@@ -711,16 +717,34 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # Check that each peer has at least one connection
             peer_info = [x.getpeerinfo() for x in rpc_connections]
             assert (all([len(info) for info in peer_info]))
-            # Advance mocktime so outbound trickle relay timers can fire, but never
-            # while a node is still waiting on a block. The block-download stall
+            # Advance mocktime so outbound trickle relay timers can fire, but hold
+            # off while a node is still waiting on a block. The block-download stall
             # timer is measured against GetTime(), which honours mocktime, so a step
             # taken here makes an in-flight download look like it has taken that long
             # and the peer is dropped. The next sync_blocks then asserts on a node
             # with no peers, which reads as an unrelated failure somewhere later in
-            # the test. Skipping the step costs nothing: the download completes on
-            # its own and the clock moves on the following iteration. See RED-58.
+            # the test. See RED-58.
+            #
+            # The hold-off is bounded, because waiting indefinitely deadlocks: a
+            # download that stalls keeps 'inflight' populated, which freezes the
+            # clock, which stops the node's own stall timeout from ever elapsing,
+            # so the peer is never dropped and 'inflight' never clears. Observed on
+            # develop as wallet_listreceivedby.py spinning for its full 2400s with
+            # mocktime unchanged across 477 polls. Past the bound, step anyway: a
+            # download that has not progressed in this many polls is exactly the
+            # stalled case the node's timeout exists to handle, and that timeout
+            # needs the clock to move.
             blocks_in_flight = any(peer.get('inflight') for info in peer_info for peer in info)
-            if not blocks_in_flight and hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
+            if not blocks_in_flight:
+                inflight_skips = 0
+            else:
+                inflight_skips += 1
+                if inflight_skips == MAX_INFLIGHT_MOCKTIME_SKIPS + 1:
+                    self.log.warning(
+                        "sync_mempools: a block has been in flight for %d polls; "
+                        "stepping mocktime anyway so the stall timeout can fire" % MAX_INFLIGHT_MOCKTIME_SKIPS)
+            deferring = blocks_in_flight and inflight_skips <= MAX_INFLIGHT_MOCKTIME_SKIPS
+            if not deferring and hasattr(rpc_connections[0], 'mocktime') and rpc_connections[0].mocktime:
                 for node in rpc_connections:
                     node.mocktime += 5
                     node.setmocktime(node.mocktime)
