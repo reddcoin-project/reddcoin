@@ -28,6 +28,11 @@ fi
 echo "Fallback to default values in env (if not yet set)"
 # The number of parallel jobs to pass down to make and test_runner.py
 export MAKEJOBS=${MAKEJOBS:--j4}
+# The number of functional test suites to run concurrently. Defaults to
+# MAKEJOBS, so most tasks are unaffected. A task whose nodes are individually
+# expensive can lower this without also slowing its build down, since the two
+# are no longer the same knob.
+export TEST_RUNNER_JOBS=${TEST_RUNNER_JOBS:-$MAKEJOBS}
 # What host to compile for. See also ./depends/README.md
 # Tests that need cross-compilation export the appropriate HOST.
 # Tests that run natively guess the host

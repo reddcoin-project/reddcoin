@@ -19,4 +19,11 @@ export GOAL="install"
 # -Werror=suggest-override. TSan's coverage is the runtime thread sanitizer,
 # not compile-time -Werror, which the 64-bit non-libc++ tasks still carry.
 export NO_WERROR=1
+# Run two functional test suites at a time rather than the default four. Every
+# node this job starts carries ThreadSanitizer's shadow memory, so four suites
+# at once, each with several nodes, has repeatedly exhausted the runner and had
+# the job SIGKILLed (exit 137) partway through. Measured: one suite alone peaks
+# well under a gigabyte of the runner's 16 GB, so the ceiling is the
+# concurrency rather than any single test. The build still uses MAKEJOBS.
+export TEST_RUNNER_JOBS="-j2"
 export BITCOIN_CONFIG="--enable-zmq --with-gui=no CPPFLAGS='-DARENA_DEBUG -DDEBUG_LOCKORDER' CXXFLAGS='-g' --with-sanitizers=thread CC=clang CXX='clang++ -stdlib=libc++'"
