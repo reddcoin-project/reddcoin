@@ -126,6 +126,24 @@ BerkeleyEnvironment::~BerkeleyEnvironment()
 
 bool BerkeleyEnvironment::Open(bilingual_str& err)
 {
+    // Take cs_db here rather than relying on callers, because they disagree.
+    // BerkeleyDatabase::Open() and ReloadDbEnv() both hold it across their call,
+    // but BerkeleyDatabase::Verify() does not: MakeBerkeleyDatabase() releases
+    // cs_db before calling Verify(), so the loadwallet RPC reaches this function
+    // unlocked while a concurrent load can be inside it holding the lock.
+    //
+    // Guarding only some of the paths leaves fDbEnvInit, dbenv and the error
+    // file racing, and lets two threads run dbenv->open() with DB_RECOVER on the
+    // same environment at once. The environment is shared per directory, so two
+    // loads of *different* wallets in one walletdir reach it together; the
+    // g_loading_wallet_set guard in LoadWallet() is keyed on wallet name and
+    // does not cover that.
+    //
+    // cs_db is recursive, so the callers that already hold it re-enter here
+    // harmlessly, and this adds no new lock order: those callers already hold
+    // cs_db across the LockDirectory() call below.
+    LOCK(cs_db);
+
     if (fDbEnvInit) {
         return true;
     }
