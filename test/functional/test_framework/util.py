@@ -478,6 +478,45 @@ STAKE_MODIFIER_SELECTION_INTERVAL = sum(
     60 * 63 // (63 + (63 - section) * (3 - 1)) for section in range(64))
 
 
+# How many consecutive polls advance_time_for_pos waits for an in-flight block
+# download before stepping the clock regardless. See _settle_block_relay.
+MAX_INFLIGHT_ADVANCE_POLLS = 10
+INFLIGHT_ADVANCE_POLL_INTERVAL = 0.2
+
+
+def _settle_block_relay(nodes):
+    """Let in-flight block downloads land before the caller steps mocktime.
+
+    The block-download stall timer compares GetTime(), which honours mocktime,
+    against the moment the download started (net_processing.cpp:5053):
+
+        current_time > m_downloading_since
+            + nPowTargetSpacing * (1 + 0.5 * other_peers_downloading)
+
+    On regtest nPowTargetSpacing is 600, so with a single downloading peer the
+    budget is exactly 600 seconds. A step of that size therefore trips the
+    timeout outright rather than merely eating into it: the peer is dropped and
+    the next sync_blocks asserts on a node with no peers, which reads as an
+    unrelated failure later in the test. Letting the download land first is what
+    actually makes a step safe, at any step size.
+
+    Bounded, for the same reason the sync_mempools hold-off is bounded: a
+    download that never completes must not stop the clock forever. Past the
+    bound the caller steps anyway and the node's own timeout is free to fire,
+    which is the right outcome for a genuinely stalled download. See RED-58.
+    """
+    for _ in range(MAX_INFLIGHT_ADVANCE_POLLS):
+        try:
+            if not any(peer.get('inflight') for node in nodes for peer in node.getpeerinfo()):
+                return
+        except Exception:
+            # A node that is stopped, crashed, or has no RPC has nothing to
+            # settle, and several tests do step time across such a node on
+            # purpose. Never let this helper be the thing that fails them.
+            return
+        time.sleep(INFLIGHT_ADVANCE_POLL_INTERVAL)
+
+
 def advance_time_for_pos(nodes, seconds=60):
     """Advance mock time on all nodes to age coins for PoS staking.
 
@@ -493,6 +532,8 @@ def advance_time_for_pos(nodes, seconds=60):
     """
     if not isinstance(nodes, list):
         nodes = [nodes]
+
+    _settle_block_relay(nodes)
 
     # Get current time - use tracked mocktime if set, otherwise block header time
     # This allows multiple calls to advance_time_for_pos without generating blocks
