@@ -192,15 +192,22 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
             for (auto block : blocks) {
                 if (block->vtx.size() == 1) {
                     // Reddcoin: Check if block or its parent is already marked as failed before trying to process
-                    // During random processing, blocks may get marked invalid for various reasons
+                    // During random processing, blocks may get marked invalid for various reasons.
+                    // Screen on BLOCK_FAILED_MASK, matching the check below: the mask is
+                    // BLOCK_FAILED_VALID|BLOCK_FAILED_CHILD, and InvalidateBlock marks a whole
+                    // subtree by setting BLOCK_FAILED_CHILD on descendants. Invalidating an
+                    // ancestor above the parent therefore leaves both the parent and this block
+                    // carrying only BLOCK_FAILED_CHILD, so screening on BLOCK_FAILED_VALID alone
+                    // let such a block through to a check it could not pass. This chain is built
+                    // with forks on purpose, so multi-level invalid subtrees are expected. RED-80.
                     {
                         LOCK(cs_main);
                         auto* pindex = m_node.chainman->m_blockman.LookupBlockIndex(block->GetHash());
                         auto* pindexPrev = m_node.chainman->m_blockman.LookupBlockIndex(block->hashPrevBlock);
-                        if (pindex && (pindex->nStatus & BLOCK_FAILED_VALID)) {
+                        if (pindex && (pindex->nStatus & BLOCK_FAILED_MASK)) {
                             continue;
                         }
-                        if (pindexPrev && (pindexPrev->nStatus & BLOCK_FAILED_VALID)) {
+                        if (pindexPrev && (pindexPrev->nStatus & BLOCK_FAILED_MASK)) {
                             continue;
                         }
                     }
@@ -208,11 +215,17 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
                     Assert(m_node.chainman)->ProcessNewBlock(Params(), block, true, &ignored);
 
                     // Reddcoin: Check if block was accepted even if not connected to active chain
-                    // In a tree with forks, not all valid blocks will be on the active chain
+                    // In a tree with forks, not all valid blocks will be on the active chain.
+                    // Report nStatus on failure: the screen above and this check are separate
+                    // cs_main scopes with an unlocked ProcessNewBlock between them, and ten
+                    // threads run this loop, so a concurrent thread can still invalidate an
+                    // ancestor in that window. If that is what fires, the flag says which.
                     {
                         LOCK(cs_main);
                         auto* pindex = m_node.chainman->m_blockman.LookupBlockIndex(block->GetHash());
-                        BOOST_CHECK(pindex && !(pindex->nStatus & BLOCK_FAILED_MASK));
+                        BOOST_CHECK_MESSAGE(pindex && !(pindex->nStatus & BLOCK_FAILED_MASK),
+                                            "block " << block->GetHash().ToString() << " unexpectedly failed, nStatus="
+                                                     << (pindex ? pindex->nStatus : 0u));
                     }
                 }
             }
