@@ -138,6 +138,7 @@ public:
         nExternalChainCounter = 0;
         nInternalChainCounter = 0;
         seed_id.SetNull();
+        bBip44 = false;
     }
 
     bool operator==(const CHDChain& chain) const
@@ -147,7 +148,7 @@ public:
 
     bool IsNull() { return seed_id.IsNull();}
 
-    void SetBip44( bool b = true)   { bBip44 = b;}
+    void SetBip44(bool b)           { bBip44 = b;}
     bool IsBip44() const            { return bBip44 == true;}
 
     bool SetMnemonic(const SecureString& ssMnemonic, const SecureString& ssMnemonicPassphrase, SecureVector& vchSeed);

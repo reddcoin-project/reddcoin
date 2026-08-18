@@ -1240,9 +1240,7 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\ntype: %d\n", __func__, seed0.c_str(), pass0.c_str(), walletoptions.walletType);
 
     CHDChain newHdChain;
-    if (walletoptions.walletType == walletType::bip44Wallet) {
-        newHdChain.SetBip44();
-    }
+    newHdChain.SetBip44(walletoptions.walletType == walletType::bip44Wallet);
     std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
 
 
