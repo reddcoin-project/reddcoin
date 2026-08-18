@@ -363,7 +363,7 @@ public:
         consensus.POSVHeight = 1440;
         consensus.BIP66Height = 2189; // 84c24e7ec0023d9cf2ba50366f2a1806c30e7256606aaeb31ebd17a4c0a82e9b
         consensus.DonationHeight = 13260; // 7e62ee9c868aa8414909dff2c68d5f9a137d9eb8e9b93c28511cbf8a5cac7280
-        consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
+        consensus.MinBIP9WarningHeight = 493920; // heightincb/cltv/csv/segwit activation (491904) + nMinerConfirmationWindow (2016)
         consensus.devScript = { CScript() << ParseHex("03d4b22ae69b0ff7554f4c343cd213d00fd5131466cc21d8ebfab97c52ec9a00c9") << OP_CHECKSIG, // Correct dev address
                                 CScript() << ParseHex("03081542439583f7632ce9ff7c8851b0e9f56d0a6db9a13645ce102a8809287d4f") << OP_CHECKSIG };
 
