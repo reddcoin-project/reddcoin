@@ -218,10 +218,26 @@ class CreateWalletTest(BitcoinTestFramework):
         info = w_default.getwalletinfo()
         assert_equal(info['hd_type'], 'bip32')
 
+        self.log.info("Test gethdwalletinfo on a plain bip32 wallet")
+        # Regression: a wallet with no bip39 seed used to return null under a declared
+        # OBJ result, tripping CHECK_NONFATAL in RPCHelpMan::HandleRequest and surfacing
+        # as "Internal bug detected". A bip32 wallet has a seed key in the keystore, so
+        # the seed and the derived keys are all reportable.
+        hdinfo_bip32 = w_default.gethdwalletinfo()
+        assert_equal(len(hdinfo_bip32['hdseed']), 64)  # 32-byte seed key
+        for field in ['rootprivkey', 'extendedprivkey', 'extendedpubkey']:
+            assert field in hdinfo_bip32
+        # bip39/bip44-only fields must be absent rather than empty
+        for field in ['mnemonic', 'mnemonicpassphrase', 'accountextendedprivkey', 'accountextendedpubkey']:
+            assert field not in hdinfo_bip32
+
         self.log.info("Test gethdwalletinfo returns matching mnemonic")
         w_bip44_info = node.get_wallet_rpc('bip44test')
         hdinfo = w_bip44_info.gethdwalletinfo()
         assert_equal(hdinfo['mnemonic'], mnemonic)
+        assert_equal(len(hdinfo['hdseed']), 128)  # 64-byte bip39 binary seed
+        for field in ['accountextendedprivkey', 'accountextendedpubkey']:
+            assert field in hdinfo
 
         self.log.info("Test encrypted BIP44 wallet")
         resp = node.createwallet(wallet_name='enc_bip44', wallet_type='bip44', passphrase='test')
