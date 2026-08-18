@@ -218,9 +218,9 @@ enum walletType {
 };
 
 struct WalletOptions {
-    int walletType;
-    int bits;
-    bool importing;
+    int walletType = 0;  // bip32Wallet
+    int bits = 256;
+    bool importing = false;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
     SecureString ssMasterKey;
