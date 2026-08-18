@@ -625,7 +625,10 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     if (IsCrypted())
         return false;
 
-    WalletOptions walletoptions;
+    WalletOptions walletoptions{};
+    walletoptions.walletType = walletType::bip32Wallet;
+    walletoptions.bits = 256;
+    walletoptions.importing = false;
 
     CKeyingMaterial _vMasterKey;
 
