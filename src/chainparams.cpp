@@ -73,7 +73,7 @@ public:
         consensus.POSVHeight = 260800;
         consensus.BIP66Height = 1564232; // a6e944cc38a0d8c7c5740569501e622ec2a011e7c9dd97a78e5fba40a45b8c61
         consensus.DonationHeight = 3382229; // 77ee468ea88227404a53bad63029a8d0aa58f9f6a470a076a2aa91c8494449ac
-        consensus.MinBIP9WarningHeight = std::numeric_limits<int>::max();
+        consensus.MinBIP9WarningHeight = 5572800; // heightincb/cltv activation (5558400) + nMinerConfirmationWindow (14400)
         consensus.devScript = { CScript() << ParseHex("03c8fc5c87f00bcc32b5ce5c036957f8befeff05bf4d88d2dcde720249f78d9313") << OP_CHECKSIG };
 
         /* pow specific */
@@ -363,7 +363,7 @@ public:
         consensus.POSVHeight = 1440;
         consensus.BIP66Height = 2189; // 84c24e7ec0023d9cf2ba50366f2a1806c30e7256606aaeb31ebd17a4c0a82e9b
         consensus.DonationHeight = 13260; // 7e62ee9c868aa8414909dff2c68d5f9a137d9eb8e9b93c28511cbf8a5cac7280
-        consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
+        consensus.MinBIP9WarningHeight = 493920; // heightincb/cltv/csv/segwit activation (491904) + nMinerConfirmationWindow (2016)
         consensus.devScript = { CScript() << ParseHex("03d4b22ae69b0ff7554f4c343cd213d00fd5131466cc21d8ebfab97c52ec9a00c9") << OP_CHECKSIG, // Correct dev address
                                 CScript() << ParseHex("03081542439583f7632ce9ff7c8851b0e9f56d0a6db9a13645ce102a8809287d4f") << OP_CHECKSIG };
 
