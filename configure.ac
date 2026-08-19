@@ -13,7 +13,7 @@ dnl in -version, logs and the P2P subversion field. CLIENT_VERSION is 4220904
 dnl under the four-component encoding, ordered above every value the previous
 dnl three-component encoding could produce, so comparisons still behave.
 define(_CLIENT_VERSION_IS_RELEASE, false)
-define(_COPYRIGHT_YEAR, 2025)
+define(_COPYRIGHT_YEAR, 2026)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
 define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Reddcoin Core]])
 AC_INIT([Reddcoin Core],m4_join([.], _CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MINOR, _CLIENT_VERSION_REVISION, _CLIENT_VERSION_BUILD)m4_if(_CLIENT_VERSION_RC, [0], [], [rc]_CLIENT_VERSION_RC),[https://github.com/reddcoin-project/reddcoin/issues],[reddcoin],[https://reddcoin.com/])
@@ -708,7 +708,7 @@ case $host in
          if $BREW list --versions qt5 >/dev/null; then
            export PKG_CONFIG_PATH="$($BREW --prefix qt5 2>/dev/null)/lib/pkgconfig:$PKG_CONFIG_PATH"
          fi
-         
+
          if $BREW list --versions openssl >/dev/null; then
            export PKG_CONFIG_PATH="$($BREW --prefix openssl 2>/dev/null)/lib/pkgconfig:$PKG_CONFIG_PATH"
          fi
@@ -1510,7 +1510,7 @@ fi
 
 AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
 AC_CHECK_LIB([ssl],         [main],SSL_LIBS=-lssl, AC_MSG_ERROR(libssl missing))
-  
+
 dnl ZMQ check
 
 if test "x$use_zmq" = xyes; then
