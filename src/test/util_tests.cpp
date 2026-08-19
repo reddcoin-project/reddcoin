@@ -1710,9 +1710,13 @@ BOOST_AUTO_TEST_CASE(test_FormatSubVersion)
     std::vector<std::string> comments2;
     comments2.push_back(std::string("comment1"));
     comments2.push_back(SanitizeString(std::string("Comment2; .,_?@-; !\"#$%&'()*+/<=>[]\\^`{|}~"), SAFE_CHARS_UA_COMMENT)); // Semicolon is discouraged but not forbidden by BIP-0014
-    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>()),std::string("/Test:9.99.0/"));
-    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments),std::string("/Test:9.99.0(comment1)/"));
-    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments2),std::string("/Test:9.99.0(comment1; Comment2; .,_?@-; )/"));
+    // 9990000 decodes as 9.99.0.0 under the four-component weights in
+    // clientversion.h, preserving the 9.99.0 this case has always used.
+    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 9990000, std::vector<std::string>()),std::string("/Test:9.99.0.0/"));
+    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 9990000, comments),std::string("/Test:9.99.0.0(comment1)/"));
+    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 9990000, comments2),std::string("/Test:9.99.0.0(comment1; Comment2; .,_?@-; )/"));
+    // The revision component is not merely cosmetic padding.
+    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 4220904, std::vector<std::string>()),std::string("/Test:4.22.9.4/"));
 }
 
 BOOST_AUTO_TEST_CASE(test_ParseFixedPoint)
