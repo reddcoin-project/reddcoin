@@ -47,7 +47,10 @@ const std::string CLIENT_BUILD(BUILD_DESC BUILD_SUFFIX);
 
 static std::string FormatVersion(int nVersion)
 {
-    return strprintf("%d.%d.%d", nVersion / 10000, (nVersion / 100) % 100, nVersion % 100);
+    // Decodes the weights used by CLIENT_VERSION in clientversion.h. Keep the
+    // two in step: this is what the peer-visible subversion string is built
+    // from, so a mismatch is silent rather than a compile error.
+    return strprintf("%d.%d.%d.%d", nVersion / 1000000, (nVersion / 10000) % 100, (nVersion / 100) % 100, nVersion % 100);
 }
 
 std::string FormatFullVersion()
