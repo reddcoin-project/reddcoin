@@ -716,10 +716,12 @@ RPCHelpMan gethdwalletinfo()
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::STR, "hdseed", "The HD seed (bip32, in hex)"},
-                        {RPCResult::Type::STR, "mnemonic", "The mnemonic for this HD wallet (bip39, english words)"},
-                        {RPCResult::Type::STR, "mnemonicpassphrase", "The mnemonic passphrase for this HD wallet (bip39)"},
+                        {RPCResult::Type::STR, "hdseed", "The HD seed, in hex. For a bip39/bip44 wallet this is the binary seed derived from the mnemonic; for a plain bip32 wallet it is the seed key held in the keystore"},
+                        {RPCResult::Type::STR, "mnemonic", /* optional */ true, "The mnemonic for this HD wallet (bip39/bip44 wallets only)"},
+                        {RPCResult::Type::STR, "mnemonicpassphrase", /* optional */ true, "The mnemonic passphrase for this HD wallet (bip39/bip44 wallets only)"},
                         {RPCResult::Type::STR, "rootprivkey", "The bip32 root private key"},
+                        {RPCResult::Type::STR, "accountextendedprivkey", /* optional */ true, "The extended private key at m/44'/coin_type'/account' (bip44 wallets only)"},
+                        {RPCResult::Type::STR, "accountextendedpubkey", /* optional */ true, "The extended public key at m/44'/coin_type'/account' (bip44 wallets only)"},
                         {RPCResult::Type::STR, "extendedprivkey", "The bip32 extended private key"},
                         {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"}
                     }
@@ -732,7 +734,6 @@ RPCHelpMan gethdwalletinfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
 
     CWallet& wallet = *pwallet;
     LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(wallet);
@@ -743,69 +744,80 @@ RPCHelpMan gethdwalletinfo()
 
     LOCK(spk_man.cs_KeyStore);
 
-    SecureVector vchSeed = spk_man.GetHDChain().vchSeed;
+    const CHDChain& hd_chain = spk_man.GetHDChain();
 
-    if (spk_man.GetHDChain().vchSeed.size() > 0) {
-        UniValue result(UniValue::VOBJ);
-        CExtKey masterKey;
-        CExtKey purposeKey;
-        CExtKey coinTypeKey;
-        CExtKey accountKey;
-        CExtKey chainKey;
-
-        masterKey.SetSeed(spk_man.GetHDChain().vchSeed.data(), spk_man.GetHDChain().vchSeed.size());
-
-        int nAccountIndex = 0;
-        bool internal = false;
-
-        if (spk_man.GetHDChain().vchMnemonic.size() > 0) {
-            SecureString ssMnemonic(spk_man.GetHDChain().vchMnemonic.begin(), spk_man.GetHDChain().vchMnemonic.end());
-            SecureString ssMnemonicPassphrase(spk_man.GetHDChain().vchMnemonicPassphrase.begin(), spk_man.GetHDChain().vchMnemonicPassphrase.end());
-
-            result.pushKV("mnemonic", ssMnemonic.c_str());
-            result.pushKV("mnemonicpassphrase", ssMnemonicPassphrase.c_str());
-        }
-
-        result.pushKV("hdseed", HexStr(spk_man.GetHDChain().vchSeed));
-        result.pushKV("rootprivkey", EncodeExtKey(masterKey));
-
-        if (!spk_man.GetHDChain().IsBip44()) {
-            // Derive new account keys
-            masterKey.Derive(accountKey, 0x80000000);
-
-            // Derive new chain keys
-            accountKey.Derive(chainKey, 0x80000000);
-
-        } else {
-            // derive m/purpose'
-            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
-            masterKey.Derive(purposeKey, 44 | 0x80000000);
-
-            // derive m/purpose'/coin_type'
-            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
-
-            // derive m/purpose'/coin_type'/account'
-            coinTypeKey.Derive(accountKey, nAccountIndex | 0x80000000);
-
-            CExtPubKey accountpubKey = accountKey.Neuter();
-
-            result.pushKV("accountextendedprivkey", EncodeExtKey(accountKey));
-            result.pushKV("accountextendedpubkey", EncodeExtPubKey(accountpubKey));
-
-            // Derive new chain keys
-            accountKey.Derive(chainKey, (internal ? 1 : 0));
-        }
-
-
-        CExtPubKey chainpubKey = chainKey.Neuter();
-
-        result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
-        result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
-
-        return result;
+    if (!spk_man.IsHDEnabled()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet has no HD seed");
     }
 
-    return NullUniValue;
+    UniValue result(UniValue::VOBJ);
+    CExtKey masterKey;
+    CExtKey purposeKey;
+    CExtKey coinTypeKey;
+    CExtKey accountKey;
+    CExtKey chainKey;
+
+    // A bip39/bip44 wallet stores the binary seed derived from its mnemonic in vchSeed.
+    // A plain bip32 wallet leaves vchSeed empty: its seed is an ordinary key held in the
+    // keystore and referenced by seed_id. Mirrors the lookup in DeriveNewChildKey().
+    SecureVector vchSeed = hd_chain.vchSeed;
+    if (vchSeed.empty()) {
+        CKey seed;
+        if (!spk_man.GetKey(hd_chain.seed_id, seed)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "HD seed not found in wallet");
+        }
+        vchSeed.assign(seed.begin(), seed.end());
+    }
+    masterKey.SetSeed(vchSeed.data(), vchSeed.size());
+
+    int nAccountIndex = 0;
+    bool internal = false;
+
+    if (hd_chain.vchMnemonic.size() > 0) {
+        SecureString ssMnemonic(hd_chain.vchMnemonic.begin(), hd_chain.vchMnemonic.end());
+        SecureString ssMnemonicPassphrase(hd_chain.vchMnemonicPassphrase.begin(), hd_chain.vchMnemonicPassphrase.end());
+
+        result.pushKV("mnemonic", ssMnemonic.c_str());
+        result.pushKV("mnemonicpassphrase", ssMnemonicPassphrase.c_str());
+    }
+
+    result.pushKV("hdseed", HexStr(vchSeed));
+    result.pushKV("rootprivkey", EncodeExtKey(masterKey));
+
+    if (!hd_chain.IsBip44()) {
+        // Derive new account keys
+        masterKey.Derive(accountKey, 0x80000000);
+
+        // Derive new chain keys
+        accountKey.Derive(chainKey, 0x80000000);
+
+    } else {
+        // derive m/purpose'
+        // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
+        masterKey.Derive(purposeKey, 44 | 0x80000000);
+
+        // derive m/purpose'/coin_type'
+        purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
+
+        // derive m/purpose'/coin_type'/account'
+        coinTypeKey.Derive(accountKey, nAccountIndex | 0x80000000);
+
+        CExtPubKey accountpubKey = accountKey.Neuter();
+
+        result.pushKV("accountextendedprivkey", EncodeExtKey(accountKey));
+        result.pushKV("accountextendedpubkey", EncodeExtPubKey(accountpubKey));
+
+        // Derive new chain keys
+        accountKey.Derive(chainKey, (internal ? 1 : 0));
+    }
+
+
+    CExtPubKey chainpubKey = chainKey.Neuter();
+
+    result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
+    result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
+
+    return result;
 },
     };
 }
