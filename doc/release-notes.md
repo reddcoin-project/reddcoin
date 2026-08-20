@@ -30,7 +30,12 @@ To receive security and update notifications, please subscribe to:
 How to Upgrade
 ==============
 
-Upgrading from earlier versions of Reddcoin Core also runs the risk of losing coins. **PLEASE CREATE BACKUPS**.
+Upgrading any wallet software carries the standing risk that an out-of-date
+backup does not cover everything the wallet holds. **PLEASE CREATE BACKUPS**.
+
+This is the general precaution carried in every release. It is not a
+statement about the defects fixed in this one: the wallet fixes described
+under **Wallet key derivation fixes** below do not put funds at risk.
 
 If you are running an older version, shut it down. Wait until it has completely
 shut down (which might take a few minutes in some cases), then run the
@@ -86,9 +91,13 @@ to be on the stack at the call site. Both are fixed in this release.
   local and passed it to `LegacyScriptPubKeyMan::SetupGeneration()`, whose
   switch on `walletType` falls through to `GenerateNewBip39Seed()` in its
   default case. Encrypting a plain BIP32 HD wallet could therefore
-  regenerate it as a BIP39 wallet with a new seed. The struct now has
-  default member initialisers and `EncryptWallet()` sets the three members
-  explicitly.
+  regenerate it as a BIP39 wallet. The struct now has default member
+  initialisers and `EncryptWallet()` sets the three members explicitly.
+
+  Note that regenerating the seed on encryption is not the defect.
+  `EncryptWallet()` calls `SetupGeneration()` with `force` for any HD wallet
+  that has no mnemonic, which is inherited Bitcoin Core behaviour. Taking the
+  BIP39 branch rather than the BIP32 one is what went wrong.
 
 **No funds are at risk from either defect.** In the BIP39 case the mnemonic
 is unchanged and only the derivation path differs, so coins under an
@@ -96,6 +105,15 @@ unintended path are recoverable by re-importing the same mnemonic with the
 other wallet type. Wallets already written with `bBip44` set keep it, since
 it is read back out of the serialized `CHDChain`, so existing BIP44 wallets
 load and keep deriving on their existing path.
+
+What remains is a recovery hazard rather than a loss of funds: a mnemonic
+restored under the wrong wallet type derives a different set of addresses, so
+the wallet looks empty while the coins sit untouched on the chain under the
+other path. This is what the backup warning under **How to Upgrade** is
+about, and it is why encrypting a wallet warrants a fresh `wallet.dat`
+backup: seed regeneration on encryption means a backup taken beforehand does
+not cover addresses derived afterwards. A `wallet.dat` backup holds the keys
+themselves and so is unaffected by which derivation path a wallet uses.
 
 Both defects are present in v4.22.9. Users who created or encrypted a
 wallet with an earlier 4.22.9 build should confirm which derivation path
