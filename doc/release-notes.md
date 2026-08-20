@@ -9,9 +9,15 @@ This is a maintenance release for the 4.22.9 series. It fixes two wallet
 defects that could cause a wallet to be created or re-created on an
 unintended key derivation path, restores the `gethdwalletinfo` RPC for
 BIP32 wallets, re-enables unknown soft fork warnings on mainnet and
-testnet, and brings the regtest network into a state where the standard
+testnet, repairs the update check so that four-component releases are
+recognised, and brings the regtest network into a state where the standard
 functional test suite can exercise soft fork activation and Proof of Stake
 block generation.
+
+This is also the first release whose fourth version digit exists in the
+binary rather than only in the git tag. See **Version numbering** below,
+which includes a compatibility note for anything parsing the `version`
+field of `getnetworkinfo`.
 
 Please report bugs using the issue tracker at GitHub:
 
@@ -96,8 +102,86 @@ wallet with an earlier 4.22.9 build should confirm which derivation path
 their wallet is using with `gethdwalletinfo` before relying on backups of
 the mnemonic alone.
 
+Version numbering
+-----------------
+
+Reddcoin Core now carries a fourth version component. The scheme is
+`MAJOR.MINOR.REVISION.BUILD`, matching the layout Bitcoin Core used
+historically: what was previously `BUILD` becomes `REVISION` and keeps its
+value of 9, and `BUILD` becomes the new trailing component.
+
+Before this change the fourth digit existed only in the git tag name.
+`share/genbuild.sh` sets `BUILD_GIT_TAG` for a clean tagged build and
+`clientversion.cpp` prefers it over `PACKAGE_VERSION`, so v4.22.9.3 showed
+its tag in the startup banner while `getnetworkinfo` still reported `42209`
+and the peer subversion string stayed `/Reddoshi:4.22.9/`, indistinguishable
+from 4.22.9, 4.22.9.1 and 4.22.9.2. A point release could not identify
+itself to the network or to an operator reading RPC output.
+
+`CLIENT_VERSION` is now computed as:
+
+    1000000 * MAJOR + 10000 * MINOR + 100 * REVISION + 1 * BUILD
+
+giving **4220904** for this release, and the peer subversion string becomes
+`/Reddoshi:4.22.9.4/`.
+
+**Compatibility note.** The `version` field of `getnetworkinfo` changes
+shape, from a five-digit `42209` to a seven-digit `4220904`. Anything
+downstream that parses it as fixed-width needs to accommodate that. The
+subversion string now always renders four components, so a release with no
+build number appears as `4.22.9.0` rather than `4.22.9`. The P2P handshake
+version is `PROTOCOL_VERSION` and is unchanged.
+
+The new encoding is deliberately ordered above every value the previous
+three-component encoding could produce, which matters because
+`CLIENT_VERSION` drives decisions and not only display: `wallet/walletdb.cpp`
+rewrites the stored version when the loaded one is older,
+`qt/optionsmodel.cpp` migrates QSettings on the same comparison, and
+`policy/fees.cpp` compares a required version on load. The old encoding
+could not reach 100000 for a single-digit major, while the new one starts at
+4000000.
+
+Downgrade compatibility was verified rather than assumed: `policy/fees.cpp`
+gates `fee_estimates.dat` on a hardcoded `42199` literal rather than
+`CLIENT_VERSION`, and wallet readability is gated on the separate
+`FEATURE_LATEST` constant family. A wallet created by a patched build was
+confirmed to reopen on an unpatched v4.22.9 build with `walletversion 169900`
+and its keypool intact.
+
 New and Updated RPCs
 --------------------
+
+- `checkupdates` now recognises four-component versions. The handler matched
+  release versions with an unanchored `regex_search` for exactly three
+  components, so on a four-component string the engine slid the start
+  position along until the trailing `$` could match, dropping the major
+  entirely: `4.22.9.4` matched as `22.9.4`, and `v4.22.9.3` as `22.9.3`.
+
+  The failure was silent rather than loud. semver parses `22.9.4` happily,
+  and it compares greater than any real Reddcoin release, so neither
+  `remoteV > localV` nor `remoteV == localV` held: no update was offered and
+  no message was shown. **A node would never learn that a newer release
+  exists.**
+
+  This already affects v4.22.9.3 in the field. That tag arrives as
+  `tag_name` from the GitHub API and parses as `22.9.3` today, so nodes
+  running it are not being told about new releases. Adding a fourth
+  component to `PACKAGE_VERSION` would have extended the same fault to the
+  local side.
+
+  The expression is now anchored, the separators escaped, and the fourth
+  component optional. semver has no fourth field, so it continues to order
+  the first three plus any prerelease tag and the build number breaks ties:
+  `4.22.9` and `4.22.9.0` stay equal, `4.22.9.4` sorts above both, and
+  `4.22.10` above all of them. Three-component behaviour is unchanged,
+  prerelease ordering included, so a release candidate still sorts below its
+  release.
+
+  Unrecognised input now throws with the offending string rather than being
+  searched for something plausible. The return value of `regex_search` was
+  previously discarded, so a failed match fell through to `semver::parse("")`
+  and surfaced as a bare "Invalid version" with no indication of what had
+  been read.
 
 - `gethdwalletinfo` no longer aborts on BIP32 wallets. It declared
   `RPCResult::Type::OBJ` but returned a null value whenever the HD chain
@@ -212,6 +296,17 @@ Build System
   passing a second `--url` through `ADDITIONAL_GUIX_TIMEMACHINE_FLAGS` has
   no effect.
 
+- The fourth version component is carried through every packaging surface:
+  the six Windows `.rc` files, `share/qt/Info.plist.in`,
+  `share/setup.nsi.in` and the cppcheck lint macro list. The Windows
+  `VERSIONINFO` resource already reserved a fourth field that `rc.exe` was
+  zero-padding, and `setup.nsi.in` carried a literal `.0` in the same slot;
+  both now receive the real build number.
+
+- `build_msvc/bitcoin_config.h` has been corrected as well as extended. It
+  is hand-maintained, because MSVC never runs `configure`, and had gone
+  stale at 4.22.6.
+
 - Copyright headers and the copyright year have been refreshed, and the man
   pages and the example `reddcoin.conf` have been regenerated.
 
@@ -236,6 +331,15 @@ Wallet
 - `CHDChain::SetBip44()` no longer has a default argument, so a bare call
   can no longer silently mean `true`.
 
+GUI
+---
+
+- One inherited behaviour changes as a consequence of the version
+  reweighting. `qt/optionsmodel.cpp` compares the stored settings version
+  against a literal `130000` carried over from upstream. That comparison was
+  permanently true under the old encoding and is now false. It targeted a
+  Bitcoin Core 0.13 dbcache default and was never meaningful here.
+
 4.22.9.4 change log
 ===============
 
@@ -257,6 +361,8 @@ A detailed list of changes in this version follows. To keep the list to a manage
  - #f5f5fbdcc rpc: return HD info for bip32 wallets instead of throwing (John Nash)
  - #63c2968ee chainparams: enable BIP9 unknown-versionbit warnings on mainnet (John Nash)
  - #c54f25719 chainparams: derive testnet BIP9 warning height from Reddcoin history (John Nash)
+ - #635f96ad8 build: add a fourth version component, CLIENT_VERSION_REVISION (John Nash)
+ - #12f6438d9 rpc: parse four-component versions in the update check (John Nash)
  - #eae8961b9 scripted-diff: Bump copyright headers (John Nash)
  - #d5eaab860 build: bump copyright year (John Nash)
  - #a5213a647 build: generate man pages (John Nash)
