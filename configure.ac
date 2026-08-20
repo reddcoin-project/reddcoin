@@ -1,20 +1,22 @@
 AC_PREREQ([2.69])
 define(_CLIENT_VERSION_MAJOR, 4)
 define(_CLIENT_VERSION_MINOR, 22)
-define(_CLIENT_VERSION_BUILD, 9)
+define(_CLIENT_VERSION_REVISION, 9)
+define(_CLIENT_VERSION_BUILD, 4)
 define(_CLIENT_VERSION_RC, 0)
 dnl This branch is a test artifact, not a release. It carries the same version
 dnl numerics as v4.22.9 but deliberately differs in consensus behaviour, so a
 dnl bare "v4.22.9" version string is indistinguishable from the real release.
 dnl Marking it not-a-release appends the git commit to the build description
 dnl (see BUILD_SUFFIX in src/clientversion.cpp), which fingerprints the binary
-dnl in -version, logs and the P2P subversion field. CLIENT_VERSION itself is
-dnl unchanged at 42209, so nothing that compares version integers is affected.
+dnl in -version, logs and the P2P subversion field. CLIENT_VERSION is 4220904
+dnl under the four-component encoding, ordered above every value the previous
+dnl three-component encoding could produce, so comparisons still behave.
 define(_CLIENT_VERSION_IS_RELEASE, false)
 define(_COPYRIGHT_YEAR, 2025)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
 define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Reddcoin Core]])
-AC_INIT([Reddcoin Core],m4_join([.], _CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MINOR, _CLIENT_VERSION_BUILD)m4_if(_CLIENT_VERSION_RC, [0], [], [rc]_CLIENT_VERSION_RC),[https://github.com/reddcoin-project/reddcoin/issues],[reddcoin],[https://reddcoin.com/])
+AC_INIT([Reddcoin Core],m4_join([.], _CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MINOR, _CLIENT_VERSION_REVISION, _CLIENT_VERSION_BUILD)m4_if(_CLIENT_VERSION_RC, [0], [], [rc]_CLIENT_VERSION_RC),[https://github.com/reddcoin-project/reddcoin/issues],[reddcoin],[https://reddcoin.com/])
 AC_CONFIG_SRCDIR([src/validation.cpp])
 AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -1813,6 +1815,7 @@ AM_CONDITIONAL([USE_UPNP],[test x$use_upnp = xyes])
 AC_DEFINE(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR, [Major version])
 AC_DEFINE(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR, [Minor version])
 AC_DEFINE(CLIENT_VERSION_BUILD, _CLIENT_VERSION_BUILD, [Version Build])
+AC_DEFINE(CLIENT_VERSION_REVISION, _CLIENT_VERSION_REVISION, [Version Revision])
 AC_DEFINE(CLIENT_VERSION_IS_RELEASE, _CLIENT_VERSION_IS_RELEASE, [Version is release])
 AC_DEFINE(COPYRIGHT_YEAR, _COPYRIGHT_YEAR, [Copyright year])
 AC_DEFINE(COPYRIGHT_HOLDERS, "_COPYRIGHT_HOLDERS", [Copyright holder(s) before %s replacement])
@@ -1822,6 +1825,7 @@ AC_DEFINE(COPYRIGHT_HOLDERS_FINAL, "_COPYRIGHT_HOLDERS_FINAL", [Copyright holder
 AC_SUBST(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR)
 AC_SUBST(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR)
 AC_SUBST(CLIENT_VERSION_BUILD, _CLIENT_VERSION_BUILD)
+AC_SUBST(CLIENT_VERSION_REVISION, _CLIENT_VERSION_REVISION)
 AC_SUBST(CLIENT_VERSION_IS_RELEASE, _CLIENT_VERSION_IS_RELEASE)
 AC_SUBST(COPYRIGHT_YEAR, _COPYRIGHT_YEAR)
 AC_SUBST(COPYRIGHT_HOLDERS, "_COPYRIGHT_HOLDERS")

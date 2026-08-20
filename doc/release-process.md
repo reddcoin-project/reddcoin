@@ -23,8 +23,32 @@ Release Process
   - update `CLIENT_VERSION_MAJOR`, `PACKAGE_VERSION`, and `PACKAGE_STRING` in [`build_msvc/bitcoin_config.h`](/build_msvc/bitcoin_config.h)
 * On the new release branch in [`configure.ac`](../configure.ac) and [`build_msvc/bitcoin_config.h`](/build_msvc/bitcoin_config.h) (see [this commit](https://github.com/bitcoin/bitcoin/commit/742f7dd)):
   - set `CLIENT_VERSION_MINOR` to `0`
+  - set `CLIENT_VERSION_REVISION` to `0`
   - set `CLIENT_VERSION_BUILD` to `0`
   - set `CLIENT_VERSION_IS_RELEASE` to `true`
+
+### The version components
+
+The version is four components, `MAJOR.MINOR.REVISION.BUILD`, e.g. `4.22.9.4`, matching
+the scheme Bitcoin Core used historically. Each is defined
+in [`configure.ac`](../configure.ac) and mirrored by hand in
+[`build_msvc/bitcoin_config.h`](/build_msvc/bitcoin_config.h), which does not run configure.
+
+Two representations exist and must be changed together:
+
+* the **string**, built by `AC_INIT` into `PACKAGE_VERSION`, and
+* the **integer** `CLIENT_VERSION` in [`src/clientversion.h`](/src/clientversion.h), weighted
+  `1000000*MAJOR + 10000*MINOR + 100*REVISION + 1*BUILD`.
+
+`FormatVersion()` in [`src/clientversion.cpp`](/src/clientversion.cpp) decodes that integer back
+into the dotted string used for the peer-visible subversion and the `getnetworkinfo` `subversion`
+field. **Its divisors must match the weights above.** A mismatch produces a plausible but wrong
+version on the wire, with no compile error; `test_FormatSubVersion` in
+[`src/test/util_tests.cpp`](/src/test/util_tests.cpp) is what catches it.
+
+`CLIENT_VERSION` also drives upgrade decisions in `wallet/walletdb.cpp` and
+`qt/optionsmodel.cpp`, which compare a previously stored value against the current one. Any
+future reweighting must keep newer versions comparing greater than older ones.
 
 #### Before branch-off
 
