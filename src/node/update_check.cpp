@@ -6,6 +6,7 @@
 
 #include <clientversion.h>
 #include <util/semver.h>
+#include <util/strencodings.h>
 #include <util/string.h>
 
 #include <univalue.h>
@@ -222,54 +223,84 @@ void node::CheckForUpdates(UniValue& result)
             if (obj_response.exists("tag_name")) {
                 repositoryVersion = obj_response["tag_name"].get_str();
 
-                /** "tag_name": "v4.22.0-alpha-1",
-                 * "v(([0-9]+).([0-9]+).([0-9]+))((-?(alpha|beta|rc))(-?(.*))|$)"
+                /** Accepts three- and four-component versions, with or without a
+                 * leading "v" and an optional alpha/beta/rc suffix:
                  *
-                 * Match 0:    v4.22.0-alpha-1
-                 * Match 1:    4.22.0
-                 * Match 2:    4             <- this
-                 * Match 3:    22            <- this
-                 * Match 4:    0             <- this
-                 * Match 5:    -alpha-1
-                 * Match 6:    -alpha
-                 * Match 7:    alpha         <- this
-                 * Match 8:    -1
-                 * Match 9:    1             <- this
+                 *   v4.22.9      v4.22.9.4      v4.22.0-alpha-1      v4.22.5-rc.1
                  *
+                 * Match 1: major        Match 2: minor        Match 3: revision
+                 * Match 4: build, the point-release number, absent on a
+                 *          three-component version
+                 * Match 5: prerelease tag       Match 6: prerelease number
+                 *
+                 * Anchoring is deliberate. An unanchored search for three
+                 * components slides past the major on a four-component string,
+                 * so "4.22.9.4" matched as "22.9.4" and compared greater than
+                 * any real release, silently suppressing the update notice.
+                 *
+                 * semver has no fourth component, so it orders the first three
+                 * plus any prerelease tag and the build number breaks ties.
                  */
+                std::regex versionRgx(R"(^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:\.([0-9]+))?(?:[-.]?(alpha|beta|rc)[-.]?([0-9A-Za-z.-]*))?$)");
 
-                std::regex versionRgx("(([0-9]+).([0-9]+).([0-9]+))([-|.]?((alpha|beta|rc)([-|.]?(.*)))|$)");
-                std::smatch remoteMatches;
-                std::smatch localMatches;
+                struct ParsedVersion {
+                    semver::version core;   //!< first three components plus prerelease
+                    int build{0};           //!< fourth component, 0 when absent
+                    std::string numeric;    //!< "4.22.9" or "4.22.9.4"
+                    std::string text;       //!< as supplied, without a leading "v"
+                    std::string prerelease_tag;
+                    std::string prerelease_num;
+                };
 
-                std::regex_search(installedVersion, localMatches, versionRgx);
-                std::regex_search(repositoryVersion, remoteMatches, versionRgx);
+                const auto parse_version = [&versionRgx](const std::string& raw) {
+                    std::smatch m;
+                    if (!std::regex_match(raw, m, versionRgx)) {
+                        throw std::runtime_error("unrecognised version string: " + raw);
+                    }
+                    ParsedVersion parsed;
+                    parsed.numeric = m[1].str() + "." + m[2].str() + "." + m[3].str();
+                    std::string core{parsed.numeric};
+                    if (m[5].matched && !m[5].str().empty()) {
+                        parsed.prerelease_tag = m[5].str();
+                        parsed.prerelease_num = m[6].str();
+                        core += "-" + parsed.prerelease_tag;
+                        if (!parsed.prerelease_num.empty()) core += "." + parsed.prerelease_num;
+                    }
+                    parsed.core = semver::version::parse(core, false);
+                    if (m[4].matched && !m[4].str().empty()) {
+                        // std::stoi is locale dependent and rejected by
+                        // test/lint/lint-locale-dependence.sh.
+                        int32_t build{0};
+                        if (!ParseInt32(m[4].str(), &build)) {
+                            throw std::runtime_error("unparsable version component in: " + raw);
+                        }
+                        parsed.build = build;
+                        parsed.numeric += "." + m[4].str();
+                    }
+                    parsed.text = (!raw.empty() && raw.front() == 'v') ? raw.substr(1) : raw;
+                    return parsed;
+                };
 
-                std::string strRemotePrerelease = "";
-                if (remoteMatches[6] != "") {
-                    strRemotePrerelease += "-" + remoteMatches[7].str() + "." + remoteMatches[9].str();
-                }
-                auto remoteV = semver::version::parse(remoteMatches[1].str() + strRemotePrerelease, false);
-                remoteVersion = remoteV.str();
+                const ParsedVersion local{parse_version(installedVersion)};
+                const ParsedVersion remote{parse_version(repositoryVersion)};
+                localVersion = local.text;
+                remoteVersion = remote.text;
 
-                std::string strLocalPrerelease = "";
-                if (localMatches[6] != "") {
-                    strLocalPrerelease += "-" + localMatches[7].str() + "." + localMatches[9].str();
-                }
-                auto localV = semver::version::parse(localMatches[1].str() + strLocalPrerelease, false);
-                localVersion = localV.str();
+                const bool remote_is_newer{remote.core > local.core ||
+                                           (remote.core == local.core && remote.build > local.build)};
+                const bool same_version{remote.core == local.core && remote.build == local.build};
 
-                if (remoteV > localV) {
+                if (remote_is_newer) {
                     updateAvailable = true;
-                    message = "Please download the latest version (" + remoteV.str() + ") from our official website";
-                } else if (remoteV == localV) {
-                    message = "You're running the most recent version of Reddcoin Core (" + localV.str() + ")";
+                    message = "Please download the latest version (" + remote.text + ") from our official website";
+                } else if (same_version) {
+                    message = "You're running the most recent version of Reddcoin Core (" + local.text + ")";
                 }
 
                 // Build direct download link
-                officialDownloadLink = strDownloadLink + remoteMatches[1].str();
-                if (remoteV.is_prerelease()) {
-                    officialDownloadLink += "/" + remoteMatches[7].str() + remoteMatches[9].str();
+                officialDownloadLink = strDownloadLink + remote.numeric;
+                if (remote.core.is_prerelease()) {
+                    officialDownloadLink += "/" + remote.prerelease_tag + remote.prerelease_num;
                 }
             }
         }
