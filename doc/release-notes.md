@@ -117,8 +117,20 @@ themselves and so is unaffected by which derivation path a wallet uses.
 
 Both defects are present in v4.22.9. Users who created or encrypted a
 wallet with an earlier 4.22.9 build should confirm which derivation path
-their wallet is using with `gethdwalletinfo` before relying on backups of
-the mnemonic alone.
+their wallet is using before relying on backups of the mnemonic alone.
+
+In the GUI the wallet status bar icon reports the scheme and exposes nothing
+sensitive, which makes it the appropriate thing to point end users at.
+`gethdwalletinfo` reports it over RPC, though not by name: a `mnemonic` field
+means the wallet has one, `accountextendedprivkey` and `accountextendedpubkey`
+mean the BIP44 path, and neither means a plain BIP32 wallet.
+
+**`gethdwalletinfo` output is private key material.** It returns the
+mnemonic, the seed and the root and extended private keys in plain text, so
+it must never be pasted into an issue, a chat channel, a screenshot or a
+support request, and should not be run while screen sharing. Anyone
+relaying these instructions to end users should carry that warning with
+them.
 
 Version numbering
 -----------------
@@ -225,6 +237,12 @@ New and Updated RPCs
 
   Wallets with no HD seed at all now return `RPC_WALLET_ERROR` rather than
   an internal bug report.
+
+  Note that this RPC dumps private key material, as its help has always
+  stated. Now that it returns successfully for BIP32 wallets rather than
+  failing, it will be reached far more often, so it is worth restating: the
+  response carries the mnemonic, the seed and the root and extended private
+  keys in plain text and must be treated exactly like `dumpwallet` output.
 
 - `generatetoaddress` and `getblocktemplate` can now produce Proof of Stake
   blocks. Past `nLastPowHeight` the chain is PoS-only, but both still built
