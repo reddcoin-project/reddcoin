@@ -1134,6 +1134,12 @@ bool CWallet::AbandonTransaction(const uint256& hashTx)
     LOCK(cs_wallet);
 
     WalletBatch batch(GetDatabase());
+    return AbandonTransaction(batch, hashTx);
+}
+
+bool CWallet::AbandonTransaction(WalletBatch& batch, const uint256& hashTx)
+{
+    AssertLockHeld(cs_wallet);
 
     std::set<uint256> todo;
     std::set<uint256> done;
@@ -1318,6 +1324,38 @@ void CWallet::blockDisconnected(const CBlock& block, int height)
     m_last_block_processed = block.hashPrevBlock;
     for (const CTransactionRef& ptx : block.vtx) {
         SyncTransaction(ptx, {CWalletTx::Status::UNCONFIRMED, /* block height */ 0, /* block hash */ {}, /* index */ 0});
+    }
+
+    // A coinstake of ours in a block that just left the chain is orphaned for
+    // good: coinstakes are never accepted into the mempool, so nothing will
+    // reconfirm it on this chain and it would sit UNCONFIRMED forever. While it
+    // does, CWallet::IsSpent still counts it as spending its input, keeping that
+    // coin out of AvailableCoins and so out of reach of the staker. Abandon it
+    // here to return the input to the wallet.
+    //
+    // This is the only way a coinstake becomes orphaned while we are running, so
+    // it replaces the full mapWallet sweep that used to run before every block
+    // template. If a deeper reorg later remines the coinstake, AddToWallet
+    // overwrites the abandoned status when the confirmation arrives.
+    std::vector<uint256> orphaned;
+    for (const CTransactionRef& ptx : block.vtx) {
+        if (!ptx->IsCoinStake()) continue;
+        auto it = mapWallet.find(ptx->GetHash());
+        if (it == mapWallet.end()) continue;
+        const CWalletTx& wtx = it->second;
+        if (wtx.GetDepthInMainChain() != 0 || wtx.isAbandoned()) continue;
+        orphaned.push_back(ptx->GetHash());
+    }
+    if (!orphaned.empty()) {
+        // One database transaction for the whole block, not one per coinstake.
+        WalletBatch batch(GetDatabase());
+        for (const uint256& wtxid : orphaned) {
+            LogPrint(BCLog::STAKE, "Abandoning coinstake wtx %s orphaned by disconnect of block %s\n",
+                     wtxid.ToString(), block.GetHash().ToString());
+            if (!AbandonTransaction(batch, wtxid)) {
+                LogPrint(BCLog::STAKE, "Failed to abandon coinstake tx %s\n", wtxid.ToString());
+            }
+        }
     }
 }
 
@@ -1755,6 +1793,7 @@ void CWallet::ReacceptWalletTransactions()
     if (!fBroadcastTransactions)
         return;
     std::map<int64_t, CWalletTx*> mapSorted;
+    std::vector<uint256> to_abandon;
 
     // Sort pending wallet transactions based on their initial wallet insertion order
     for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
@@ -1766,10 +1805,19 @@ void CWallet::ReacceptWalletTransactions()
 
         if (nDepth == 0 && !wtx.isAbandoned()) {
             if (wtx.IsCoinBase() || wtx.IsCoinStake()) {
-                LogPrintf("Abandoning wtx %s\n", wtx.GetHash().ToString());
-                AbandonTransaction(wtxid);
+                to_abandon.push_back(wtxid);
             } else
                 mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
+        }
+    }
+
+    // Abandon under a single batch: one database transaction for the whole set
+    // rather than one per transaction.
+    if (!to_abandon.empty()) {
+        WalletBatch batch(GetDatabase());
+        for (const uint256& wtxid : to_abandon) {
+            LogPrintf("Abandoning wtx %s\n", wtxid.ToString());
+            AbandonTransaction(batch, wtxid);
         }
     }
 
@@ -1784,15 +1832,26 @@ void CWallet::ReacceptWalletTransactions()
 void CWallet::AbandonOrphanedCoinstakes()
 {
     LOCK(cs_wallet);
-    for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
+
+    // Collect first, then abandon, so the whole sweep costs one database
+    // transaction rather than one per orphan. AbandonTransaction also mutates
+    // mapWallet entries, which is not safe to do while iterating it.
+    std::vector<uint256> orphaned;
+    for (const std::pair<const uint256, CWalletTx>& item : mapWallet) {
         const uint256& wtxid = item.first;
-        CWalletTx& wtx = item.second;
+        const CWalletTx& wtx = item.second;
         assert(wtx.GetHash() == wtxid);
         if (wtx.GetDepthInMainChain() == 0 && !wtx.isAbandoned() && wtx.IsCoinStake()) {
-            LogPrint(BCLog::STAKE, "Abandoning coinstake wtx %s\n", wtx.GetHash().ToString());
-            if (!AbandonTransaction(wtxid)) {
-                LogPrint(BCLog::STAKE, "Failed to abandon coinstake tx %s\n", wtx.GetHash().ToString());
-            }
+            orphaned.push_back(wtxid);
+        }
+    }
+    if (orphaned.empty()) return;
+
+    WalletBatch batch(GetDatabase());
+    for (const uint256& wtxid : orphaned) {
+        LogPrint(BCLog::STAKE, "Abandoning coinstake wtx %s\n", wtxid.ToString());
+        if (!AbandonTransaction(batch, wtxid)) {
+            LogPrint(BCLog::STAKE, "Failed to abandon coinstake tx %s\n", wtxid.ToString());
         }
     }
 }
@@ -2970,6 +3029,14 @@ bool CWallet::UpgradeWallet(int version, bilingual_str& error)
 void CWallet::postInitProcess()
 {
     LOCK(cs_wallet);
+
+    // Return the inputs of any coinstake this wallet loaded already orphaned, so
+    // the staker can spend them again. While we are running, blockDisconnected()
+    // abandons them as the disconnect arrives; this covers a wallet that was
+    // offline across the reorg. LoadToWallet() has already reset such a coinstake
+    // to UNCONFIRMED by resolving its recorded block against the active chain, so
+    // it is at depth zero here for the sweep to find.
+    AbandonOrphanedCoinstakes();
 
     // Add wallet transactions that aren't already in a block to mempool
     // Do this here as mempool requires genesis block to be loaded
