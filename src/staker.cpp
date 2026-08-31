@@ -18,6 +18,8 @@
 #include <wallet/wallet.h>
 #include <wallet/walletutil.h>
 
+#include <boost/signals2/connection.hpp>
+
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -263,8 +265,11 @@ void CStakeman::StakeWalletAdd(const std::string& walletname)
         StakerThread staker;
         staker.interrupt = interrupt;
         staker.finished = finished;
-        staker.thread = std::thread(&util::TraceThread, "staker", [this, pwallet = wallet.get(), interrupt, finished, chainManager = chainManager, connManager = connManager, mempool = memPool]() {
-            ThreadStaker(pwallet, chainManager, connManager, mempool, std::this_thread::get_id(), fStakingActive, *interrupt);
+        // The wallet is captured as a shared_ptr, not a bare pointer: an
+        // unload would otherwise destroy it while this thread is still
+        // dereferencing it every pass.
+        staker.thread = std::thread(&util::TraceThread, "staker", [this, wallet, interrupt, finished, chainManager = chainManager, connManager = connManager, mempool = memPool]() {
+            ThreadStaker(wallet, chainManager, connManager, mempool, std::this_thread::get_id(), fStakingActive, *interrupt);
             *finished = true;
         });
         m_stakers.emplace(walletname, std::move(staker));
@@ -298,12 +303,28 @@ void CStakeman::StakeWalletRemove(const std::string& walletname)
     uiInterface.NotifyWalletStakingActiveChanged(false);
 }
 
-void CStakeman::ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt)
+void CStakeman::ThreadStaker(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt)
 {
     LogPrintf("CStakeman::%s\n", __func__);
     LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
+
+    // Stop when the wallet is unloaded. This thread holds the wallet alive for
+    // as long as it runs, so an unload cannot pull it away mid-pass, but it
+    // also cannot finish until this thread lets go: UnloadWallet() waits for
+    // the last reference to be released. Interrupting is enough, since the loop
+    // returns out of its next sleep.
+    //
+    // The connection is deliberately a local of this function. It has to be
+    // disconnected before the wallet's last reference goes, because ~CWallet
+    // asserts that nothing is still subscribed, and a local is destroyed ahead
+    // of the pwallet parameter it was registered on.
+    boost::signals2::scoped_connection unload_conn = pwallet->NotifyUnload.connect([&interrupt, thread_id]() {
+        LogPrintf("CStakeman::ThreadStaker Staking thread [%s] stopping, wallet unloaded\n", thread_id);
+        interrupt();
+    });
+
     try {
-        PoSMiner(pwallet, chainman, connman, mempool, thread_id, running, interrupt);
+        PoSMiner(pwallet.get(), chainman, connman, mempool, thread_id, running, interrupt);
     } catch (std::exception& e) {
         PrintExceptionContinue(&e, "ThreadStakeMinter()");
     } catch (...) {

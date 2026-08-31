@@ -57,7 +57,7 @@ public:
     //! Number of staking threads that are still running. A thread that returned
     //! on its own is not counted, even though it has not been joined yet.
     int GetStakingThreadCount();
-    void static ThreadStaker(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt);
+    void static ThreadStaker(std::shared_ptr<CWallet> pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt);
     void StakeWalletAdd(const std::string& walletname);
     void StakeWalletRemove(const std::string& walletname);
 
