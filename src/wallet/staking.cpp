@@ -11,6 +11,7 @@
 #include <deploymentstatus.h>
 #include <index/disktxpos.h>
 #include <index/txindex.h>
+#include <interfaces/handler.h>
 #include <node/blockstorage.h>
 #include <pos/kernel.h>
 #include <pos/stake.h>
@@ -657,6 +658,11 @@ public:
     }
 
     void notifyStakingStatusChanged() override { m_wallet->NotifyWalletStakingStatusChanged(); }
+
+    std::unique_ptr<interfaces::Handler> handleUnload(UnloadFn fn) override
+    {
+        return interfaces::MakeHandler(m_wallet->NotifyUnload.connect(fn));
+    }
 
     void setLastCoinStakeSearchInterval(int64_t interval) override
     {

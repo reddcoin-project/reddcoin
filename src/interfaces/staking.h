@@ -9,6 +9,7 @@
 #include <primitives/transaction.h> // For COutPoint, CMutableTransaction
 #include <script/standard.h> // For CTxDestination
 
+#include <functional>
 #include <memory>
 #include <stdint.h>
 #include <string>
@@ -28,6 +29,8 @@ struct Params;
 static const unsigned int DEFAULT_STAKETIMIO = 500;
 
 namespace interfaces {
+
+class Handler;
 
 //! Wallet-free description of a coin that can be staked.
 //!
@@ -92,6 +95,18 @@ public:
 
     //! Emit the wallet's staking-status-changed notification.
     virtual void notifyStakingStatusChanged() = 0;
+
+    //! Register a callback for when this wallet is unloaded.
+    //!
+    //! A staking thread holds its wallet alive for as long as it runs, so an
+    //! unload cannot take the wallet away from it, but it also cannot complete
+    //! until the thread lets go. The thread registers here to be told to stop.
+    //!
+    //! The returned handler MUST be released before the last reference to the
+    //! wallet is, because ~CWallet asserts that nothing is still subscribed.
+    //! Keeping it on the staking thread's own stack gets that ordering right.
+    using UnloadFn = std::function<void()>;
+    virtual std::unique_ptr<Handler> handleUnload(UnloadFn fn) = 0;
 
     //! Number of spendable coins, used to scale the stake search timeout.
     virtual size_t getAvailableCoinCount() = 0;
