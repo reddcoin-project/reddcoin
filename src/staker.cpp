@@ -4,6 +4,7 @@
 
 #include <staker.h>
 
+#include <interfaces/handler.h>
 #include <interfaces/staking.h>
 #include <logging.h>
 #include <miner.h>
@@ -287,6 +288,22 @@ void CStakeman::ThreadStaker(std::shared_ptr<interfaces::StakingWallet> staking_
 {
     LogPrintf("CStakeman::%s\n", __func__);
     LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
+
+    // Stop when the wallet is unloaded. This thread holds the wallet alive for
+    // as long as it runs, so an unload cannot pull it away mid-pass, but it
+    // also cannot finish until this thread lets go: UnloadWallet() waits for
+    // the last reference to be released. Interrupting is enough, since the loop
+    // returns out of its next sleep.
+    //
+    // The handler is deliberately a local of this function. It has to be
+    // disconnected before the wallet's last reference goes, because ~CWallet
+    // asserts that nothing is still subscribed, and a local is destroyed ahead
+    // of the staking_wallet parameter it was registered on.
+    std::unique_ptr<interfaces::Handler> unload_handler = staking_wallet->handleUnload([&interrupt, thread_id]() {
+        LogPrintf("CStakeman::ThreadStaker Staking thread [%s] stopping, wallet unloaded\n", thread_id);
+        interrupt();
+    });
+
     try {
         PoSMiner(*staking_wallet, chainman, connman, mempool, thread_id, running, interrupt);
     } catch (std::exception& e) {
