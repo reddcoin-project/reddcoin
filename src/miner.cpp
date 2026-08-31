@@ -544,7 +544,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, pwallet->GetName());
     util::ThreadRename(strprintf("staker-%d", thread_id));
@@ -583,6 +583,15 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
         return;
     }
 
+    // Every reason this thread should return. The waiting loops below can run
+    // for as long as the condition they wait on lasts, which for a locked wallet
+    // is indefinitely, so each of them has to check all of these and not just
+    // the shutdown flag: otherwise disabling staking for this wallet cannot
+    // stop it, and neither can the node-wide switch.
+    const auto stop_requested = [&]() {
+        return ShutdownRequested() || !running || !pwallet->GetEnableStaking();
+    };
+
     try {
         bool fNeedToClear = false;
         while (running) {
@@ -591,7 +600,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
             if (ShutdownRequested())
                 return;
             while (pwallet->IsLocked()) {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
@@ -599,14 +608,14 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
             // Busy-wait for the network to come online so we don't waste time mining
             // on an obsolete chain. In regtest mode we expect to fly solo.
             while(connman == nullptr || connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainman->ActiveChainstate().IsInitialBlockDownload()) {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainman->ActiveChain().Tip()->nHeight);
                 if (strMintWarning != strMintSyncMessage) {
@@ -615,13 +624,13 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
             while (GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.9996)
             {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 LogPrintf("Staker thread [%d]: sleeps while sync at %f\n", thread_id, GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()));
                 if (strMintWarning != strMintSyncMessage) {
@@ -630,7 +639,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                     pwallet->NotifyWalletStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                         return;
             }
             if (fNeedToClear) {
@@ -658,7 +667,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
             {
                 if (fPoSCancel == true)
                 {
-                    if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                         return;
                     continue;
                 }
@@ -666,7 +675,7 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 uiInterface.NotifyAlertChanged();
                 pwallet->NotifyWalletStakingStatusChanged();
                 LogPrintf("Staker thread [%d]: Error in ReddcoinMiner: Keypool ran out, please call keypoolrefill before restarting the mining thread\n", thread_id);
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                if (!interrupt.sleep_for(std::chrono::seconds(10)))
                    return;
 
                 return;
@@ -691,11 +700,11 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
                 ProcessBlockFound(pblock, chainman, &chainman->ActiveChainstate(), Params());
                 reservedest.KeepDestination();
                 // Rest for ~3 minutes after successful block to preserve close quick
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(60 + GetRand(4))))
+                if (!interrupt.sleep_for(std::chrono::seconds(60 + GetRand(4))))
                     return;
             }
 
-            if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+            if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                 return;
 
             continue;
