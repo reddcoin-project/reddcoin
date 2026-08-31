@@ -19,9 +19,10 @@ records the intent on one wallet and adds or removes it from the staking set.
 A wallet only actually stakes when both are on, which is what the interaction
 at the end of this test pins down.
 
-The last case covers the thread behind the switches rather than the flag in
+The last cases cover the thread behind the switches rather than the flag in
 front of it. Reporting the flag is not enough: a wallet whose staking thread
-has ended reports `setstaking` true and stakes nothing.
+has ended reports `setstaking` true and stakes nothing, and a thread that
+outlives its wallet keeps `unloadwallet` waiting forever.
 
 Staking is left off at every point where the test asserts on chain height,
 since a staking thread that finds a kernel would move the tip underneath it.
@@ -259,6 +260,40 @@ class StakingRpcTest(BitcoinTestFramework):
 
         node.staking(False)
 
+    def test_unloading_a_wallet_stops_its_staking_thread(self):
+        """Unloading a staking wallet has to end its thread.
+
+        Nothing told the thread to stop when its wallet went away. The thread
+        holds the wallet alive for as long as it runs, and UnloadWallet waits
+        for the last reference to be released, so unloadwallet waited on a
+        thread that was never going to let go.
+
+        Like the locked-wallet case, without a fix this does not fail, it hangs.
+        """
+        node = self.nodes[0]
+
+        node.createwallet(wallet_name="unload_staker")
+        wallet = node.get_wallet_rpc("unload_staker")
+
+        node.staking(True)
+        wallet.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 1)
+
+        self.log.info("unloadwallet returns while the wallet is staking")
+        # Through the wallet's own endpoint: self.nodes[0] is scoped to the
+        # default wallet, and unloadwallet refuses a wallet_name that disagrees
+        # with its endpoint. It resolves the wallet by name either way, so this
+        # holds no extra reference that would keep the unload waiting.
+        wallet.unloadwallet()
+
+        # unloadwallet only returns once the last reference to the wallet is
+        # released, and the thread is what holds it, so it has necessarily
+        # stopped by now. No waiting needed.
+        assert_equal(node.staking()["thread_count"], 0)
+        assert "unload_staker" not in node.listwallets()
+
+        node.staking(False)
+
     def run_test(self):
         self.test_staking_switch()
         self.test_setstaking_switch()
@@ -266,6 +301,7 @@ class StakingRpcTest(BitcoinTestFramework):
         self.test_switches_are_independent()
         self.test_staking_thread_lifecycle()
         self.test_locked_wallet_thread_can_be_stopped()
+        self.test_unloading_a_wallet_stops_its_staking_thread()
 
 
 if __name__ == "__main__":
