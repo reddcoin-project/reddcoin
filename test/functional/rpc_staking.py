@@ -19,6 +19,10 @@ records the intent on one wallet and adds or removes it from the staking set.
 A wallet only actually stakes when both are on, which is what the interaction
 at the end of this test pins down.
 
+The last case covers the thread behind the switches rather than the flag in
+front of it. Reporting the flag is not enough: a wallet whose staking thread
+has ended reports `setstaking` true and stakes nothing.
+
 Staking is left off at every point where the test asserts on chain height,
 since a staking thread that finds a kernel would move the tip underneath it.
 """
@@ -50,8 +54,10 @@ class StakingRpcTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # Start with staking off so the tip stays put; the switches are then
-        # exercised explicitly.
-        self.extra_args = [["-staking=0"]]
+        # exercised explicitly. A staking thread reserves a destination for its
+        # coinstake rewards as it starts and throws if the keypool cannot cover
+        # it, which would end the thread the lifecycle case is watching.
+        self.extra_args = [["-staking=0", "-keypool=100"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -163,11 +169,103 @@ class StakingRpcTest(BitcoinTestFramework):
         node.staking(False)
         assert_equal(node.staking()["enabled"], False)
 
+    def test_staking_thread_lifecycle(self):
+        """setstaking has to be able to start a thread it stopped.
+
+        RED-102: turning staking off for a wallet ended its thread, and turning
+        it back on set the flag without starting a new one, so the node stopped
+        staking with nothing reporting an error. thread_count claimed a thread
+        was running the whole time, because a thread that had returned was
+        still counted.
+
+        This runs last: it is the only case that leaves both switches on, so
+        from here the node is free to move its own tip.
+        """
+        node = self.nodes[0]
+
+        node.setstaking(False)
+        node.staking(True)
+        assert_equal(node.staking()["thread_count"], 0)
+
+        self.log.info("setstaking(True) starts a thread for the wallet")
+        node.setstaking(True)
+        status = node.staking()
+        assert_equal(status["thread_count"], 1)
+        assert_equal(status["running"], True)
+
+        self.log.info("setstaking(False) stops it and stops counting it")
+        node.setstaking(False)
+        status = node.staking()
+        assert_equal(status["thread_count"], 0)
+        assert_equal(status["running"], False)
+
+        self.log.info("setstaking(True) starts a replacement thread")
+        node.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 1)
+
+        self.log.info("Enabling an already staking wallet does not add a second thread")
+        with node.assert_debug_log(expected_msgs=["is already staking"]):
+            node.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 1)
+
+        self.log.info("The node-wide switch stops the thread as well")
+        node.staking(False)
+        assert_equal(node.staking()["thread_count"], 0)
+
+        self.log.info("With the node-wide switch off, setstaking starts nothing")
+        node.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 0)
+
+        node.setstaking(False)
+
+    def test_locked_wallet_thread_can_be_stopped(self):
+        """A thread waiting for its wallet to be unlocked still has to stop.
+
+        The wait loops checked only the shutdown flag, so a thread parked on a
+        locked wallet ignored both switches and the join that stops it never
+        returned. That hung the RPC that asked for the stop, and with it the
+        `staking` RPC behind the same lock, including the node-wide
+        `staking false` that RED-102 documents as the way to recover.
+
+        Without a fix this case does not fail, it hangs, and the framework's
+        RPC timeout is what ends it.
+        """
+        node = self.nodes[0]
+
+        # A wallet of its own, encrypted before it ever stakes: encryptwallet
+        # reloads the wallet, and a running thread holds the one it started on.
+        node.createwallet(wallet_name="locked_staker")
+        wallet = node.get_wallet_rpc("locked_staker")
+        wallet.encryptwallet("passphrase")
+
+        wallet.walletpassphrase("passphrase", 60)
+        # A starting thread reserves a destination, which the keypool of a
+        # freshly encrypted wallet cannot cover.
+        wallet.keypoolrefill(100)
+
+        node.staking(True)
+        wallet.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 1)
+
+        self.log.info("A staking thread parks when its wallet is locked")
+        wallet.walletlock()
+        # The warning is only reachable from inside the wait loop, so seeing it
+        # is what proves the thread is parked rather than between passes.
+        self.wait_until(lambda: "locked wallet" in wallet.getstakinginfo()["warnings"])
+
+        self.log.info("setstaking(False) stops a thread parked on a locked wallet")
+        wallet.setstaking(False)
+        assert_equal(node.staking()["thread_count"], 0)
+
+        node.staking(False)
+
     def run_test(self):
         self.test_staking_switch()
         self.test_setstaking_switch()
         self.test_getstakinginfo()
         self.test_switches_are_independent()
+        self.test_staking_thread_lifecycle()
+        self.test_locked_wallet_thread_can_be_stopped()
 
 
 if __name__ == "__main__":
