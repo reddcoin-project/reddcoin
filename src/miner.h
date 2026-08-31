@@ -27,6 +27,7 @@
 
 class CConnman;
 class ChainstateManager;
+class CThreadInterrupt;
 namespace interfaces {
 class Chain;
 } /* namespace interfaces */
@@ -224,7 +225,12 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
-void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+/** Staking loop for one wallet.
+ *
+ *  Every sleep in the loop waits on interrupt, so signalling it returns this
+ *  thread promptly instead of after the current sleep, which is up to a minute
+ *  once a block has been found. The caller owns it and must outlive the call. */
+void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt);
 
 void InitStakeWallet();
 void SetStakingActive(bool active);
