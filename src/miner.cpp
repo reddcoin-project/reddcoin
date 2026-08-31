@@ -177,9 +177,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     if (pwallet)
     {
-        // flush orphaned coinstakes
-        pwallet->AbandonOrphanedCoinstakes();
-
         // attempt to find a coinstake
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
