@@ -571,7 +571,7 @@ static bool ProcessBlockFound(const CBlock* pblock, ChainstateManager* chainman,
     return true;
 }
 
-void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running)
+void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt)
 {
     LogPrintf("CPUMiner [%d] started for proof-of-stake wallet [%s]\n", thread_id, staking_wallet.getName());
     util::ThreadRename(strprintf("staker-%d", thread_id));
@@ -609,6 +609,15 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
         return;
     }
 
+    // Every reason this thread should return. The waiting loops below can run
+    // for as long as the condition they wait on lasts, which for a locked wallet
+    // is indefinitely, so each of them has to check all of these and not just
+    // the shutdown flag: otherwise disabling staking for this wallet cannot
+    // stop it, and neither can the node-wide switch.
+    const auto stop_requested = [&]() {
+        return ShutdownRequested() || !running || !staking_wallet.getEnableStaking();
+    };
+
     try {
         bool fNeedToClear = false;
         while (running) {
@@ -617,7 +626,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             if (ShutdownRequested())
                 return;
             while (staking_wallet.isLocked()) {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 if (strMintWarning != strMintMessage) {
                     strMintWarning = strMintMessage;
@@ -625,7 +634,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                     staking_wallet.notifyStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
@@ -633,7 +642,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             // on an obsolete chain. In regtest mode we expect to fly solo.
             bool isRegTest = Params().NetworkIDString() == CBaseChainParams::REGTEST;
             while(connman == nullptr || (!isRegTest && (connman->GetNodeCount(ConnectionDirection::Both) == 0 || chainman->ActiveChainstate().IsInitialBlockDownload()))) {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 LogPrintf("Staker thread [%d]: sleeps while IBD at %d\n", thread_id, chainman->ActiveChain().Tip()->nHeight);
                 if (strMintWarning != strMintSyncMessage) {
@@ -642,13 +651,13 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                     staking_wallet.notifyStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                     return;
             }
 
             while (!isRegTest && GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()) < 0.9996)
             {
-                if (ShutdownRequested())
+                if (stop_requested())
                     return;
                 LogPrintf("Staker thread [%d]: sleeps while sync at %f\n", thread_id, GuessVerificationProgress(Params().TxData(), chainman->ActiveChain().Tip()));
                 if (strMintWarning != strMintSyncMessage) {
@@ -657,7 +666,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                     staking_wallet.notifyStakingStatusChanged();
                 }
                 fNeedToClear = true;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(2)))
+                if (!interrupt.sleep_for(std::chrono::seconds(2)))
                         return;
             }
             if (fNeedToClear) {
@@ -692,7 +701,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             {
                 if (fPoSCancel == true)
                 {
-                    if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                         return;
                     continue;
                 }
@@ -700,7 +709,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                 uiInterface.NotifyAlertChanged();
                 staking_wallet.notifyStakingStatusChanged();
                 LogPrintf("Staker thread [%d]: Error in ReddcoinMiner: Keypool ran out, please call keypoolrefill before restarting the mining thread\n", thread_id);
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                if (!interrupt.sleep_for(std::chrono::seconds(10)))
                    return;
 
                 return;
@@ -727,11 +736,11 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                 // Rest after successful block to preserve resources
                 // Use shorter interval for regtest (10 second) vs mainnet/testnet (60 seconds)
                 int nStakeInterval = Params().NetworkIDString() == CBaseChainParams::REGTEST ? 10 : 60;
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(nStakeInterval + GetRand(4))))
+                if (!interrupt.sleep_for(std::chrono::seconds(nStakeInterval + GetRand(4))))
                     return;
             }
 
-            if (!connman->interruptNet.sleep_for(std::chrono::milliseconds(pos_timio)))
+            if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                 return;
 
             continue;

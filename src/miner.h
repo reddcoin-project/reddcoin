@@ -27,6 +27,7 @@
 
 class CConnman;
 class ChainstateManager;
+class CThreadInterrupt;
 namespace interfaces {
 class Chain;
 class StakingWallet;
@@ -232,8 +233,12 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
 /** Staking loop for one wallet. The caller owns staking_wallet and must keep it
  *  alive for the whole call: it holds the destination reserved for coinstake
- *  rewards across every iteration. */
-void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running);
+ *  rewards across every iteration.
+ *
+ *  Every sleep in the loop waits on interrupt, so signalling it returns this
+ *  thread promptly instead of after the current sleep, which is up to a minute
+ *  once a block has been found. The caller owns it and must outlive the call. */
+void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chainman, CConnman* connman, CTxMemPool* mempool, std::thread::id thread_id, std::atomic<bool> &running, CThreadInterrupt& interrupt);
 
 void InitStakeWallet();
 void SetStakingActive(bool active);
