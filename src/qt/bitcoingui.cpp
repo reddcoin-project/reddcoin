@@ -310,7 +310,7 @@ void BitcoinGUI::checkUpdates()
 void BitcoinGUI::updateCheckFinished(const QVariantMap& info)
 {
     if (info.value("updateavailable").toBool()) {
-        labelCheckUpdate->setText(tr("Update to %1 is available.").arg(info.value("localversion").toString()));
+        labelCheckUpdate->setText(tr("Update to %1 is available.").arg(info.value("remoteversion").toString()));
         labelCheckUpdate->setVisible(true);
     } else {
         labelCheckUpdate->setVisible(false);
