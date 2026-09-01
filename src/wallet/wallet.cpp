@@ -1080,6 +1080,18 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, CWalletTx::Co
                 while (range.first != range.second) {
                     if (range.first->second != tx.GetHash()) {
                         WalletLogPrintf("Transaction %s (in block %s) conflicts with wallet transaction %s (both spend %s:%i)\n", tx.GetHash().ToString(), confirm.hashBlock.ToString(), range.first->second.ToString(), range.first->first.hash.ToString(), range.first->first.n);
+                        // reddcoin: a staking wallet re-stakes an input whenever its
+                        // previous coinstake was orphaned, so two coinstakes spending
+                        // the same input is routine. Only this wallet can sign that
+                        // input, so the earlier one can only have lost a race. Without
+                        // this line the inherited wording above reads like a double
+                        // spend in an operator's log. Deliberately narrow: a coinstake
+                        // conflicting with an ordinary spend is a real conflict and
+                        // keeps the bare message.
+                        const CWalletTx* prev_wtx = GetWalletTx(range.first->second);
+                        if (tx.IsCoinStake() && prev_wtx && prev_wtx->IsCoinStake()) {
+                            WalletLogPrintf("Re-stake of %s:%i: coinstake %s supersedes orphaned coinstake %s (expected for a staking wallet, not a double spend)\n", range.first->first.hash.ToString(), range.first->first.n, tx.GetHash().ToString(), range.first->second.ToString());
+                        }
                         MarkConflicted(confirm.hashBlock, confirm.block_height, range.first->second);
                     }
                     range.first++;
