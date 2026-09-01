@@ -892,6 +892,11 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
     rpcConsole->removeWallet(walletModel);
     walletFrame->removeWallet(walletModel);
     updateWindowTitle();
+
+    // Refresh against whichever wallet is current now, so a wallet that is
+    // still open gets its staking icon straight back rather than waiting for
+    // its next status change.
+    updateWalletStakingStatus();
 }
 
 void BitcoinGUI::setCurrentWallet(WalletModel* wallet_model)
@@ -1705,6 +1710,10 @@ void BitcoinGUI::updateWalletStakingStatus()
 
     walletstakingStatusControl->setToolTip(msg);
     walletstakingStatusControl->setThemedPixmap(icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+    // removeWallet() hides this icon, and this is the only place that brings it
+    // back. The early returns above cover the case that hide is there for: once
+    // the last wallet is gone there is no status to show, so it stays hidden.
+    walletstakingStatusControl->show();
 }
 
 
