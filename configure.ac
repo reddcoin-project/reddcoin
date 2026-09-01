@@ -649,6 +649,10 @@ case $host in
      AC_CHECK_LIB([ws2_32],   [WSAStartup],, AC_MSG_ERROR(libws2_32 missing))
      AC_CHECK_LIB([shlwapi],  [PathRemoveFileSpecW],, AC_MSG_ERROR(libshlwapi missing))
      AC_CHECK_LIB([iphlpapi], [GetAdaptersAddresses],, AC_MSG_ERROR(libiphlpapi missing))
+     dnl OpenSSL's winstore loader reads the system ROOT certificate store, which
+     dnl is how the update check gets its TLS trust anchors on Windows. depends
+     dnl must not be configured with no-winstore.
+     AC_CHECK_LIB([crypt32],  [CertOpenStore],, AC_MSG_ERROR(libcrypt32 missing))
 
      dnl -static is interpreted by libtool, where it has a different meaning.
      dnl In libtool-speak, it's -all-static.
@@ -731,6 +735,9 @@ case $host in
 
      AX_CHECK_LINK_FLAG([[-Wl,-headerpad_max_install_names]], [LDFLAGS="$LDFLAGS -Wl,-headerpad_max_install_names"],, [[$LDFLAG_WERROR]])
      CPPFLAGS="$CPPFLAGS -DMAC_OSX -DOBJC_OLD_DISPATCH_PROTOTYPES=0"
+     dnl The update check reads its TLS trust anchors from the system trust
+     dnl store, which OpenSSL has no loader for on this platform.
+     LIBS="$LIBS -framework Security -framework CoreFoundation"
      OBJCXXFLAGS="$CXXFLAGS"
      ;;
    *android*)
