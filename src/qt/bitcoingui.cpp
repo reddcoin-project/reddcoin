@@ -894,9 +894,11 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
     updateWindowTitle();
 
     // Refresh against whichever wallet is current now, so a wallet that is
-    // still open gets its staking icon straight back rather than waiting for
-    // its next status change.
+    // still open gets its status icons straight back rather than waiting for
+    // whatever would next change them. Both return early once the last wallet
+    // is gone, which is the case the hides above exist for.
     updateWalletStakingStatus();
+    updateWalletStatus();
 }
 
 void BitcoinGUI::setCurrentWallet(WalletModel* wallet_model)
