@@ -5,6 +5,7 @@
 #include <node/update_check.h>
 
 #include <clientversion.h>
+#include <node/ca_store.h>
 #include <util/semver.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -29,6 +30,8 @@
 
 #include <openssl/crypto.h>
 #include <openssl/opensslv.h>
+#include <openssl/ssl.h>
+#include <openssl/tls1.h>
 
 #include <chrono>
 #include <cstddef>
@@ -67,6 +70,30 @@ public:
           m_ssl_ctx{boost::asio::ssl::context::tls_client},
           m_stream{m_ioc, m_ssl_ctx}
     {
+        // Without this the connection is encrypted but unauthenticated: any
+        // party able to intercept it can present any certificate and substitute
+        // the response. The most useful thing that buys an attacker is silently
+        // suppressing upgrade notices, which is the wrong failure mode for the
+        // mechanism whose job is to get security fixes onto user machines.
+        const std::string ca_error{node::LoadTrustedCACertificates(m_ssl_ctx.native_handle())};
+        if (!ca_error.empty()) throw std::runtime_error(ca_error);
+
+        // verify_peer rejects a certificate that does not chain to one of those
+        // anchors; the callback additionally binds the certificate to the host
+        // that was asked for, so a valid certificate for some other name is no
+        // use. Boost 1.71 spells this rfc2818_verification; the
+        // host_name_verification that replaced it arrived in 1.73.
+        m_ssl_ctx.set_verify_mode(boost::asio::ssl::verify_peer);
+        m_ssl_ctx.set_verify_callback(boost::asio::ssl::rfc2818_verification(m_host));
+
+        // Server Name Indication. Without it a host that serves several names
+        // from one address, which includes anything behind a CDN, cannot tell
+        // which certificate to present and may not serve the request at all.
+        // This is a functional fix rather than a security one: the certificate
+        // is checked against m_host above regardless of what SNI asked for.
+        if (SSL_set_tlsext_host_name(m_stream.native_handle(), m_host.c_str()) != 1) {
+            throw std::runtime_error("Could not set the TLS server name for " + m_host);
+        }
     }
 
     //! Fetch target and return the response body. Throws std::runtime_error on
