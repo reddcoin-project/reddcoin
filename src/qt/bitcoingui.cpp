@@ -297,7 +297,7 @@ void BitcoinGUI::checkUpdates()
         }
 
         if (updateavailable) {
-            labelCheckUpdate->setText(tr("Update to %1 is available.").arg(QString::fromStdString(localversion)));
+            labelCheckUpdate->setText(tr("Update to %1 is available.").arg(QString::fromStdString(remoteversion)));
             labelCheckUpdate->setVisible(true);
         } else {
             labelCheckUpdate->setVisible(false);
