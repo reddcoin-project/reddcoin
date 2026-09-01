@@ -19,9 +19,21 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/signals2/signal.hpp>
 
+// boost 1.71 predates OpenSSL 3.0 and its ssl wrapper still calls functions the
+// 3.x series deprecated, such as RSA_free and SSL_CTX_use_RSAPrivateKey. The
+// warnings come from boost rather than from anything here, and depends headers
+// are reached with -I rather than -isystem, so they would otherwise break any
+// build using -Werror.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include <boost/assign/list_of.hpp>
 
 using boost::asio::ip::tcp;
