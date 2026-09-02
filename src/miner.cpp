@@ -686,7 +686,6 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             // StakingWallet. No lock is held here, which is what this needs.
             staking_wallet.blockUntilSyncedToCurrentChain();
 
-            CBlockIndex* pindexPrev = chainman->ActiveChain().Tip();
             bool fPoSCancel = false;
             CScript scriptPubKey = GetScriptForDestination(dest);
             CBlock *pblock;
@@ -715,6 +714,17 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
                 return;
             }
             pblock = &pblocktemplate->block;
+
+            // reddcoin: take the parent from the template we actually got, not
+            // from a tip sampled before the call. CreateNewBlock() re-reads the
+            // tip under cs_main and builds on whatever it finds there, so an
+            // earlier sample can already be one block behind by the time it
+            // returns. IncrementExtraNonce() rewrites the coinbase height from
+            // whichever index it is handed, and a stale one leaves a block whose
+            // coinbase claims its parent's height instead of its own. This node
+            // then rejects its own block as bad-cb-height and the stake is lost.
+            CBlockIndex* pindexPrev = WITH_LOCK(::cs_main, return chainman->m_blockman.LookupBlockIndex(pblock->hashPrevBlock));
+            assert(pindexPrev != nullptr);
             IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
             staking_wallet.notifyStakingStatusChanged();
