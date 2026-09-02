@@ -112,6 +112,7 @@ MACHO_ALLOWED_LIBRARIES = {
 
 PE_ALLOWED_LIBRARIES = {
 'ADVAPI32.dll', # security & registry
+'CRYPT32.dll', # certificate store, for the update check's TLS trust anchors
 'IPHLPAPI.DLL', # IP helper API
 'KERNEL32.dll', # win32 base APIs
 'msvcrt.dll', # C standard library for MSVC

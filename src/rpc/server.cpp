@@ -7,6 +7,7 @@
 #include <rpc/server.h>
 
 #include <clientversion.h>
+#include <node/ca_store.h>
 #include <rpc/util.h>
 #include <rpc/semver.h>
 #include <shutdown.h>
@@ -19,15 +20,31 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/signals2/signal.hpp>
 
+// boost 1.71 predates OpenSSL 3.0 and its ssl wrapper still calls functions the
+// 3.x series deprecated, such as RSA_free and SSL_CTX_use_RSAPrivateKey. The
+// warnings come from boost rather than from anything here, and depends headers
+// are reached with -I rather than -isystem, so they would otherwise break any
+// build using -Werror.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include <boost/assign/list_of.hpp>
+
+#include <openssl/ssl.h>
+#include <openssl/tls1.h>
 
 using boost::asio::ip::tcp;
 
 #include <cassert>
 #include <memory> // for unique_ptr
+#include <stdexcept>
 #include <mutex>
 #include <regex>
 #include <unordered_map>
@@ -45,6 +62,9 @@ static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& req
 
 static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
 static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
+//! Named once so the resolver, the SNI extension, the certificate check and the
+//! Host header cannot drift apart from one another.
+static const std::string strGithubHost = "api.github.com";
 
 struct RPCCommandExecutionInfo
 {
@@ -303,10 +323,46 @@ void checkforupdatesinfo(UniValue& result)
 
     try {
         boost::asio::io_service svc;
-        boost::asio::ssl::context ctx(boost::asio::ssl::context::method::sslv23_client);
+
+        // tls_client rather than the sslv23_client this used to ask for. Both
+        // negotiate the best protocol both ends support, but the sslv23 spelling
+        // names methods the 3.x series deprecated.
+        boost::asio::ssl::context ctx(boost::asio::ssl::context::method::tls_client);
+
+        // Without this the connection is encrypted but unauthenticated: any
+        // party able to intercept it can present any certificate and substitute
+        // the response. The most useful thing that buys an attacker is silently
+        // suppressing upgrade notices, which is the wrong failure mode for the
+        // mechanism whose job is to get security fixes onto user machines.
+        //
+        // Failing to obtain trust anchors is fatal to the fetch rather than a
+        // downgrade to an unverified one. The catch below reports it like any
+        // other failure.
+        const std::string ca_error = node::LoadTrustedCACertificates(ctx.native_handle());
+        if (!ca_error.empty()) throw std::runtime_error(ca_error);
+
+        // verify_peer rejects a certificate that does not chain to one of those
+        // anchors; the callback additionally binds the certificate to the host
+        // that was asked for, so a valid certificate for some other name is no
+        // use. boost 1.71 spells this rfc2818_verification; the
+        // host_name_verification that replaced it arrived in 1.73.
+        ctx.set_verify_mode(boost::asio::ssl::verify_peer);
+        ctx.set_verify_callback(boost::asio::ssl::rfc2818_verification(strGithubHost));
+
         boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssock(svc, ctx);
+
+        // Server Name Indication. Without it a host that serves several names
+        // from one address, which includes anything behind a CDN, cannot tell
+        // which certificate to present and may not serve the request at all.
+        // This is a functional fix rather than a security one: the certificate
+        // is checked against strGithubHost above regardless of what SNI asked
+        // for.
+        if (SSL_set_tlsext_host_name(ssock.native_handle(), strGithubHost.c_str()) != 1) {
+            throw std::runtime_error("Could not set the TLS server name for " + strGithubHost);
+        }
+
         boost::asio::ip::tcp::resolver resolver(svc);
-        boost::asio::ip::tcp::resolver::query query("api.github.com", "https");
+        boost::asio::ip::tcp::resolver::query query(strGithubHost, "https");
         boost::asio::ip::tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
 
         // Establish a connection.
@@ -317,7 +373,7 @@ void checkforupdatesinfo(UniValue& result)
         boost::asio::streambuf request;
         std::ostream request_stream(&request);
         request_stream << "GET " << strGithubLink << " HTTP/1.1\r\n"; // note that you can change it if you wish to HTTP/1.0
-        request_stream << "Host: api.github.com\r\n";
+        request_stream << "Host: " << strGithubHost << "\r\n";
         request_stream << "User-Agent: C/1.0\r\n";
         request_stream << "Content-Type: application/json; charset=utf-8\r\n";
         request_stream << "Accept: */*\r\n";
