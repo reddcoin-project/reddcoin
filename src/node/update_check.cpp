@@ -35,6 +35,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <regex>
 #include <sstream>
@@ -72,6 +73,67 @@ std::string GetHeader(const std::string& headers, const std::string& lower_name)
         pos = end;
     }
     return "";
+}
+
+//! Parse a hexadecimal chunk size. Rejects an empty field, a non-hex
+//! character, and anything wider than 64 bits.
+bool ParseChunkSize(const std::string& str, uint64_t& out)
+{
+    if (str.empty() || str.size() > 16) return false;
+    uint64_t value{0};
+    for (const char c : str) {
+        const signed char digit{HexDigit(c)};
+        if (digit < 0) return false;
+        value = (value << 4) | static_cast<uint64_t>(digit);
+    }
+    out = value;
+    return true;
+}
+
+//! Reassemble a chunked body.
+//!
+//! Completeness is inherent here rather than checked afterwards: the loop only
+//! returns on the terminating zero length chunk, so a body that stops early
+//! throws instead of yielding what arrived. Chunk extensions and trailers are
+//! ignored, neither being used by anything this talks to.
+std::string DecodeChunkedBody(const std::string& body)
+{
+    std::string decoded;
+    std::string::size_type pos{0};
+
+    while (true) {
+        const std::string::size_type eol{body.find("\r\n", pos)};
+        if (eol == std::string::npos) {
+            throw std::runtime_error("Chunked response ended before its final chunk");
+        }
+
+        std::string size_field{body.substr(pos, eol - pos)};
+        const std::string::size_type extension{size_field.find(';')};
+        if (extension != std::string::npos) size_field = size_field.substr(0, extension);
+
+        uint64_t size{0};
+        if (!ParseChunkSize(TrimString(size_field), size)) {
+            throw std::runtime_error("Chunked response has an unusable chunk size");
+        }
+        pos = eol + 2;
+
+        // The zero length chunk ends the body. Anything after it is trailers.
+        if (size == 0) return decoded;
+
+        // Each chunk is followed by its own CRLF, so both it and the data have
+        // to be present. Compared this way round so neither side can overflow.
+        const std::string::size_type available{body.size() - pos};
+        if (size > available || available - size < 2) {
+            throw std::runtime_error("Chunked response ended mid-chunk");
+        }
+
+        decoded.append(body, pos, static_cast<std::string::size_type>(size));
+        pos += static_cast<std::string::size_type>(size);
+        if (body.compare(pos, 2, "\r\n") != 0) {
+            throw std::runtime_error("Chunked response has a malformed chunk terminator");
+        }
+        pos += 2;
+    }
 }
 
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
@@ -253,12 +315,20 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
     const std::string headers{raw_response.substr(0, terminator)};
     std::string body{raw_response.substr(terminator + 4)};
 
-    // A chunked body carries its own framing, which is not decoded here, so
-    // returning it would hand back the chunk sizes along with the content.
-    // Reject it rather than pass it off as the body.
-    const std::string transfer_encoding{GetHeader(headers, "transfer-encoding")};
+    // A chunked body carries its own framing, so the chunk sizes have to be
+    // stripped out before anything downstream sees the content. api.github.com
+    // does use this: it answers with Content-Length most of the time and
+    // switches to chunked intermittently, so a client that cannot reassemble a
+    // chunked body fails a fraction of its checks for no visible reason.
+    //
+    // Content-Length is not consulted in this case. RFC 7230 forbids sending
+    // both, and the terminating chunk is what proves the body is complete.
+    const std::string transfer_encoding{ToLower(GetHeader(headers, "transfer-encoding"))};
     if (!transfer_encoding.empty()) {
-        throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
+        if (transfer_encoding != "chunked") {
+            throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
+        }
+        return DecodeChunkedBody(body);
     }
 
     const std::string content_length{GetHeader(headers, "content-length")};

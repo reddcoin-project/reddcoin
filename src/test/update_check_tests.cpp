@@ -5,6 +5,7 @@
 #include <node/update_check.h>
 
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <util/string.h>
 
 #include <boost/test/unit_test.hpp>
@@ -18,6 +19,12 @@ namespace {
 //! The body every positive case expects back, shaped like the response the
 //! update check actually parses.
 const std::string BODY{"{\"tag_name\":\"v4.22.9.4\"}"};
+
+//! Chunk sizes are hexadecimal.
+std::string ToHex(std::string::size_type n)
+{
+    return strprintf("%x", n);
+}
 
 std::string WithLength(const std::string& body, const std::string& declared_length)
 {
@@ -87,16 +94,66 @@ BOOST_AUTO_TEST_CASE(connection_close_framing_needs_a_clean_shutdown)
     BOOST_CHECK_THROW(ExtractHttpBody(response, false), std::runtime_error);
 }
 
-BOOST_AUTO_TEST_CASE(chunked_encoding_is_rejected)
+BOOST_AUTO_TEST_CASE(chunked_body_is_reassembled)
 {
-    // Chunk sizes are interleaved with the content and are not decoded here,
-    // so the body must not be handed back as if it were the payload.
-    const std::string response{
-        "HTTP/1.1 200 OK\r\n"
-        "Transfer-Encoding: chunked\r\n\r\n"
-        "17\r\n" +
-        BODY + "\r\n0\r\n\r\n"};
+    // api.github.com answers with Content-Length most of the time and switches
+    // to chunked intermittently, so both have to work. Before this was decoded
+    // the chunk sizes were handed back as part of the body, the JSON parse
+    // failed, and the update check reported nothing at all.
+    const std::string head{"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"};
 
+    // One chunk holding the whole body.
+    const std::string single{head + ToHex(BODY.size()) + "\r\n" + BODY + "\r\n0\r\n\r\n"};
+    BOOST_CHECK_EQUAL(ExtractHttpBody(single, true), BODY);
+
+    // Split across chunks, which is the shape a real server sends.
+    const std::string first{BODY.substr(0, 8)};
+    const std::string rest{BODY.substr(8)};
+    const std::string split{head + ToHex(first.size()) + "\r\n" + first + "\r\n" +
+                            ToHex(rest.size()) + "\r\n" + rest + "\r\n0\r\n\r\n"};
+    BOOST_CHECK_EQUAL(ExtractHttpBody(split, true), BODY);
+
+    // Chunk extensions are ignored, and trailers after the final chunk too.
+    const std::string extras{head + ToHex(BODY.size()) + ";name=value\r\n" + BODY +
+                             "\r\n0\r\nX-Trailer: ignored\r\n\r\n"};
+    BOOST_CHECK_EQUAL(ExtractHttpBody(extras, true), BODY);
+
+    // Case of the header value must not decide whether it is decoded.
+    const std::string upper{"HTTP/1.1 200 OK\r\nTransfer-Encoding: CHUNKED\r\n\r\n" +
+                            ToHex(BODY.size()) + "\r\n" + BODY + "\r\n0\r\n\r\n"};
+    BOOST_CHECK_EQUAL(ExtractHttpBody(upper, true), BODY);
+}
+
+BOOST_AUTO_TEST_CASE(incomplete_chunked_body_is_rejected)
+{
+    const std::string head{"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"};
+
+    // The terminating zero length chunk never arrived, so the body is short
+    // even though everything received parsed cleanly.
+    const std::string no_last_chunk{head + ToHex(BODY.size()) + "\r\n" + BODY + "\r\n"};
+    BOOST_CHECK_THROW(ExtractHttpBody(no_last_chunk, true), std::runtime_error);
+
+    // Cut off partway through a chunk's data.
+    const std::string mid_chunk{head + ToHex(BODY.size()) + "\r\n" + BODY.substr(0, 6)};
+    BOOST_CHECK_THROW(ExtractHttpBody(mid_chunk, true), std::runtime_error);
+
+    // A chunk whose declared size overruns what is present.
+    const std::string overrun{head + "ffff\r\n" + BODY + "\r\n0\r\n\r\n"};
+    BOOST_CHECK_THROW(ExtractHttpBody(overrun, true), std::runtime_error);
+
+    // Size field that is not hexadecimal.
+    const std::string bad_size{head + "zz\r\n" + BODY + "\r\n0\r\n\r\n"};
+    BOOST_CHECK_THROW(ExtractHttpBody(bad_size, true), std::runtime_error);
+
+    // Chunk data not followed by its CRLF.
+    const std::string bad_terminator{head + ToHex(BODY.size()) + "\r\n" + BODY + "XX0\r\n\r\n"};
+    BOOST_CHECK_THROW(ExtractHttpBody(bad_terminator, true), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(other_transfer_encodings_are_rejected)
+{
+    // Only chunked is decoded. Anything else must not be passed off as a body.
+    const std::string response{"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n" + BODY};
     BOOST_CHECK_THROW(ExtractHttpBody(response, true), std::runtime_error);
 }
 

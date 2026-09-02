@@ -36,12 +36,16 @@ std::string SslVersion();
  * response carries no Content-Length and is therefore delimited by the
  * connection closing, when the stream ended with a clean TLS shutdown.
  *
+ * A chunked body is reassembled, and is complete only if its terminating zero
+ * length chunk arrived. api.github.com answers with Content-Length most of the
+ * time and switches to chunked intermittently, so both have to work.
+ *
  * @param[in] raw_response The status line, headers and body as received.
  * @param[in] clean_eof    Whether the read ended with a clean end of file
  *                         rather than a truncated stream.
  * @return The response body.
  * @throws std::runtime_error if the response is malformed, reports a status
- *         other than 200, uses a transfer encoding this does not decode, or
+ *         other than 200, uses a transfer encoding other than chunked, or
  *         cannot be shown to have arrived in full.
  *
  * Exposed for testing.
