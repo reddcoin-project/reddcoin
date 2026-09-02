@@ -46,6 +46,34 @@ static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin
 static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
 
 namespace {
+//! Value of one header, matched case insensitively as RFC 7230 requires, or an
+//! empty string when the header is absent.
+//!
+//! headers is the status line plus the header block, without the blank line
+//! that terminates it. Matching walks line by line rather than searching the
+//! block for the name, so a name appearing inside some other header's value
+//! cannot be mistaken for the header itself.
+std::string GetHeader(const std::string& headers, const std::string& lower_name)
+{
+    std::string::size_type pos{headers.find("\r\n")};
+    while (pos != std::string::npos) {
+        const std::string::size_type start{pos + 2};
+        std::string::size_type end{headers.find("\r\n", start)};
+        const bool last_line{end == std::string::npos};
+        if (last_line) end = headers.size();
+
+        const std::string line{headers.substr(start, end - start)};
+        const std::string::size_type colon{line.find(':')};
+        if (colon != std::string::npos && ToLower(line.substr(0, colon)) == lower_name) {
+            return TrimString(line.substr(colon + 1));
+        }
+
+        if (last_line) break;
+        pos = end;
+    }
+    return "";
+}
+
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
 
 //! Budget for the whole exchange, from name resolution to the last byte of the
@@ -180,11 +208,16 @@ std::string HttpsFetcher::Get(const std::string& target)
     Await("sending the request to " + m_host);
 
     // The server was asked to close when done, so read to the end of the
-    // stream. Both a clean end of file and a connection dropped without a TLS
-    // shutdown mean the response is complete.
+    // stream. Neither ending is an error here: a clean end of file means the
+    // peer sent close_notify, and a truncated stream means the connection went
+    // away without one, which plenty of servers do. They are not equivalent
+    // though, so which one arrived is carried through to the completeness check
+    // rather than being flattened into success.
+    bool clean_eof{false};
     boost::asio::streambuf response;
     boost::asio::async_read(m_stream, response, boost::asio::transfer_all(),
         [&](const boost::system::error_code& ec, std::size_t) {
+            clean_eof = (ec == boost::asio::error::eof);
             m_ec = (ec == boost::asio::error::eof || ec == boost::asio::ssl::error::stream_truncated)
                        ? boost::system::error_code{}
                        : ec;
@@ -194,12 +227,16 @@ std::string HttpsFetcher::Get(const std::string& target)
 
     std::ostringstream raw;
     raw << &response;
-    const std::string str_raw{raw.str()};
+    return node::ExtractHttpBody(raw.str(), clean_eof);
+}
+} // namespace
 
+std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eof)
+{
     // Status line.
-    const std::string::size_type eol{str_raw.find("\r\n")};
+    const std::string::size_type eol{raw_response.find("\r\n")};
     if (eol == std::string::npos) throw std::runtime_error("Invalid response");
-    std::istringstream status_stream{str_raw.substr(0, eol)};
+    std::istringstream status_stream{raw_response.substr(0, eol)};
     std::string http_version;
     unsigned int status_code{0};
     status_stream >> http_version >> status_code;
@@ -211,11 +248,37 @@ std::string HttpsFetcher::Get(const std::string& target)
     }
 
     // Headers are terminated by a blank line; everything after it is the body.
-    const std::string::size_type body{str_raw.find("\r\n\r\n")};
-    if (body == std::string::npos) throw std::runtime_error("Invalid response");
-    return str_raw.substr(body + 4);
+    const std::string::size_type terminator{raw_response.find("\r\n\r\n")};
+    if (terminator == std::string::npos) throw std::runtime_error("Invalid response");
+    const std::string headers{raw_response.substr(0, terminator)};
+    std::string body{raw_response.substr(terminator + 4)};
+
+    // A chunked body carries its own framing, which is not decoded here, so
+    // returning it would hand back the chunk sizes along with the content.
+    // Reject it rather than pass it off as the body.
+    const std::string transfer_encoding{GetHeader(headers, "transfer-encoding")};
+    if (!transfer_encoding.empty()) {
+        throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
+    }
+
+    const std::string content_length{GetHeader(headers, "content-length")};
+    if (!content_length.empty()) {
+        int64_t expected{0};
+        if (!ParseInt64(content_length, &expected) || expected < 0) {
+            throw std::runtime_error("Response has an unusable Content-Length: " + content_length);
+        }
+        if (body.size() != static_cast<std::string::size_type>(expected)) {
+            throw std::runtime_error("Incomplete response: got " + ToString(body.size()) +
+                                     " of " + content_length + " bytes");
+        }
+    } else if (!clean_eof) {
+        // Without a Content-Length the body runs until the connection closes,
+        // so a clean shutdown is the only evidence that all of it arrived.
+        throw std::runtime_error("Response gave no Content-Length and ended without a clean shutdown");
+    }
+
+    return body;
 }
-} // namespace
 
 std::string node::SslVersion()
 {
