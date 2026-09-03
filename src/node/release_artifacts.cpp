@@ -105,6 +105,15 @@ bool node::GetReleaseArtifacts(const std::string& host_triplet, const std::strin
     return false;
 }
 
+std::string node::HostTriplet()
+{
+#if defined(HOST_TRIPLET)
+    return HOST_TRIPLET;
+#else
+    return "";
+#endif
+}
+
 bool node::GetReleaseArtifactsForThisHost(const std::string& version, ReleaseArtifacts& out)
 {
 #if defined(HOST_TRIPLET)

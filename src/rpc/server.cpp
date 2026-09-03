@@ -7,6 +7,7 @@
 #include <rpc/server.h>
 
 #include <clientversion.h>
+#include <node/release_artifacts.h>
 #include <node/ca_store.h>
 #include <rpc/util.h>
 #include <rpc/semver.h>
@@ -296,6 +297,12 @@ static RPCHelpMan checkupdates()
                 {RPCResult::Type::STR, "message", "Message confirming if you are on latest release version and where to download the latest version from"},
                 {RPCResult::Type::STR, "warning", "Any warning messages"},
                 {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
+                {RPCResult::Type::STR, "hosttriplet", "The host triplet this build targets, empty if the build did not record one"},
+                {RPCResult::Type::STR, "platform", "Short platform name used in artifact filenames, empty if no build is published for this host"},
+                {RPCResult::Type::STR, "guiartifact", "Filename of the build a reddcoin-qt user should install, empty if unknown"},
+                {RPCResult::Type::STR, "guiartifactlink", "Direct download link for guiartifact, empty if unknown"},
+                {RPCResult::Type::STR, "daemonartifact", "Filename of the build a reddcoind user should install, empty if unknown. Equal to guiartifact on Linux, where one tarball carries both"},
+                {RPCResult::Type::STR, "daemonartifactlink", "Direct download link for daemonartifact, empty if unknown"},
                 {RPCResult::Type::STR, "errors", "Any error messages"},
             }},
         RPCExamples{HelpExampleCli("checkupdates", "") + HelpExampleRpc("checkupdates", "")},
@@ -319,6 +326,11 @@ void checkforupdatesinfo(UniValue& result)
     std::string message = "";
     std::string warning = "";
     std::string officialDownloadLink = "";
+    std::string platform = "";
+    std::string guiArtifact = "";
+    std::string guiArtifactLink = "";
+    std::string daemonArtifact = "";
+    std::string daemonArtifactLink = "";
     std::string errors = "";
 
     try {
@@ -524,6 +536,24 @@ void checkforupdatesinfo(UniValue& result)
                 if (remote.core.is_prerelease()) {
                     officialDownloadLink += "/" + remote.prerelease_tag + remote.prerelease_num;
                 }
+
+                // Name the exact file this host needs, so a caller can offer a
+                // download rather than a directory to read.
+                //
+                // Not attempted for a prerelease. No prerelease has ever been
+                // published, so the naming convention for one is unverified,
+                // and naming a file that does not exist is worse than naming
+                // none: it turns a working notice into a broken link.
+                if (!remote.core.is_prerelease()) {
+                    node::ReleaseArtifacts artifacts;
+                    if (node::GetReleaseArtifactsForThisHost(remote.numeric, artifacts)) {
+                        platform = artifacts.platform;
+                        guiArtifact = artifacts.gui;
+                        daemonArtifact = artifacts.daemon;
+                        guiArtifactLink = officialDownloadLink + "/" + artifacts.gui;
+                        daemonArtifactLink = officialDownloadLink + "/" + artifacts.daemon;
+                    }
+                }
             }
         }
 
@@ -544,6 +574,15 @@ void checkforupdatesinfo(UniValue& result)
     result.pushKV("message", message);
     result.pushKV("warning", warning);
     result.pushKV("officialDownloadLink", officialDownloadLink);
+    // Empty rather than absent when the host publishes no build, or when the
+    // check did not get far enough to know, so the shape of the result does not
+    // depend on whether it succeeded.
+    result.pushKV("hosttriplet", node::HostTriplet());
+    result.pushKV("platform", platform);
+    result.pushKV("guiartifact", guiArtifact);
+    result.pushKV("guiartifactlink", guiArtifactLink);
+    result.pushKV("daemonartifact", daemonArtifact);
+    result.pushKV("daemonartifactlink", daemonArtifactLink);
     result.pushKV("errors", errors);
 }
 
