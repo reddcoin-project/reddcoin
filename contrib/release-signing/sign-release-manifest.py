@@ -120,6 +120,18 @@ def bip39_seed(mnemonic, passphrase=""):
 
 
 def bip32_master(seed):
+    """BIP32 master key and chain code from a seed.
+
+    "Bitcoin seed" is the HMAC key BIP32 fixes for this step, in every
+    implementation and for every coin. It is not a name to localise: a coin
+    identifies itself in the derivation path, and changing this constant would
+    derive a different key from the same words while looking perfectly correct.
+    Keeping it standard is also what lets any BIP39 tool recover the release key
+    from the mnemonic, rather than this script being the only thing that can.
+
+    Matches CExtKey::SetSeed() in src/key.cpp, which spells the same constant as
+    a char array.
+    """
     i = hmac.new(b"Bitcoin seed", seed, hashlib.sha512).digest()
     return i[:32], i[32:]
 
