@@ -107,8 +107,8 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             if (result.exists("officialDownloadLink")) {
                 officialDownloadLink = QString::fromStdString(result["officialDownloadLink"].get_str());
             }
-            if (result.exists("error")) {
-                errors = QString::fromStdString(result["error"].get_str());
+            if (result.exists("errors")) {
+                errors = QString::fromStdString(result["errors"].get_str());
             }
             if (result.exists("platform")) {
                 platform = QString::fromStdString(result["platform"].get_str());
