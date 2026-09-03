@@ -285,6 +285,89 @@ Both files go to the server together. Publishing `SHA256SUMS` without its
 signature leaves the manifest authenticated by nothing but TLS to the web host,
 which is the state every release up to and including 4.22.9.4 shipped in.
 
+### Sign the manifest for the client
+
+`SHA256SUMS.asc` proves the release to a person with OpenPGP tooling.
+`SHA256SUMS.sig` proves it to the client, which has no OpenPGP and, on Windows,
+no `gpgv` either. Both cover the same manifest and both are published.
+
+The client verifies against a public key compiled into it, so this signature is
+made with a key whose private half **never touches a networked machine**. It
+lives on an air-gapped box, derived from a BIP39 mnemonic held offline.
+
+`contrib/release-signing/sign-release-manifest.py` does the signing. It needs
+nothing but Python and this repository: the BIP340 implementation and the
+official test vectors it uses already live in `test/functional/test_framework`.
+
+#### First, on the air-gapped machine
+
+Prove the crypto works on that machine before it signs anything users will
+trust:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py selftest
+```
+
+That runs the official BIP340 vectors and must report all of them passing.
+
+#### Sign
+
+Carry `SHA256SUMS` in, and carry `SHA256SUMS.sig` back out. Nothing else crosses
+the gap, and the mnemonic never leaves:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py sign SHA256SUMS \
+    --mnemonic /path/to/mnemonic.txt
+```
+
+It prints the public key it signed with. **Check that against the release key
+below before publishing.** A signature made with the wrong key verifies happily
+against itself and against nothing any released client will accept, so this is
+the one check that cannot be skipped.
+
+#### Verify before uploading
+
+On the build host, against the manifest as it will be published:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py verify SHA256SUMS SHA256SUMS.sig \
+    --pubkey "$RELEASE_PUBKEY"
+```
+
+It exits non-zero on a bad signature, so it is safe to gate an upload on.
+
+Upload `SHA256SUMS.sig` beside `SHA256SUMS` and `SHA256SUMS.asc`. The same rule
+applies as for the `.asc`: if the manifest is regenerated, **both** signatures
+have to be regenerated and re-uploaded with it, or they verify as BAD against
+what is served.
+
+#### The release key
+
+```
+derivation   m/1017'/4'/0'  (BIP39 mnemonic -> BIP32, all elements hardened)
+public key   (fill in when the production key is generated)
+```
+
+Deliberately not a wallet path. Reddcoin wallets derive under `m/44'/4'/...`, and
+a release key that could collide with a spending key is a bad idea however
+unlikely the collision.
+
+⚠ **The path is part of the key.** A mnemonic does not identify a key without
+it, so changing the path after a key exists is changing the key, and every
+client carrying the old public key stops verifying. Fix it before generating the
+production key, not after.
+
+⚠ **The tag is part of the format.** The signature is over
+`TaggedHash("Reddcoin/ReleaseManifest")` of the manifest bytes, matching
+`TaggedHash()` in `src/hash.h`. Changing the tag invalidates every signature any
+released client will accept.
+
+The public key is compiled into the client, so **rotating it requires a client
+release**. That cost was accepted deliberately: any automatic client-side
+verification needs a trust anchor, and the alternative was verifying nothing.
+Recovery from a lost signing machine is the offline mnemonic backup, not a
+delegation chain, so treat that backup with the care a wallet seed gets.
+
 ### Publishing the release key
 
 A signature is only useful to someone who can obtain the key that made it. The
@@ -361,6 +444,8 @@ gpg --export --armor "$SIGNER_KEY" > reddcoin-release-key.asc
     2. The `SHA256SUMS` file
 
     3. The `SHA256SUMS.asc` detached signature you just created and verified
+
+    4. The `SHA256SUMS.sig` Schnorr signature the client verifies
 
 ### Verify the published release
 
