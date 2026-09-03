@@ -144,6 +144,17 @@ const std::string UPDATE_CHECK_HOST{"api.github.com"};
 //! than holding anything up for long.
 constexpr std::chrono::seconds UPDATE_CHECK_TIMEOUT{10};
 
+//! Ceiling on the whole response, headers included.
+//!
+//! The body is buffered in memory before it is parsed, so without a bound a
+//! hostile or broken server can make this allocate until the process dies. The
+//! release object this asks for runs to a few kilobytes, so a megabyte is two
+//! orders of magnitude of headroom and still nowhere near enough to hurt.
+//!
+//! This is not the size limit for downloading an artifact. That path does not
+//! exist yet, and when it does it must stream to disk rather than raise this.
+constexpr std::size_t MAX_RESPONSE_BYTES{1024 * 1024};
+
 /**
  * Minimal one-shot HTTPS GET with an overall deadline.
  *
@@ -277,7 +288,7 @@ std::string HttpsFetcher::Get(const std::string& target)
     // though, so which one arrived is carried through to the completeness check
     // rather than being flattened into success.
     bool clean_eof{false};
-    boost::asio::streambuf response;
+    boost::asio::streambuf response{MAX_RESPONSE_BYTES};
     boost::asio::async_read(m_stream, response, boost::asio::transfer_all(),
         [&](const boost::system::error_code& ec, std::size_t) {
             clean_eof = (ec == boost::asio::error::eof);
@@ -287,6 +298,20 @@ std::string HttpsFetcher::Get(const std::string& target)
             m_done = true;
         });
     Await("reading the response from " + m_host);
+
+    // A bounded streambuf does not report the bound being hit. asio's read loop
+    // simply stops once prepare() can yield nothing more and completes as though
+    // the stream had ended, so the caller is handed a truncated body with no
+    // error. Detect it here rather than let it look like a short response.
+    //
+    // A response that is exactly the ceiling is rejected along with one that
+    // exceeds it, since the two are indistinguishable from this side. Erring
+    // that way costs nothing at a limit set two orders of magnitude above the
+    // real thing.
+    if (response.size() >= MAX_RESPONSE_BYTES) {
+        throw std::runtime_error("Response from " + m_host + " exceeded " +
+                                 ToString(MAX_RESPONSE_BYTES) + " bytes");
+    }
 
     std::ostringstream raw;
     raw << &response;
