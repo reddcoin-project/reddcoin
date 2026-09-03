@@ -107,8 +107,8 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             if (result.exists("officialDownloadLink")) {
                 officialDownloadLink = QString::fromStdString(result["officialDownloadLink"].get_str());
             }
-            if (result.exists("error")) {
-                errors = QString::fromStdString(result["error"].get_str());
+            if (result.exists("errors")) {
+                errors = QString::fromStdString(result["errors"].get_str());
             }
             if (result.exists("platform")) {
                 platform = QString::fromStdString(result["platform"].get_str());
@@ -150,6 +150,17 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
                         text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
                     }
                 }
+            }
+
+            // The pre-release caution belongs on every outcome, not just one
+            // branch: it describes the build the user is running rather than
+            // anything the check discovered, so it is appended to whatever the
+            // text above ended up being.
+            if (!warning.isEmpty()) {
+                if (!text.isEmpty()) {
+                    text += "<br><br>";
+                }
+                text += "<font color = 'red'>" + warning + "</font>";
             }
 
             ui->aboutMessage->setText(text);
