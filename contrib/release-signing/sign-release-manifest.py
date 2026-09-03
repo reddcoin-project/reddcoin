@@ -52,13 +52,27 @@ MANIFEST_TAG = "Reddcoin/ReleaseManifest"
 
 # BIP32 path the release key is derived at.
 #
+#   m/1018'/4'/0'
+#     │      │   └── index, so a rotated key is 1' from the same backed-up seed
+#     │      └────── SLIP-0044 coin type 4, Reddcoin (chainparams nExtCoinType)
+#     └───────────── purpose
+#
 # Deliberately not a wallet path. Reddcoin wallets derive under m/44'/4'/..., and
 # a release key that could collide with a spending key is a bad idea however
 # unlikely the collision. This path exists for signing releases and nothing else.
 #
+# On the purpose value: 1018 was checked against the BIP43 registry (44, 45, 47,
+# 48, 49, 84, 86, 87) and against known unregistered users, and had no claimant.
+# Its neighbour 1017 does: lnd derives every Lightning key under
+# m/1017'/coinType'/keyFamily'/0/index, so that prefix would have described this
+# key as a Lightning multisig branch. Nothing would have collided, since this
+# seed derives nothing else, but a path is read by people and should not say
+# something untrue. Absence of a claimant is not a reservation; the REP is what
+# records this one.
+#
 # Fixed once a key has been generated: the mnemonic alone does not identify the
 # key without it, so changing the path is changing the key.
-DERIVATION_PATH = "m/1017'/4'/0'"
+DERIVATION_PATH = "m/1018'/4'/0'"
 
 
 def tagged_hash(tag, data):

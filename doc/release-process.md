@@ -350,13 +350,19 @@ what is served.
 #### The release key
 
 ```
-derivation   m/1017'/4'/0'  (BIP39 mnemonic -> BIP32, all elements hardened)
+derivation   m/1018'/4'/0'  (BIP39 mnemonic -> BIP32, all elements hardened)
 public key   (fill in when the production key is generated)
 ```
 
 Deliberately not a wallet path. Reddcoin wallets derive under `m/44'/4'/...`, and
 a release key that could collide with a spending key is a bad idea however
-unlikely the collision.
+unlikely the collision. `4'` is Reddcoin's SLIP-0044 coin type, matching
+`nExtCoinType`; the trailing index is the rotation slot, so a replacement key is
+`1'` from the same backup rather than a new seed.
+
+Purpose `1018'` had no claimant when it was assigned, checked against the BIP43
+registry and against known unregistered users. Its neighbour `1017'` is lnd's,
+which derives Lightning keys under `m/1017'/coinType'/keyFamily'/0/index`.
 
 ⚠ **The path is part of the key.** A mnemonic does not identify a key without
 it, so changing the path after a key exists is changing the key, and every
