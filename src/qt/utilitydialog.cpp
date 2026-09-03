@@ -154,6 +154,7 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
     const QString localversion{info.value("localversion").toString()};
     const QString remoteversion{info.value("remoteversion").toString()};
     const QString errors{info.value("errors").toString()};
+    const QString warning{info.value("warning").toString()};
 
     if (!errors.isEmpty()) {
         text = "<font color = 'red'>Error: </font>";
@@ -189,6 +190,16 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
                 text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
             }
         }
+    }
+
+    // The pre-release caution belongs on every outcome, not just one branch: it
+    // describes the build the user is running rather than anything the check
+    // discovered, so it is appended to whatever the text above ended up being.
+    if (!warning.isEmpty()) {
+        if (!text.isEmpty()) {
+            text += "<br><br>";
+        }
+        text += "<font color = 'red'>" + warning + "</font>";
     }
 
     ui->aboutMessage->setText(text);
