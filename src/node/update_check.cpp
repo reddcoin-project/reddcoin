@@ -6,6 +6,7 @@
 
 #include <clientversion.h>
 #include <node/ca_store.h>
+#include <node/release_artifacts.h>
 #include <util/semver.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -369,6 +370,11 @@ void node::CheckForUpdates(UniValue& result)
     std::string warning = "";
     std::string officialDownloadLink = "";
     std::string errors = "";
+    std::string platform = "";
+    std::string guiArtifact = "";
+    std::string guiArtifactLink = "";
+    std::string daemonArtifact = "";
+    std::string daemonArtifactLink = "";
 
     try {
         HttpsFetcher fetcher{UPDATE_CHECK_HOST, UPDATE_CHECK_TIMEOUT};
@@ -462,6 +468,24 @@ void node::CheckForUpdates(UniValue& result)
                 if (remote.core.is_prerelease()) {
                     officialDownloadLink += "/" + remote.prerelease_tag + remote.prerelease_num;
                 }
+
+                // Name the exact file this host needs, so a caller can offer a
+                // download rather than a directory to read.
+                //
+                // Not attempted for a prerelease. No prerelease has ever been
+                // published, so the naming convention for one is unverified,
+                // and naming a file that does not exist is worse than naming
+                // none: it turns a working notice into a broken link.
+                if (!remote.core.is_prerelease()) {
+                    ReleaseArtifacts artifacts;
+                    if (GetReleaseArtifactsForThisHost(remote.numeric, artifacts)) {
+                        platform = artifacts.platform;
+                        guiArtifact = artifacts.gui;
+                        daemonArtifact = artifacts.daemon;
+                        guiArtifactLink = officialDownloadLink + "/" + artifacts.gui;
+                        daemonArtifactLink = officialDownloadLink + "/" + artifacts.daemon;
+                    }
+                }
             }
         }
 
@@ -482,5 +506,14 @@ void node::CheckForUpdates(UniValue& result)
     result.pushKV("message", message);
     result.pushKV("warning", warning);
     result.pushKV("officialDownloadLink", officialDownloadLink);
+    // Empty rather than absent when the host publishes no build, or when the
+    // check did not get far enough to know, so the shape of the result does not
+    // depend on whether it succeeded.
+    result.pushKV("hosttriplet", HostTriplet());
+    result.pushKV("platform", platform);
+    result.pushKV("guiartifact", guiArtifact);
+    result.pushKV("guiartifactlink", guiArtifactLink);
+    result.pushKV("daemonartifact", daemonArtifact);
+    result.pushKV("daemonartifactlink", daemonArtifactLink);
     result.pushKV("errors", errors);
 }
