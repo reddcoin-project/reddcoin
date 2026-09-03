@@ -88,6 +88,9 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             QString warning = "";
             QString officialDownloadLink = "";
             QString errors = "";
+            QString platform = "";
+            QString guiArtifact = "";
+            QString guiArtifactLink = "";
 
             if (result.exists("localversion")) {
                 localversion = QString::fromStdString(result["localversion"].get_str());
@@ -107,6 +110,15 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             if (result.exists("error")) {
                 errors = QString::fromStdString(result["error"].get_str());
             }
+            if (result.exists("platform")) {
+                platform = QString::fromStdString(result["platform"].get_str());
+            }
+            if (result.exists("guiartifact")) {
+                guiArtifact = QString::fromStdString(result["guiartifact"].get_str());
+            }
+            if (result.exists("guiartifactlink")) {
+                guiArtifactLink = QString::fromStdString(result["guiartifactlink"].get_str());
+            }
 
             if (!errors.isEmpty()) {
                 text = "<font color = 'red'>Error: </font>";
@@ -115,11 +127,29 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
                 text = "Installed version: <b>" + localversion  + "</b><br>";
                 text += message;
             } else {
-                QString url = "<a href=\""+ officialDownloadLink +"\">"+ officialDownloadLink +"</a>";
-
                 text = "Installed version: <b>" + localversion  + "</b><br>";
                 text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
-                text += "Please download the latest version from our official website <br>(" + url + ").";
+
+                if (guiArtifact.isEmpty() || guiArtifactLink.isEmpty()) {
+                    // Either no build is published for this host, or the release
+                    // is a prerelease, whose artifact naming has never been
+                    // exercised. Point at the directory and let the user choose,
+                    // rather than name a file that may not be there.
+                    QString url = "<a href=\""+ officialDownloadLink +"\">"+ officialDownloadLink +"</a>";
+                    text += "Please download the latest version from our official website <br>(" + url + ").";
+                } else {
+                    // The build this machine needs, rather than the directory
+                    // holding fifteen files it would have to choose between.
+                    text += "The build for this machine is:<br>";
+                    text += "<a href=\"" + guiArtifactLink + "\">" + guiArtifact + "</a>";
+
+                    if (platform == "osx64") {
+                        // Only an x86_64 macOS build is published, and it runs on
+                        // Apple Silicon under Rosetta. Say which one it is rather
+                        // than let an arm64 user assume it is native.
+                        text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
+                    }
+                }
             }
 
             ui->aboutMessage->setText(text);
