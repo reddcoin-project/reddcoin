@@ -162,12 +162,33 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
         text = "Installed version: <b>" + localversion + "</b><br>";
         text += info.value("message").toString();
     } else {
-        const QString link{info.value("officialDownloadLink").toString()};
-        QString url = "<a href=\"" + link + "\">" + link + "</a>";
+        const QString artifact{info.value("guiartifact").toString()};
+        const QString artifact_link{info.value("guiartifactlink").toString()};
 
         text = "Installed version: <b>" + localversion + "</b><br>";
         text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
-        text += "Please download the latest version from our official website <br>(" + url + ").";
+
+        if (artifact.isEmpty() || artifact_link.isEmpty()) {
+            // Either no build is published for this host, or the release is a
+            // prerelease, whose artifact naming has never been exercised. Point
+            // at the directory and let the user choose, rather than name a file
+            // that may not be there.
+            const QString link{info.value("officialDownloadLink").toString()};
+            const QString url{"<a href=\"" + link + "\">" + link + "</a>"};
+            text += "Please download the latest version from our official website <br>(" + url + ").";
+        } else {
+            // The build this machine needs, rather than the directory holding
+            // fifteen files it would have to choose between.
+            text += "The build for this machine is:<br>";
+            text += "<a href=\"" + artifact_link + "\">" + artifact + "</a>";
+
+            if (info.value("platform").toString() == "osx64") {
+                // Only an x86_64 macOS build is published, and it runs on Apple
+                // Silicon under Rosetta. Say which one it is rather than let an
+                // arm64 user assume it is native.
+                text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
+            }
+        }
     }
 
     ui->aboutMessage->setText(text);
