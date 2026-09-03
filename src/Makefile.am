@@ -188,6 +188,7 @@ BITCOIN_CORE_H = \
   node/coin.h \
   node/coinstats.h \
   node/ca_store.h \
+  node/release_artifacts.h \
   node/context.h \
   node/psbt.h \
   node/transaction.h \
@@ -367,6 +368,7 @@ libbitcoin_server_a_SOURCES = \
   node/coin.cpp \
   node/coinstats.cpp \
   node/ca_store.cpp \
+  node/release_artifacts.cpp \
   node/context.cpp \
   node/interfaces.cpp \
   node/psbt.cpp \
