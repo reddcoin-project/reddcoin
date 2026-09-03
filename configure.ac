@@ -38,6 +38,15 @@ fi
 
 AC_CANONICAL_HOST
 
+dnl The autoconf host triplet this build targets, exported to C++.
+dnl
+dnl The update check needs it to name the release artifact built for this
+dnl platform: guix names every output after the triplet, so the triplet is what
+dnl maps a running binary to its download. TARGET_OS, derived further down, is
+dnl too coarse for that. It cannot tell x86_64 Linux from aarch64 Linux, and the
+dnl published artifacts differ per triplet.
+AC_DEFINE_UNQUOTED([HOST_TRIPLET], ["$host"], [The autoconf host triplet this build targets])
+
 AH_TOP([#ifndef BITCOIN_CONFIG_H])
 AH_TOP([#define BITCOIN_CONFIG_H])
 AH_BOTTOM([#endif //BITCOIN_CONFIG_H])
