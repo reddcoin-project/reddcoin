@@ -320,10 +320,16 @@ the gap, and the mnemonic never leaves:
     --mnemonic /path/to/mnemonic.txt
 ```
 
-It prints the public key it signed with. **Check that against the release key
-below before publishing.** A signature made with the wrong key verifies happily
-against itself and against nothing any released client will accept, so this is
-the one check that cannot be skipped.
+A mistyped mnemonic is rejected rather than signed with: the words are checked
+against the BIP39 list and the phrase against its own checksum. That matters
+most when recovering onto a rebuilt machine, where a wrong word would otherwise
+derive a perfectly usable key for a wallet that has never signed anything.
+
+What the checksum cannot tell you is whether a valid phrase is the *right*
+phrase, so the tool also prints the public key it signed with. **Check that
+against the release key below before publishing.** A signature made with the
+wrong key verifies happily against itself and against nothing any released
+client will accept, so this is the one check that cannot be skipped.
 
 #### Verify before uploading
 

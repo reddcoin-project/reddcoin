@@ -29,6 +29,7 @@ import argparse
 import hashlib
 import hmac
 import os
+import re
 import sys
 import unicodedata
 
@@ -66,14 +67,53 @@ def tagged_hash(tag, data):
     return hashlib.sha256(ss + ss + data).digest()
 
 
-def bip39_seed(mnemonic, passphrase=""):
-    """BIP39 mnemonic to 64-byte seed.
+def load_wordlist():
+    """The English BIP39 wordlist, read from the header the client uses.
 
-    The mnemonic is not checksum-validated here. This signs with whatever key
-    the words produce, and the public key is what tells you it is the right one:
-    check it against the value in the release process before trusting a
-    signature.
+    Parsed rather than duplicated so there is one wordlist in the repository. A
+    second copy here could drift from the one the wallet derives with, and the
+    divergence would only ever show up as a key that does not match.
     """
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                        '..', '..', 'src', 'util', 'lang', 'bip39_english.h')
+    words = re.findall(r'^\s*"([a-z]+)",?\s*$', open(path, encoding='utf8').read(), re.MULTILINE)
+    if len(words) != 2048:
+        raise SystemExit("expected 2048 words in {}, found {}".format(path, len(words)))
+    return words
+
+
+def check_mnemonic(mnemonic):
+    """Reject a mnemonic that is not a valid BIP39 phrase.
+
+    Worth doing rather than trusting the operator to eyeball the public key
+    afterwards. A single mistyped word produces a perfectly usable key for a
+    completely different wallet, so without this the tool would happily sign a
+    release with a key nothing has ever seen, and the only thing standing
+    between that and publishing it would be someone comparing 64 hex
+    characters by eye.
+    """
+    words = unicodedata.normalize("NFKD", mnemonic).split()
+    if len(words) not in (12, 15, 18, 21, 24):
+        raise SystemExit("mnemonic has {} words, expected 12, 15, 18, 21 or 24".format(len(words)))
+
+    wordlist = load_wordlist()
+    index = {w: i for i, w in enumerate(wordlist)}
+    unknown = [w for w in words if w not in index]
+    if unknown:
+        raise SystemExit("not BIP39 words: {}".format(", ".join(sorted(set(unknown)))))
+
+    bits = "".join(format(index[w], "011b") for w in words)
+    entropy_bits = len(words) * 32 // 3
+    entropy = int(bits[:entropy_bits], 2).to_bytes(entropy_bits // 8, "big")
+    expected = format(hashlib.sha256(entropy).digest()[0], "08b")[:len(words) // 3]
+    if bits[entropy_bits:] != expected:
+        raise SystemExit(
+            "mnemonic checksum is wrong. One or more words are mistyped or out of order; "
+            "this is not the phrase you think it is")
+
+
+def bip39_seed(mnemonic, passphrase=""):
+    """BIP39 mnemonic to 64-byte seed."""
     mnemonic = unicodedata.normalize("NFKD", " ".join(mnemonic.split()))
     salt = unicodedata.normalize("NFKD", "mnemonic" + passphrase)
     return hashlib.pbkdf2_hmac("sha512", mnemonic.encode(), salt.encode(), 2048)
@@ -96,6 +136,7 @@ def bip32_derive_hardened(privkey, chaincode, index):
 
 def derive_release_key(mnemonic, passphrase=""):
     """Private key at DERIVATION_PATH for a mnemonic."""
+    check_mnemonic(mnemonic)
     privkey, chaincode = bip32_master(bip39_seed(mnemonic, passphrase))
     for element in DERIVATION_PATH.split("/")[1:]:
         assert element.endswith("'"), "every path element must be hardened"
