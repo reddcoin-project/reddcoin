@@ -185,6 +185,7 @@ BITCOIN_CORE_H = \
   netmessagemaker.h \
   node/blockstorage.h \
   node/ca_store.h \
+  node/release_artifacts.h \
   node/coin.h \
   node/coinstats.h \
   node/context.h \
@@ -362,6 +363,7 @@ libbitcoin_server_a_SOURCES = \
   net_processing.cpp \
   node/blockstorage.cpp \
   node/ca_store.cpp \
+  node/release_artifacts.cpp \
   node/coin.cpp \
   node/coinstats.cpp \
   node/context.cpp \
