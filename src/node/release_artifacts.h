@@ -58,6 +58,16 @@ bool GetReleaseArtifacts(const std::string& host_triplet, const std::string& ver
  * HOST_TRIPLET recorded by configure.
  */
 bool GetReleaseArtifactsForThisHost(const std::string& version, ReleaseArtifacts& out);
+
+/**
+ * The host triplet this binary was built for, or an empty string if the build
+ * did not record one.
+ *
+ * Kept here so the one dependency on the generated config header stays in this
+ * translation unit rather than spreading to every caller that wants to report
+ * the triplet.
+ */
+std::string HostTriplet();
 } // namespace node
 
 #endif // BITCOIN_NODE_RELEASE_ARTIFACTS_H
