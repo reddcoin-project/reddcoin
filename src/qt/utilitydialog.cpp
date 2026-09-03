@@ -152,6 +152,17 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
                 }
             }
 
+            // The pre-release caution belongs on every outcome, not just one
+            // branch: it describes the build the user is running rather than
+            // anything the check discovered, so it is appended to whatever the
+            // text above ended up being.
+            if (!warning.isEmpty()) {
+                if (!text.isEmpty()) {
+                    text += "<br><br>";
+                }
+                text += "<font color = 'red'>" + warning + "</font>";
+            }
+
             ui->aboutMessage->setText(text);
 
         }
