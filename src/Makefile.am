@@ -186,6 +186,7 @@ BITCOIN_CORE_H = \
   node/blockstorage.h \
   node/ca_store.h \
   node/release_artifacts.h \
+  node/update_check.h \
   node/coin.h \
   node/coinstats.h \
   node/context.h \
@@ -364,6 +365,7 @@ libbitcoin_server_a_SOURCES = \
   node/blockstorage.cpp \
   node/ca_store.cpp \
   node/release_artifacts.cpp \
+  node/update_check.cpp \
   node/coin.cpp \
   node/coinstats.cpp \
   node/context.cpp \

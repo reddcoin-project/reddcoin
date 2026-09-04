@@ -146,6 +146,7 @@ BITCOIN_TESTS =\
   test/txvalidationcache_tests.cpp \
   test/release_artifacts_tests.cpp \
   test/release_manifest_tests.cpp \
+  test/update_check_tests.cpp \
   test/uint256_tests.cpp \
   test/util_tests.cpp \
   test/validation_block_tests.cpp \

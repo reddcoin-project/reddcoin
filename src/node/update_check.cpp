@@ -1,0 +1,688 @@
+// Copyright (c) 2014-2026 The Reddcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include <node/update_check.h>
+
+#include <clientversion.h>
+#include <node/ca_store.h>
+#include <node/release_artifacts.h>
+#include <rpc/semver.h>
+#include <util/strencodings.h>
+#include <util/string.h>
+
+#include <univalue.h>
+
+// boost 1.71 predates OpenSSL 3.0 and its ssl wrapper still calls functions the
+// 3.x series deprecated, such as RSA_free and SSL_CTX_use_RSAPrivateKey. The
+// warnings come from boost rather than from anything here, and depends headers
+// are reached with -I rather than -isystem, so they would otherwise break any
+// build using -Werror.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+#include <boost/asio.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl.hpp>
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
+#include <openssl/crypto.h>
+#include <openssl/opensslv.h>
+#include <openssl/ssl.h>
+#include <openssl/tls1.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
+static std::string strDownloadLink = "https://download.reddcoin.com/bin/reddcoin-core-";
+static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/latest";
+
+namespace {
+//! Value of one header, matched case insensitively as RFC 7230 requires, or an
+//! empty string when the header is absent.
+//!
+//! headers is the status line plus the header block, without the blank line
+//! that terminates it. Matching walks line by line rather than searching the
+//! block for the name, so a name appearing inside some other header's value
+//! cannot be mistaken for the header itself.
+std::string GetHeader(const std::string& headers, const std::string& lower_name)
+{
+    std::string::size_type pos{headers.find("\r\n")};
+    while (pos != std::string::npos) {
+        const std::string::size_type start{pos + 2};
+        std::string::size_type end{headers.find("\r\n", start)};
+        const bool last_line{end == std::string::npos};
+        if (last_line) end = headers.size();
+
+        const std::string line{headers.substr(start, end - start)};
+        const std::string::size_type colon{line.find(':')};
+        if (colon != std::string::npos && ToLower(line.substr(0, colon)) == lower_name) {
+            return TrimString(line.substr(colon + 1));
+        }
+
+        if (last_line) break;
+        pos = end;
+    }
+    return "";
+}
+
+//! Parse a hexadecimal chunk size. Rejects an empty field, a non-hex
+//! character, and anything wider than 64 bits.
+bool ParseChunkSize(const std::string& str, uint64_t& out)
+{
+    if (str.empty() || str.size() > 16) return false;
+    uint64_t value{0};
+    for (const char c : str) {
+        const signed char digit{HexDigit(c)};
+        if (digit < 0) return false;
+        value = (value << 4) | static_cast<uint64_t>(digit);
+    }
+    out = value;
+    return true;
+}
+
+//! Reassemble a chunked body.
+//!
+//! Completeness is inherent here rather than checked afterwards: the loop only
+//! returns on the terminating zero length chunk, so a body that stops early
+//! throws instead of yielding what arrived. Chunk extensions and trailers are
+//! ignored, neither being used by anything this talks to.
+std::string DecodeChunkedBody(const std::string& body)
+{
+    std::string decoded;
+    std::string::size_type pos{0};
+
+    while (true) {
+        const std::string::size_type eol{body.find("\r\n", pos)};
+        if (eol == std::string::npos) {
+            throw std::runtime_error("Chunked response ended before its final chunk");
+        }
+
+        std::string size_field{body.substr(pos, eol - pos)};
+        const std::string::size_type extension{size_field.find(';')};
+        if (extension != std::string::npos) size_field = size_field.substr(0, extension);
+
+        uint64_t size{0};
+        if (!ParseChunkSize(TrimString(size_field), size)) {
+            throw std::runtime_error("Chunked response has an unusable chunk size");
+        }
+        pos = eol + 2;
+
+        // The zero length chunk ends the body. Anything after it is trailers.
+        if (size == 0) return decoded;
+
+        // Each chunk is followed by its own CRLF, so both it and the data have
+        // to be present. Compared this way round so neither side can overflow.
+        const std::string::size_type available{body.size() - pos};
+        if (size > available || available - size < 2) {
+            throw std::runtime_error("Chunked response ended mid-chunk");
+        }
+
+        decoded.append(body, pos, static_cast<std::string::size_type>(size));
+        pos += static_cast<std::string::size_type>(size);
+        if (body.compare(pos, 2, "\r\n") != 0) {
+            throw std::runtime_error("Chunked response has a malformed chunk terminator");
+        }
+        pos += 2;
+    }
+}
+
+const std::string UPDATE_CHECK_HOST{"api.github.com"};
+
+//! How long one step may make no progress before the exchange is abandoned.
+//!
+//! Reset by progress rather than counted from the start, so a slow but moving
+//! transfer is not cut off the way a single overall budget cuts it off. That
+//! distinction does not matter much for a few kilobytes of JSON; it is what
+//! makes the same fetcher usable for an artifact, which is why it changes here
+//! rather than in the phase that needs it.
+constexpr std::chrono::seconds IDLE_TIMEOUT{10};
+
+//! Ceiling on one exchange, redirects included.
+//!
+//! An idle timeout alone does not bound a server that sends a byte just often
+//! enough to keep resetting it. At the response ceiling below that is patient
+//! enough to run for months, so the pathological case needs its own bound. Set
+//! far above any honest exchange, since the idle timeout is what ends a normal
+//! failure.
+constexpr std::chrono::seconds TOTAL_TIMEOUT{120};
+
+//! Redirect hops to follow before giving up.
+//!
+//! Enough for the indirection a download host may grow, few enough that a
+//! redirect loop ends promptly. Each hop is a fresh connection with its own
+//! certificate verification against the host it actually reaches.
+constexpr int MAX_REDIRECTS{5};
+
+//! Ceiling on the whole response, headers included.
+//!
+//! The body is buffered in memory before it is parsed, so without a bound a
+//! hostile or broken server can make this allocate until the process dies. The
+//! release object this asks for runs to a few kilobytes, so a megabyte is two
+//! orders of magnitude of headroom and still nowhere near enough to hurt.
+//!
+//! This is not the size limit for downloading an artifact. That path does not
+//! exist yet, and when it does it must stream to disk rather than raise this.
+constexpr std::size_t MAX_RESPONSE_BYTES{1024 * 1024};
+
+/**
+ * One HTTPS exchange with one host.
+ *
+ * Boost's synchronous socket calls accept no timeout, which is why every step
+ * here is issued asynchronously and driven by a bounded run of the io_context.
+ * A stalled or unreachable server therefore costs IDLE_TIMEOUT rather than
+ * however long the operating system takes to abandon the connection.
+ *
+ * One instance is one connection to one host. A redirect is a different host as
+ * far as certificate verification is concerned, so following one means building
+ * another of these rather than reusing this.
+ */
+class HttpsConnection
+{
+public:
+    HttpsConnection(std::string host, std::chrono::steady_clock::time_point hard_deadline)
+        : m_host{std::move(host)},
+          m_hard_deadline{hard_deadline},
+          m_ssl_ctx{boost::asio::ssl::context::tls_client},
+          m_stream{m_ioc, m_ssl_ctx}
+    {
+        // Without this the connection is encrypted but unauthenticated: any
+        // party able to intercept it can present any certificate and substitute
+        // the response. The most useful thing that buys an attacker is silently
+        // suppressing upgrade notices, which is the wrong failure mode for the
+        // mechanism whose job is to get security fixes onto user machines.
+        const std::string ca_error{node::LoadTrustedCACertificates(m_ssl_ctx.native_handle())};
+        if (!ca_error.empty()) throw std::runtime_error(ca_error);
+
+        // verify_peer rejects a certificate that does not chain to one of those
+        // anchors; the callback additionally binds the certificate to the host
+        // that was asked for, so a valid certificate for some other name is no
+        // use. Boost 1.71 spells this rfc2818_verification; the
+        // host_name_verification that replaced it arrived in 1.73.
+        m_ssl_ctx.set_verify_mode(boost::asio::ssl::verify_peer);
+        m_ssl_ctx.set_verify_callback(boost::asio::ssl::rfc2818_verification(m_host));
+
+        // Server Name Indication. Without it a host that serves several names
+        // from one address, which includes anything behind a CDN, cannot tell
+        // which certificate to present and may not serve the request at all.
+        // This is a functional fix rather than a security one: the certificate
+        // is checked against m_host above regardless of what SNI asked for.
+        if (SSL_set_tlsext_host_name(m_stream.native_handle(), m_host.c_str()) != 1) {
+            throw std::runtime_error("Could not set the TLS server name for " + m_host);
+        }
+    }
+
+    //! Fetch target and return the raw response, status line and headers
+    //! included, so the caller can act on a redirect. Throws std::runtime_error
+    //! on any transport failure, including timeout.
+    std::string Get(const std::string& target, bool& clean_eof);
+
+private:
+    //! Pump the io_context until the outstanding operation reports back or the
+    //! deadline passes, then rethrow whatever it reported.
+    void Await(const std::string& what);
+
+    //! Give the next step a fresh idle window, without letting it run past the
+    //! ceiling on the exchange as a whole.
+    void ArmIdleTimer()
+    {
+        m_deadline = std::min(std::chrono::steady_clock::now() + IDLE_TIMEOUT, m_hard_deadline);
+    }
+
+    std::string m_host;
+    std::chrono::steady_clock::time_point m_hard_deadline;
+    std::chrono::steady_clock::time_point m_deadline{};
+    boost::asio::io_context m_ioc;
+    boost::asio::ssl::context m_ssl_ctx;
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> m_stream;
+    bool m_done{false};
+    boost::system::error_code m_ec{};
+};
+
+void HttpsConnection::Await(const std::string& what)
+{
+    m_ioc.restart();
+    while (!m_done) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= m_deadline) {
+            // An outstanding asynchronous operation cannot simply be abandoned:
+            // its handler holds references to objects owned by this class. Close
+            // the socket so the operation fails, then let the handler run before
+            // unwinding.
+            boost::system::error_code ignored_error;
+            m_stream.lowest_layer().close(ignored_error);
+            m_ioc.run();
+            throw std::runtime_error("Timed out while " + what);
+        }
+        m_ioc.run_one_for(m_deadline - now);
+    }
+    m_done = false;
+    if (m_ec) throw std::runtime_error("Failed while " + what + ": " + m_ec.message());
+}
+
+std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
+{
+    ArmIdleTimer();
+
+    boost::asio::ip::tcp::resolver resolver{m_ioc};
+    boost::asio::ip::tcp::resolver::results_type endpoints;
+    resolver.async_resolve(m_host, "https",
+        [&](const boost::system::error_code& ec, const boost::asio::ip::tcp::resolver::results_type& results) {
+            m_ec = ec;
+            endpoints = results;
+            m_done = true;
+        });
+    Await("resolving " + m_host);
+
+    ArmIdleTimer();
+    boost::asio::async_connect(m_stream.lowest_layer(), endpoints,
+        [&](const boost::system::error_code& ec, const boost::asio::ip::tcp::endpoint&) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("connecting to " + m_host);
+
+    ArmIdleTimer();
+    m_stream.async_handshake(boost::asio::ssl::stream_base::client,
+        [&](const boost::system::error_code& ec) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("performing the TLS handshake with " + m_host);
+
+    boost::asio::streambuf request;
+    std::ostream request_stream(&request);
+    request_stream << "GET " << target << " HTTP/1.1\r\n";
+    request_stream << "Host: " << m_host << "\r\n";
+    request_stream << "User-Agent: " << PACKAGE_NAME << "/" << PACKAGE_VERSION << "\r\n";
+    request_stream << "Accept: */*\r\n";
+    request_stream << "Connection: close\r\n\r\n";
+
+    ArmIdleTimer();
+    boost::asio::async_write(m_stream, request,
+        [&](const boost::system::error_code& ec, std::size_t) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("sending the request to " + m_host);
+
+    // The server was asked to close when done, so read to the end of the
+    // stream. Neither ending is an error here: a clean end of file means the
+    // peer sent close_notify, and a truncated stream means the connection went
+    // away without one, which plenty of servers do. They are not equivalent
+    // though, so which one arrived is carried out to the completeness check
+    // rather than being flattened into success.
+    //
+    // Read in a loop rather than in one call. Two things follow from that: each
+    // arrival of data is progress, so the idle window restarts, and the ceiling
+    // is enforced while reading rather than inspected afterwards.
+    //
+    // Enforcing it while reading is not a tidiness preference. A bounded
+    // streambuf does not report the bound being hit: asio stops once prepare()
+    // can yield nothing more and completes as though the stream had ended, so a
+    // truncated body arrives with no error at all. Growing the buffer under an
+    // explicit test removes the failure mode rather than detecting it after the
+    // fact.
+    clean_eof = false;
+    std::string raw;
+    std::array<char, 16 * 1024> chunk{};
+    for (;;) {
+        ArmIdleTimer();
+        std::size_t got{0};
+        m_stream.async_read_some(boost::asio::buffer(chunk),
+            [&](const boost::system::error_code& ec, std::size_t bytes) {
+                got = bytes;
+                clean_eof = (ec == boost::asio::error::eof);
+                m_ec = (ec == boost::asio::error::eof || ec == boost::asio::ssl::error::stream_truncated)
+                           ? boost::system::error_code{}
+                           : ec;
+                m_done = true;
+            });
+        const bool finished{[&] {
+            Await("reading the response from " + m_host);
+            return clean_eof || got == 0;
+        }()};
+
+        if (got > 0) {
+            if (raw.size() + got > MAX_RESPONSE_BYTES) {
+                throw std::runtime_error("Response from " + m_host + " exceeded " +
+                                         ToString(MAX_RESPONSE_BYTES) + " bytes");
+            }
+            raw.append(chunk.data(), got);
+        }
+        if (finished) break;
+    }
+
+    return raw;
+}
+
+//! Where a redirect points, given the response that carried it.
+struct Redirect {
+    std::string host;
+    std::string target;
+};
+
+/**
+ * Fetch a target from a host, following redirects, and return the body.
+ *
+ * Each hop is a new connection and therefore a new certificate check against
+ * the host actually reached. A redirect that leaves https is refused rather
+ * than followed: silently continuing over plaintext would discard the
+ * verification this fetcher exists to perform.
+ */
+std::string HttpsGet(const std::string& start_host, const std::string& start_target)
+{
+    const auto hard_deadline{std::chrono::steady_clock::now() + TOTAL_TIMEOUT};
+    std::string host{start_host};
+    std::string target{start_target};
+
+    for (int hop{0}; hop <= MAX_REDIRECTS; ++hop) {
+        HttpsConnection connection{host, hard_deadline};
+        bool clean_eof{false};
+        const std::string raw{connection.Get(target, clean_eof)};
+
+        const node::HttpResponse response{node::ParseHttpResponse(raw, clean_eof)};
+        if (response.status == 200) return response.body;
+
+        if (response.status < 300 || response.status >= 400) {
+            throw std::runtime_error("Response returned with status code " + ToString(response.status));
+        }
+        if (response.location.empty()) {
+            throw std::runtime_error("Response returned status code " + ToString(response.status) +
+                                     " without a Location header");
+        }
+        const node::Url next{node::ResolveRedirect(host, target, response.location)};
+        host = next.host;
+        target = next.target;
+    }
+
+    throw std::runtime_error("Gave up after " + ToString(MAX_REDIRECTS) + " redirects");
+}
+} // namespace
+
+node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool clean_eof)
+{
+    HttpResponse out;
+
+    // Status line.
+    const std::string::size_type eol{raw_response.find("\r\n")};
+    if (eol == std::string::npos) throw std::runtime_error("Invalid response");
+    std::istringstream status_stream{raw_response.substr(0, eol)};
+    std::string http_version;
+    unsigned int status_code{0};
+    status_stream >> http_version >> status_code;
+    if (!status_stream || http_version.substr(0, 5) != "HTTP/") {
+        throw std::runtime_error("Invalid response");
+    }
+    out.status = status_code;
+
+    // Headers are terminated by a blank line; everything after it is the body.
+    const std::string::size_type terminator{raw_response.find("\r\n\r\n")};
+    if (terminator == std::string::npos) throw std::runtime_error("Invalid response");
+    const std::string headers{raw_response.substr(0, terminator)};
+    std::string body{raw_response.substr(terminator + 4)};
+
+    // A chunked body carries its own framing, so the chunk sizes have to be
+    // stripped out before anything downstream sees the content. api.github.com
+    // does use this: it answers with Content-Length most of the time and
+    // switches to chunked intermittently, so a client that cannot reassemble a
+    // chunked body fails a fraction of its checks for no visible reason.
+    //
+    // Content-Length is not consulted in this case. RFC 7230 forbids sending
+    // both, and the terminating chunk is what proves the body is complete.
+    out.location = GetHeader(headers, "location");
+
+    // A redirect's body is discarded, so its framing is not checked. Rejecting
+    // a valid redirect because the server closed without a Content-Length would
+    // fail the exchange over a body nothing reads.
+    if (out.status != 200) {
+        out.body = body;
+        return out;
+    }
+
+    const std::string transfer_encoding{ToLower(GetHeader(headers, "transfer-encoding"))};
+    if (!transfer_encoding.empty()) {
+        if (transfer_encoding != "chunked") {
+            throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
+        }
+        out.body = DecodeChunkedBody(body);
+        return out;
+    }
+
+    const std::string content_length{GetHeader(headers, "content-length")};
+    if (!content_length.empty()) {
+        int64_t expected{0};
+        if (!ParseInt64(content_length, &expected) || expected < 0) {
+            throw std::runtime_error("Response has an unusable Content-Length: " + content_length);
+        }
+        if (body.size() != static_cast<std::string::size_type>(expected)) {
+            throw std::runtime_error("Incomplete response: got " + ToString(body.size()) +
+                                     " of " + content_length + " bytes");
+        }
+    } else if (!clean_eof) {
+        // Without a Content-Length the body runs until the connection closes,
+        // so a clean shutdown is the only evidence that all of it arrived.
+        throw std::runtime_error("Response gave no Content-Length and ended without a clean shutdown");
+    }
+
+    out.body = body;
+    return out;
+}
+
+std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eof)
+{
+    const HttpResponse response{ParseHttpResponse(raw_response, clean_eof)};
+    if (response.status != 200) {
+        throw std::runtime_error("Response returned with status code " + ToString(response.status));
+    }
+    return response.body;
+}
+
+node::Url node::ResolveRedirect(const std::string& base_host, const std::string& base_target,
+                                const std::string& location)
+{
+    if (location.empty()) throw std::runtime_error("Redirect has an empty Location");
+
+    // Absolute, or protocol relative. Anything that is not https is refused
+    // rather than followed: continuing over plaintext would quietly discard the
+    // certificate verification this client exists to perform, and a redirect is
+    // exactly where an attacker would try to introduce that.
+    std::string rest;
+    if (location.compare(0, 8, "https://") == 0) {
+        rest = location.substr(8);
+    } else if (location.compare(0, 2, "//") == 0) {
+        rest = location.substr(2);
+    } else if (location.find("://") != std::string::npos) {
+        throw std::runtime_error("Refusing to follow a redirect that leaves https: " + location);
+    } else {
+        // Same host. An absolute path replaces the target; anything else is
+        // relative to the directory the current target sits in.
+        if (location[0] == '/') return Url{base_host, location};
+        const std::string::size_type slash{base_target.rfind('/')};
+        const std::string dir{slash == std::string::npos ? "/" : base_target.substr(0, slash + 1)};
+        return Url{base_host, dir + location};
+    }
+
+    const std::string::size_type slash{rest.find('/')};
+    const std::string host{slash == std::string::npos ? rest : rest.substr(0, slash)};
+    const std::string target{slash == std::string::npos ? "/" : rest.substr(slash)};
+    if (host.empty()) throw std::runtime_error("Redirect has no host: " + location);
+
+    // A port would need carrying through to the connect, which nothing this
+    // talks to requires. Refusing is honest; quietly ignoring it would connect
+    // somewhere other than where the server asked.
+    if (host.find(':') != std::string::npos) {
+        throw std::runtime_error("Refusing to follow a redirect to a non-default port: " + location);
+    }
+    return Url{host, target};
+}
+
+void node::CheckForUpdates(UniValue& result)
+{
+    std::string installedVersion = PACKAGE_VERSION;
+    std::string repositoryVersion = "";
+    std::string localVersion = "";
+    std::string remoteVersion = "";
+    bool updateAvailable = false;
+    std::string message = "";
+    std::string warning = "";
+    std::string officialDownloadLink = "";
+    std::string errors = "";
+    std::string platform = "";
+    std::string guiArtifact = "";
+    std::string guiArtifactLink = "";
+    std::string daemonArtifact = "";
+    std::string daemonArtifactLink = "";
+
+    try {
+        const std::string str_response{HttpsGet(UPDATE_CHECK_HOST, strGithubLink)};
+
+        // read response into Univalue Obj
+        UniValue obj_response(UniValue::VOBJ);
+
+        auto success = obj_response.read(str_response);
+
+        if (success) {
+            if (obj_response.exists("tag_name")) {
+                repositoryVersion = obj_response["tag_name"].get_str();
+
+                /** Accepts three- and four-component versions, with or without a
+                 * leading "v" and an optional alpha/beta/rc suffix:
+                 *
+                 *   v4.22.9      v4.22.9.4      v4.22.0-alpha-1      v4.22.5-rc.1
+                 *
+                 * Match 1: major        Match 2: minor        Match 3: revision
+                 * Match 4: build, the point-release number, absent on a
+                 *          three-component version
+                 * Match 5: prerelease tag       Match 6: prerelease number
+                 *
+                 * Anchoring is deliberate. An unanchored search for three
+                 * components slides past the major on a four-component string,
+                 * so "4.22.9.4" matched as "22.9.4" and compared greater than
+                 * any real release, silently suppressing the update notice.
+                 *
+                 * semver has no fourth component, so it orders the first three
+                 * plus any prerelease tag and the build number breaks ties.
+                 */
+                std::regex versionRgx(R"(^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:\.([0-9]+))?(?:[-.]?(alpha|beta|rc)[-.]?([0-9A-Za-z.-]*))?$)");
+
+                struct ParsedVersion {
+                    semver::version core;   //!< first three components plus prerelease
+                    int build{0};           //!< fourth component, 0 when absent
+                    std::string numeric;    //!< "4.22.9" or "4.22.9.4"
+                    std::string text;       //!< as supplied, without a leading "v"
+                    std::string prerelease_tag;
+                    std::string prerelease_num;
+                };
+
+                const auto parse_version = [&versionRgx](const std::string& raw) {
+                    std::smatch m;
+                    if (!std::regex_match(raw, m, versionRgx)) {
+                        throw std::runtime_error("unrecognised version string: " + raw);
+                    }
+                    ParsedVersion parsed;
+                    parsed.numeric = m[1].str() + "." + m[2].str() + "." + m[3].str();
+                    std::string core{parsed.numeric};
+                    if (m[5].matched && !m[5].str().empty()) {
+                        parsed.prerelease_tag = m[5].str();
+                        parsed.prerelease_num = m[6].str();
+                        core += "-" + parsed.prerelease_tag;
+                        if (!parsed.prerelease_num.empty()) core += "." + parsed.prerelease_num;
+                    }
+                    parsed.core = semver::version::parse(core, false);
+                    if (m[4].matched && !m[4].str().empty()) {
+                        // std::stoi is locale dependent and rejected by
+                        // test/lint/lint-locale-dependence.sh.
+                        int32_t build{0};
+                        if (!ParseInt32(m[4].str(), &build)) {
+                            throw std::runtime_error("unparsable version component in: " + raw);
+                        }
+                        parsed.build = build;
+                        parsed.numeric += "." + m[4].str();
+                    }
+                    parsed.text = (!raw.empty() && raw.front() == 'v') ? raw.substr(1) : raw;
+                    return parsed;
+                };
+
+                const ParsedVersion local{parse_version(installedVersion)};
+                const ParsedVersion remote{parse_version(repositoryVersion)};
+                localVersion = local.text;
+                remoteVersion = remote.text;
+
+                const bool remote_is_newer{remote.core > local.core ||
+                                           (remote.core == local.core && remote.build > local.build)};
+                const bool same_version{remote.core == local.core && remote.build == local.build};
+
+                if (remote_is_newer) {
+                    updateAvailable = true;
+                    message = "Please download the latest version (" + remote.text + ") from our official website";
+                } else if (same_version) {
+                    message = "You're running the most recent version of Reddcoin Core (" + local.text + ")";
+                }
+
+                // Build direct download link
+                officialDownloadLink = strDownloadLink + remote.numeric;
+                if (remote.core.is_prerelease()) {
+                    officialDownloadLink += "/" + remote.prerelease_tag + remote.prerelease_num;
+                }
+
+                // Name the exact file this host needs, so a caller can offer a
+                // download rather than a directory to read.
+                //
+                // Not attempted for a prerelease. No prerelease has ever been
+                // published, so the naming convention for one is unverified,
+                // and naming a file that does not exist is worse than naming
+                // none: it turns a working notice into a broken link.
+                if (!remote.core.is_prerelease()) {
+                    ReleaseArtifacts artifacts;
+                    if (GetReleaseArtifactsForThisHost(remote.numeric, artifacts)) {
+                        platform = artifacts.platform;
+                        guiArtifact = artifacts.gui;
+                        daemonArtifact = artifacts.daemon;
+                        guiArtifactLink = officialDownloadLink + "/" + artifacts.gui;
+                        daemonArtifactLink = officialDownloadLink + "/" + artifacts.daemon;
+                    }
+                }
+            }
+        }
+
+        std::string preleaseWarning = "";
+
+        // Display pre-release note if the installed version is a pre-release version
+        if (!CLIENT_VERSION_IS_RELEASE) {
+            warning = "This is a pre-release test build - use at your own risk - do not use for staking or merchant applications";
+        }
+
+    } catch (std::exception& e) {
+        errors = e.what();
+    }
+
+    result.pushKV("localversion", localVersion);
+    result.pushKV("remoteversion", remoteVersion);
+    result.pushKV("updateavailable", updateAvailable);
+    result.pushKV("message", message);
+    result.pushKV("warning", warning);
+    result.pushKV("officialDownloadLink", officialDownloadLink);
+    // Empty rather than absent when the host publishes no build, or when the
+    // check did not get far enough to know, so the shape of the result does not
+    // depend on whether it succeeded.
+    result.pushKV("hosttriplet", HostTriplet());
+    result.pushKV("platform", platform);
+    result.pushKV("guiartifact", guiArtifact);
+    result.pushKV("guiartifactlink", guiArtifactLink);
+    result.pushKV("daemonartifact", daemonArtifact);
+    result.pushKV("daemonartifactlink", daemonArtifactLink);
+    result.pushKV("errors", errors);
+}
