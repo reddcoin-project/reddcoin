@@ -310,6 +310,47 @@ trust:
 
 That runs the official BIP340 vectors and must report all of them passing.
 
+#### Generate the key, once
+
+Only for the first release signed with a given key, or for a rotation. Skip this
+if a key already exists; the public key below tells you whether it does.
+
+```bash
+./contrib/release-signing/sign-release-manifest.py generate
+```
+
+That prints twenty four words and the public key they derive. Nothing is written
+to disk, deliberately: a file holding the mnemonic is a file that gets backed up,
+synced, or left on a machine that was supposed to be wiped, and the tool is not
+in a position to know which. Write the words on paper.
+
+Entropy comes from the platform CSPRNG. For a key with no expiry you may prefer
+not to trust one generator on one machine, in which case supply your own from
+dice or coin flips:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py generate --entropy-hex "$(cat dice.hex)"
+```
+
+That takes 32 bytes as 64 hex characters for a 24-word phrase. 256 dice rolls
+recorded in base 6 and converted, or 256 coin flips, both work.
+
+⚠ **Restore the backup before trusting it.** Type the words from the paper copy,
+not from the screen, into a scratch file and check they derive the same key:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py pubkey --mnemonic /path/to/scratch.txt
+```
+
+It must print the public key `generate` showed. A transcription error is caught
+here or it is caught years later when the backup is the only copy left. Remove
+the scratch file afterwards.
+
+⚠ **Then record the public key in the release process**, in "The release key"
+below, on both maintained lines. The client is built with that value compiled in,
+so it is the anchor for every verification; a key that exists but is written down
+nowhere is not usable by anyone else.
+
 #### Sign
 
 Carry `SHA256SUMS` in, and carry `SHA256SUMS.sig` back out. Nothing else crosses

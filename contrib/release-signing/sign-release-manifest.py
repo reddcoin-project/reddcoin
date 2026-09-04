@@ -16,6 +16,7 @@ SHA256SUMS.sig comes out.
 Subcommands:
 
     selftest   run the official BIP340 test vectors
+    generate   create a new release key and print its mnemonic
     pubkey     print the x-only public key for a mnemonic
     sign       sign a manifest
     verify     check a signature against a manifest and a public key
@@ -30,6 +31,7 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
 import sys
 import unicodedata
 
@@ -141,6 +143,24 @@ def check_mnemonic(mnemonic):
             "this is not the phrase you think it is")
 
 
+def mnemonic_from_entropy(entropy):
+    """BIP39 mnemonic for a block of entropy.
+
+    The inverse of the checksum test in check_mnemonic: append the first
+    len(entropy)/4 bits of SHA256(entropy), then read the result 11 bits at a
+    time as indices into the wordlist.
+    """
+    if len(entropy) not in (16, 20, 24, 28, 32):
+        raise SystemExit("entropy must be 16, 20, 24, 28 or 32 bytes, got {}".format(len(entropy)))
+
+    checksum_bits = len(entropy) * 8 // 32
+    bits = "".join(format(b, "08b") for b in entropy)
+    bits += format(hashlib.sha256(entropy).digest()[0], "08b")[:checksum_bits]
+
+    wordlist = load_wordlist()
+    return " ".join(wordlist[int(bits[i:i + 11], 2)] for i in range(0, len(bits), 11))
+
+
 def bip39_seed(mnemonic, passphrase=""):
     """BIP39 mnemonic to 64-byte seed."""
     mnemonic = unicodedata.normalize("NFKD", " ".join(mnemonic.split()))
@@ -228,6 +248,65 @@ def cmd_selftest(_args):
     return 0
 
 
+def cmd_generate(args):
+    """Create a release key and print the words that reproduce it.
+
+    Deliberately writes nothing to disk. A file holding the mnemonic is a file
+    that gets backed up, synced, or left behind on a machine that was supposed
+    to be wiped, and this tool is not in a position to know which. Transcribe
+    the words onto paper, then type them into a file when there is a manifest to
+    sign, and remove that file afterwards.
+    """
+    if args.entropy_hex:
+        # For entropy generated off the machine: dice, coin flips, a hardware
+        # source. Worth supporting for a key with no expiry, where trusting one
+        # CSPRNG on one box is a choice rather than a default.
+        try:
+            entropy = bytes.fromhex(args.entropy_hex.strip())
+        except ValueError:
+            raise SystemExit("--entropy-hex is not valid hexadecimal")
+        expected = args.words * 32 // 24
+        if len(entropy) != expected:
+            raise SystemExit(
+                "a {}-word mnemonic needs {} bytes of entropy, got {}".format(
+                    args.words, expected, len(entropy)))
+        source = "supplied with --entropy-hex"
+    else:
+        entropy = secrets.token_bytes(args.words * 32 // 24)
+        source = "secrets.token_bytes, the platform CSPRNG"
+
+    mnemonic = mnemonic_from_entropy(entropy)
+
+    # Prove the words reproduce a key before showing them to anyone. A
+    # generation bug that produced an unusable phrase would otherwise surface
+    # months later, when the backup is the only copy left.
+    check_mnemonic(mnemonic)
+    pubkey = xonly_pubkey(derive_release_key(mnemonic))
+
+    words = mnemonic.split()
+    print("Release key, {} words, entropy from {}.\n".format(len(words), source))
+    for row in range(0, len(words), 3):
+        print("   " + "".join("{:>3}. {:<12}".format(row + col + 1, words[row + col])
+                              for col in range(min(3, len(words) - row))))
+    print()
+    print("path        {}".format(DERIVATION_PATH))
+    print("public key  {}".format(pubkey.hex()))
+    print()
+    print("Write the words down now, on paper, and keep at least one copy away from")
+    print("this machine. Nothing was saved to disk. There is no delegation chain and")
+    print("no recovery other than these words: losing them ends the ability to sign")
+    print("for every client that ships the public key above.")
+    print()
+    print("Then check the recovery works before trusting it, from the written copy")
+    print("rather than from this screen:")
+    print()
+    print("    {} pubkey --mnemonic <file>".format(os.path.basename(__file__)))
+    print()
+    print("It must print the same public key. A backup that has never been restored")
+    print("is a hypothesis.")
+    return 0
+
+
 def cmd_pubkey(args):
     privkey = derive_release_key(read_text(args.mnemonic),
                                  read_text(args.passphrase) if args.passphrase else "")
@@ -291,6 +370,13 @@ def main():
 
     sub.add_parser("selftest", help="run the official BIP340 test vectors")
 
+    p = sub.add_parser("generate", help="create a new release key and print its mnemonic")
+    p.add_argument("--words", type=int, default=24, choices=[12, 15, 18, 21, 24],
+                   help="mnemonic length (default: 24, for 256 bits of entropy)")
+    p.add_argument("--entropy-hex",
+                   help="use this entropy instead of the platform CSPRNG, for dice or "
+                        "another off-machine source")
+
     p = sub.add_parser("pubkey", help="print the x-only public key for a mnemonic")
     p.add_argument("--mnemonic", required=True, help="file holding the BIP39 mnemonic")
     p.add_argument("--passphrase", help="file holding the BIP39 passphrase, if any")
@@ -309,6 +395,7 @@ def main():
     args = parser.parse_args()
     return {
         "selftest": cmd_selftest,
+        "generate": cmd_generate,
         "pubkey": cmd_pubkey,
         "sign": cmd_sign,
         "verify": cmd_verify,
