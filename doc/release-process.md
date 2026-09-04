@@ -222,16 +222,218 @@ git push  # Assuming you can push to the guix.sigs tree
 popd
 ```
 
-### After 3 or more people have guix-built and their results match:
+### Sign the manifest that will be published
 
-Combine the `all.SHA256SUMS.asc` file from all signers into `SHA256SUMS.asc`:
+Reddcoin releases are signed by one release manager rather than by three or more
+independent builders, so the upstream step of concatenating every signer's
+`all.SHA256SUMS.asc` does not apply. Sign the manifest directly instead.
+
+**Sign the exact bytes you are going to publish.** `all.SHA256SUMS` is not that
+file. `guix-attest` writes it over *every* fragment, which includes artifacts
+that are deliberately not uploaded:
+
+- `reddcoin-${VERSION}-codesignatures-${VERSION}.tar.gz`, an intermediate of the
+  codesigning step
+- the `*-debug*` archives, which the upload step below excludes on purpose
+
+Listing either in the published manifest leaves entries no one can download, so
+`sha256sum -c SHA256SUMS` in the download directory fails on them. Signing
+`all.SHA256SUMS` and publishing a different file is worse still: the signature
+then reports BAD against what was actually uploaded, which is indistinguishable
+from tampering.
+
+The difference is not fixed from release to release either. 4.22.9 shipped
+without macOS codesigning, so its `all.SHA256SUMS` happened to match what was
+published; 4.22.9.4's did not. Derive the manifest every time rather than
+assuming.
+
+Build the manifest and sign it in one place:
 
 ```bash
-cat "$VERSION"/*/all.SHA256SUMS.asc > SHA256SUMS.asc
+# The release key's full fingerprint, as listed in contrib/builder-keys/keys.txt.
+SIGNER_KEY='ABEDC4489B9188E45C2342A82E91240B293BA5D3'
+
+cd guix-build-${VERSION}/output
+
+# The published manifest: only the artifacts that are actually uploaded.
+# Nothing under contrib/guix does this filtering. libexec/build.sh builds each
+# SHA256SUMS.part from `find "$ACTUAL_OUTDIR" -type f`, so every artifact is
+# listed, and guix-attest only concatenates those fragments. That is correct for
+# the guix.sigs attestations, which are meant to cover everything that was
+# built; it is the published manifest that has to be narrowed, here.
+# This exclusion must stay in step with the upload command further down, which
+# skips the same files with -not -name "*debug*".
+grep -v codesignatures all.SHA256SUMS | grep -v -- '-debug' > SHA256SUMS
+
+gpg --detach-sign --armor --digest-algo sha256 \
+    --local-user "$SIGNER_KEY" \
+    -o SHA256SUMS.asc SHA256SUMS
 ```
 
+Verify before uploading anything. This must report a good signature from the
+release key:
 
-- Upload to the bitcoincore.org server (`/var/www/bin/bitcoin-core-${VERSION}/`):
+```bash
+gpg --verify SHA256SUMS.asc SHA256SUMS
+```
+
+Upload `SHA256SUMS` and `SHA256SUMS.asc` together, and re-upload both if either
+is regenerated. A signature uploaded beside an older manifest verifies as BAD,
+which is a worse outcome than the missing signature it replaced.
+
+Both files go to the server together. Publishing `SHA256SUMS` without its
+signature leaves the manifest authenticated by nothing but TLS to the web host,
+which is the state every release up to and including 4.22.9.4 shipped in.
+
+### Sign the manifest for the client
+
+`SHA256SUMS.asc` proves the release to a person with OpenPGP tooling.
+`SHA256SUMS.sig` proves it to the client, which has no OpenPGP and, on Windows,
+no `gpgv` either. Both cover the same manifest and both are published.
+
+The client verifies against a public key compiled into it, so this signature is
+made with a key whose private half **never touches a networked machine**. It
+lives on an air-gapped box, derived from a BIP39 mnemonic held offline.
+
+`contrib/release-signing/sign-release-manifest.py` does the signing. It needs
+nothing but Python and this repository: the BIP340 implementation and the
+official test vectors it uses already live in `test/functional/test_framework`.
+
+#### First, on the air-gapped machine
+
+Prove the crypto works on that machine before it signs anything users will
+trust:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py selftest
+```
+
+That runs the official BIP340 vectors and must report all of them passing.
+
+#### Sign
+
+Carry `SHA256SUMS` in, and carry `SHA256SUMS.sig` back out. Nothing else crosses
+the gap, and the mnemonic never leaves:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py sign SHA256SUMS \
+    --mnemonic /path/to/mnemonic.txt
+```
+
+A mistyped mnemonic is rejected rather than signed with: the words are checked
+against the BIP39 list and the phrase against its own checksum. That matters
+most when recovering onto a rebuilt machine, where a wrong word would otherwise
+derive a perfectly usable key for a wallet that has never signed anything.
+
+What the checksum cannot tell you is whether a valid phrase is the *right*
+phrase, so the tool also prints the public key it signed with. **Check that
+against the release key below before publishing.** A signature made with the
+wrong key verifies happily against itself and against nothing any released
+client will accept, so this is the one check that cannot be skipped.
+
+#### Verify before uploading
+
+On the build host, against the manifest as it will be published:
+
+```bash
+./contrib/release-signing/sign-release-manifest.py verify SHA256SUMS SHA256SUMS.sig \
+    --pubkey "$RELEASE_PUBKEY"
+```
+
+It exits non-zero on a bad signature, so it is safe to gate an upload on.
+
+Upload `SHA256SUMS.sig` beside `SHA256SUMS` and `SHA256SUMS.asc`. The same rule
+applies as for the `.asc`: if the manifest is regenerated, **both** signatures
+have to be regenerated and re-uploaded with it, or they verify as BAD against
+what is served.
+
+#### The release key
+
+```
+derivation   m/1018'/4'/0'  (BIP39 mnemonic -> BIP32, all elements hardened)
+public key   (fill in when the production key is generated)
+```
+
+Deliberately not a wallet path. Reddcoin wallets derive under `m/44'/4'/...`, and
+a release key that could collide with a spending key is a bad idea however
+unlikely the collision. `4'` is Reddcoin's SLIP-0044 coin type, matching
+`nExtCoinType`; the trailing index is the rotation slot, so a replacement key is
+`1'` from the same backup rather than a new seed.
+
+Purpose `1018'` had no claimant when it was assigned, checked against the BIP43
+registry and against known unregistered users. Its neighbour `1017'` is lnd's,
+which derives Lightning keys under `m/1017'/coinType'/keyFamily'/0/index`.
+
+⚠ **The path is part of the key.** A mnemonic does not identify a key without
+it, so changing the path after a key exists is changing the key, and every
+client carrying the old public key stops verifying. Fix it before generating the
+production key, not after.
+
+⚠ **The tag is part of the format.** The signature is over
+`TaggedHash("Reddcoin/ReleaseManifest")` of the manifest bytes, matching
+`TaggedHash()` in `src/hash.h`. Changing the tag invalidates every signature any
+released client will accept.
+
+The public key is compiled into the client, so **rotating it requires a client
+release**. That cost was accepted deliberately: any automatic client-side
+verification needs a trust anchor, and the alternative was verifying nothing.
+Recovery from a lost signing machine is the offline mnemonic backup, not a
+delegation chain, so treat that backup with the care a wallet seed gets.
+
+### Publishing the release key
+
+A signature is only useful to someone who can obtain the key that made it. The
+fingerprint belongs in [`contrib/builder-keys/keys.txt`](/contrib/builder-keys/keys.txt),
+and the key itself has to be fetchable from somewhere the verifier already
+trusts. Publish it to both keyservers, since they behave differently and are
+consulted by different tools:
+
+```bash
+SIGNER_KEY='ABEDC4489B9188E45C2342A82E91240B293BA5D3'
+
+gpg --keyserver hkps://keys.openpgp.org  --send-keys "$SIGNER_KEY"
+gpg --keyserver hkps://keyserver.ubuntu.com --send-keys "$SIGNER_KEY"
+```
+
+`keys.openpgp.org` accepts the upload immediately but publishes the user ID only
+once the address on the key has been confirmed by email, so answer its
+verification message. **Until that is done the upload is of no use to anyone.**
+The key is served, and a fingerprint lookup returns it, but it comes back with no
+user ID attached, and `gpg --import` refuses a key in that state:
+
+```
+gpg: Total number processed: 1
+gpg:           w/o user IDs: 1
+```
+
+so nothing lands in the verifier's keyring. Lookup by email returns 404 as well.
+`keys.openpgp.org` also accepts a single user ID and strips all third-party
+signatures, distributing only self-signatures. `keyserver.ubuntu.com` performs
+none of this validation, accepts whatever it is given, and serves the key with
+its user ID straight away, which is the other reason to publish to both.
+
+Confirm both are serving the key before relying on either:
+
+```bash
+curl -sf "https://keys.openpgp.org/vks/v1/by-fingerprint/${SIGNER_KEY}" | gpg --show-keys
+curl -sf "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${SIGNER_KEY}" | gpg --show-keys
+```
+
+Each should print the fingerprint above with the release manager's user ID. A
+200 response alone is not sufficient evidence: a keyserver can answer a lookup
+that found nothing with a page that is not a key, so pipe the result through
+`gpg --show-keys` rather than checking the status code.
+
+Keep an armoured copy on the download server as well, so verification does not
+depend on a keyserver being reachable:
+
+```bash
+gpg --export --armor "$SIGNER_KEY" > reddcoin-release-key.asc
+```
+
+### Publish the release
+
+- Upload to the download server (`download.reddcoin.com`, `bin/reddcoin-core-${VERSION}/`):
     1. The contents of each `./bitcoin/guix-build-${VERSION}/output/${HOST}/` directory, except for
        `*-debug*` files.
 
@@ -248,12 +450,58 @@ cat "$VERSION"/*/all.SHA256SUMS.asc > SHA256SUMS.asc
        nor put them in the torrent*.
 
        ```sh
-       find guix-build-${VERSION}/output/ -maxdepth 2 -type f -not -name "SHA256SUMS.part" -and -not -name "*debug*" -exec scp {} user@bitcoincore.org:/var/www/bin/bitcoin-core-${VERSION} \;
+       find guix-build-${VERSION}/output/ -maxdepth 2 -type f -not -name "SHA256SUMS.part" -and -not -name "*debug*" -exec scp {} user@download.reddcoin.com:bin/reddcoin-core-${VERSION} \;
        ```
 
     2. The `SHA256SUMS` file
 
-    3. The `SHA256SUMS.asc` combined signature file you just created
+    3. The `SHA256SUMS.asc` detached signature you just created and verified
+
+    4. The `SHA256SUMS.sig` Schnorr signature the client verifies
+
+### Verify the published release
+
+Check the upload the way a user will, from the server rather than from the build
+tree. This is what catches a manifest that lists files which were never
+uploaded, and a signature that was regenerated without its manifest:
+
+```bash
+base="https://download.reddcoin.com/bin/reddcoin-core-${VERSION}"
+cd "$(mktemp -d)"
+
+curl -sO "$base/SHA256SUMS"
+curl -sO "$base/SHA256SUMS.asc"
+
+# Must report a good signature from the release key, against the published
+# manifest and not a local copy of it.
+gpg --verify SHA256SUMS.asc SHA256SUMS
+
+# Every file the manifest names must be downloadable, and must hash correctly.
+# This fetches the whole release, so expect it to take a while.
+awk '{print $2}' SHA256SUMS | while read -r f; do curl -sO "$base/$f"; done
+sha256sum -c SHA256SUMS
+```
+
+`sha256sum -c` has to come out clean with no `--ignore-missing`. Needing that
+flag means the manifest lists something that was not uploaded, and a verifier
+who sees failures cannot tell a deliberate omission from a corrupted download.
+
+Verifying with a keyring that already trusts the release key proves less than it
+appears to. To check what a new user actually experiences, fetch the key from a
+keyserver into a throwaway keyring first:
+
+```bash
+export GNUPGHOME="$(mktemp -d)"
+curl -sf "https://keys.openpgp.org/vks/v1/by-fingerprint/${SIGNER_KEY}" | gpg --import
+gpg --verify SHA256SUMS.asc SHA256SUMS
+```
+
+A warning that the key is not certified is expected there and is not a failure:
+a fresh keyring has no trust path to any key. What matters is `Good signature`
+and a primary key fingerprint matching
+[`contrib/builder-keys/keys.txt`](/contrib/builder-keys/keys.txt).
+
+### Distribute and announce
 
 - Create a torrent of the `/var/www/bin/bitcoin-core-${VERSION}` directory such
   that at the top level there is only one file: the `bitcoin-core-${VERSION}`
