@@ -392,7 +392,7 @@ what is served.
 
 ```
 derivation   m/1018'/4'/0'  (BIP39 mnemonic -> BIP32, all elements hardened)
-public key   (fill in when the production key is generated)
+public key   23e6b696f2b69cd753de0d8fe3875e989085fbb6f2dc09026ba8ba1df33585db
 ```
 
 Deliberately not a wallet path. Reddcoin wallets derive under `m/44'/4'/...`, and
