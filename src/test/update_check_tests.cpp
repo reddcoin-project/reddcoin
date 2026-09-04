@@ -14,6 +14,10 @@
 #include <string>
 
 using node::ExtractHttpBody;
+using node::HttpResponse;
+using node::ParseHttpResponse;
+using node::ResolveRedirect;
+using node::Url;
 
 namespace {
 //! The body every positive case expects back, shaped like the response the
@@ -198,6 +202,100 @@ BOOST_AUTO_TEST_CASE(non_200_status_is_rejected)
         const std::string response{"HTTP/1.1 " + status + "\r\nContent-Length: 0\r\n\r\n"};
         BOOST_CHECK_THROW(ExtractHttpBody(response, true), std::runtime_error);
     }
+}
+
+//! Redirects, added with phase 3a. The fetcher follows them now, so where a
+//! Location points is a decision the client makes and therefore one to pin down.
+
+BOOST_AUTO_TEST_CASE(an_absolute_redirect_changes_host_and_target)
+{
+    const Url next{ResolveRedirect("api.github.com", "/repos/x/releases/latest",
+                                   "https://download.reddcoin.com/bin/file.tar.gz")};
+    BOOST_CHECK_EQUAL(next.host, "download.reddcoin.com");
+    BOOST_CHECK_EQUAL(next.target, "/bin/file.tar.gz");
+}
+
+BOOST_AUTO_TEST_CASE(an_absolute_path_keeps_the_host)
+{
+    const Url next{ResolveRedirect("download.reddcoin.com", "/bin/old/file", "/bin/new/file")};
+    BOOST_CHECK_EQUAL(next.host, "download.reddcoin.com");
+    BOOST_CHECK_EQUAL(next.target, "/bin/new/file");
+}
+
+BOOST_AUTO_TEST_CASE(a_relative_redirect_resolves_against_the_directory)
+{
+    // Relative to the directory of the current target, not to its full path,
+    // which would otherwise produce /bin/reddcoin-core-4.22.9.4/SHA256SUMSother.
+    const Url next{ResolveRedirect("download.reddcoin.com",
+                                   "/bin/reddcoin-core-4.22.9.4/SHA256SUMS", "SHA256SUMS.sig")};
+    BOOST_CHECK_EQUAL(next.target, "/bin/reddcoin-core-4.22.9.4/SHA256SUMS.sig");
+}
+
+BOOST_AUTO_TEST_CASE(a_protocol_relative_redirect_stays_on_https)
+{
+    const Url next{ResolveRedirect("api.github.com", "/x", "//example.org/y")};
+    BOOST_CHECK_EQUAL(next.host, "example.org");
+    BOOST_CHECK_EQUAL(next.target, "/y");
+}
+
+BOOST_AUTO_TEST_CASE(a_redirect_out_of_https_is_refused)
+{
+    // The one that matters. Following this would discard the certificate
+    // verification the fetcher exists to perform, and a redirect is exactly
+    // where an attacker would try to introduce it.
+    BOOST_CHECK_THROW(ResolveRedirect("api.github.com", "/x", "http://example.org/y"),
+                      std::runtime_error);
+    BOOST_CHECK_THROW(ResolveRedirect("api.github.com", "/x", "ftp://example.org/y"),
+                      std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(a_redirect_to_another_port_is_refused)
+{
+    // The port would have to be carried through to the connect. Ignoring it
+    // would connect somewhere other than where the server asked.
+    BOOST_CHECK_THROW(ResolveRedirect("api.github.com", "/x", "https://example.org:8443/y"),
+                      std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(a_malformed_redirect_is_refused)
+{
+    BOOST_CHECK_THROW(ResolveRedirect("api.github.com", "/x", ""), std::runtime_error);
+    BOOST_CHECK_THROW(ResolveRedirect("api.github.com", "/x", "https:///y"), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(a_redirect_response_is_parsed_rather_than_rejected)
+{
+    // ExtractHttpBody throws on any non-200, which is right for a caller that
+    // wants a body. The fetcher needs to see the status and Location instead.
+    const std::string raw{
+        "HTTP/1.1 302 Found\r\n"
+        "Location: https://download.reddcoin.com/bin/file\r\n"
+        "\r\n"};
+
+    const HttpResponse response{ParseHttpResponse(raw, false)};
+    BOOST_CHECK_EQUAL(response.status, 302U);
+    BOOST_CHECK_EQUAL(response.location, "https://download.reddcoin.com/bin/file");
+
+    BOOST_CHECK_THROW(ExtractHttpBody(raw, false), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(a_redirect_body_is_not_held_to_the_framing_rules)
+{
+    // No Content-Length and no clean shutdown. For a 200 that is a truncated
+    // response and must be rejected; for a redirect the body is discarded, so
+    // failing here would reject a valid redirect over bytes nothing reads.
+    const std::string redirect{
+        "HTTP/1.1 301 Moved Permanently\r\n"
+        "Location: /elsewhere\r\n"
+        "\r\n"
+        "partial"};
+    BOOST_CHECK_NO_THROW(ParseHttpResponse(redirect, false));
+
+    const std::string ok{
+        "HTTP/1.1 200 OK\r\n"
+        "\r\n"
+        "partial"};
+    BOOST_CHECK_THROW(ParseHttpResponse(ok, false), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
