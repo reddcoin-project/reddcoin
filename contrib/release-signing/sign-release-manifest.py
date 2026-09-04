@@ -81,6 +81,16 @@ def tagged_hash(tag, data):
     return hashlib.sha256(ss + ss + data).digest()
 
 
+# Where the client keeps the English BIP39 wordlist. It sits in src/util/lang on
+# the development line and in src/wallet on the 4.22.9 release line, so both are
+# tried: this tool is copied to an air-gapped machine and should be one file that
+# works from either checkout rather than two that can drift apart.
+WORDLIST_PATHS = (
+    ('src', 'util', 'lang', 'bip39_english.h'),
+    ('src', 'wallet', 'bip39_english.h'),
+)
+
+
 def load_wordlist():
     """The English BIP39 wordlist, read from the header the client uses.
 
@@ -88,8 +98,13 @@ def load_wordlist():
     second copy here could drift from the one the wallet derives with, and the
     divergence would only ever show up as a key that does not match.
     """
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                        '..', '..', 'src', 'util', 'lang', 'bip39_english.h')
+    root = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..')
+    tried = [os.path.join(root, *parts) for parts in WORDLIST_PATHS]
+    found = [p for p in tried if os.path.exists(p)]
+    if not found:
+        raise SystemExit("no BIP39 wordlist found, looked in:\n  " + "\n  ".join(tried))
+
+    path = found[0]
     words = re.findall(r'^\s*"([a-z]+)",?\s*$', open(path, encoding='utf8').read(), re.MULTILINE)
     if len(words) != 2048:
         raise SystemExit("expected 2048 words in {}, found {}".format(path, len(words)))
