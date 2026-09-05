@@ -14,6 +14,7 @@
 #include <qt/guiutil.h>
 #include <qt/networkstyle.h>
 #include <qt/updatecheckworker.h>
+#include <qt/updatedownloadworker.h>
 
 #include <clientversion.h>
 #include <init.h>
@@ -25,6 +26,8 @@
 
 #include <QCloseEvent>
 #include <QLabel>
+#include <QProgressBar>
+#include <QPushButton>
 #include <QMainWindow>
 #include <QRegExp>
 #include <QTextCursor>
@@ -149,6 +152,104 @@ void HelpMessageDialog::startUpdateCheck(interfaces::Node& node)
     m_update_check_thread.start();
 }
 
+void HelpMessageDialog::addDownloadControls(const QString& version, const QString& artifact)
+{
+    // Built here rather than in the .ui file because they exist only on the
+    // update path, and only when there is a named artifact to fetch.
+    m_download_status = new QLabel{this};
+    m_download_status->setWordWrap(true);
+    m_download_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    m_download_progress = new QProgressBar{this};
+    m_download_progress->setRange(0, 100);
+    m_download_progress->setValue(0);
+    m_download_progress->setVisible(false);
+
+    m_download_button = new QPushButton{tr("Download and verify"), this};
+    m_download_button->setToolTip(
+        tr("Download %1 and check it against the signing key built into this client. "
+           "Nothing is installed.").arg(artifact));
+
+    if (QLayout* layout = this->layout()) {
+        layout->addWidget(m_download_status);
+        layout->addWidget(m_download_progress);
+        layout->addWidget(m_download_button);
+    }
+
+    m_download_worker = new UpdateDownloadWorker{version, artifact};
+    m_download_worker->moveToThread(&m_download_thread);
+
+    connect(&m_download_thread, &QThread::finished, m_download_worker, &QObject::deleteLater);
+    connect(&m_download_thread, &QThread::started, m_download_worker, &UpdateDownloadWorker::download);
+    connect(m_download_worker, &UpdateDownloadWorker::progressed,
+            this, &HelpMessageDialog::onDownloadProgress);
+    connect(m_download_worker, &UpdateDownloadWorker::finished,
+            this, &HelpMessageDialog::onDownloadFinished);
+    connect(m_download_button, &QPushButton::clicked, this, &HelpMessageDialog::onDownloadClicked);
+}
+
+void HelpMessageDialog::onDownloadClicked()
+{
+    if (m_download_thread.isRunning()) {
+        // Second click cancels. The worker checks the flag between reads, so
+        // the transfer stops at the next one rather than being torn down from
+        // under the thread performing it.
+        m_download_button->setEnabled(false);
+        m_download_button->setText(tr("Cancelling..."));
+        if (m_download_worker) m_download_worker->cancel();
+        return;
+    }
+
+    m_download_progress->setValue(0);
+    m_download_progress->setVisible(true);
+    m_download_status->setText(tr("Downloading..."));
+    m_download_button->setText(tr("Cancel"));
+    m_download_thread.start();
+}
+
+void HelpMessageDialog::onDownloadProgress(qint64 received, qint64 total)
+{
+    if (total > 0) {
+        m_download_progress->setRange(0, 100);
+        m_download_progress->setValue(static_cast<int>((received * 100) / total));
+        m_download_status->setText(tr("Downloading... %1 of %2 MB")
+                                       .arg(received / (1024 * 1024))
+                                       .arg(total / (1024 * 1024)));
+        return;
+    }
+
+    // No declared length, so there is no honest percentage to show. A busy
+    // indicator says "working" without inventing a position.
+    m_download_progress->setRange(0, 0);
+    m_download_status->setText(tr("Downloading... %1 MB so far").arg(received / (1024 * 1024)));
+}
+
+void HelpMessageDialog::onDownloadFinished(bool ok, const QString& path, qint64 size,
+                                           const QString& error)
+{
+    m_download_thread.quit();
+    m_download_progress->setVisible(false);
+    m_download_button->setEnabled(true);
+    m_download_button->setText(tr("Download and verify"));
+
+    if (ok) {
+        // Say what was actually established. "Downloaded" would undersell it
+        // and "installed" would be untrue.
+        m_download_status->setText(
+            tr("Verified against the release signing key (%1 MB).<br>Saved to: %2")
+                .arg(size / (1024 * 1024))
+                .arg(path.toHtmlEscaped()));
+        m_download_button->setVisible(false);
+        return;
+    }
+
+    if (error.isEmpty()) {
+        m_download_status->setText(tr("Download cancelled."));
+        return;
+    }
+    m_download_status->setText("<font color='red'>" + error.toHtmlEscaped() + "</font>");
+}
+
 void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
 {
     const QString localversion{info.value("localversion").toString()};
@@ -183,6 +284,8 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
             text += "The build for this machine is:<br>";
             text += "<a href=\"" + artifact_link + "\">" + artifact + "</a>";
 
+            addDownloadControls(remoteversion, artifact);
+
             if (info.value("platform").toString() == "osx64") {
                 // Only an x86_64 macOS build is published, and it runs on Apple
                 // Silicon under Rosetta. Say which one it is rather than let an
@@ -210,6 +313,15 @@ HelpMessageDialog::~HelpMessageDialog()
     // An in flight request must not outlive the widgets its reply updates.
     m_update_check_thread.quit();
     m_update_check_thread.wait();
+
+    // A download can be minutes from finishing, so ask it to stop before
+    // waiting rather than blocking the close on a transfer nobody wants any
+    // more. quit() alone would not do it: the worker is inside a blocking call
+    // and is not reading the event loop, so it has to be told through the flag
+    // it polls between reads.
+    if (m_download_worker) m_download_worker->cancel();
+    m_download_thread.quit();
+    m_download_thread.wait();
 
     delete ui;
 }
