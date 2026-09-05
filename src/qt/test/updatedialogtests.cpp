@@ -5,7 +5,10 @@
 #include <qt/test/updatedialogtests.h>
 
 #include <qt/networkstyle.h>
+#include <qt/updatecheckworker.h>
 #include <qt/utilitydialog.h>
+
+#include <univalue.h>
 
 #include <QPushButton>
 #include <QVariantMap>
@@ -46,6 +49,56 @@ int DownloadButtons(const HelpMessageDialog& dialog)
     return found;
 }
 } // namespace
+
+void UpdateDialogTests::everyFieldTheDialogReadsSurvivesTheWorker()
+{
+    // The contract the other tests cannot see. They hand the dialog a map built
+    // in this file, which proves the dialog reads a map correctly and proves
+    // nothing about whether the worker ever puts those keys in one.
+    //
+    // It did not. The worker named seven fields while the dialog had grown to
+    // read ten, so guiartifact arrived empty and the dialog silently took its
+    // "no artifact published" branch on every update. The named-file notice
+    // phase 1 added never appeared through the real path, and no test noticed,
+    // because every test supplied its own map.
+    UniValue result{UniValue::VOBJ};
+    result.pushKV("localversion", "4.22.9.0");
+    result.pushKV("remoteversion", "4.22.9.4");
+    result.pushKV("updateavailable", true);
+    result.pushKV("message", "a message");
+    result.pushKV("warning", "");
+    result.pushKV("officialDownloadLink", "https://download.reddcoin.com/bin/reddcoin-core-4.22.9.4");
+    result.pushKV("hosttriplet", "x86_64-pc-linux-gnu");
+    result.pushKV("artifactbytes", 30603976);
+    result.pushKV("platform", "x86_64-linux-gnu");
+    result.pushKV("guiartifact", "reddcoin-4.22.9.4-x86_64-linux-gnu.tar.gz");
+    result.pushKV("guiartifactlink", "https://download.reddcoin.com/x.tar.gz");
+    result.pushKV("daemonartifact", "reddcoin-4.22.9.4-x86_64-linux-gnu.tar.gz");
+    result.pushKV("daemonartifactlink", "https://download.reddcoin.com/x.tar.gz");
+    result.pushKV("errors", "");
+
+    const QVariantMap info{UpdateInfoToVariantMap(result)};
+
+    // Nothing the node reports may be dropped on the way to the GUI.
+    for (const std::string& key : result.getKeys()) {
+        QVERIFY2(info.contains(QString::fromStdString(key)),
+                 qPrintable(QString{"the worker dropped '%1'"}.arg(QString::fromStdString(key))));
+    }
+
+    QCOMPARE(info.value("guiartifact").toString(),
+             QString{"reddcoin-4.22.9.4-x86_64-linux-gnu.tar.gz"});
+    QCOMPARE(info.value("platform").toString(), QString{"x86_64-linux-gnu"});
+    QCOMPARE(info.value("updateavailable").toBool(), true);
+    QCOMPARE(info.value("artifactbytes").toLongLong(), 30603976LL);
+
+    // And the dialog, fed what the worker actually produces rather than a map
+    // written to suit it, offers the download.
+    std::unique_ptr<const NetworkStyle> style{NetworkStyle::instantiate("regtest")};
+    QVERIFY(style);
+    HelpMessageDialog dialog{nullptr, style.get(), false, true, nullptr};
+    Deliver(dialog, info);
+    QCOMPARE(DownloadButtons(dialog), 1);
+}
 
 void UpdateDialogTests::downloadOfferedOnlyWithAnArtifact()
 {

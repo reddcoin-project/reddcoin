@@ -21,6 +21,7 @@ class UpdateDialogTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void everyFieldTheDialogReadsSurvivesTheWorker();
     void downloadOfferedOnlyWithAnArtifact();
     void destroyingTheDialogIsSafe();
 };
