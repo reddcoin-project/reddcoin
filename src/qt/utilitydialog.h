@@ -12,6 +12,13 @@
 #include <QWidget>
 
 class NetworkStyle;
+class UpdateDownloadWorker;
+
+QT_BEGIN_NAMESPACE
+class QLabel;
+class QProgressBar;
+class QPushButton;
+QT_END_NAMESPACE
 
 namespace interfaces {
 class Node;
@@ -43,15 +50,41 @@ private:
     /** Create the update check worker and start the thread it runs on */
     void startUpdateCheck(interfaces::Node& node);
 
+    /** Platform-appropriate wording for the hand-off button */
+    static QString handOffLabel();
+    static QString handOffTooltip();
+
+    /** Add the download button and progress bar, once there is something to offer */
+    void addDownloadControls(const QString& version, const QString& artifact);
+
     Ui::HelpMessageDialog *ui;
     QString text;
     /** Thread the update check runs on, so its network request cannot stall the GUI */
     QThread m_update_check_thread;
 
+    /** Thread the download runs on, for the same reason and for much longer */
+    QThread m_download_thread;
+    /** Owned by m_download_thread, which deletes it when it finishes */
+    UpdateDownloadWorker* m_download_worker{nullptr};
+    QPushButton* m_download_button{nullptr};
+    QProgressBar* m_download_progress{nullptr};
+    QLabel* m_download_status{nullptr};
+    /** Where the verified artifact landed, once there is one */
+    QString m_downloaded_path;
+
 private Q_SLOTS:
     void on_okButton_accepted();
     /** Replace the "please wait" text once the check has an answer */
     void showUpdateInfo(const QVariantMap& info);
+
+    /** Start the download, or ask a running one to stop */
+    void onDownloadClicked();
+    /** Move the bar. Queued from the worker thread, already throttled there */
+    void onDownloadProgress(qint64 received, qint64 total);
+    /** Report where the verified file is, or why there is not one */
+    void onDownloadFinished(bool ok, const QString& path, qint64 size, const QString& error);
+    /** Hand the verified file to the platform. Never acts on it here */
+    void onHandOffClicked();
 };
 
 
