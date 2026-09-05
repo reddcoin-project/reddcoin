@@ -5,6 +5,11 @@
 #ifndef BITCOIN_NODE_UPDATE_CHECK_H
 #define BITCOIN_NODE_UPDATE_CHECK_H
 
+#include <fs.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <string>
 
 class UniValue;
@@ -51,6 +56,71 @@ std::string SslVersion();
  * Exposed for testing.
  */
 std::string ExtractHttpBody(const std::string& raw_response, bool clean_eof);
+
+//! What the status line and headers say, before any body has been read.
+struct HttpHeaders {
+    unsigned int status{0};
+    //! Location header, empty when absent.
+    std::string location;
+    //! Content-Length, or -1 when the server gave none.
+    int64_t content_length{-1};
+    bool chunked{false};
+};
+
+/**
+ * Parse a status line and header block.
+ *
+ * Separate from ParseHttpResponse so a streaming read can decide what to do
+ * with a body before any of it has arrived.
+ *
+ * @param[in] headers The status line and headers, without the blank line that
+ *                    terminates them.
+ * @throws std::runtime_error if the status line is malformed, the transfer
+ *         encoding is not chunked, or Content-Length is unusable.
+ *
+ * Exposed for testing.
+ */
+HttpHeaders ParseHttpHeaders(const std::string& headers);
+
+/**
+ * Decodes a chunked body as it arrives, rather than all at once.
+ *
+ * An artifact that arrives chunked cannot be reassembled in memory first
+ * without defeating the point of streaming it, so the framing has to come off
+ * incrementally, across reads that land anywhere in the stream.
+ *
+ * Exposed for testing, which is where the boundary cases live: a chunk size
+ * split across two reads, a chunk body split across several, and a terminating
+ * chunk arriving on its own.
+ */
+class ChunkedDecoder
+{
+public:
+    //! Called with each run of decoded body bytes. Returning false stops the
+    //! decode, which is how a cancelled or failed write aborts it.
+    using Sink = std::function<bool(const char* data, std::size_t size)>;
+
+    /**
+     * Feed raw bytes from the stream.
+     *
+     * @return false if the framing is malformed or the sink asked to stop.
+     */
+    bool Feed(const char* data, std::size_t size, const Sink& sink);
+
+    //! Whether the terminating zero length chunk has been seen. A body that
+    //! ends without it is incomplete, however many bytes arrived.
+    bool Complete() const { return m_state == State::Done; }
+
+private:
+    enum class State { Size, Data, DataTerminator, Done };
+    State m_state{State::Size};
+    //! Partial size line carried between feeds.
+    std::string m_pending;
+    //! Bytes still to come in the chunk being read.
+    uint64_t m_remaining{0};
+    //! Bytes of the chunk's trailing CRLF still to consume.
+    int m_terminator{0};
+};
 
 /**
  * A parsed HTTP response.
@@ -100,6 +170,40 @@ struct Url {
  */
 Url ResolveRedirect(const std::string& base_host, const std::string& base_target,
                     const std::string& location);
+
+//! Called as a download proceeds. total is -1 when the server gave no length.
+using DownloadProgress = std::function<void(int64_t received, int64_t total)>;
+
+//! Called between reads. Returning true abandons the download.
+using DownloadCancel = std::function<bool()>;
+
+/**
+ * Download a file over HTTPS, streaming it to disk.
+ *
+ * The body is never held in memory, so this is what an artifact goes through
+ * rather than the update check's in-memory fetch. Redirects are followed on the
+ * same terms as elsewhere: a fresh certificate check per hop, and a refusal to
+ * leave https.
+ *
+ * Written to `destination` with a `.part` suffix and renamed only once the body
+ * is complete, so an interrupted download never leaves a file that looks
+ * finished. On any failure the partial file is removed.
+ *
+ * @param[in]  host        Host to fetch from.
+ * @param[in]  target      Path on that host.
+ * @param[in]  destination Where the finished file goes.
+ * @param[in]  progress    Optional, may be empty.
+ * @param[in]  cancel      Optional, may be empty.
+ * @param[out] error       Why it failed, when it returns false. Empty when the
+ *                         caller cancelled, since that is not an error.
+ * @return true only when the file is complete and in place.
+ *
+ * Does not verify what was downloaded. That is the caller's job, and until it
+ * happens the file is untrusted bytes from the network.
+ */
+bool DownloadToFile(const std::string& host, const std::string& target,
+                    const fs::path& destination, const DownloadProgress& progress,
+                    const DownloadCancel& cancel, std::string& error);
 
 /**
  * Ask the release server which version is current and report how it compares
