@@ -34,6 +34,8 @@
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -139,10 +141,30 @@ std::string DecodeChunkedBody(const std::string& body)
 
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
 
-//! Budget for the whole exchange, from name resolution to the last byte of the
-//! response. The update check is a background nicety, so it gives up rather
-//! than holding anything up for long.
-constexpr std::chrono::seconds UPDATE_CHECK_TIMEOUT{10};
+//! How long one step may make no progress before the exchange is abandoned.
+//!
+//! Reset by progress rather than counted from the start, so a slow but moving
+//! transfer is not cut off the way a single overall budget cuts it off. That
+//! distinction does not matter much for a few kilobytes of JSON; it is what
+//! makes the same fetcher usable for an artifact, which is why it changes here
+//! rather than in the phase that needs it.
+constexpr std::chrono::seconds IDLE_TIMEOUT{10};
+
+//! Ceiling on one exchange, redirects included.
+//!
+//! An idle timeout alone does not bound a server that sends a byte just often
+//! enough to keep resetting it. At the response ceiling below that is patient
+//! enough to run for months, so the pathological case needs its own bound. Set
+//! far above any honest exchange, since the idle timeout is what ends a normal
+//! failure.
+constexpr std::chrono::seconds TOTAL_TIMEOUT{120};
+
+//! Redirect hops to follow before giving up.
+//!
+//! Enough for the indirection a download host may grow, few enough that a
+//! redirect loop ends promptly. Each hop is a fresh connection with its own
+//! certificate verification against the host it actually reaches.
+constexpr int MAX_REDIRECTS{5};
 
 //! Ceiling on the whole response, headers included.
 //!
@@ -156,19 +178,23 @@ constexpr std::chrono::seconds UPDATE_CHECK_TIMEOUT{10};
 constexpr std::size_t MAX_RESPONSE_BYTES{1024 * 1024};
 
 /**
- * Minimal one-shot HTTPS GET with an overall deadline.
+ * One HTTPS exchange with one host.
  *
  * Boost's synchronous socket calls accept no timeout, which is why every step
  * here is issued asynchronously and driven by a bounded run of the io_context.
- * A stalled or unreachable server therefore costs UPDATE_CHECK_TIMEOUT rather
- * than however long the operating system takes to abandon the connection.
+ * A stalled or unreachable server therefore costs IDLE_TIMEOUT rather than
+ * however long the operating system takes to abandon the connection.
+ *
+ * One instance is one connection to one host. A redirect is a different host as
+ * far as certificate verification is concerned, so following one means building
+ * another of these rather than reusing this.
  */
-class HttpsFetcher
+class HttpsConnection
 {
 public:
-    HttpsFetcher(std::string host, std::chrono::steady_clock::duration timeout)
+    HttpsConnection(std::string host, std::chrono::steady_clock::time_point hard_deadline)
         : m_host{std::move(host)},
-          m_timeout{timeout},
+          m_hard_deadline{hard_deadline},
           m_ssl_ctx{boost::asio::ssl::context::tls_client},
           m_stream{m_ioc, m_ssl_ctx}
     {
@@ -198,17 +224,25 @@ public:
         }
     }
 
-    //! Fetch target and return the response body. Throws std::runtime_error on
-    //! any failure, including timeout and a non-200 status.
-    std::string Get(const std::string& target);
+    //! Fetch target and return the raw response, status line and headers
+    //! included, so the caller can act on a redirect. Throws std::runtime_error
+    //! on any transport failure, including timeout.
+    std::string Get(const std::string& target, bool& clean_eof);
 
 private:
     //! Pump the io_context until the outstanding operation reports back or the
     //! deadline passes, then rethrow whatever it reported.
     void Await(const std::string& what);
 
+    //! Give the next step a fresh idle window, without letting it run past the
+    //! ceiling on the exchange as a whole.
+    void ArmIdleTimer()
+    {
+        m_deadline = std::min(std::chrono::steady_clock::now() + IDLE_TIMEOUT, m_hard_deadline);
+    }
+
     std::string m_host;
-    std::chrono::steady_clock::duration m_timeout;
+    std::chrono::steady_clock::time_point m_hard_deadline;
     std::chrono::steady_clock::time_point m_deadline{};
     boost::asio::io_context m_ioc;
     boost::asio::ssl::context m_ssl_ctx;
@@ -217,7 +251,7 @@ private:
     boost::system::error_code m_ec{};
 };
 
-void HttpsFetcher::Await(const std::string& what)
+void HttpsConnection::Await(const std::string& what)
 {
     m_ioc.restart();
     while (!m_done) {
@@ -238,9 +272,9 @@ void HttpsFetcher::Await(const std::string& what)
     if (m_ec) throw std::runtime_error("Failed while " + what + ": " + m_ec.message());
 }
 
-std::string HttpsFetcher::Get(const std::string& target)
+std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
 {
-    m_deadline = std::chrono::steady_clock::now() + m_timeout;
+    ArmIdleTimer();
 
     boost::asio::ip::tcp::resolver resolver{m_ioc};
     boost::asio::ip::tcp::resolver::results_type endpoints;
@@ -252,6 +286,7 @@ std::string HttpsFetcher::Get(const std::string& target)
         });
     Await("resolving " + m_host);
 
+    ArmIdleTimer();
     boost::asio::async_connect(m_stream.lowest_layer(), endpoints,
         [&](const boost::system::error_code& ec, const boost::asio::ip::tcp::endpoint&) {
             m_ec = ec;
@@ -259,6 +294,7 @@ std::string HttpsFetcher::Get(const std::string& target)
         });
     Await("connecting to " + m_host);
 
+    ArmIdleTimer();
     m_stream.async_handshake(boost::asio::ssl::stream_base::client,
         [&](const boost::system::error_code& ec) {
             m_ec = ec;
@@ -274,6 +310,7 @@ std::string HttpsFetcher::Get(const std::string& target)
     request_stream << "Accept: */*\r\n";
     request_stream << "Connection: close\r\n\r\n";
 
+    ArmIdleTimer();
     boost::asio::async_write(m_stream, request,
         [&](const boost::system::error_code& ec, std::size_t) {
             m_ec = ec;
@@ -285,42 +322,100 @@ std::string HttpsFetcher::Get(const std::string& target)
     // stream. Neither ending is an error here: a clean end of file means the
     // peer sent close_notify, and a truncated stream means the connection went
     // away without one, which plenty of servers do. They are not equivalent
-    // though, so which one arrived is carried through to the completeness check
+    // though, so which one arrived is carried out to the completeness check
     // rather than being flattened into success.
-    bool clean_eof{false};
-    boost::asio::streambuf response{MAX_RESPONSE_BYTES};
-    boost::asio::async_read(m_stream, response, boost::asio::transfer_all(),
-        [&](const boost::system::error_code& ec, std::size_t) {
-            clean_eof = (ec == boost::asio::error::eof);
-            m_ec = (ec == boost::asio::error::eof || ec == boost::asio::ssl::error::stream_truncated)
-                       ? boost::system::error_code{}
-                       : ec;
-            m_done = true;
-        });
-    Await("reading the response from " + m_host);
-
-    // A bounded streambuf does not report the bound being hit. asio's read loop
-    // simply stops once prepare() can yield nothing more and completes as though
-    // the stream had ended, so the caller is handed a truncated body with no
-    // error. Detect it here rather than let it look like a short response.
     //
-    // A response that is exactly the ceiling is rejected along with one that
-    // exceeds it, since the two are indistinguishable from this side. Erring
-    // that way costs nothing at a limit set two orders of magnitude above the
-    // real thing.
-    if (response.size() >= MAX_RESPONSE_BYTES) {
-        throw std::runtime_error("Response from " + m_host + " exceeded " +
-                                 ToString(MAX_RESPONSE_BYTES) + " bytes");
+    // Read in a loop rather than in one call. Two things follow from that: each
+    // arrival of data is progress, so the idle window restarts, and the ceiling
+    // is enforced while reading rather than inspected afterwards.
+    //
+    // Enforcing it while reading is not a tidiness preference. A bounded
+    // streambuf does not report the bound being hit: asio stops once prepare()
+    // can yield nothing more and completes as though the stream had ended, so a
+    // truncated body arrives with no error at all. Growing the buffer under an
+    // explicit test removes the failure mode rather than detecting it after the
+    // fact.
+    clean_eof = false;
+    std::string raw;
+    std::array<char, 16 * 1024> chunk{};
+    for (;;) {
+        ArmIdleTimer();
+        std::size_t got{0};
+        m_stream.async_read_some(boost::asio::buffer(chunk),
+            [&](const boost::system::error_code& ec, std::size_t bytes) {
+                got = bytes;
+                clean_eof = (ec == boost::asio::error::eof);
+                m_ec = (ec == boost::asio::error::eof || ec == boost::asio::ssl::error::stream_truncated)
+                           ? boost::system::error_code{}
+                           : ec;
+                m_done = true;
+            });
+        const bool finished{[&] {
+            Await("reading the response from " + m_host);
+            return clean_eof || got == 0;
+        }()};
+
+        if (got > 0) {
+            if (raw.size() + got > MAX_RESPONSE_BYTES) {
+                throw std::runtime_error("Response from " + m_host + " exceeded " +
+                                         ToString(MAX_RESPONSE_BYTES) + " bytes");
+            }
+            raw.append(chunk.data(), got);
+        }
+        if (finished) break;
     }
 
-    std::ostringstream raw;
-    raw << &response;
-    return node::ExtractHttpBody(raw.str(), clean_eof);
+    return raw;
+}
+
+//! Where a redirect points, given the response that carried it.
+struct Redirect {
+    std::string host;
+    std::string target;
+};
+
+/**
+ * Fetch a target from a host, following redirects, and return the body.
+ *
+ * Each hop is a new connection and therefore a new certificate check against
+ * the host actually reached. A redirect that leaves https is refused rather
+ * than followed: silently continuing over plaintext would discard the
+ * verification this fetcher exists to perform.
+ */
+std::string HttpsGet(const std::string& start_host, const std::string& start_target)
+{
+    const auto hard_deadline{std::chrono::steady_clock::now() + TOTAL_TIMEOUT};
+    std::string host{start_host};
+    std::string target{start_target};
+
+    for (int hop{0}; hop <= MAX_REDIRECTS; ++hop) {
+        HttpsConnection connection{host, hard_deadline};
+        bool clean_eof{false};
+        const std::string raw{connection.Get(target, clean_eof)};
+
+        const node::HttpResponse response{node::ParseHttpResponse(raw, clean_eof)};
+        if (response.status == 200) return response.body;
+
+        if (response.status < 300 || response.status >= 400) {
+            throw std::runtime_error("Response returned with status code " + ToString(response.status));
+        }
+        if (response.location.empty()) {
+            throw std::runtime_error("Response returned status code " + ToString(response.status) +
+                                     " without a Location header");
+        }
+        const node::Url next{node::ResolveRedirect(host, target, response.location)};
+        host = next.host;
+        target = next.target;
+    }
+
+    throw std::runtime_error("Gave up after " + ToString(MAX_REDIRECTS) + " redirects");
 }
 } // namespace
 
-std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eof)
+node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool clean_eof)
 {
+    HttpResponse out;
+
     // Status line.
     const std::string::size_type eol{raw_response.find("\r\n")};
     if (eol == std::string::npos) throw std::runtime_error("Invalid response");
@@ -331,9 +426,7 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
     if (!status_stream || http_version.substr(0, 5) != "HTTP/") {
         throw std::runtime_error("Invalid response");
     }
-    if (status_code != 200) {
-        throw std::runtime_error("Response returned with status code " + ToString(status_code));
-    }
+    out.status = status_code;
 
     // Headers are terminated by a blank line; everything after it is the body.
     const std::string::size_type terminator{raw_response.find("\r\n\r\n")};
@@ -349,12 +442,23 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
     //
     // Content-Length is not consulted in this case. RFC 7230 forbids sending
     // both, and the terminating chunk is what proves the body is complete.
+    out.location = GetHeader(headers, "location");
+
+    // A redirect's body is discarded, so its framing is not checked. Rejecting
+    // a valid redirect because the server closed without a Content-Length would
+    // fail the exchange over a body nothing reads.
+    if (out.status != 200) {
+        out.body = body;
+        return out;
+    }
+
     const std::string transfer_encoding{ToLower(GetHeader(headers, "transfer-encoding"))};
     if (!transfer_encoding.empty()) {
         if (transfer_encoding != "chunked") {
             throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
         }
-        return DecodeChunkedBody(body);
+        out.body = DecodeChunkedBody(body);
+        return out;
     }
 
     const std::string content_length{GetHeader(headers, "content-length")};
@@ -373,7 +477,56 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
         throw std::runtime_error("Response gave no Content-Length and ended without a clean shutdown");
     }
 
-    return body;
+    out.body = body;
+    return out;
+}
+
+std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eof)
+{
+    const HttpResponse response{ParseHttpResponse(raw_response, clean_eof)};
+    if (response.status != 200) {
+        throw std::runtime_error("Response returned with status code " + ToString(response.status));
+    }
+    return response.body;
+}
+
+node::Url node::ResolveRedirect(const std::string& base_host, const std::string& base_target,
+                                const std::string& location)
+{
+    if (location.empty()) throw std::runtime_error("Redirect has an empty Location");
+
+    // Absolute, or protocol relative. Anything that is not https is refused
+    // rather than followed: continuing over plaintext would quietly discard the
+    // certificate verification this client exists to perform, and a redirect is
+    // exactly where an attacker would try to introduce that.
+    std::string rest;
+    if (location.compare(0, 8, "https://") == 0) {
+        rest = location.substr(8);
+    } else if (location.compare(0, 2, "//") == 0) {
+        rest = location.substr(2);
+    } else if (location.find("://") != std::string::npos) {
+        throw std::runtime_error("Refusing to follow a redirect that leaves https: " + location);
+    } else {
+        // Same host. An absolute path replaces the target; anything else is
+        // relative to the directory the current target sits in.
+        if (location[0] == '/') return Url{base_host, location};
+        const std::string::size_type slash{base_target.rfind('/')};
+        const std::string dir{slash == std::string::npos ? "/" : base_target.substr(0, slash + 1)};
+        return Url{base_host, dir + location};
+    }
+
+    const std::string::size_type slash{rest.find('/')};
+    const std::string host{slash == std::string::npos ? rest : rest.substr(0, slash)};
+    const std::string target{slash == std::string::npos ? "/" : rest.substr(slash)};
+    if (host.empty()) throw std::runtime_error("Redirect has no host: " + location);
+
+    // A port would need carrying through to the connect, which nothing this
+    // talks to requires. Refusing is honest; quietly ignoring it would connect
+    // somewhere other than where the server asked.
+    if (host.find(':') != std::string::npos) {
+        throw std::runtime_error("Refusing to follow a redirect to a non-default port: " + location);
+    }
+    return Url{host, target};
 }
 
 std::string node::SslVersion()
@@ -402,8 +555,7 @@ void node::CheckForUpdates(UniValue& result)
     std::string daemonArtifactLink = "";
 
     try {
-        HttpsFetcher fetcher{UPDATE_CHECK_HOST, UPDATE_CHECK_TIMEOUT};
-        const std::string str_response{fetcher.Get(strGithubLink)};
+        const std::string str_response{HttpsGet(UPDATE_CHECK_HOST, strGithubLink)};
 
         // read response into Univalue Obj
         UniValue obj_response(UniValue::VOBJ);

@@ -53,6 +53,55 @@ std::string SslVersion();
 std::string ExtractHttpBody(const std::string& raw_response, bool clean_eof);
 
 /**
+ * A parsed HTTP response.
+ *
+ * body is only checked for completeness when status is 200. A redirect's body
+ * is discarded, so rejecting the exchange because that body was framed loosely
+ * would fail over something nothing reads.
+ */
+struct HttpResponse {
+    unsigned int status{0};
+    //! Location header, empty when absent.
+    std::string location;
+    std::string body;
+};
+
+/**
+ * Parse a raw HTTP response into its status, Location and body.
+ *
+ * @param[in] raw_response The status line, headers and body as received.
+ * @param[in] clean_eof    Whether the read ended with a clean end of file
+ *                         rather than a truncated stream.
+ * @throws std::runtime_error if the response is malformed, uses a transfer
+ *         encoding other than chunked, or carries a 200 body that cannot be
+ *         shown to have arrived in full.
+ *
+ * Exposed for testing.
+ */
+HttpResponse ParseHttpResponse(const std::string& raw_response, bool clean_eof);
+
+//! A host and the path to ask it for.
+struct Url {
+    std::string host;
+    std::string target;
+};
+
+/**
+ * Where a Location header points, given the request that produced it.
+ *
+ * Handles absolute, protocol relative, absolute path and relative forms.
+ *
+ * @throws std::runtime_error if the redirect leaves https, names no host, or
+ *         specifies a port. Following a redirect out of https would discard the
+ *         certificate verification this client performs, and a redirect is
+ *         where an attacker would try to introduce that.
+ *
+ * Exposed for testing.
+ */
+Url ResolveRedirect(const std::string& base_host, const std::string& base_target,
+                    const std::string& location);
+
+/**
  * Ask the release server which version is current and report how it compares
  * with this build.
  *
