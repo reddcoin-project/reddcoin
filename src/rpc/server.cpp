@@ -289,6 +289,7 @@ static RPCHelpMan checkupdates()
                 {RPCResult::Type::STR, "warning", "Any warning messages"},
                 {RPCResult::Type::STR, "officialDownloadLink", "Official direct download link"},
                 {RPCResult::Type::STR, "hosttriplet", "The host triplet this build targets, empty if the build did not record one"},
+                {RPCResult::Type::NUM, "artifactbytes", "Size of the GUI artifact in bytes, or -1 if not established"},
                 {RPCResult::Type::STR, "platform", "Short platform name used in artifact filenames, empty if no build is published for this host"},
                 {RPCResult::Type::STR, "guiartifact", "Filename of the build a reddcoin-qt user should install, empty if unknown"},
                 {RPCResult::Type::STR, "guiartifactlink", "Direct download link for guiartifact, empty if unknown"},
