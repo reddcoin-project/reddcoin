@@ -50,6 +50,10 @@ private:
     /** Create the update check worker and start the thread it runs on */
     void startUpdateCheck(interfaces::Node& node);
 
+    /** Platform-appropriate wording for the hand-off button */
+    static QString handOffLabel();
+    static QString handOffTooltip();
+
     /** Add the download button and progress bar, once there is something to offer */
     void addDownloadControls(const QString& version, const QString& artifact);
 
@@ -65,6 +69,8 @@ private:
     QPushButton* m_download_button{nullptr};
     QProgressBar* m_download_progress{nullptr};
     QLabel* m_download_status{nullptr};
+    /** Where the verified artifact landed, once there is one */
+    QString m_downloaded_path;
 
 private Q_SLOTS:
     void on_okButton_accepted();
@@ -77,6 +83,8 @@ private Q_SLOTS:
     void onDownloadProgress(qint64 received, qint64 total);
     /** Report where the verified file is, or why there is not one */
     void onDownloadFinished(bool ok, const QString& path, qint64 size, const QString& error);
+    /** Hand the verified file to the platform. Never acts on it here */
+    void onHandOffClicked();
 };
 
 

@@ -129,6 +129,43 @@ void UpdateDialogTests::downloadOfferedOnlyWithAnArtifact()
     }
 }
 
+void UpdateDialogTests::handOffWordingMatchesThePlatform()
+{
+    // The hand-off is the last step and it differs by platform, so what the
+    // button says has to match what pressing it does. Getting this wrong means
+    // telling a Linux user an installer will run when a file manager opens.
+    std::unique_ptr<const NetworkStyle> style{NetworkStyle::instantiate("regtest")};
+    QVERIFY(style);
+    HelpMessageDialog dialog{nullptr, style.get(), false, true, nullptr};
+    Deliver(dialog, Result("4.22.9.0", "4.22.9.4", "reddcoin-4.22.9.4-x86_64-linux-gnu.tar.gz"));
+
+    QPushButton* button{nullptr};
+    for (QPushButton* candidate : dialog.findChildren<QPushButton*>()) {
+        if (candidate->text().contains("Download")) button = candidate;
+    }
+    QVERIFY(button);
+
+    // Before a download there is nothing to hand off, so the button still
+    // offers the download rather than an action with no file behind it.
+    QVERIFY(button->text().contains("Download"));
+
+    // The wording after a successful download is the platform's, and on Linux
+    // it must not promise to install anything: B5 says the install shape there
+    // is not knowable at runtime, so the sequence ends at revealing the file.
+    QMetaObject::invokeMethod(&dialog, "onDownloadFinished", Qt::DirectConnection,
+                              Q_ARG(bool, true), Q_ARG(QString, "/tmp/artifact.tar.gz"),
+                              Q_ARG(qint64, 30603976), Q_ARG(QString, QString{}));
+
+#if defined(Q_OS_WIN)
+    QCOMPARE(button->text(), QString{"Run installer"});
+#elif defined(Q_OS_MACOS)
+    QCOMPARE(button->text(), QString{"Open disk image"});
+#else
+    QCOMPARE(button->text(), QString{"Show in folder"});
+    QVERIFY(!button->text().contains("install", Qt::CaseInsensitive));
+#endif
+}
+
 void UpdateDialogTests::destroyingTheDialogIsSafe()
 {
     // The worker lives on a thread the dialog owns and holds a reference to

@@ -25,9 +25,12 @@
 #include <stdio.h>
 
 #include <QCloseEvent>
+#include <QDesktopServices>
+#include <QFileInfo>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QUrl>
 #include <QMainWindow>
 #include <QRegExp>
 #include <QTextCursor>
@@ -239,7 +242,17 @@ void HelpMessageDialog::onDownloadFinished(bool ok, const QString& path, qint64 
             tr("Verified against the release signing key (%1 MB).<br>Saved to: %2")
                 .arg(size / (1024 * 1024))
                 .arg(path.toHtmlEscaped()));
-        m_download_button->setVisible(false);
+
+        // Hand it to the platform rather than acting on it. The client does not
+        // install anything and does not replace its own files, so the last step
+        // is always the user's.
+        m_downloaded_path = path;
+        m_download_button->setText(handOffLabel());
+        m_download_button->setToolTip(handOffTooltip());
+        disconnect(m_download_button, &QPushButton::clicked, this,
+                   &HelpMessageDialog::onDownloadClicked);
+        connect(m_download_button, &QPushButton::clicked, this,
+                &HelpMessageDialog::onHandOffClicked);
         return;
     }
 
@@ -248,6 +261,54 @@ void HelpMessageDialog::onDownloadFinished(bool ok, const QString& path, qint64 
         return;
     }
     m_download_status->setText("<font color='red'>" + error.toHtmlEscaped() + "</font>");
+}
+
+QString HelpMessageDialog::handOffLabel()
+{
+#if defined(Q_OS_WIN)
+    return tr("Run installer");
+#elif defined(Q_OS_MACOS)
+    return tr("Open disk image");
+#else
+    return tr("Show in folder");
+#endif
+}
+
+QString HelpMessageDialog::handOffTooltip()
+{
+#if defined(Q_OS_WIN)
+    return tr("Start the installer. %1 will not close itself; quit it before installing.")
+        .arg(PACKAGE_NAME);
+#elif defined(Q_OS_MACOS)
+    return tr("Open the disk image so the application can be dragged into Applications. "
+              "%1 will not close itself; quit it before replacing it.").arg(PACKAGE_NAME);
+#else
+    return tr("Open the folder containing the verified archive.");
+#endif
+}
+
+void HelpMessageDialog::onHandOffClicked()
+{
+    if (m_downloaded_path.isEmpty()) return;
+
+    // On Linux the install shape is not knowable from here. A tarball, a distro
+    // package, a Snap, a Flatpak and a container are all plausible and nothing
+    // in the client can tell which one this user is running, so opening the
+    // containing folder is the honest end of the sequence. Opening the archive
+    // itself would hand it to an archive manager, which is a guess.
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    const QUrl target{QUrl::fromLocalFile(m_downloaded_path)};
+#else
+    const QUrl target{QUrl::fromLocalFile(QFileInfo{m_downloaded_path}.absolutePath())};
+#endif
+
+    if (!QDesktopServices::openUrl(target)) {
+        // Do not leave the user with a button that silently does nothing. The
+        // file is verified and its path is already on screen above.
+        m_download_status->setText(
+            m_download_status->text() + "<br><font color='red'>" +
+            tr("Could not open it. The file is at the path above.").toHtmlEscaped() + "</font>");
+    }
 }
 
 void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
