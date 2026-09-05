@@ -6,6 +6,7 @@
 
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
+#include <util/system.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -15,6 +16,7 @@
 using node::FindArtifactDigest;
 using node::HashFile;
 using node::RELEASE_PUBKEY;
+using node::StagedRelease;
 using node::VerifyReleaseManifest;
 
 namespace {
@@ -214,6 +216,92 @@ BOOST_AUTO_TEST_CASE(the_real_published_release_verifies)
     BOOST_CHECK(!VerifyReleaseManifest(
         published + "0000000000000000000000000000000000000000000000000000000000000000  extra\n",
         signature, error));
+}
+
+//! Staging, added with phase 4b. The download itself needs a network, but the
+//! decisions around it, what is kept, what is thrown away, are the part that
+//! can be got wrong quietly and are testable here.
+
+BOOST_AUTO_TEST_CASE(a_manifest_the_key_did_not_sign_stages_nothing)
+{
+    // The ordering that matters: verification precedes everything. A staging
+    // directory should not so much as be created for a manifest that fails.
+    const fs::path root{gArgs.GetDataDirNet() / "staging-unsigned"};
+    StagedRelease staged;
+    std::string error;
+
+    // No network is reached: the version is one no server will answer for, so
+    // this fails at the fetch. The point is that it fails without leaving a
+    // directory behind.
+    BOOST_CHECK(!node::StageVerifiedRelease("0.0.0-nonexistent", "whatever.tar.gz", root,
+                                            node::DownloadProgress{},
+                                            [] { return true; }, staged, error));
+    BOOST_CHECK(!fs::exists(root));
+}
+
+BOOST_AUTO_TEST_CASE(staging_refuses_an_empty_version_or_name)
+{
+    const fs::path root{gArgs.GetDataDirNet() / "staging-empty"};
+    StagedRelease staged;
+    std::string error;
+
+    BOOST_CHECK(!node::StageVerifiedRelease("", "x.tar.gz", root, node::DownloadProgress{},
+                                            node::DownloadCancel{}, staged, error));
+    BOOST_CHECK(!error.empty());
+    BOOST_CHECK(!node::StageVerifiedRelease("4.22.9.4", "", root, node::DownloadProgress{},
+                                            node::DownloadCancel{}, staged, error));
+    BOOST_CHECK(!error.empty());
+    BOOST_CHECK(!fs::exists(root));
+}
+
+BOOST_AUTO_TEST_CASE(a_staged_file_is_recognised_by_its_hash_not_its_name)
+{
+    // The reuse decision. A file already present and already correct must not
+    // be downloaded again, and a file present under the right name with the
+    // wrong contents must not be mistaken for it.
+    const fs::path dir{gArgs.GetDataDirNet() / "staged"};
+    fs::create_directories(dir);
+    const fs::path artifact{dir / "artifact.tar.gz"};
+    {
+        fsbridge::ofstream out{artifact, std::ios::binary};
+        out << "reddcoin";
+    }
+
+    uint256 present;
+    std::string error;
+    BOOST_REQUIRE(HashFile(artifact, present, error));
+
+    uint256 expected;
+    BOOST_REQUIRE(FindArtifactDigest(
+        "827ea7b9e26989931cbb1f10711d6575ad01aeac043607044d7eb09f322d0d8c  artifact.tar.gz\n",
+        "artifact.tar.gz", expected, error));
+    BOOST_CHECK(present == expected);
+
+    // Same name, different contents. The name proves nothing.
+    {
+        fsbridge::ofstream out{artifact, std::ios::binary};
+        out << "reddcoin ";
+    }
+    uint256 changed;
+    BOOST_REQUIRE(HashFile(artifact, changed, error));
+    BOOST_CHECK(changed != expected);
+}
+
+BOOST_AUTO_TEST_CASE(hashing_is_not_confused_by_size_alone)
+{
+    // Two files of identical length and different content, since a size check
+    // is the tempting shortcut and would pass both.
+    const fs::path a{gArgs.GetDataDirNet() / "a.bin"};
+    const fs::path b{gArgs.GetDataDirNet() / "b.bin"};
+    { fsbridge::ofstream out{a, std::ios::binary}; out << std::string(100000, 'x'); }
+    { fsbridge::ofstream out{b, std::ios::binary}; out << std::string(99999, 'x') << 'y'; }
+
+    uint256 ha, hb;
+    std::string error;
+    BOOST_REQUIRE(HashFile(a, ha, error));
+    BOOST_REQUIRE(HashFile(b, hb, error));
+    BOOST_CHECK_EQUAL(fs::file_size(a), fs::file_size(b));
+    BOOST_CHECK(ha != hb);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

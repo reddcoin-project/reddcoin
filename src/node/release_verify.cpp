@@ -12,6 +12,8 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 
+#include <algorithm>
+
 #include <array>
 #include <string>
 #include <vector>
@@ -147,6 +149,107 @@ bool node::FindArtifactDigest(const std::string& manifest, const std::string& fi
         return false;
     }
     std::copy(bytes.begin(), bytes.end(), digest.begin());
+    return true;
+}
+
+namespace {
+//! Remove every staged directory except the one for this version.
+//!
+//! Called after a success rather than before the download, so a failed fetch
+//! never destroys a good artifact that is already staged.
+void PruneOtherVersions(const fs::path& staging_root, const std::string& keep)
+{
+    if (!fs::is_directory(staging_root)) return;
+    for (fs::directory_iterator it{staging_root}; it != fs::directory_iterator{}; ++it) {
+        const fs::path entry{it->path()};
+        if (!fs::is_directory(entry)) continue;
+        if (entry.filename().string() == keep) continue;
+
+        // Best effort. A directory that cannot be removed, because a file in it
+        // is open on Windows for instance, costs disk rather than correctness.
+        fs::remove_all(entry);
+    }
+}
+} // namespace
+
+bool node::StageVerifiedRelease(const std::string& version, const std::string& filename,
+                                const fs::path& staging_root, const DownloadProgress& progress,
+                                const DownloadCancel& cancel, StagedRelease& out,
+                                std::string& error)
+{
+    error.clear();
+    if (version.empty() || filename.empty()) {
+        error = "No release to stage";
+        return false;
+    }
+
+    const std::string release_dir{"reddcoin-core-" + version};
+    const std::string base{"/bin/" + release_dir};
+
+    // The manifest and its signature are small and have to be held whole to be
+    // checked, so they go through the in-memory fetch rather than to disk.
+    std::string manifest;
+    if (!FetchToString(RELEASE_DOWNLOAD_HOST, base + "/SHA256SUMS", manifest, error)) {
+        error = "Could not fetch the release manifest: " + error;
+        return false;
+    }
+    std::string signature;
+    if (!FetchToString(RELEASE_DOWNLOAD_HOST, base + "/SHA256SUMS.sig", signature, error)) {
+        error = "Could not fetch the release signature: " + error;
+        return false;
+    }
+
+    // Nothing below this line trusts the manifest until it has been verified,
+    // and nothing above it trusts anything at all.
+    if (!VerifyReleaseManifest(manifest, signature, error)) return false;
+
+    uint256 expected;
+    if (!FindArtifactDigest(manifest, filename, expected, error)) return false;
+
+    const fs::path version_dir{staging_root / release_dir};
+    const fs::path artifact{version_dir / filename};
+
+    // An artifact already staged and already correct is not fetched again, so
+    // repeating the check costs a manifest rather than the whole release.
+    bool have_it{false};
+    if (fs::exists(artifact)) {
+        uint256 present;
+        std::string ignored;
+        have_it = HashFile(artifact, present, ignored) && present == expected;
+        if (!have_it) {
+            // The only thing knowable about it is that it is not the artifact.
+            fs::remove(artifact);
+        }
+    }
+
+    if (!have_it) {
+        fs::create_directories(version_dir);
+        if (!DownloadToFile(RELEASE_DOWNLOAD_HOST, base + "/" + filename, artifact, progress,
+                            cancel, error)) {
+            // A cancelled download leaves error empty, and that is carried
+            // through rather than turned into a failure message.
+            return false;
+        }
+
+        uint256 got;
+        if (!HashFile(artifact, got, error)) {
+            fs::remove(artifact);
+            return false;
+        }
+        if (got != expected) {
+            // Deleted rather than kept. An unverified artifact left in the
+            // staging directory is indistinguishable from a verified one.
+            fs::remove(artifact);
+            error = "The downloaded file does not match the signed manifest";
+            return false;
+        }
+    }
+
+    PruneOtherVersions(staging_root, release_dir);
+
+    out.path = artifact;
+    out.filename = filename;
+    out.size = static_cast<int64_t>(fs::file_size(artifact));
     return true;
 }
 
