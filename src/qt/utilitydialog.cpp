@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Reddcoin Core developers
+// Copyright (c) 2014-2023 The Reddcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,17 +18,18 @@
 
 #include <clientversion.h>
 #include <init.h>
-#include <rpc/server.h>
-#include <univalue.h>
 #include <util/system.h>
 #include <util/strencodings.h>
 
 #include <stdio.h>
 
 #include <QCloseEvent>
+#include <QDesktopServices>
+#include <QFileInfo>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QUrl>
 #include <QMainWindow>
 #include <QRegExp>
 #include <QTextCursor>
@@ -81,11 +82,9 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
             text = "Checking for updates. Please wait...";
             ui->aboutMessage->setText(text);
 
-            // The check performs a network request, and since phase 3c that is
-            // two of them, so it runs on a worker thread and showUpdateInfo()
-            // fills the dialog in once the answer arrives. Until then the
-            // "please wait" text above stands. Doing it here would freeze the
-            // window for as long as the slower of the two takes.
+            // The node performs a network request for this, so it runs on a
+            // worker thread and showUpdateInfo() fills the dialog in once the
+            // answer arrives. Until then the "please wait" text above stands.
             if (auto_check) startUpdateCheck();
         }
 
@@ -143,24 +142,6 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, const NetworkStyle* networ
     GUIUtil::handleCloseWindowShortcut(this);
 }
 
-HelpMessageDialog::~HelpMessageDialog()
-{
-    // An in flight request must not outlive the widgets its reply updates.
-    m_update_check_thread.quit();
-    m_update_check_thread.wait();
-
-    // A download can be minutes from finishing, so ask it to stop before
-    // waiting rather than blocking the close on a transfer nobody wants any
-    // more. quit() alone would not do it: the worker is inside a blocking call
-    // and is not reading the event loop, so it has to be told through the flag
-    // it polls between reads.
-    if (m_download_worker) m_download_worker->cancel();
-    m_download_thread.quit();
-    m_download_thread.wait();
-
-    delete ui;
-}
-
 void HelpMessageDialog::startUpdateCheck()
 {
     UpdateCheckWorker* worker = new UpdateCheckWorker();
@@ -171,64 +152,6 @@ void HelpMessageDialog::startUpdateCheck()
     connect(&m_update_check_thread, &QThread::started, worker, &UpdateCheckWorker::check);
 
     m_update_check_thread.start();
-}
-
-void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
-{
-    const QString localversion{info.value("localversion").toString()};
-    const QString remoteversion{info.value("remoteversion").toString()};
-    const QString errors{info.value("errors").toString()};
-    const QString warning{info.value("warning").toString()};
-
-    if (!errors.isEmpty()) {
-        text = "<font color = 'red'>Error: </font>";
-        text += errors;
-    } else if (localversion == remoteversion) {
-        text = "Installed version: <b>" + localversion + "</b><br>";
-        text += info.value("message").toString();
-    } else {
-        const QString artifact{info.value("guiartifact").toString()};
-        const QString artifact_link{info.value("guiartifactlink").toString()};
-
-        text = "Installed version: <b>" + localversion + "</b><br>";
-        text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
-
-        if (artifact.isEmpty() || artifact_link.isEmpty()) {
-            // Either no build is published for this host, or the release is a
-            // prerelease, whose artifact naming has never been exercised. Point
-            // at the directory and let the user choose, rather than name a file
-            // that may not be there.
-            const QString link{info.value("officialDownloadLink").toString()};
-            const QString url{"<a href=\"" + link + "\">" + link + "</a>"};
-            text += "Please download the latest version from our official website <br>(" + url + ").";
-        } else {
-            // The build this machine needs, rather than the directory holding
-            // fifteen files it would have to choose between.
-            text += "The build for this machine is:<br>";
-            text += "<a href=\"" + artifact_link + "\">" + artifact + "</a>";
-
-            addDownloadControls(remoteversion, artifact);
-
-            if (info.value("platform").toString() == "osx64") {
-                // Only an x86_64 macOS build is published, and it runs on Apple
-                // Silicon under Rosetta. Say which one it is rather than let an
-                // arm64 user assume it is native.
-                text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
-            }
-        }
-    }
-
-    // The pre-release caution belongs on every outcome, not just one branch: it
-    // describes the build the user is running rather than anything the check
-    // discovered, so it is appended to whatever the text above ended up being.
-    if (!warning.isEmpty()) {
-        if (!text.isEmpty()) {
-            text += "<br><br>";
-        }
-        text += "<font color = 'red'>" + warning + "</font>";
-    }
-
-    ui->aboutMessage->setText(text);
 }
 
 void HelpMessageDialog::addDownloadControls(const QString& version, const QString& artifact)
@@ -318,7 +241,17 @@ void HelpMessageDialog::onDownloadFinished(bool ok, const QString& path, qint64 
             tr("Verified against the release signing key (%1 MB).<br>Saved to: %2")
                 .arg(size / (1024 * 1024))
                 .arg(path.toHtmlEscaped()));
-        m_download_button->setVisible(false);
+
+        // Hand it to the platform rather than acting on it. The client does not
+        // install anything and does not replace its own files, so the last step
+        // is always the user's.
+        m_downloaded_path = path;
+        m_download_button->setText(handOffLabel());
+        m_download_button->setToolTip(handOffTooltip());
+        disconnect(m_download_button, &QPushButton::clicked, this,
+                   &HelpMessageDialog::onDownloadClicked);
+        connect(m_download_button, &QPushButton::clicked, this,
+                &HelpMessageDialog::onHandOffClicked);
         return;
     }
 
@@ -327,6 +260,130 @@ void HelpMessageDialog::onDownloadFinished(bool ok, const QString& path, qint64 
         return;
     }
     m_download_status->setText("<font color='red'>" + error.toHtmlEscaped() + "</font>");
+}
+
+QString HelpMessageDialog::handOffLabel()
+{
+#if defined(Q_OS_WIN)
+    return tr("Run installer");
+#elif defined(Q_OS_MACOS)
+    return tr("Open disk image");
+#else
+    return tr("Show in folder");
+#endif
+}
+
+QString HelpMessageDialog::handOffTooltip()
+{
+#if defined(Q_OS_WIN)
+    return tr("Start the installer. %1 will not close itself; quit it before installing.")
+        .arg(PACKAGE_NAME);
+#elif defined(Q_OS_MACOS)
+    return tr("Open the disk image so the application can be dragged into Applications. "
+              "%1 will not close itself; quit it before replacing it.").arg(PACKAGE_NAME);
+#else
+    return tr("Open the folder containing the verified archive.");
+#endif
+}
+
+void HelpMessageDialog::onHandOffClicked()
+{
+    if (m_downloaded_path.isEmpty()) return;
+
+    // On Linux the install shape is not knowable from here. A tarball, a distro
+    // package, a Snap, a Flatpak and a container are all plausible and nothing
+    // in the client can tell which one this user is running, so opening the
+    // containing folder is the honest end of the sequence. Opening the archive
+    // itself would hand it to an archive manager, which is a guess.
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    const QUrl target{QUrl::fromLocalFile(m_downloaded_path)};
+#else
+    const QUrl target{QUrl::fromLocalFile(QFileInfo{m_downloaded_path}.absolutePath())};
+#endif
+
+    if (!QDesktopServices::openUrl(target)) {
+        // Do not leave the user with a button that silently does nothing. The
+        // file is verified and its path is already on screen above.
+        m_download_status->setText(
+            m_download_status->text() + "<br><font color='red'>" +
+            tr("Could not open it. The file is at the path above.").toHtmlEscaped() + "</font>");
+    }
+}
+
+void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
+{
+    const QString localversion{info.value("localversion").toString()};
+    const QString remoteversion{info.value("remoteversion").toString()};
+    const QString errors{info.value("errors").toString()};
+    const QString warning{info.value("warning").toString()};
+
+    if (!errors.isEmpty()) {
+        text = "<font color = 'red'>Error: </font>";
+        text += errors;
+    } else if (localversion == remoteversion) {
+        text = "Installed version: <b>" + localversion + "</b><br>";
+        text += info.value("message").toString();
+    } else {
+        const QString artifact{info.value("guiartifact").toString()};
+        const QString artifact_link{info.value("guiartifactlink").toString()};
+
+        text = "Installed version: <b>" + localversion + "</b><br>";
+        text += "Latest repository version: <b>" + remoteversion + "</b><br><br>";
+
+        if (artifact.isEmpty() || artifact_link.isEmpty()) {
+            // Either no build is published for this host, or the release is a
+            // prerelease, whose artifact naming has never been exercised. Point
+            // at the directory and let the user choose, rather than name a file
+            // that may not be there.
+            const QString link{info.value("officialDownloadLink").toString()};
+            const QString url{"<a href=\"" + link + "\">" + link + "</a>"};
+            text += "Please download the latest version from our official website <br>(" + url + ").";
+        } else {
+            // The build this machine needs, rather than the directory holding
+            // fifteen files it would have to choose between.
+            text += "The build for this machine is:<br>";
+            text += "<a href=\"" + artifact_link + "\">" + artifact + "</a>";
+
+            addDownloadControls(remoteversion, artifact);
+
+            if (info.value("platform").toString() == "osx64") {
+                // Only an x86_64 macOS build is published, and it runs on Apple
+                // Silicon under Rosetta. Say which one it is rather than let an
+                // arm64 user assume it is native.
+                text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
+            }
+        }
+    }
+
+    // The pre-release caution belongs on every outcome, not just one branch: it
+    // describes the build the user is running rather than anything the check
+    // discovered, so it is appended to whatever the text above ended up being.
+    if (!warning.isEmpty()) {
+        if (!text.isEmpty()) {
+            text += "<br><br>";
+        }
+        text += "<font color = 'red'>" + warning + "</font>";
+    }
+
+    ui->aboutMessage->setText(text);
+}
+
+HelpMessageDialog::~HelpMessageDialog()
+{
+    // An in flight request must not outlive the widgets its reply updates.
+    m_update_check_thread.quit();
+    m_update_check_thread.wait();
+
+    // A download can be minutes from finishing, so ask it to stop before
+    // waiting rather than blocking the close on a transfer nobody wants any
+    // more. quit() alone would not do it: the worker is inside a blocking call
+    // and is not reading the event loop, so it has to be told through the flag
+    // it polls between reads.
+    if (m_download_worker) m_download_worker->cancel();
+    m_download_thread.quit();
+    m_download_thread.wait();
+
+    delete ui;
 }
 
 void HelpMessageDialog::printToConsole()
