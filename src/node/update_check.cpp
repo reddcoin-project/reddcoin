@@ -200,9 +200,7 @@ bool node::ChunkedDecoder::Feed(const char* data, std::size_t size, const Sink& 
 namespace {
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
 
-//! Where the artifacts themselves are published, as distinct from where the
-//! version is announced.
-const std::string DOWNLOAD_HOST{"download.reddcoin.com"};
+
 
 //! How long one step may make no progress before the exchange is abandoned.
 //!
@@ -759,6 +757,21 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
     return response.body;
 }
 
+const std::string node::RELEASE_DOWNLOAD_HOST{"download.reddcoin.com"};
+
+bool node::FetchToString(const std::string& host, const std::string& target, std::string& out,
+                         std::string& error)
+{
+    error.clear();
+    try {
+        out = HttpsGet(host, target);
+        return true;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+}
+
 node::ProbeResult node::ProbeRemoteFile(const std::string& host_in, const std::string& target_in,
                                         RemoteFile& out, std::string& error)
 {
@@ -1075,7 +1088,7 @@ void node::CheckForUpdates(UniValue& result)
                         const std::string probe_target{"/bin/reddcoin-core-" + remote.numeric +
                                                        "/" + artifacts.gui};
                         const ProbeResult probed{
-                            ProbeRemoteFile(DOWNLOAD_HOST, probe_target, remote_file, probe_error)};
+                            ProbeRemoteFile(RELEASE_DOWNLOAD_HOST, probe_target, remote_file, probe_error)};
                         if (probed == ProbeResult::Absent) {
                             guiArtifact.clear();
                             daemonArtifact.clear();
