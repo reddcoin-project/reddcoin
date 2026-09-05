@@ -11,6 +11,7 @@
 #include <qt/bitcoin.h>
 #include <qt/test/apptests.h>
 #include <qt/test/rpcnestedtests.h>
+#include <qt/test/updatedialogtests.h>
 #include <qt/test/uritests.h>
 #include <test/util/setup_common.h>
 
@@ -86,6 +87,10 @@ int main(int argc, char* argv[])
     }
     URITests test1;
     if (QTest::qExec(&test1) != 0) {
+        fInvalid = true;
+    }
+    UpdateDialogTests update_dialog_tests;
+    if (QTest::qExec(&update_dialog_tests) != 0) {
         fInvalid = true;
     }
     RPCNestedTests test3(app.node());
