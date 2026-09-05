@@ -6,6 +6,7 @@
 #define BITCOIN_NODE_RELEASE_VERIFY_H
 
 #include <fs.h>
+#include <node/update_check.h>
 #include <uint256.h>
 
 #include <string>
@@ -67,6 +68,47 @@ bool VerifyReleaseManifest(const std::string& manifest, const std::string& signa
  */
 bool FindArtifactDigest(const std::string& manifest, const std::string& filename,
                         uint256& digest, std::string& error);
+
+//! A verified artifact, sitting where the user can be pointed at it.
+struct StagedRelease {
+    fs::path path;
+    std::string filename;
+    int64_t size{0};
+};
+
+/**
+ * Fetch, verify and stage a release artifact.
+ *
+ * Performs the whole of REP-1018 section 3.6: fetch the manifest and its
+ * signature, verify the signature against the compiled-in key, resolve the
+ * artifact name to its digest, download the artifact, and hash what arrived.
+ * Returns true only when the file on disk matches the digest in a manifest that
+ * the release key signed.
+ *
+ * **Staging layout.** Artifacts live under `<staging_root>/<version>/`, one
+ * directory per release. Directories for other versions are removed on success,
+ * so at most one staged artifact exists at a time and disk use is bounded by a
+ * single release rather than growing with every check.
+ *
+ * **An already-staged artifact is reused.** If the file is present and hashes
+ * to the expected digest it is not downloaded again, so repeating the check
+ * costs a manifest fetch rather than 29 MB. A file that is present and does not
+ * match is deleted and refetched, since the only thing that can be concluded
+ * about it is that it is not the artifact.
+ *
+ * **A hash mismatch deletes the file.** Leaving it would mean an unverified
+ * artifact sitting in the staging directory looking exactly like a verified
+ * one.
+ *
+ * @param[in]  version      Release version, used for the path and the directory.
+ * @param[in]  filename     Artifact to fetch, matched exactly in the manifest.
+ * @param[in]  staging_root Directory the per-version directories live under.
+ * @param[out] out          Where the verified artifact is, on success.
+ * @param[out] error        Why it failed. Empty when the caller cancelled.
+ */
+bool StageVerifiedRelease(const std::string& version, const std::string& filename,
+                          const fs::path& staging_root, const DownloadProgress& progress,
+                          const DownloadCancel& cancel, StagedRelease& out, std::string& error);
 
 /**
  * SHA-256 of a file on disk, read in blocks rather than loaded.
