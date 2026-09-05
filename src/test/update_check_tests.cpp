@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <node/update_check.h>
+#include <vector>
+#include <util/strencodings.h>
 
 #include <test/util/setup_common.h>
 #include <tinyformat.h>
@@ -13,7 +15,10 @@
 #include <stdexcept>
 #include <string>
 
+using node::ChunkedDecoder;
 using node::ExtractHttpBody;
+using node::HttpHeaders;
+using node::ParseHttpHeaders;
 using node::HttpResponse;
 using node::ParseHttpResponse;
 using node::ResolveRedirect;
@@ -298,4 +303,115 @@ BOOST_AUTO_TEST_CASE(a_redirect_body_is_not_held_to_the_framing_rules)
     BOOST_CHECK_THROW(ParseHttpResponse(ok, false), std::runtime_error);
 }
 
+//! Streaming, added with phase 3b. The decoder sees the stream in whatever
+//! pieces the network hands it, so the cases that matter are the splits.
+
+namespace {
+//! Feed a chunked body to the decoder in fixed size pieces, returning what it
+//! decoded. step of 0 means feed it all at once.
+std::string DecodeInPieces(const std::string& raw, std::size_t step, bool& complete, bool& ok)
+{
+    ChunkedDecoder decoder;
+    std::string out;
+    const auto sink = [&out](const char* data, std::size_t size) {
+        out.append(data, size);
+        return true;
+    };
+    ok = true;
+    const std::size_t width{step == 0 ? raw.size() : step};
+    for (std::size_t pos{0}; pos < raw.size() && ok; pos += width) {
+        ok = decoder.Feed(raw.data() + pos, std::min(width, raw.size() - pos), sink);
+    }
+    complete = decoder.Complete();
+    return out;
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(chunked_decoding_survives_any_split)
+{
+    // The property that matters. Where the reads land is not ours to choose, so
+    // every boundary has to give the same answer.
+    const std::string raw{"4\r\nWiki\r\n5\r\npedia\r\ne\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"};
+    const std::string expected{"Wikipedia in\r\n\r\nchunks."};
+
+    for (std::size_t step{1}; step <= raw.size(); ++step) {
+        bool complete{false}, ok{false};
+        const std::string got{DecodeInPieces(raw, step, complete, ok)};
+        BOOST_CHECK_MESSAGE(ok, "decode failed at step " << step);
+        BOOST_CHECK_MESSAGE(complete, "not complete at step " << step);
+        BOOST_CHECK_MESSAGE(got == expected, "wrong body at step " << step << ": " << got);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(a_chunked_body_without_its_final_chunk_is_incomplete)
+{
+    // Not an error while reading: the bytes so far are valid. It is incomplete,
+    // which is what the caller must act on rather than treating it as the end.
+    bool complete{true}, ok{false};
+    const std::string got{DecodeInPieces("4\r\nWiki\r\n", 1, complete, ok)};
+    BOOST_CHECK(ok);
+    BOOST_CHECK(!complete);
+    BOOST_CHECK_EQUAL(got, "Wiki");
+}
+
+BOOST_AUTO_TEST_CASE(malformed_chunk_framing_is_rejected)
+{
+    bool complete{false}, ok{true};
+    // Size that is not hexadecimal.
+    DecodeInPieces("zz\r\ndata\r\n0\r\n\r\n", 0, complete, ok);
+    BOOST_CHECK(!ok);
+
+    // Chunk not followed by its CRLF.
+    ok = true;
+    DecodeInPieces("4\r\nWikiXX5\r\n", 0, complete, ok);
+    BOOST_CHECK(!ok);
+}
+
+BOOST_AUTO_TEST_CASE(chunk_extensions_are_ignored)
+{
+    bool complete{false}, ok{false};
+    const std::string got{DecodeInPieces("4;name=value\r\nWiki\r\n0\r\n\r\n", 3, complete, ok)};
+    BOOST_CHECK(ok);
+    BOOST_CHECK(complete);
+    BOOST_CHECK_EQUAL(got, "Wiki");
+}
+
+BOOST_AUTO_TEST_CASE(a_sink_that_stops_stops_the_decode)
+{
+    // How a cancelled download, or a failed write, aborts mid body.
+    ChunkedDecoder decoder;
+    const std::string raw{"4\r\nWiki\r\n0\r\n\r\n"};
+    const bool fed{decoder.Feed(raw.data(), raw.size(),
+                                [](const char*, std::size_t) { return false; })};
+    BOOST_CHECK(!fed);
+    BOOST_CHECK(!decoder.Complete());
+}
+
+BOOST_AUTO_TEST_CASE(headers_are_parsed_without_a_body)
+{
+    // What a streaming read needs before deciding anything: it must not have to
+    // see the body to know the status, the length or the framing.
+    const HttpHeaders plain{ParseHttpHeaders(
+        "HTTP/1.1 200 OK\r\nContent-Length: 42\r\nContent-Type: application/gzip")};
+    BOOST_CHECK_EQUAL(plain.status, 200U);
+    BOOST_CHECK_EQUAL(plain.content_length, 42);
+    BOOST_CHECK(!plain.chunked);
+
+    const HttpHeaders chunked{ParseHttpHeaders(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked")};
+    BOOST_CHECK(chunked.chunked);
+    BOOST_CHECK_EQUAL(chunked.content_length, -1);
+
+    const HttpHeaders moved{ParseHttpHeaders(
+        "HTTP/1.1 302 Found\r\nLocation: https://example.org/x")};
+    BOOST_CHECK_EQUAL(moved.status, 302U);
+    BOOST_CHECK_EQUAL(moved.location, "https://example.org/x");
+
+    // No length and no chunking is legal: the body runs to the close.
+    const HttpHeaders open_ended{ParseHttpHeaders("HTTP/1.1 200 OK\r\nServer: x")};
+    BOOST_CHECK_EQUAL(open_ended.content_length, -1);
+    BOOST_CHECK(!open_ended.chunked);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
+

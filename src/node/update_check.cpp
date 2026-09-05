@@ -10,6 +10,7 @@
 #include <rpc/semver.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/system.h>
 
 #include <univalue.h>
 
@@ -139,6 +140,64 @@ std::string DecodeChunkedBody(const std::string& body)
     }
 }
 
+} // namespace
+
+bool node::ChunkedDecoder::Feed(const char* data, std::size_t size, const Sink& sink)
+{
+    std::size_t pos{0};
+    while (pos < size) {
+        switch (m_state) {
+        case State::Size: {
+            // The size line can land across any number of feeds, so it is
+            // accumulated rather than assumed to arrive whole.
+            const char c{data[pos++]};
+            m_pending.push_back(c);
+            if (m_pending.size() >= 2 && m_pending.compare(m_pending.size() - 2, 2, "\r\n") == 0) {
+                std::string field{m_pending.substr(0, m_pending.size() - 2)};
+                m_pending.clear();
+                const std::string::size_type extension{field.find(';')};
+                if (extension != std::string::npos) field = field.substr(0, extension);
+                if (!ParseChunkSize(TrimString(field), m_remaining)) return false;
+                if (m_remaining == 0) {
+                    // Trailers may follow; nothing here reads them.
+                    m_state = State::Done;
+                    return true;
+                }
+                m_state = State::Data;
+            } else if (m_pending.size() > 64) {
+                // A size line this long is not a size line.
+                return false;
+            }
+            break;
+        }
+        case State::Data: {
+            const std::size_t available{size - pos};
+            const std::size_t take{static_cast<std::size_t>(
+                std::min<uint64_t>(m_remaining, static_cast<uint64_t>(available)))};
+            if (take > 0 && !sink(data + pos, take)) return false;
+            pos += take;
+            m_remaining -= take;
+            if (m_remaining == 0) {
+                m_terminator = 2;
+                m_state = State::DataTerminator;
+            }
+            break;
+        }
+        case State::DataTerminator: {
+            const char c{data[pos++]};
+            if ((m_terminator == 2 && c != '\r') || (m_terminator == 1 && c != '\n')) return false;
+            if (--m_terminator == 0) m_state = State::Size;
+            break;
+        }
+        case State::Done:
+            // Anything after the terminating chunk is trailers, ignored.
+            return true;
+        }
+    }
+    return true;
+}
+
+namespace {
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
 
 //! How long one step may make no progress before the exchange is abandoned.
@@ -159,6 +218,11 @@ constexpr std::chrono::seconds IDLE_TIMEOUT{10};
 //! failure.
 constexpr std::chrono::seconds TOTAL_TIMEOUT{120};
 
+//! The same ceiling for a download, which legitimately takes far longer. The
+//! idle timeout is still what ends a stalled transfer; this only bounds one that
+//! creeps along fast enough to keep resetting it.
+constexpr std::chrono::seconds DOWNLOAD_TOTAL_TIMEOUT{3600};
+
 //! Redirect hops to follow before giving up.
 //!
 //! Enough for the indirection a download host may grow, few enough that a
@@ -176,6 +240,34 @@ constexpr int MAX_REDIRECTS{5};
 //! This is not the size limit for downloading an artifact. That path does not
 //! exist yet, and when it does it must stream to disk rather than raise this.
 constexpr std::size_t MAX_RESPONSE_BYTES{1024 * 1024};
+
+//! Ceiling on a downloaded artifact.
+//!
+//! Streaming removes the memory problem, not the disk one: a server that never
+//! stops sending would otherwise fill the filesystem. Set well above the largest
+//! published artifact, which is 29 MB, so it bounds the pathological case
+//! without second-guessing a legitimate release growing.
+constexpr int64_t MAX_DOWNLOAD_BYTES{256 * 1024 * 1024};
+
+//! Reason a streamed read stopped, so the caller can tell them apart.
+enum class StreamResult {
+    Complete,   //!< body ended, and framing proved it complete
+    Cancelled,  //!< the caller asked to stop
+    TooLarge,   //!< exceeded MAX_DOWNLOAD_BYTES
+};
+
+//! The request line and headers this client sends. Shared so a streamed request
+//! is byte for byte the one the in-memory path sends.
+std::string RequestFor(const std::string& host, const std::string& target)
+{
+    std::ostringstream request;
+    request << "GET " << target << " HTTP/1.1\r\n";
+    request << "Host: " << host << "\r\n";
+    request << "User-Agent: " << PACKAGE_NAME << "/" << PACKAGE_VERSION << "\r\n";
+    request << "Accept: */*\r\n";
+    request << "Connection: close\r\n\r\n";
+    return request.str();
+}
 
 /**
  * One HTTPS exchange with one host.
@@ -229,6 +321,20 @@ public:
     //! on any transport failure, including timeout.
     std::string Get(const std::string& target, bool& clean_eof);
 
+    //! Resolve, connect and complete the TLS handshake.
+    void Connect();
+
+    //! Send the request and read only as far as the end of the headers, leaving
+    //! the body unread on the stream. What arrived past the header terminator is
+    //! returned in leftover, since a single read does not stop on a boundary.
+    node::HttpHeaders GetHeaders(const std::string& target, std::string& leftover);
+
+    //! Stream the body that GetHeaders left on the stream into sink.
+    StreamResult ReadBodyToSink(const node::HttpHeaders& headers, const std::string& leftover,
+                                const std::function<bool(const char*, std::size_t)>& sink,
+                                const std::function<void(int64_t, int64_t)>& progress,
+                                const std::function<bool()>& cancel);
+
 private:
     //! Pump the io_context until the outstanding operation reports back or the
     //! deadline passes, then rethrow whatever it reported.
@@ -272,7 +378,7 @@ void HttpsConnection::Await(const std::string& what)
     if (m_ec) throw std::runtime_error("Failed while " + what + ": " + m_ec.message());
 }
 
-std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
+void HttpsConnection::Connect()
 {
     ArmIdleTimer();
 
@@ -301,14 +407,16 @@ std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
             m_done = true;
         });
     Await("performing the TLS handshake with " + m_host);
+}
 
+std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
+{
+    Connect();
+
+    const std::string request_text{RequestFor(m_host, target)};
     boost::asio::streambuf request;
     std::ostream request_stream(&request);
-    request_stream << "GET " << target << " HTTP/1.1\r\n";
-    request_stream << "Host: " << m_host << "\r\n";
-    request_stream << "User-Agent: " << PACKAGE_NAME << "/" << PACKAGE_VERSION << "\r\n";
-    request_stream << "Accept: */*\r\n";
-    request_stream << "Connection: close\r\n\r\n";
+    request_stream << request_text;
 
     ArmIdleTimer();
     boost::asio::async_write(m_stream, request,
@@ -368,11 +476,148 @@ std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
     return raw;
 }
 
-//! Where a redirect points, given the response that carried it.
-struct Redirect {
-    std::string host;
-    std::string target;
-};
+node::HttpHeaders HttpsConnection::GetHeaders(const std::string& target, std::string& leftover)
+{
+    Connect();
+
+    const std::string request_text{RequestFor(m_host, target)};
+    boost::asio::streambuf request;
+    std::ostream request_stream(&request);
+    request_stream << request_text;
+
+    ArmIdleTimer();
+    boost::asio::async_write(m_stream, request,
+        [&](const boost::system::error_code& ec, std::size_t) {
+            m_ec = ec;
+            m_done = true;
+        });
+    Await("sending the request to " + m_host);
+
+    // Read only until the headers are complete. A read does not stop on a
+    // boundary, so whatever arrived past the terminator is handed back rather
+    // than dropped: for a small body it can be the whole thing.
+    std::string raw;
+    std::array<char, 16 * 1024> chunk{};
+    std::string::size_type terminator{std::string::npos};
+    for (;;) {
+        ArmIdleTimer();
+        std::size_t got{0};
+        bool ended{false};
+        m_stream.async_read_some(boost::asio::buffer(chunk),
+            [&](const boost::system::error_code& ec, std::size_t bytes) {
+                got = bytes;
+                ended = (ec == boost::asio::error::eof ||
+                         ec == boost::asio::ssl::error::stream_truncated);
+                m_ec = ended ? boost::system::error_code{} : ec;
+                m_done = true;
+            });
+        Await("reading the response headers from " + m_host);
+
+        if (got > 0) {
+            raw.append(chunk.data(), got);
+            terminator = raw.find("\r\n\r\n");
+            if (terminator != std::string::npos) break;
+            if (raw.size() > MAX_RESPONSE_BYTES) {
+                throw std::runtime_error("Response headers from " + m_host + " exceeded " +
+                                         ToString(MAX_RESPONSE_BYTES) + " bytes");
+            }
+        }
+        if (ended || got == 0) break;
+    }
+
+    if (terminator == std::string::npos) throw std::runtime_error("Invalid response");
+    leftover = raw.substr(terminator + 4);
+    return node::ParseHttpHeaders(raw.substr(0, terminator));
+}
+
+StreamResult HttpsConnection::ReadBodyToSink(const node::HttpHeaders& headers,
+                                             const std::string& leftover,
+                                             const std::function<bool(const char*, std::size_t)>& sink,
+                                             const std::function<void(int64_t, int64_t)>& progress,
+                                             const std::function<bool()>& cancel)
+{
+    int64_t received{0};
+    bool sink_failed{false};
+
+    node::ChunkedDecoder decoder;
+    const auto deliver = [&](const char* data, std::size_t size) {
+        if (!sink(data, size)) {
+            sink_failed = true;
+            return false;
+        }
+        received += static_cast<int64_t>(size);
+        return true;
+    };
+
+    // Feeds one run of raw stream bytes through the framing, if any, into the
+    // sink. Returns false to stop the read.
+    const auto consume = [&](const char* data, std::size_t size) {
+        if (headers.chunked) return decoder.Feed(data, size, deliver);
+        return deliver(data, size);
+    };
+
+    if (!leftover.empty() && !consume(leftover.data(), leftover.size())) {
+        if (sink_failed) throw std::runtime_error("Could not write the downloaded data");
+        throw std::runtime_error("Malformed chunked response from " + m_host);
+    }
+    if (progress) progress(received, headers.content_length);
+
+    const bool have_all{[&] {
+        if (headers.chunked) return decoder.Complete();
+        return headers.content_length >= 0 && received >= headers.content_length;
+    }()};
+
+    std::array<char, 64 * 1024> chunk{};
+    bool clean_eof{false};
+    while (!have_all) {
+        if (cancel && cancel()) return StreamResult::Cancelled;
+
+        ArmIdleTimer();
+        std::size_t got{0};
+        bool ended{false};
+        m_stream.async_read_some(boost::asio::buffer(chunk),
+            [&](const boost::system::error_code& ec, std::size_t bytes) {
+                got = bytes;
+                clean_eof = (ec == boost::asio::error::eof);
+                ended = (ec == boost::asio::error::eof ||
+                         ec == boost::asio::ssl::error::stream_truncated);
+                m_ec = ended ? boost::system::error_code{} : ec;
+                m_done = true;
+            });
+        Await("reading the response body from " + m_host);
+
+        if (got > 0) {
+            if (received + static_cast<int64_t>(got) > MAX_DOWNLOAD_BYTES) return StreamResult::TooLarge;
+            if (!consume(chunk.data(), got)) {
+                if (sink_failed) throw std::runtime_error("Could not write the downloaded data");
+                throw std::runtime_error("Malformed chunked response from " + m_host);
+            }
+            if (progress) progress(received, headers.content_length);
+        }
+
+        if (headers.chunked ? decoder.Complete()
+                            : (headers.content_length >= 0 && received >= headers.content_length)) {
+            break;
+        }
+        if (ended || got == 0) {
+            // The framing decides whether this was the end or a truncation.
+            if (headers.chunked && !decoder.Complete()) {
+                throw std::runtime_error("Chunked response ended before its final chunk");
+            }
+            if (headers.content_length >= 0 && received < headers.content_length) {
+                throw std::runtime_error("Incomplete download: got " + ToString(received) +
+                                         " of " + ToString(headers.content_length) + " bytes");
+            }
+            if (headers.content_length < 0 && !headers.chunked && !clean_eof) {
+                throw std::runtime_error(
+                    "Download gave no Content-Length and ended without a clean shutdown");
+            }
+            break;
+        }
+    }
+
+    return StreamResult::Complete;
+}
 
 /**
  * Fetch a target from a host, following redirects, and return the body.
@@ -412,14 +657,13 @@ std::string HttpsGet(const std::string& start_host, const std::string& start_tar
 }
 } // namespace
 
-node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool clean_eof)
+node::HttpHeaders node::ParseHttpHeaders(const std::string& headers)
 {
-    HttpResponse out;
+    HttpHeaders out;
 
     // Status line.
-    const std::string::size_type eol{raw_response.find("\r\n")};
-    if (eol == std::string::npos) throw std::runtime_error("Invalid response");
-    std::istringstream status_stream{raw_response.substr(0, eol)};
+    const std::string::size_type eol{headers.find("\r\n")};
+    std::istringstream status_stream{eol == std::string::npos ? headers : headers.substr(0, eol)};
     std::string http_version;
     unsigned int status_code{0};
     status_stream >> http_version >> status_code;
@@ -427,12 +671,42 @@ node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool
         throw std::runtime_error("Invalid response");
     }
     out.status = status_code;
+    out.location = GetHeader(headers, "location");
+
+    const std::string transfer_encoding{ToLower(GetHeader(headers, "transfer-encoding"))};
+    if (!transfer_encoding.empty()) {
+        if (transfer_encoding != "chunked") {
+            throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
+        }
+        out.chunked = true;
+    }
+
+    // Content-Length is not consulted on a chunked body. RFC 7230 forbids
+    // sending both, and the terminating chunk is what proves completeness.
+    const std::string content_length{GetHeader(headers, "content-length")};
+    if (!out.chunked && !content_length.empty()) {
+        int64_t expected{0};
+        if (!ParseInt64(content_length, &expected) || expected < 0) {
+            throw std::runtime_error("Response has an unusable Content-Length: " + content_length);
+        }
+        out.content_length = expected;
+    }
+    return out;
+}
+
+node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool clean_eof)
+{
+    HttpResponse out;
 
     // Headers are terminated by a blank line; everything after it is the body.
     const std::string::size_type terminator{raw_response.find("\r\n\r\n")};
     if (terminator == std::string::npos) throw std::runtime_error("Invalid response");
     const std::string headers{raw_response.substr(0, terminator)};
     std::string body{raw_response.substr(terminator + 4)};
+
+    const HttpHeaders parsed{ParseHttpHeaders(headers)};
+    out.status = parsed.status;
+    out.location = parsed.location;
 
     // A chunked body carries its own framing, so the chunk sizes have to be
     // stripped out before anything downstream sees the content. api.github.com
@@ -442,8 +716,6 @@ node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool
     //
     // Content-Length is not consulted in this case. RFC 7230 forbids sending
     // both, and the terminating chunk is what proves the body is complete.
-    out.location = GetHeader(headers, "location");
-
     // A redirect's body is discarded, so its framing is not checked. Rejecting
     // a valid redirect because the server closed without a Content-Length would
     // fail the exchange over a body nothing reads.
@@ -452,24 +724,15 @@ node::HttpResponse node::ParseHttpResponse(const std::string& raw_response, bool
         return out;
     }
 
-    const std::string transfer_encoding{ToLower(GetHeader(headers, "transfer-encoding"))};
-    if (!transfer_encoding.empty()) {
-        if (transfer_encoding != "chunked") {
-            throw std::runtime_error("Response uses an unsupported transfer encoding: " + transfer_encoding);
-        }
+    if (parsed.chunked) {
         out.body = DecodeChunkedBody(body);
         return out;
     }
 
-    const std::string content_length{GetHeader(headers, "content-length")};
-    if (!content_length.empty()) {
-        int64_t expected{0};
-        if (!ParseInt64(content_length, &expected) || expected < 0) {
-            throw std::runtime_error("Response has an unusable Content-Length: " + content_length);
-        }
-        if (body.size() != static_cast<std::string::size_type>(expected)) {
+    if (parsed.content_length >= 0) {
+        if (body.size() != static_cast<std::string::size_type>(parsed.content_length)) {
             throw std::runtime_error("Incomplete response: got " + ToString(body.size()) +
-                                     " of " + content_length + " bytes");
+                                     " of " + ToString(parsed.content_length) + " bytes");
         }
     } else if (!clean_eof) {
         // Without a Content-Length the body runs until the connection closes,
@@ -488,6 +751,92 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
         throw std::runtime_error("Response returned with status code " + ToString(response.status));
     }
     return response.body;
+}
+
+bool node::DownloadToFile(const std::string& host_in, const std::string& target_in,
+                          const fs::path& destination, const DownloadProgress& progress,
+                          const DownloadCancel& cancel, std::string& error)
+{
+    error.clear();
+
+    // Written beside the destination rather than to a temporary directory, so
+    // the rename at the end cannot cross a filesystem boundary and turn into a
+    // copy that can itself fail half way.
+    const fs::path partial{destination.string() + ".part"};
+
+    const auto hard_deadline{std::chrono::steady_clock::now() + DOWNLOAD_TOTAL_TIMEOUT};
+    std::string host{host_in};
+    std::string target{target_in};
+
+    try {
+        for (int hop{0}; hop <= MAX_REDIRECTS; ++hop) {
+            HttpsConnection connection{host, hard_deadline};
+            std::string leftover;
+            const HttpHeaders headers{connection.GetHeaders(target, leftover)};
+
+            if (headers.status >= 300 && headers.status < 400) {
+                if (headers.location.empty()) {
+                    error = "Response returned status code " + ToString(headers.status) +
+                            " without a Location header";
+                    return false;
+                }
+                const Url next{ResolveRedirect(host, target, headers.location)};
+                host = next.host;
+                target = next.target;
+                continue;
+            }
+            if (headers.status != 200) {
+                error = "Response returned with status code " + ToString(headers.status);
+                return false;
+            }
+
+            // Refuse before writing anything, when the server is willing to say
+            // how much it intends to send.
+            if (headers.content_length > MAX_DOWNLOAD_BYTES) {
+                error = "Refusing a download of " + ToString(headers.content_length) +
+                        " bytes, over the " + ToString(MAX_DOWNLOAD_BYTES) + " byte limit";
+                return false;
+            }
+
+            fsbridge::ofstream out{partial, std::ios::binary | std::ios::trunc};
+            if (!out.good()) {
+                error = "Could not open " + partial.string() + " for writing";
+                return false;
+            }
+
+            const auto sink = [&out](const char* data, std::size_t size) {
+                out.write(data, static_cast<std::streamsize>(size));
+                return out.good();
+            };
+
+            const StreamResult result{
+                connection.ReadBodyToSink(headers, leftover, sink, progress, cancel)};
+            out.close();
+
+            if (result != StreamResult::Complete) {
+                fs::remove(partial);
+                if (result == StreamResult::TooLarge) {
+                    error = "Download exceeded " + ToString(MAX_DOWNLOAD_BYTES) + " bytes";
+                }
+                // A cancelled download leaves error empty: the caller asked for
+                // this and does not need telling it happened.
+                return false;
+            }
+
+            if (!RenameOver(partial, destination)) {
+                fs::remove(partial);
+                error = "Could not move the download into place at " + destination.string();
+                return false;
+            }
+            return true;
+        }
+        error = "Gave up after " + ToString(MAX_REDIRECTS) + " redirects";
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+
+    fs::remove(partial);
+    return false;
 }
 
 node::Url node::ResolveRedirect(const std::string& base_host, const std::string& base_target,
