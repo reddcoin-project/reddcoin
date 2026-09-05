@@ -8,8 +8,8 @@ TESTS += qt/test/test_reddcoin-qt
 TEST_QT_MOC_CPP = \
   qt/test/moc_apptests.cpp \
   qt/test/moc_rpcnestedtests.cpp \
-  qt/test/moc_uritests.cpp
-
+  qt/test/moc_uritests.cpp \
+  qt/test/moc_updatedialogtests.cpp
 if ENABLE_WALLET
 TEST_QT_MOC_CPP += \
   qt/test/moc_addressbooktests.cpp \
@@ -20,8 +20,8 @@ TEST_QT_H = \
   qt/test/addressbooktests.h \
   qt/test/apptests.h \
   qt/test/rpcnestedtests.h \
-  qt/test/uritests.h \
-  qt/test/util.h \
+  qt/test/uritests.h \ \
+  qt/test/updatedialogtests.h \  qt/test/util.h \
   qt/test/wallettests.h
 
 qt_test_test_reddcoin_qt_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BITCOIN_QT_INCLUDES) \
@@ -31,8 +31,8 @@ qt_test_test_reddcoin_qt_SOURCES = \
   qt/test/apptests.cpp \
   qt/test/rpcnestedtests.cpp \
   qt/test/test_main.cpp \
-  qt/test/uritests.cpp \
-  qt/test/util.cpp \
+  qt/test/uritests.cpp \ \
+  qt/test/updatedialogtests.cpp \  qt/test/util.cpp \
   $(TEST_QT_H)
 if ENABLE_WALLET
 qt_test_test_reddcoin_qt_SOURCES += \
