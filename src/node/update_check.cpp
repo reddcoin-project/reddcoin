@@ -200,6 +200,10 @@ bool node::ChunkedDecoder::Feed(const char* data, std::size_t size, const Sink& 
 namespace {
 const std::string UPDATE_CHECK_HOST{"api.github.com"};
 
+//! Where the artifacts themselves are published, as distinct from where the
+//! version is announced.
+const std::string DOWNLOAD_HOST{"download.reddcoin.com"};
+
 //! How long one step may make no progress before the exchange is abandoned.
 //!
 //! Reset by progress rather than counted from the start, so a slow but moving
@@ -258,10 +262,10 @@ enum class StreamResult {
 
 //! The request line and headers this client sends. Shared so a streamed request
 //! is byte for byte the one the in-memory path sends.
-std::string RequestFor(const std::string& host, const std::string& target)
+std::string RequestFor(const std::string& method, const std::string& host, const std::string& target)
 {
     std::ostringstream request;
-    request << "GET " << target << " HTTP/1.1\r\n";
+    request << method << " " << target << " HTTP/1.1\r\n";
     request << "Host: " << host << "\r\n";
     request << "User-Agent: " << PACKAGE_NAME << "/" << PACKAGE_VERSION << "\r\n";
     request << "Accept: */*\r\n";
@@ -327,7 +331,8 @@ public:
     //! Send the request and read only as far as the end of the headers, leaving
     //! the body unread on the stream. What arrived past the header terminator is
     //! returned in leftover, since a single read does not stop on a boundary.
-    node::HttpHeaders GetHeaders(const std::string& target, std::string& leftover);
+    node::HttpHeaders GetHeaders(const std::string& method, const std::string& target,
+                                 std::string& leftover);
 
     //! Stream the body that GetHeaders left on the stream into sink.
     StreamResult ReadBodyToSink(const node::HttpHeaders& headers, const std::string& leftover,
@@ -413,7 +418,7 @@ std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
 {
     Connect();
 
-    const std::string request_text{RequestFor(m_host, target)};
+    const std::string request_text{RequestFor("GET", m_host, target)};
     boost::asio::streambuf request;
     std::ostream request_stream(&request);
     request_stream << request_text;
@@ -476,11 +481,12 @@ std::string HttpsConnection::Get(const std::string& target, bool& clean_eof)
     return raw;
 }
 
-node::HttpHeaders HttpsConnection::GetHeaders(const std::string& target, std::string& leftover)
+node::HttpHeaders HttpsConnection::GetHeaders(const std::string& method, const std::string& target,
+                                              std::string& leftover)
 {
     Connect();
 
-    const std::string request_text{RequestFor(m_host, target)};
+    const std::string request_text{RequestFor(method, m_host, target)};
     boost::asio::streambuf request;
     std::ostream request_stream(&request);
     request_stream << request_text;
@@ -753,6 +759,55 @@ std::string node::ExtractHttpBody(const std::string& raw_response, bool clean_eo
     return response.body;
 }
 
+node::ProbeResult node::ProbeRemoteFile(const std::string& host_in, const std::string& target_in,
+                                        RemoteFile& out, std::string& error)
+{
+    error.clear();
+
+    // A probe is a question, not a transfer, so it gets the short ceiling
+    // rather than the download one.
+    const auto hard_deadline{std::chrono::steady_clock::now() + TOTAL_TIMEOUT};
+    std::string host{host_in};
+    std::string target{target_in};
+
+    try {
+        for (int hop{0}; hop <= MAX_REDIRECTS; ++hop) {
+            HttpsConnection connection{host, hard_deadline};
+            std::string leftover;
+            const HttpHeaders headers{connection.GetHeaders("HEAD", target, leftover)};
+
+            if (headers.status >= 300 && headers.status < 400) {
+                if (headers.location.empty()) {
+                    error = "Response returned status code " + ToString(headers.status) +
+                            " without a Location header";
+                    return ProbeResult::Unknown;
+                }
+                const Url next{ResolveRedirect(host, target, headers.location)};
+                host = next.host;
+                target = next.target;
+                continue;
+            }
+
+            if (headers.status == 200) {
+                // Content-Length on a HEAD describes the body that a GET would
+                // return, which is exactly the size being asked about.
+                out.size = headers.content_length;
+                return ProbeResult::Present;
+            }
+            if (headers.status == 404 || headers.status == 410) {
+                return ProbeResult::Absent;
+            }
+
+            error = "Response returned with status code " + ToString(headers.status);
+            return ProbeResult::Unknown;
+        }
+        error = "Gave up after " + ToString(MAX_REDIRECTS) + " redirects";
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    return ProbeResult::Unknown;
+}
+
 bool node::DownloadToFile(const std::string& host_in, const std::string& target_in,
                           const fs::path& destination, const DownloadProgress& progress,
                           const DownloadCancel& cancel, std::string& error)
@@ -772,7 +827,7 @@ bool node::DownloadToFile(const std::string& host_in, const std::string& target_
         for (int hop{0}; hop <= MAX_REDIRECTS; ++hop) {
             HttpsConnection connection{host, hard_deadline};
             std::string leftover;
-            const HttpHeaders headers{connection.GetHeaders(target, leftover)};
+            const HttpHeaders headers{connection.GetHeaders("GET", target, leftover)};
 
             if (headers.status >= 300 && headers.status < 400) {
                 if (headers.location.empty()) {
@@ -902,6 +957,7 @@ void node::CheckForUpdates(UniValue& result)
     std::string guiArtifactLink = "";
     std::string daemonArtifact = "";
     std::string daemonArtifactLink = "";
+    int64_t artifactBytes = -1;
 
     try {
         const std::string str_response{HttpsGet(UPDATE_CHECK_HOST, strGithubLink)};
@@ -1010,6 +1066,32 @@ void node::CheckForUpdates(UniValue& result)
                         daemonArtifact = artifacts.daemon;
                         guiArtifactLink = officialDownloadLink + "/" + artifacts.gui;
                         daemonArtifactLink = officialDownloadLink + "/" + artifacts.daemon;
+
+                        // Confirm the file is actually there before naming it.
+                        // The name is derived from a convention rather than read
+                        // from the server, so a release published under a
+                        // different scheme would otherwise produce a confident
+                        // link to nothing.
+                        //
+                        // Fails open, deliberately. Only a definite 404 withdraws
+                        // the name; a timeout or a 500 leaves it in place, since
+                        // a probe that could not reach the server is no evidence
+                        // that the artifact is missing, and degrading a working
+                        // notice on a network hiccup would be the worse error.
+                        std::string probe_error;
+                        RemoteFile remote_file;
+                        const std::string probe_target{"/bin/reddcoin-core-" + remote.numeric +
+                                                       "/" + artifacts.gui};
+                        const ProbeResult probed{
+                            ProbeRemoteFile(DOWNLOAD_HOST, probe_target, remote_file, probe_error)};
+                        if (probed == ProbeResult::Absent) {
+                            guiArtifact.clear();
+                            daemonArtifact.clear();
+                            guiArtifactLink.clear();
+                            daemonArtifactLink.clear();
+                        } else if (probed == ProbeResult::Present) {
+                            artifactBytes = remote_file.size;
+                        }
                     }
                 }
             }
@@ -1036,6 +1118,10 @@ void node::CheckForUpdates(UniValue& result)
     // check did not get far enough to know, so the shape of the result does not
     // depend on whether it succeeded.
     result.pushKV("hosttriplet", HostTriplet());
+    // -1 when the probe did not run, could not reach the server, or the server
+    // gave no Content-Length. A size of zero would be a real answer, so absence
+    // needs its own value rather than being folded into it.
+    result.pushKV("artifactbytes", artifactBytes);
     result.pushKV("platform", platform);
     result.pushKV("guiartifact", guiArtifact);
     result.pushKV("guiartifactlink", guiArtifactLink);
