@@ -8,6 +8,7 @@
 
 #include <clientversion.h>
 #include <rpc/util.h>
+#include <node/release_verify.h>
 #include <node/update_check.h>
 #include <shutdown.h>
 #include <sync.h>
@@ -316,6 +317,81 @@ void checkforupdatesinfo(UniValue& result)
     node::CheckForUpdates(result);
 }
 
+static RPCHelpMan downloadupdate()
+{
+    return RPCHelpMan{"downloadupdate",
+        "\nDownload the current release and verify it against the signing key built into this "
+        "client.\n"
+        "\nThe file is only kept if its hash matches a manifest that key signed, so a successful "
+        "call means the artifact on disk is the one the release manager published. Nothing is "
+        "installed: this client never replaces its own files.\n"
+        "\nRe-running is cheap. An artifact already downloaded and still correct is not fetched "
+        "again.\n",
+        {
+            {"artifact", RPCArg::Type::STR, RPCArg::Default{"daemon"},
+             "Which build to fetch, \"daemon\" or \"gui\". They are the same file on Linux; on "
+             "Windows and macOS the gui build is the installer and the daemon build is the archive"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::STR, "version", "Version that was downloaded"},
+                {RPCResult::Type::STR, "artifact", "Filename that was downloaded"},
+                {RPCResult::Type::STR, "path", "Where the verified file is"},
+                {RPCResult::Type::NUM, "size", "Its size in bytes"},
+                {RPCResult::Type::BOOL, "verified", "Always true. A file that did not verify is deleted rather than reported"},
+            }},
+        RPCExamples{HelpExampleCli("downloadupdate", "") +
+                    HelpExampleCli("downloadupdate", "gui") +
+                    HelpExampleRpc("downloadupdate", "\"gui\"")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    // Defaults to the daemon build because this is the RPC: a reddcoind
+    // operator is who reaches it. The Qt console can ask for "gui", and the
+    // GUI itself will call the node directly rather than through here.
+    const std::string which{request.params[0].isNull() ? "daemon" : request.params[0].get_str()};
+    if (which != "daemon" && which != "gui") {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "artifact must be \"daemon\" or \"gui\"");
+    }
+
+    // Ask what the current release is, rather than taking a version from the
+    // caller. A caller-supplied version would let this be pointed at anything
+    // on the server, and the answer to "which release" belongs in one place.
+    UniValue check(UniValue::VOBJ);
+    node::CheckForUpdates(check);
+
+    const std::string errors{check["errors"].isNull() ? "" : check["errors"].get_str()};
+    if (!errors.empty()) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Could not determine the current release: " + errors);
+    }
+
+    const std::string version{check["remoteversion"].isNull() ? "" : check["remoteversion"].get_str()};
+    const std::string field{which == "gui" ? "guiartifact" : "daemonartifact"};
+    const std::string artifact{check[field].isNull() ? "" : check[field].get_str()};
+    if (version.empty() || artifact.empty()) {
+        throw JSONRPCError(RPC_MISC_ERROR,
+                           "No published build is known for this host, so there is nothing to download");
+    }
+
+    node::StagedRelease staged;
+    std::string error;
+    if (!node::StageVerifiedRelease(version, artifact, gArgs.GetDataDirNet() / "updates",
+                                    node::DownloadProgress{}, node::DownloadCancel{}, staged,
+                                    error)) {
+        throw JSONRPCError(RPC_MISC_ERROR, error.empty() ? "Download cancelled" : error);
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("version", version);
+    result.pushKV("artifact", staged.filename);
+    result.pushKV("path", staged.path.string());
+    result.pushKV("size", staged.size);
+    result.pushKV("verified", true);
+    return result;
+}
+    };
+}
+
 // clang-format off
 static const CRPCCommand vRPCCommands[] =
 { //  category               actor (function)
@@ -326,6 +402,7 @@ static const CRPCCommand vRPCCommands[] =
     { "control",             &stop,                   },
     { "control",             &uptime,                 },
     { "control",             &checkupdates,           },
+    { "control",             &downloadupdate,         },
 };
 // clang-format on
 
