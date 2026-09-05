@@ -160,6 +160,43 @@ struct Url {
 Url ResolveRedirect(const std::string& base_host, const std::string& base_target,
                     const std::string& location);
 
+//! What a probe found out about a file on the server.
+struct RemoteFile {
+    //! Content-Length the server reports, or -1 when it gives none.
+    int64_t size{-1};
+};
+
+/**
+ * Answer to "is this file actually there?".
+ *
+ * Absent and Unknown are kept apart deliberately. A 404 is the server saying
+ * the file is not there; a timeout or a 500 is the client failing to find out.
+ * Collapsing the two would let a broken network be reported to the user as a
+ * missing release, which is a different problem with a different remedy.
+ */
+enum class ProbeResult {
+    Present,  //!< the server answered 200
+    Absent,   //!< the server answered 404
+    Unknown,  //!< could not be established
+};
+
+/**
+ * Ask whether a file exists, without downloading it.
+ *
+ * Issues a HEAD request, following redirects on the same terms as everything
+ * else here. Used to avoid naming an artifact that would 404, and to learn its
+ * size before offering to fetch it.
+ *
+ * @param[out] out   Filled in when the result is Present.
+ * @param[out] error Why the result is Unknown. Empty otherwise.
+ *
+ * A server is not obliged to answer HEAD the way it answers GET, so a Present
+ * result is good evidence rather than a guarantee. It is the difference between
+ * offering a link that is probably right and one that is probably wrong.
+ */
+ProbeResult ProbeRemoteFile(const std::string& host, const std::string& target,
+                            RemoteFile& out, std::string& error);
+
 //! Called as a download proceeds. total is -1 when the server gave no length.
 using DownloadProgress = std::function<void(int64_t received, int64_t total)>;
 
