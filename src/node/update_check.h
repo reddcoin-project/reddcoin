@@ -171,6 +171,22 @@ struct Url {
 Url ResolveRedirect(const std::string& base_host, const std::string& base_target,
                     const std::string& location);
 
+//! Host the release artifacts and their manifest are published on, as
+//! distinct from the one that announces the version.
+extern const std::string RELEASE_DOWNLOAD_HOST;
+
+/**
+ * Fetch a small file into memory over HTTPS.
+ *
+ * For the manifest and its signature, which are kilobytes and have to be held
+ * whole to be verified. An artifact goes through DownloadToFile instead.
+ *
+ * @param[out] out   The body, when this returns true.
+ * @param[out] error Why it failed.
+ */
+bool FetchToString(const std::string& host, const std::string& target, std::string& out,
+                   std::string& error);
+
 //! What a probe found out about a file on the server.
 struct RemoteFile {
     //! Content-Length the server reports, or -1 when it gives none.
