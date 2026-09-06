@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QVariantMap>
 
+#include <memory>
+
 namespace {
 //! An update-check result, as showUpdateInfo receives it.
 QVariantMap Result(const QString& local, const QString& remote, const QString& artifact)
