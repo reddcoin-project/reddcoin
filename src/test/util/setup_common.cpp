@@ -213,19 +213,25 @@ TestChain100Setup::TestChain100Setup()
 {
     const Consensus::Params& params = Params().GetConsensus();
 
-    SetMockTime(1598887952);
+    // Start the clock just after genesis. UpdateTime floors a new block's time
+    // at the previous block's median time past plus one, so a mock time set
+    // earlier than genesis dates every block far beyond the mocked "now" and
+    // each one is rejected as time-too-new.
+    SetMockTime(Params().GenesisBlock().nTime + 1);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
 
-    // Generate a 100-block chain:
+    // Generate nCoinbaseMaturity PoW blocks, which is 60 on regtest and leaves
+    // the tip at height 60. Every one of them is below nLastPowHeight, so no
+    // staking is needed to build this chain.
     this->mineBlocks(params.GetCoinbaseMaturity());
 
     {
         LOCK(::cs_main);
         assert(
             m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "571d80a9967ae599cec0448b0b0ba1cfb606f584d8069bd7166b86854ba7a191");
+            "7d94161290ee304fbaba0817cbd8ae31253d243abec3e4d2ea4d587230f05d23");
     }
 }
 
