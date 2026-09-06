@@ -3144,6 +3144,20 @@ void CChainState::ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pi
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
+    // Check proof of work matches claimed amount.
+    //
+    // Reddcoin's proof of work is scrypt, so this hashes GetPoWHash() and not
+    // GetHash(). Proof of stake blocks carry no proof of work and are checked
+    // by CheckProofOfStake instead. Blocks at or before CHECK_POW_FROM_NTIME
+    // are exempt, matching the historical chain.
+    if (block.GetBlockTime() > CHECK_POW_FROM_NTIME) {
+        if (fCheckPOW && block.IsProofOfWork()) {
+            if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams)) {
+                return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+            }
+        }
+    }
+
     return true;
 }
 
