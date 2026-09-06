@@ -23,6 +23,7 @@ class UpdateDialogTests : public QObject
 private Q_SLOTS:
     void everyFieldTheDialogReadsSurvivesTheWorker();
     void downloadOfferedOnlyWithAnArtifact();
+    void handOffWordingMatchesThePlatform();
     void destroyingTheDialogIsSafe();
 };
 
