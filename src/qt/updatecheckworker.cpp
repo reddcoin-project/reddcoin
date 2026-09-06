@@ -8,26 +8,41 @@
 #include <univalue.h>
 
 #include <string>
+#include <vector>
 
-namespace {
-QString GetString(const UniValue& value, const std::string& key)
+QVariantMap UpdateInfoToVariantMap(const UniValue& result)
 {
-    return value.exists(key) ? QString::fromStdString(value[key].get_str()) : QString{};
+    QVariantMap info;
+    if (!result.isObject()) return info;
+
+    // Every key, rather than the ones this happens to know about. The reader
+    // asks for what it needs; anything it does not need costs a map entry.
+    const std::vector<std::string>& keys{result.getKeys()};
+    const std::vector<UniValue>& values{result.getValues()};
+    for (size_t i = 0; i < keys.size() && i < values.size(); ++i) {
+        const QString key{QString::fromStdString(keys[i])};
+        switch (values[i].getType()) {
+        case UniValue::VBOOL:
+            info[key] = values[i].get_bool();
+            break;
+        case UniValue::VNUM:
+            info[key] = static_cast<qlonglong>(values[i].get_int64());
+            break;
+        case UniValue::VSTR:
+            info[key] = QString::fromStdString(values[i].get_str());
+            break;
+        default:
+            // Nothing else appears in an update check result today. Skipping is
+            // right rather than stringifying: a reader asking for a key that is
+            // not there gets an empty value, which is what it would have got
+            // from a field this could not represent anyway.
+            break;
+        }
+    }
+    return info;
 }
-} // namespace
 
 void UpdateCheckWorker::check()
 {
-    const UniValue result{m_node.checkForUpdates()};
-
-    QVariantMap info;
-    info["updateavailable"] = result.exists("updateavailable") && result["updateavailable"].get_bool();
-    info["localversion"] = GetString(result, "localversion");
-    info["remoteversion"] = GetString(result, "remoteversion");
-    info["message"] = GetString(result, "message");
-    info["warning"] = GetString(result, "warning");
-    info["officialDownloadLink"] = GetString(result, "officialDownloadLink");
-    info["errors"] = GetString(result, "errors");
-
-    Q_EMIT checked(info);
+    Q_EMIT checked(UpdateInfoToVariantMap(m_node.checkForUpdates()));
 }

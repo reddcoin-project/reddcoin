@@ -8,6 +8,21 @@
 #include <QObject>
 #include <QVariantMap>
 
+class UniValue;
+
+/**
+ * Convert an update check result into the map the GUI reads.
+ *
+ * Copies every field rather than naming the ones wanted. An allow-list here
+ * drifts the moment the node reports something new: the reader goes on asking
+ * for a key nobody puts in, gets an empty string, and takes whichever branch
+ * empty means. That is not hypothetical, it is what happened when phase 1 added
+ * the artifact fields.
+ *
+ * Free and exposed so the mapping can be tested without constructing a node.
+ */
+QVariantMap UpdateInfoToVariantMap(const UniValue& result);
+
 namespace interfaces {
 class Node;
 } // namespace interfaces

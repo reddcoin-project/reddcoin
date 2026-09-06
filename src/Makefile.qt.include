@@ -85,6 +85,7 @@ QT_MOC_CPP = \
   qt/moc_transactiontablemodel.cpp \
   qt/moc_transactionview.cpp \
   qt/moc_updatecheckworker.cpp \
+  qt/moc_updatedownloadworker.cpp \
   qt/moc_utilitydialog.cpp \
   qt/moc_walletcontroller.cpp \
   qt/moc_walletframe.cpp \
@@ -166,6 +167,7 @@ BITCOIN_QT_H = \
   qt/transactiontablemodel.h \
   qt/transactionview.h \
   qt/updatecheckworker.h \
+  qt/updatedownloadworker.h \
   qt/utilitydialog.h \
   qt/walletcontroller.h \
   qt/walletframe.h \
@@ -263,6 +265,7 @@ BITCOIN_QT_BASE_CPP = \
   qt/splashscreen.cpp \
   qt/trafficgraphwidget.cpp \
   qt/updatecheckworker.cpp \
+  qt/updatedownloadworker.cpp \
   qt/utilitydialog.cpp
 
 BITCOIN_QT_WINDOWS_CPP = qt/winshutdownmonitor.cpp
