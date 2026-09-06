@@ -20,7 +20,7 @@ never take longer than the fetch deadline.
 import time
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, assert_raises_rpc_error
 
 # node::CheckForUpdates gives the whole exchange UPDATE_CHECK_TIMEOUT (10s),
 # with generous headroom here for a loaded CI machine.
@@ -85,6 +85,35 @@ class CheckUpdatesTest(BitcoinTestFramework):
         # running twice in one process.
         again = node.checkupdates()
         assert_equal(set(again), set(info))
+
+        self.check_downloadupdate(node)
+
+    def check_downloadupdate(self, node):
+        """downloadupdate, without ever actually downloading.
+
+        The happy path fetches a 29 MB artifact from download.reddcoin.com, so
+        it is deliberately not exercised here: a test suite that pulls a release
+        on every run is a bad neighbour to CI and to anyone running the suite on
+        a metered connection. It is covered by hand against the live server
+        instead.
+
+        What is worth asserting is that the argument is validated before
+        anything reaches the network, so a caller who mistypes it gets an error
+        rather than a download.
+        """
+        self.log.info("downloadupdate rejects an unknown artifact, without fetching")
+        start = time.time()
+        assert_raises_rpc_error(-8, 'artifact must be "daemon" or "gui"',
+                                node.downloadupdate, "nonsense")
+        elapsed = time.time() - start
+
+        # A network round trip could not fit in this, so the rejection provably
+        # happened before one was attempted.
+        assert elapsed < 2, \
+            "downloadupdate took {:.1f}s to reject an argument, so it reached the network first".format(elapsed)
+
+        self.log.info("downloadupdate is documented")
+        assert "daemon" in node.help("downloadupdate")
 
 
 if __name__ == "__main__":
