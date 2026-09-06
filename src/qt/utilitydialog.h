@@ -8,6 +8,7 @@
 
 #include <QDialog>
 #include <QThread>
+#include <QVariantMap>
 #include <QWidget>
 
 class NetworkStyle;
@@ -33,18 +34,31 @@ class HelpMessageDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates);
+    /**
+     * @param[in] auto_check Start the update check on construction. Tests pass
+     *                       false to build the dialog without performing the
+     *                       network requests it would otherwise make, which is
+     *                       the same thing develop achieves by passing it no
+     *                       node.
+     */
+    explicit HelpMessageDialog(QWidget *parent, const NetworkStyle *networkStyle, bool about, bool checkUpdates, bool auto_check = true);
     ~HelpMessageDialog();
 
     void printToConsole();
     void showOrPrint();
 
 private:
+    /** Create the update check worker and start the thread it runs on */
+    void startUpdateCheck();
+
     /** Add the download button and progress bar, once there is something to offer */
     void addDownloadControls(const QString& version, const QString& artifact);
 
     Ui::HelpMessageDialog *ui;
     QString text;
+
+    /** Thread the update check runs on, so its network requests cannot stall the GUI */
+    QThread m_update_check_thread;
 
     /** Thread the download runs on, so a 29 MB transfer cannot stall the GUI */
     QThread m_download_thread;
@@ -56,6 +70,8 @@ private:
 
 private Q_SLOTS:
     void on_okButton_accepted();
+    /** Replace the "please wait" text once the check has an answer */
+    void showUpdateInfo(const QVariantMap& info);
 
     /** Start the download, or ask a running one to stop */
     void onDownloadClicked();

@@ -13,6 +13,7 @@
 #include <qt/guiutil.h>
 #include <qt/modaloverlay.h>
 #include <qt/networkstyle.h>
+#include <qt/updatecheckworker.h>
 #include <qt/notificator.h>
 #include <qt/openuridialog.h>
 #include <qt/optionsdialog.h>
@@ -240,6 +241,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     connect(timer, &QTimer::timeout, this, &BitcoinGUI::checkUpdates);
     timer->start(CHECK_UPDATE_DELAY);
 
+    startUpdateCheckWorker();
+
     // check update on initial start
     checkUpdates();
 
@@ -265,46 +268,54 @@ BitcoinGUI::~BitcoinGUI()
     MacDockIconHandler::cleanup();
 #endif
 
+    // An in flight check must not outlive the widgets its answer updates.
+    m_update_check_thread.quit();
+    m_update_check_thread.wait();
+
     delete rpcConsole;
+}
+
+void BitcoinGUI::startUpdateCheckWorker()
+{
+    UpdateCheckWorker* worker = new UpdateCheckWorker();
+    worker->moveToThread(&m_update_check_thread);
+
+    // Requests from this object must go to the worker, and its answers must come
+    // back here. Both connections cross threads, so Qt queues them.
+    connect(this, &BitcoinGUI::updateCheckRequested, worker, &UpdateCheckWorker::check);
+    connect(worker, &UpdateCheckWorker::checked, this, &BitcoinGUI::updateCheckFinished);
+
+    // Make sure the worker is deleted in its own thread.
+    connect(&m_update_check_thread, &QThread::finished, worker, &UpdateCheckWorker::deleteLater);
+
+    // The default QThread::run() spins up an event loop, which is what is needed
+    // here so the worker can receive queued calls.
+    m_update_check_thread.start();
 }
 
 void BitcoinGUI::checkUpdates()
 {
 #ifdef ENABLE_WALLET
-
     QSettings settings;
     if (settings.value("bCheckGithub").toBool()) {
-        // Get checkforupdatesinfo from rpc server
-        UniValue result(UniValue::VOBJ);
-        checkforupdatesinfo(result);
-
-        std::string localversion = "";
-        std::string remoteversion = "";
-        bool updateavailable = false;
-        std::string message = "";
-        std::string warning = "";
-        std::string officialDownloadLink = "";
-        std::string errors = "";
-
-        if (result.exists("localversion")) {
-            localversion = result["localversion"].get_str();
-        }
-        if (result.exists("remoteversion")) {
-            remoteversion = result["remoteversion"].get_str();
-        }
-        if (result.exists("updateavailable")) {
-            updateavailable = result["updateavailable"].get_bool();
-        }
-
-        if (updateavailable) {
-            labelCheckUpdate->setText(tr("Update to %1 is available.").arg(QString::fromStdString(remoteversion)));
-            labelCheckUpdate->setVisible(true);
-        } else {
-            labelCheckUpdate->setVisible(false);
-            labelCheckUpdate->setText(QString(""));
-        }
+        // The check performs network requests, so hand it to the worker thread
+        // and pick the answer up in updateCheckFinished(). Doing it here froze
+        // the window, and did so during construction on the first call, before
+        // it had even been shown.
+        Q_EMIT updateCheckRequested();
     }
 #endif
+}
+
+void BitcoinGUI::updateCheckFinished(const QVariantMap& info)
+{
+    if (info.value("updateavailable").toBool()) {
+        labelCheckUpdate->setText(tr("Update to %1 is available.").arg(info.value("remoteversion").toString()));
+        labelCheckUpdate->setVisible(true);
+    } else {
+        labelCheckUpdate->setVisible(false);
+        labelCheckUpdate->setText(QString(""));
+    }
 }
 
 void BitcoinGUI::createActions()

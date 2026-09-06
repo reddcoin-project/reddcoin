@@ -16,6 +16,8 @@
 #include <amount.h>
 
 #include <QLabel>
+#include <QVariantMap>
+#include <QThread>
 #include <QMainWindow>
 #include <QMap>
 #include <QMenu>
@@ -124,6 +126,13 @@ protected:
     bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
+
+    /** Create the update check worker and start the thread it runs on */
+    void startUpdateCheckWorker();
+
+    /** Thread the update check runs on, so its network requests cannot stall the GUI */
+    QThread m_update_check_thread;
+
     interfaces::Node& m_node;
     WalletController* m_wallet_controller{nullptr};
     std::unique_ptr<interfaces::Handler> m_handler_message_box;
@@ -248,11 +257,19 @@ private:
     void openOptionsDialogWithTab(OptionsDialog::Tab tab);
 
 Q_SIGNALS:
+    /** Ask the worker thread to run a check */
+    void updateCheckRequested();
+
     /** Signal raised when a URI was entered or dragged to the GUI */
     void receivedURI(const QString &uri);
     /** Signal raised when RPC console shown */
     void consoleShown(RPCConsole* console);
     void setPrivacy(bool privacy);
+
+
+private Q_SLOTS:
+    /** Update the status bar label once the check has an answer */
+    void updateCheckFinished(const QVariantMap& info);
 
 public Q_SLOTS:
     /** Set number of connections shown in the UI */
@@ -408,7 +425,6 @@ private:
     /** Creates context menu, its actions, and wires up all the relevant signals for mouse events. */
     void createContextMenu();
 
-private Q_SLOTS:
     /** When Display Units are changed on OptionsModel it will refresh the display text of the control on the status bar */
     void updateDisplayUnit(int newUnits);
     /** Tells underlying optionsModel to update its current display unit. */
