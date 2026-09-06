@@ -222,25 +222,12 @@ BOOST_AUTO_TEST_CASE(the_real_published_release_verifies)
 //! decisions around it, what is kept, what is thrown away, are the part that
 //! can be got wrong quietly and are testable here.
 
-BOOST_AUTO_TEST_CASE(a_manifest_the_key_did_not_sign_stages_nothing)
-{
-    // The ordering that matters: verification precedes everything. A staging
-    // directory should not so much as be created for a manifest that fails.
-    const fs::path root{gArgs.GetDataDirNet() / "staging-unsigned"};
-    StagedRelease staged;
-    std::string error;
-
-    // No network is reached: the version is one no server will answer for, so
-    // this fails at the fetch. The point is that it fails without leaving a
-    // directory behind.
-    BOOST_CHECK(!node::StageVerifiedRelease("0.0.0-nonexistent", "whatever.tar.gz", root,
-                                            node::DownloadProgress{},
-                                            [] { return true; }, staged, error));
-    BOOST_CHECK(!fs::exists(root));
-}
-
 BOOST_AUTO_TEST_CASE(staging_refuses_an_empty_version_or_name)
 {
+    // These are the arguments StageVerifiedRelease rejects before it fetches
+    // anything, which is what makes them safe to assert here. Anything that
+    // reaches the fetch performs real DNS and TLS, so it does not belong in a
+    // unit test however certain the failure is.
     const fs::path root{gArgs.GetDataDirNet() / "staging-empty"};
     StagedRelease staged;
     std::string error;
