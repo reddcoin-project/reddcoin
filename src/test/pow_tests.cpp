@@ -2,10 +2,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <arith_uint256.h>
 #include <chain.h>
 #include <chainparams.h>
+#include <consensus/validation.h>
 #include <pow.h>
+#include <primitives/block.h>
+#include <primitives/transaction.h>
+#include <validation.h>
+
 #include <test/util/setup_common.h>
+
+#include <string>
 
 #include <boost/test/unit_test.hpp>
 
@@ -180,6 +188,97 @@ BOOST_AUTO_TEST_CASE(ChainParams_TESTNET_sanity)
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, CBaseChainParams::SIGNET);
+}
+
+//! A target far harder than any regtest header will meet by accident.
+static const uint32_t UNREACHABLE_TARGET{0x1d00ffff};
+
+//! Build a block carrying only a header.
+//!
+//! CheckBlockHeader runs before every check that inspects transactions, so a
+//! block with no transactions is enough to reach it. Anything that gets past
+//! the header check fails later for an unrelated reason, which is why the
+//! cases below test the reject reason rather than the return value.
+static CBlock HeaderOnlyBlock(int32_t version, uint32_t time, uint32_t bits)
+{
+    CBlock block;
+    block.nVersion = version;
+    block.hashPrevBlock.SetNull();
+    block.hashMerkleRoot.SetNull();
+    block.nTime = time;
+    block.nBits = bits;
+    block.nNonce = 0;
+    return block;
+}
+
+//! Proof of work must actually be verified.
+//!
+//! This is the regression test for the stub CheckBlockHeader that shipped on
+//! this line: 80b9c562c6 deleted the check during the PoSV migration, so a
+//! block's claimed nBits went untested against any work for the whole of the
+//! historical proof-of-work range.
+BOOST_AUTO_TEST_CASE(pow_is_rejected_when_the_header_misses_its_target)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    CBlock block = HeaderOnlyBlock(POW_BLOCK_VERSION, CHECK_POW_FROM_NTIME + 1, UNREACHABLE_TARGET);
+
+    // The premise: this header does not meet the target it claims. Asserted
+    // rather than assumed, so the case cannot quietly stop testing anything
+    // if the hash or the target ever changes.
+    BOOST_CHECK(!CheckProofOfWork(block.GetPoWHash(), block.nBits, params));
+
+    BlockValidationState state;
+    BOOST_CHECK(!CheckBlock(block, state, params));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), std::string{"high-hash"});
+}
+
+//! The control: a header that meets its target passes the proof-of-work check.
+//! Without this, the case above would still pass if the check rejected
+//! everything put in front of it.
+BOOST_AUTO_TEST_CASE(pow_is_accepted_when_the_header_meets_its_target)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    const uint32_t easiest{UintToArith256(params.powLimit).GetCompact()};
+    CBlock block = HeaderOnlyBlock(POW_BLOCK_VERSION, CHECK_POW_FROM_NTIME + 1, easiest);
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, params)) ++block.nNonce;
+
+    BlockValidationState state;
+    CheckBlock(block, state, params);
+    BOOST_CHECK_NE(state.GetRejectReason(), std::string{"high-hash"});
+}
+
+//! Proof-of-stake headers carry no proof of work and are exempt.
+//!
+//! Note which predicate decides this. CheckBlockHeader takes a CBlockHeader,
+//! so IsProofOfWork resolves to the header's version test and not to the
+//! coinstake test CBlock shadows it with. Every block the miner produces
+//! carries a versionbits nVersion, so the check does not apply to them: its
+//! reach is the historical proof-of-work era, where blocks carry version 1
+//! or 2. This case exists to pin that down, because it is not obvious from
+//! reading CheckBlockHeader alone.
+BOOST_AUTO_TEST_CASE(pow_is_not_checked_for_proof_of_stake_headers)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    CBlock block = HeaderOnlyBlock(POW_BLOCK_VERSION + 1, CHECK_POW_FROM_NTIME + 1, UNREACHABLE_TARGET);
+    BOOST_CHECK(block.CBlockHeader::IsProofOfStake());
+    BOOST_CHECK(!CheckProofOfWork(block.GetPoWHash(), block.nBits, params));
+
+    BlockValidationState state;
+    CheckBlock(block, state, params);
+    BOOST_CHECK_NE(state.GetRejectReason(), std::string{"high-hash"});
+}
+
+//! Headers at or before CHECK_POW_FROM_NTIME are exempt, matching the
+//! historical chain, which is why the constant exists.
+BOOST_AUTO_TEST_CASE(pow_is_not_checked_before_check_pow_from_ntime)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    CBlock block = HeaderOnlyBlock(POW_BLOCK_VERSION, CHECK_POW_FROM_NTIME, UNREACHABLE_TARGET);
+    BOOST_CHECK(!CheckProofOfWork(block.GetPoWHash(), block.nBits, params));
+
+    BlockValidationState state;
+    CheckBlock(block, state, params);
+    BOOST_CHECK_NE(state.GetRejectReason(), std::string{"high-hash"});
 }
 
 BOOST_AUTO_TEST_SUITE_END()
