@@ -137,11 +137,18 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
 bool CheckProofOfWork(arith_uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {
+    bool fNegative;
+    bool fOverflow;
     arith_uint256 bnTarget;
-    bnTarget.SetCompact(nBits);
 
-    // Check range
-    if (bnTarget <= 0 || bnTarget > UintToArith256(params.powLimit))
+    bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
+
+    // Check range. arith_uint256 is unsigned, so bnTarget <= 0 only ever caught
+    // zero: a compact encoding carrying the sign bit was silently accepted as
+    // its own magnitude, and one whose exponent overflows was accepted as
+    // whatever SetCompact left behind. Both have to come from SetCompact's own
+    // flags, which is what upstream does and what develop already carries.
+    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
         return error("CheckProofOfWork() : nBits below minimum work");
 
     // Check proof of work matches claimed amount
