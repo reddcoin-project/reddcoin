@@ -2043,12 +2043,9 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(const CExtKey& master_
     } // no default case, so the compiler can warn about missing cases
     assert(!desc_prefix.empty());
 
-    // Mainnet derives at 0', testnet and regtest derive at 1'
-    if (Params().IsTestChain()) {
-        desc_prefix += "/1'";
-    } else {
-        desc_prefix += "/0'";
-    }
+    // Derive at Reddcoin's registered SLIP-0044 coin type, the same one legacy
+    // HD wallets use: 4' on mainnet, 1' on the test chains.
+    desc_prefix += strprintf("/%d'", Params().ExtCoinType());
 
     std::string internal_path = internal ? "/1" : "/0";
     std::string desc_str = desc_prefix + "/0'" + internal_path + desc_suffix;
