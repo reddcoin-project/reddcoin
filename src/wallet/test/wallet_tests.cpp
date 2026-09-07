@@ -825,4 +825,41 @@ BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
     TestUnloadWallet(std::move(wallet));
 }
 
+//! Unloading marks the wallet before it notifies, so a subscriber that arrives
+//! late can tell that it missed the notification.
+//!
+//! A staking thread subscribes to NotifyUnload only once it is already running,
+//! several statements after StakeWalletAdd() took its reference to the wallet
+//! and started the thread. An unloadwallet in that window fired the
+//! notification with nothing listening, and the thread then waited forever for
+//! a notification that had already been sent, holding the very reference
+//! UnloadWallet() blocks on. The ordering asserted here is what closes that
+//! window; ThreadStaker reads the flag once it has subscribed.
+BOOST_AUTO_TEST_CASE(unload_marks_wallet_before_notifying)
+{
+    auto wallet = TestLoadWallet(m_node.chain.get());
+    BOOST_REQUIRE(wallet);
+
+    CWallet* const wallet_ptr = wallet.get();
+    BOOST_CHECK(!wallet_ptr->IsUnloading());
+
+    bool notified{false};
+    bool marked_when_notified{false};
+
+    boost::signals2::connection conn = wallet_ptr->NotifyUnload.connect([&]() {
+        notified = true;
+        marked_when_notified = wallet_ptr->IsUnloading();
+
+        // ~CWallet asserts that nothing is still subscribed, and the wallet is
+        // destroyed inside UnloadWallet(), so let go here. Same ordering the
+        // staking thread keeps when its own connection fires.
+        conn.disconnect();
+    });
+
+    TestUnloadWallet(std::move(wallet));
+
+    BOOST_CHECK(notified);
+    BOOST_CHECK(marked_when_notified);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
