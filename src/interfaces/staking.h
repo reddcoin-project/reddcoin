@@ -108,6 +108,20 @@ public:
     using UnloadFn = std::function<void()>;
     virtual std::unique_ptr<Handler> handleUnload(UnloadFn fn) = 0;
 
+    //! Whether the wallet has already begun unloading.
+    //!
+    //! The partner of handleUnload(). A staking thread only subscribes once it
+    //! is running, which is after StakeWalletAdd() has taken a reference to the
+    //! wallet and started it, so an unload arriving in between fires the
+    //! notification with nothing listening. The thread would then wait on a
+    //! notification that has already been and gone, holding the wallet alive,
+    //! and unloadwallet would never return.
+    //!
+    //! The wallet is marked before the notification is sent, so subscribing and
+    //! then asking this closes the window: either the handler runs, or this
+    //! returns true.
+    virtual bool isUnloading() const = 0;
+
     //! Number of spendable coins, used to scale the stake search timeout.
     virtual size_t getAvailableCoinCount() = 0;
 
