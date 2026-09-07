@@ -197,6 +197,12 @@ void UnloadWallet(std::shared_ptr<CWallet>&& wallet)
     // The wallet can be in use so it's not possible to explicitly unload here.
     // Notify the unload intent so that all remaining shared pointers are
     // released.
+    //
+    // Mark the wallet first. A subscriber that connects to NotifyUnload after
+    // this point misses the notification, and would then hold the wallet alive
+    // waiting for one that will never come; the flag lets it check on arrival
+    // whether it was too late. See CWallet::IsUnloading().
+    wallet->m_unloading = true;
     wallet->NotifyUnload();
 
     // Time to ditch our shared_ptr and wait for ReleaseWallet call.

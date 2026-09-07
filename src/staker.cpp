@@ -13,6 +13,7 @@
 #include <txmempool.h>
 #include <util/system.h>
 #include <util/thread.h>
+#include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <wallet/wallet.h>
@@ -308,6 +309,15 @@ void CStakeman::ThreadStaker(std::shared_ptr<CWallet> pwallet, ChainstateManager
     LogPrintf("CStakeman::%s\n", __func__);
     LogPrintf("CStakeman::%s Staking thread [%s] starting\n", __func__, thread_id);
 
+    // Widen the startup window on demand, so a test or a manual check can land
+    // an unloadwallet inside it rather than hoping to. Debug-only and zero by
+    // default; the window this sits in is the one the IsUnloading() check below
+    // closes.
+    const int64_t start_delay = gArgs.GetArg("-stakerstartdelay", 0);
+    if (start_delay > 0) {
+        UninterruptibleSleep(std::chrono::milliseconds{start_delay});
+    }
+
     // Stop when the wallet is unloaded. This thread holds the wallet alive for
     // as long as it runs, so an unload cannot pull it away mid-pass, but it
     // also cannot finish until this thread lets go: UnloadWallet() waits for
@@ -323,12 +333,24 @@ void CStakeman::ThreadStaker(std::shared_ptr<CWallet> pwallet, ChainstateManager
         interrupt();
     });
 
-    try {
-        PoSMiner(pwallet.get(), chainman, connman, mempool, thread_id, running, interrupt);
-    } catch (std::exception& e) {
-        PrintExceptionContinue(&e, "ThreadStakeMinter()");
-    } catch (...) {
-        PrintExceptionContinue(NULL, "ThreadStakeMinter()");
+    // The unload may already have happened. StakeWalletAdd() takes its
+    // reference to the wallet and starts this thread, and nothing listens for
+    // the unload until the connection above is made, several statements into
+    // the new thread. An unloadwallet arriving in that window fires
+    // NotifyUnload with no subscriber, so this thread would wait forever for a
+    // notification that has already been sent, while holding the reference
+    // UnloadWallet() is blocked on. The wallet is marked before the
+    // notification goes out, so asking now covers the whole window.
+    if (pwallet->IsUnloading()) {
+        LogPrintf("CStakeman::%s Staking thread [%s] not starting, wallet already unloading\n", __func__, thread_id);
+    } else {
+        try {
+            PoSMiner(pwallet.get(), chainman, connman, mempool, thread_id, running, interrupt);
+        } catch (std::exception& e) {
+            PrintExceptionContinue(&e, "ThreadStakeMinter()");
+        } catch (...) {
+            PrintExceptionContinue(NULL, "ThreadStakeMinter()");
+        }
     }
     pwallet->SetLastCoinStakeSearchInterval(0);
     LogPrintf("CStakeman::%s Staking thread [%s] stopped\n", __func__, thread_id);
