@@ -20,7 +20,9 @@
 #include <test/util/setup_common.h>
 #include <util/translation.h>
 #include <validation.h>
+#include <interfaces/staking.h>
 #include <wallet/coincontrol.h>
+#include <wallet/staking.h>
 #include <wallet/test/wallet_test_fixture.h>
 
 #include <boost/test/unit_test.hpp>
@@ -1147,6 +1149,53 @@ BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
     LogPrintf("ZapSelectTx: Unloading test wallet\n");
     TestUnloadWallet(std::move(wallet));
     LogPrintf("ZapSelectTx: Test complete\n");
+}
+
+//! Unloading marks the wallet before it notifies, so a subscriber that arrives
+//! late can tell that it missed the notification.
+//!
+//! A staking thread subscribes to NotifyUnload only once it is already running,
+//! several statements after StakeWalletAdd() took its reference to the wallet
+//! and started the thread. An unloadwallet in that window fired the
+//! notification with nothing listening, and the thread then waited forever for
+//! a notification that had already been sent, holding the very reference
+//! UnloadWallet() blocks on. The ordering asserted here is what closes that
+//! window, and isUnloading() is how the staker reads it across the node/wallet
+//! boundary, so both ends and the seam between them are checked together.
+BOOST_AUTO_TEST_CASE(unload_marks_wallet_before_notifying)
+{
+    auto wallet = TestLoadWallet(m_node.chain.get());
+    BOOST_REQUIRE(wallet);
+
+    CWallet* const wallet_ptr = wallet.get();
+    auto staking_wallet = MakeStakingWallet(wallet);
+    BOOST_REQUIRE(staking_wallet);
+
+    BOOST_CHECK(!wallet_ptr->IsUnloading());
+    BOOST_CHECK(!staking_wallet->isUnloading());
+
+    bool notified{false};
+    bool marked_when_notified{false};
+    bool marked_at_the_seam{false};
+
+    boost::signals2::connection conn = wallet_ptr->NotifyUnload.connect([&]() {
+        notified = true;
+        marked_when_notified = wallet_ptr->IsUnloading();
+        marked_at_the_seam = staking_wallet->isUnloading();
+
+        // Both of these have to go before the wallet's last reference does: the
+        // wrapper holds a reference UnloadWallet() would otherwise wait on, and
+        // ~CWallet asserts that nothing is still subscribed. Same ordering the
+        // staking thread keeps when its own handler fires.
+        staking_wallet.reset();
+        conn.disconnect();
+    });
+
+    TestUnloadWallet(std::move(wallet));
+
+    BOOST_CHECK(notified);
+    BOOST_CHECK(marked_when_notified);
+    BOOST_CHECK(marked_at_the_seam);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

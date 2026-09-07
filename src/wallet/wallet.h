@@ -257,6 +257,9 @@ private:
      * skips it during initial block download, in which case updatedBlockTip()
      * runs it once IBD ends. See AbandonOrphanedCoinstakes(). */
     std::atomic<bool> m_orphaned_coinstakes_swept{false};
+    /** Set by UnloadWallet() before it fires NotifyUnload. See IsUnloading(). */
+    std::atomic<bool> m_unloading{false};
+    friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
      * provides no real security */
@@ -756,6 +759,18 @@ public:
 
     /** Wallet is about to be unloaded */
     boost::signals2::signal<void ()> NotifyUnload;
+
+    /**
+     * Whether UnloadWallet() has begun unloading this wallet.
+     *
+     * Set before NotifyUnload fires, so anything that subscribes to that signal
+     * can ask afterwards whether it missed the notification. A subscriber that
+     * only connects once it is already running (a staking thread, say) would
+     * otherwise have no way to tell "not unloading" apart from "unloading, and
+     * you were too late to hear about it", and would wait for a notification
+     * that has already been and gone while holding the wallet alive.
+     */
+    bool IsUnloading() const { return m_unloading; }
 
     /**
      * Address book entry changed.

@@ -664,6 +664,8 @@ public:
         return interfaces::MakeHandler(m_wallet->NotifyUnload.connect(fn));
     }
 
+    bool isUnloading() const override { return m_wallet->IsUnloading(); }
+
     void setLastCoinStakeSearchInterval(int64_t interval) override
     {
         m_wallet->SetLastCoinStakeSearchInterval(interval);

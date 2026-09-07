@@ -294,6 +294,54 @@ class StakingRpcTest(BitcoinTestFramework):
 
         node.staking(False)
 
+    def test_unloadwallet_racing_the_staking_thread_startup(self):
+        """Unloading a wallet the instant staking starts has to end its thread too.
+
+        The case above unloads a wallet whose staking thread is already running.
+        This one aims at the startup window instead: StakeWalletAdd() takes a
+        reference to the wallet and starts the thread, and nothing listens for
+        the unload until the thread has run several statements of its own. An
+        unloadwallet in between fires the notification with no subscriber, so
+        the thread never learns it should stop and goes on holding the very
+        reference unloadwallet is waiting for.
+
+        That window is microseconds wide, narrower than the RPC round trip it
+        would have to be squeezed into, so racing it from here does not work:
+        back to back RPCs miss it on an unloaded machine every time, which is
+        why this only ever showed up on busy CI runners. -stakerstartdelay
+        widens the window on purpose, making the race the normal case rather
+        than a rare one.
+
+        Like the case above, a regression does not fail here, it hangs.
+        """
+        node = self.nodes[0]
+
+        # Hold every staking thread before the point where it starts listening,
+        # for longer than the unload below takes to arrive.
+        self.restart_node(0, self.extra_args[0] + ["-stakerstartdelay=2000"])
+        node.staking(True)
+
+        self.log.info("unloadwallet returns when it races the staking thread's startup")
+        node.createwallet(wallet_name="race_staker")
+        wallet = node.get_wallet_rpc("race_staker")
+
+        wallet.setstaking(True)
+        assert_equal(node.staking()["thread_count"], 1)
+
+        # The thread is now parked inside the window, so this unload is the one
+        # that used to be missed. It returns only once the thread lets go of the
+        # wallet, so returning at all is the assertion; the log line pins down
+        # that it was the missed-notification path that let go, rather than the
+        # handler having caught it after all.
+        with node.assert_debug_log(["not starting, wallet already unloading"], timeout=30):
+            wallet.unloadwallet()
+
+        assert "race_staker" not in node.listwallets()
+        assert_equal(node.staking()["thread_count"], 0)
+
+        node.staking(False)
+        self.restart_node(0, self.extra_args[0])
+
     def run_test(self):
         self.test_staking_switch()
         self.test_setstaking_switch()
@@ -302,6 +350,7 @@ class StakingRpcTest(BitcoinTestFramework):
         self.test_staking_thread_lifecycle()
         self.test_locked_wallet_thread_can_be_stopped()
         self.test_unloading_a_wallet_stops_its_staking_thread()
+        self.test_unloadwallet_racing_the_staking_thread_startup()
 
 
 if __name__ == "__main__":
