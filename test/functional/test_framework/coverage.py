@@ -10,6 +10,8 @@ testing.
 
 import os
 
+from .authproxy import JSONRPCException
+
 
 REFERENCE_FILENAME = 'rpc_interface.txt'
 
@@ -43,8 +45,22 @@ class AuthServiceProxyWrapper():
         Delegates to AuthServiceProxy, then writes the particular RPC method
         called to a file.
 
+        A call the node answered with an error is recorded too. It reached the
+        RPC and the RPC decided the answer, which is what the coverage gate is
+        asking about, and for an RPC whose success path a test cannot reach it
+        is the only coverage there will ever be: downloadupdate can only succeed
+        by fetching a signed release over the network, so rpc_checkupdates.py
+        can only test how it rejects a bad argument. Recording nothing there
+        reported an RPC that is exercised by a passing test as untested.
+
+        A transport failure is not recorded. Nothing reached the RPC, so there
+        is nothing to claim coverage of.
         """
-        return_val = self.auth_service_proxy_instance.__call__(*args, **kwargs)
+        try:
+            return_val = self.auth_service_proxy_instance.__call__(*args, **kwargs)
+        except JSONRPCException:
+            self._log_call()
+            raise
         self._log_call()
         return return_val
 
