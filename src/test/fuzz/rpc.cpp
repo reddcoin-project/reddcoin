@@ -68,6 +68,7 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "addpeeraddress", // avoid DNS lookups
     "analyzepsbt",    // avoid signed integer overflow in CFeeRate::GetFee(unsigned long) (https://github.com/bitcoin/bitcoin/issues/20607)
     "checkupdates",   // avoid outbound network access (queries the release feed over TLS)
+    "downloadupdate", // avoid outbound network access and writing to disk (fetches a release into the datadir)
     "dumptxoutset",   // avoid writing to disk
     "dumpwallet", // avoid writing to disk
     "echoipc",              // avoid assertion failure (Assertion `"EnsureAnyNodeContext(request.context).init" && check' failed.)
