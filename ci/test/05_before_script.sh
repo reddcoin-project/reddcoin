@@ -50,7 +50,16 @@ if [ -z "$NO_DEPENDS" ]; then
     # CentOS has problems building the depends if the config shell is not explicitly set
     # (i.e. for libevent a Makefile with an empty SHELL variable is generated, leading to
     #  an error as the first command is executed)
-    SHELL_OPTS="LC_ALL=en_US.UTF-8 CONFIG_SHELL=/bin/dash"
+    #
+    # Keep the locale the rest of the job runs under. Upstream forces en_US.UTF-8
+    # here, which its CentOS 8 image has; the stream9 image generates no en_US
+    # locale at all, so every shell call prints
+    #   sh: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+    # on stderr. Qt's configure reads its library flags by capturing stdout and
+    # stderr together, so that warning ends up inside the flags it got back from
+    # pkg-config, and the freetype test then fails to build with a shell syntax
+    # error. That takes the whole GUI depends build down.
+    SHELL_OPTS="LC_ALL=C.UTF-8 CONFIG_SHELL=/bin/dash"
   else
     SHELL_OPTS="CONFIG_SHELL="
   fi
