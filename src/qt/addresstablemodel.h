@@ -67,7 +67,8 @@ public:
      */
     QString addRow(const QString &type, const QString &label, const QString &address, const OutputType address_type);
 
-    /** Look up label for address in address book, if not found return empty string. */
+    /** Look up label for address in address book, if not found return empty string.
+     *  Served from the model's own index, so it does not take the wallet lock. */
     QString labelForAddress(const QString &address) const;
 
     /** Look up purpose for address in address book, if not found return empty string. */
