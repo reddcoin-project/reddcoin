@@ -95,6 +95,10 @@ private:
     void subscribeToCoreSignals();
     void unsubscribeFromCoreSignals();
 
+    /** Re-evaluate rows first..last: refresh their status and tell every
+     *  attached view and proxy that the whole row changed. */
+    void emitRowsChanged(int first, int last);
+
     QString lookupAddress(const std::string &address, bool tooltip) const;
     QVariant addressColor(const TransactionRecord *wtx) const;
     QString formatTxStatus(const TransactionRecord *wtx) const;
