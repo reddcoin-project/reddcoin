@@ -10,6 +10,7 @@
 #include <key_io.h>
 #include <wallet/ismine.h>
 
+#include <cassert>
 #include <stdint.h>
 
 #include <QDateTime>
@@ -250,6 +251,24 @@ bool TransactionRecord::statusUpdateNeeded(const uint256& block_hash) const
 {
     assert(!block_hash.IsNull());
     return status.m_cur_block_hash != block_hash || status.needsUpdate;
+}
+
+bool TransactionStatus::needsBlockRefresh() const
+{
+    switch (status) {
+    case Unconfirmed:
+    case Confirming:
+    case Immature:
+    case OpenUntilDate:
+    case OpenUntilBlock:
+        return true;
+    case Confirmed:
+    case Conflicted:
+    case Abandoned:
+    case NotAccepted:
+        return false;
+    } // no default case, so the compiler can warn about missing cases
+    assert(false);
 }
 
 QString TransactionRecord::getTxHash() const

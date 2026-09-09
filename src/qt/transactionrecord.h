@@ -25,7 +25,8 @@ class TransactionStatus
 {
 public:
     TransactionStatus() : countsForBalance(false), sortKey(""),
-                          matures_in(0), status(Unconfirmed), depth(0), open_for(0)
+                          matures_in(0), status(Unconfirmed), depth(0), open_for(0),
+                          needsUpdate(false)
     { }
 
     enum Status {
@@ -65,6 +66,14 @@ public:
     uint256 m_cur_block_hash{};
 
     bool needsUpdate;
+
+    /** Whether a new block can change this status without the wallet
+     *  reporting a change to the transaction: the row is waiting on depth
+     *  (confirmations, maturity) or on finality. Every other status moves
+     *  only through a transaction notification, and a confirmed row only
+     *  gains confirmations, which is refreshed when the row is next shown.
+     */
+    bool needsBlockRefresh() const;
 };
 
 /** UI model for a transaction. A core transaction can be represented by multiple UI transactions if it has
