@@ -17,7 +17,9 @@
 
 #include <core_io.h>
 #include <interfaces/handler.h>
+#include <logging.h>
 #include <uint256.h>
+#include <util/time.h>
 
 #include <algorithm>
 #include <functional>
@@ -291,8 +293,15 @@ void TransactionTableModel::updateConfirmations()
     // Invalidate status (number of confirmations) and (possibly) description
     //  for all rows. Qt is smart enough to only actually request the data for the
     //  visible rows.
+    //
+    // Every proxy attached to this model answers each emit synchronously, and
+    // a proxy with dynamic sorting re-runs its filter on every row in the
+    // range, so the time reported here grows with the row count.
+    const int64_t nStart = GetTimeMicros();
     Q_EMIT dataChanged(index(0, Status), index(priv->size()-1, Status));
     Q_EMIT dataChanged(index(0, ToAddress), index(priv->size()-1, ToAddress));
+    LogPrint(BCLog::BENCH, "TransactionTableModel::updateConfirmations [%s]: %d rows in %.2fms\n",
+             walletModel->getWalletName().toStdString(), priv->size(), 0.001 * (GetTimeMicros() - nStart));
 }
 
 int TransactionTableModel::rowCount(const QModelIndex &parent) const
