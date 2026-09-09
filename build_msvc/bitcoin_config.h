@@ -1,5 +1,5 @@
 // Copyright (c) 2018-2020 The Bitcoin Core developers
-// Copyright (c) 2018-2024 The Reddcoin Core developers
+// Copyright (c) 2018-2026 The Reddcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,7 +13,7 @@
 #define CLIENT_VERSION_REVISION 9
 
 /* Version Build */
-#define CLIENT_VERSION_BUILD 4
+#define CLIENT_VERSION_BUILD 5
 
 /* Version is release */
 #define CLIENT_VERSION_IS_RELEASE true
@@ -258,7 +258,7 @@
 #define PACKAGE_NAME "Reddcoin Core"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Reddcoin Core 4.22.9.4"
+#define PACKAGE_STRING "Reddcoin Core 4.22.9.5"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "reddcoin"
@@ -267,7 +267,7 @@
 #define PACKAGE_URL "https://reddcoin.com/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.22.9.4"
+#define PACKAGE_VERSION "4.22.9.5"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */
