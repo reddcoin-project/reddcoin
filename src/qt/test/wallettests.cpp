@@ -8,6 +8,7 @@
 
 #include <interfaces/chain.h>
 #include <interfaces/node.h>
+#include <qt/addresstablemodel.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/clientmodel.h>
 #include <qt/optionsmodel.h>
@@ -15,6 +16,8 @@
 #include <qt/qvalidatedlineedit.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
+#include <qt/transactionfilterproxy.h>
+#include <qt/transactionrecord.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
@@ -33,6 +36,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCoreApplication>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -294,20 +298,239 @@ void TestGUI(interfaces::Node& node)
     QCOMPARE(walletModel.wallet().getAddressReceiveRequests().size(), size_t{0});
 }
 
+//! Load the height-100 chain's coinbases into a fresh wallet, as TestGUI does.
+std::shared_ptr<CWallet> LoadCoinbaseWallet(interfaces::Node& node, TestChain100Setup& test)
+{
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    {
+        auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+        wallet->SetAddressBook(GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type), "", "receive");
+        spk_man->AddKeyPubKey(test.coinbaseKey, test.coinbaseKey.GetPubKey());
+        wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+    WalletRescanReserver reserver(*wallet);
+    reserver.reserve();
+    CWallet::ScanResult result = wallet->ScanForWalletTransactions(Params().GetConsensus().hashGenesisBlock, 0 /* block height */, {} /* max height */, reserver, true /* fUpdate */);
+    if (result.status != CWallet::ScanResult::SUCCESS) return nullptr;
+    return wallet;
+}
+
+//! The per-block refresh visits exactly the rows whose status can still move
+//! with a block, a transaction notification re-evaluates the rows it names,
+//! and the history filter still finds rows by txid and label.
+void TestTransactionTableRefresh(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    std::shared_ptr<CWallet> wallet = LoadCoinbaseWallet(node, test);
+    QVERIFY(wallet);
+
+    // A view attaches a dynamic filter proxy, as the history page does, so
+    // every row is evaluated and settled the way it is in the client.
+    std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    TransactionView transactionView(platformStyle.get());
+    OptionsModel optionsModel;
+    ClientModel clientModel(node, &optionsModel);
+    AddWallet(wallet);
+    WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    RemoveWallet(wallet, std::nullopt);
+    transactionView.setModel(&walletModel);
+
+    TransactionTableModel* model = walletModel.getTransactionTableModel();
+    const int rows = model->rowCount({});
+    QVERIFY(rows > 0);
+
+    // Record every row range the model reports as changed.
+    std::vector<std::pair<int, int>> ranges;
+    QMetaObject::Connection recorder = QObject::connect(model, &QAbstractItemModel::dataChanged,
+        [&ranges](const QModelIndex& top_left, const QModelIndex& bottom_right) {
+            ranges.emplace_back(top_left.row(), bottom_right.row());
+        });
+    auto covered = [&ranges](int row) {
+        for (const auto& range : ranges) {
+            if (row >= range.first && row <= range.second) return true;
+        }
+        return false;
+    };
+    auto role = [model](int row, int which) {
+        return model->data(model->index(row, 0, {}), which);
+    };
+    auto live = [&role](int row) {
+        TransactionStatus status;
+        status.status = static_cast<TransactionStatus::Status>(role(row, TransactionTableModel::StatusRole).toInt());
+        return status.needsBlockRefresh();
+    };
+
+    // The first sweep after loading may visit every row, since a row that
+    // has never been refreshed carries the default status. The second sees
+    // settled statuses and is the one the client runs on every block.
+    model->updateConfirmations();
+    ranges.clear();
+    model->updateConfirmations();
+
+    // At height 100 with a maturity of 60 the early coinbases are confirmed
+    // and the later ones immature, so both kinds are present.
+    int live_rows = 0;
+    int settled_rows = 0;
+    for (int row = 0; row < rows; ++row) {
+        if (live(row)) {
+            ++live_rows;
+            QVERIFY2(covered(row), "a row still waiting on depth was not refreshed");
+        } else {
+            ++settled_rows;
+            QVERIFY2(!covered(row), "a settled row was refreshed");
+        }
+    }
+    QVERIFY(live_rows > 0);
+    QVERIFY(settled_rows > 0);
+
+    // A transaction notification re-evaluates the rows it names, whether or
+    // not the per-block sweep would have visited them.
+    int settled_row = -1;
+    for (int row = 0; row < rows && settled_row < 0; ++row) {
+        if (!live(row)) settled_row = row;
+    }
+    QVERIFY(settled_row >= 0);
+    const QString settled_hash = role(settled_row, TransactionTableModel::TxHashRole).toString();
+    uint256 settled_txid;
+    settled_txid.SetHex(settled_hash.toStdString());
+    ranges.clear();
+    wallet->NotifyTransactionChanged(settled_txid, CT_UPDATED);
+    QCoreApplication::processEvents(); // the notification reaches the model through the event loop
+    QVERIFY2(covered(settled_row), "a CT_UPDATED notification did not re-evaluate its row");
+    QObject::disconnect(recorder);
+
+    // The filter reads the address, label and txid strings only when a
+    // search is set; both paths must still answer correctly.
+    TransactionFilterProxy proxy;
+    proxy.setSourceModel(model);
+    QCOMPARE(proxy.rowCount({}), rows);
+    proxy.setSearchString(settled_hash.left(16));
+    QCOMPARE(proxy.rowCount({}), 1);
+    proxy.setSearchString("no such transaction");
+    QCOMPARE(proxy.rowCount({}), 0);
+
+    // Labelling the coinbase address must make every row paying to it match
+    // a search for that label. Stake rows carry no address and do not count.
+    const QString coinbase_address = QString::fromStdString(EncodeDestination(GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type)));
+    int coinbase_rows = 0;
+    for (int row = 0; row < rows; ++row) {
+        if (role(row, TransactionTableModel::AddressRole).toString() == coinbase_address) ++coinbase_rows;
+    }
+    QVERIFY(coinbase_rows > 0);
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetAddressBook(GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type), "mined here", "receive");
+    }
+    QCoreApplication::processEvents(); // the address book change reaches the label index through the event loop
+    proxy.setSearchString("mined here");
+    QCOMPARE(proxy.rowCount({}), coinbase_rows);
+    proxy.setSearchString("");
+    QCOMPARE(proxy.rowCount({}), rows);
+}
+
+//! Labels are served from the address table model's own index: complete for
+//! every address type, current with the address book, and tolerant of
+//! another spelling of the same address.
+void TestLabelIndex(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
+    wallet->SetupLegacyScriptPubKeyMan();
+    wallet->LoadWallet();
+
+    // Two spellings of one key: a pay-to-pubkey-hash address and a bech32 one.
+    CKey key;
+    key.MakeNewKey(true);
+    const CTxDestination pkhash_dest = GetDestinationForKey(key.GetPubKey(), OutputType::LEGACY);
+    const CTxDestination bech32_dest = GetDestinationForKey(key.GetPubKey(), OutputType::BECH32);
+    const QString pkhash_address = QString::fromStdString(EncodeDestination(pkhash_dest));
+    const QString bech32_address = QString::fromStdString(EncodeDestination(bech32_dest));
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetAddressBook(pkhash_dest, "legacy label", "send");
+        wallet->SetAddressBook(bech32_dest, "witness label", "send");
+    }
+
+    std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    OptionsModel optionsModel;
+    ClientModel clientModel(node, &optionsModel);
+    AddWallet(wallet);
+    WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    RemoveWallet(wallet, std::nullopt);
+
+    AddressTableModel* addresses = walletModel.getAddressTableModel();
+    QCOMPARE(addresses->labelForAddress(pkhash_address), QString("legacy label"));
+    QCOMPARE(addresses->labelForAddress(bech32_address), QString("witness label"));
+    // bech32 is case-insensitive, so the upper-case spelling names the same entry.
+    QCOMPARE(addresses->labelForAddress(bech32_address.toUpper()), QString("witness label"));
+
+    // An address that is not in the book, and a string that is not an address.
+    CKey other;
+    other.MakeNewKey(true);
+    QCOMPARE(addresses->labelForAddress(QString::fromStdString(EncodeDestination(GetDestinationForKey(other.GetPubKey(), OutputType::LEGACY)))), QString());
+    QCOMPARE(addresses->labelForAddress(QString("not an address")), QString());
+
+    // The index follows the address book through its notifications.
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetAddressBook(pkhash_dest, "renamed", "send");
+        wallet->DelAddressBook(bech32_dest);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(addresses->labelForAddress(pkhash_address), QString("renamed"));
+    QCOMPARE(addresses->labelForAddress(bech32_address), QString());
+
+    // The sign-message dialog rebuilds the wallet's address table with
+    // pay-to-pubkey-hash entries only. The table shrinks; the labels of every
+    // other address type must survive, since the history view still asks for them.
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetAddressBook(bech32_dest, "witness label", "send");
+    }
+    QCoreApplication::processEvents();
+    walletModel.refresh(/* pk_hash_only */ true);
+    addresses = walletModel.getAddressTableModel();
+    QCOMPARE(addresses->rowCount({}), 1);
+    QCOMPARE(addresses->labelForAddress(pkhash_address), QString("renamed"));
+    QCOMPARE(addresses->labelForAddress(bech32_address), QString("witness label"));
+}
+
+//! Qt on macOS crashes inside the framework on the "minimal" platform when it
+//! looks up unimplemented cocoa functions (https://bugreports.qt.io/browse/QTBUG-49686).
+bool SkipOnMacMinimalPlatform(const char* test_name)
+{
+#ifdef Q_OS_MAC
+    if (QApplication::platformName() == "minimal") {
+        QWARN(QString("Skipping %1 on mac build with 'minimal' platform set due to Qt bugs. To run AppTests, invoke "
+                      "with 'QT_QPA_PLATFORM=cocoa test_reddcoin-qt' on mac, or else use a linux or windows build.")
+                  .arg(test_name).toUtf8().constData());
+        return true;
+    }
+#endif
+    (void)test_name;
+    return false;
+}
+
 } // namespace
 
 void WalletTests::walletTests()
 {
-#ifdef Q_OS_MAC
-    if (QApplication::platformName() == "minimal") {
-        // Disable for mac on "minimal" platform to avoid crashes inside the Qt
-        // framework when it tries to look up unimplemented cocoa functions,
-        // and fails to handle returned nulls
-        // (https://bugreports.qt.io/browse/QTBUG-49686).
-        QWARN("Skipping WalletTests on mac build with 'minimal' platform set due to Qt bugs. To run AppTests, invoke "
-              "with 'QT_QPA_PLATFORM=cocoa test_reddcoin-qt' on mac, or else use a linux or windows build.");
-        return;
-    }
-#endif
+    if (SkipOnMacMinimalPlatform("WalletTests")) return;
     TestGUI(m_node);
+}
+
+void WalletTests::transactionTableTests()
+{
+    if (SkipOnMacMinimalPlatform("transactionTableTests")) return;
+    TestTransactionTableRefresh(m_node);
+}
+
+void WalletTests::labelIndexTests()
+{
+    if (SkipOnMacMinimalPlatform("labelIndexTests")) return;
+    TestLabelIndex(m_node);
 }
