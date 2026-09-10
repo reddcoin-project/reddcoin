@@ -49,18 +49,24 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     if (datetime < dateFrom || datetime > dateTo)
         return false;
 
-    QString address = index.data(TransactionTableModel::AddressRole).toString();
-    QString label = index.data(TransactionTableModel::LabelRole).toString();
-    QString txid = index.data(TransactionTableModel::TxHashRole).toString();
-    if (!address.contains(m_search_string, Qt::CaseInsensitive) &&
-        !  label.contains(m_search_string, Qt::CaseInsensitive) &&
-        !   txid.contains(m_search_string, Qt::CaseInsensitive)) {
-        return false;
-    }
-
     qint64 amount = llabs(index.data(TransactionTableModel::AmountRole).toLongLong());
     if (amount < minAmount)
         return false;
+
+    // The three strings below are the costly part of a row: each is built
+    // on request, and the label is looked up in the address book. An empty
+    // search string matches everything, so only pay for them when one is
+    // set.
+    if (!m_search_string.isEmpty()) {
+        QString address = index.data(TransactionTableModel::AddressRole).toString();
+        QString label = index.data(TransactionTableModel::LabelRole).toString();
+        QString txid = index.data(TransactionTableModel::TxHashRole).toString();
+        if (!address.contains(m_search_string, Qt::CaseInsensitive) &&
+            !  label.contains(m_search_string, Qt::CaseInsensitive) &&
+            !   txid.contains(m_search_string, Qt::CaseInsensitive)) {
+            return false;
+        }
+    }
 
     return true;
 }

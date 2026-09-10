@@ -17,7 +17,9 @@
 
 #include <core_io.h>
 #include <interfaces/handler.h>
+#include <logging.h>
 #include <uint256.h>
+#include <util/time.h>
 
 #include <algorithm>
 #include <functional>
@@ -199,11 +201,17 @@ public:
             parent->endRemoveRows();
             break;
         case CT_UPDATED:
-            // Miscellaneous updates -- nothing to do, status update will take care of this, and is only computed for
-            // visible transactions.
+            // Miscellaneous updates: flag the rows so index() refreshes their
+            // status, then re-evaluate them now. A conflict, an abandon or a
+            // reorg can move a row across a proxy filter, and the per-block
+            // sweep in updateConfirmations() only visits rows that are
+            // waiting on depth.
             for (int i = lowerIndex; i < upperIndex; i++) {
                 TransactionRecord *rec = &cachedWallet[i];
                 rec->status.needsUpdate = true;
+            }
+            if (inModel) {
+                parent->emitRowsChanged(lowerIndex, upperIndex - 1);
             }
             break;
         }
@@ -287,12 +295,53 @@ void TransactionTableModel::updateTransaction(const QString &hash, int status, b
 
 void TransactionTableModel::updateConfirmations()
 {
-    // Blocks came in since last poll.
-    // Invalidate status (number of confirmations) and (possibly) description
-    //  for all rows. Qt is smart enough to only actually request the data for the
-    //  visible rows.
-    Q_EMIT dataChanged(index(0, Status), index(priv->size()-1, Status));
-    Q_EMIT dataChanged(index(0, ToAddress), index(priv->size()-1, ToAddress));
+    // Blocks came in since last poll. Re-evaluate the rows whose displayed
+    // status can move with a new block: those waiting on confirmations,
+    // maturity or finality, and those the wallet has flagged since the last
+    // pass. A confirmed row only gains confirmations, which index() refreshes
+    // when the row is next painted or hovered, and a conflicted, abandoned or
+    // rejected row moves only through a transaction notification, which
+    // updateWallet() re-evaluates on arrival.
+    //
+    // Emitting dataChanged over every row is not free. Each proxy attached to
+    // this model answers synchronously and re-runs its filter on every row in
+    // the range, on the GUI thread, so the two whole-table emits that used to
+    // be here cost about 5 s per block on a wallet with 176k transactions.
+    //
+    // Rows that have never been refreshed carry the default status, which is
+    // Unconfirmed, so the first pass after loading still visits every row
+    // once and settles them; after that the set is the handful that are
+    // still moving.
+    const int64_t nStart = GetTimeMicros();
+    const int size = priv->size();
+    int rows = 0;
+    int ranges = 0;
+    int first = -1;
+    for (int i = 0; i < size; ++i) {
+        const TransactionStatus& status = priv->cachedWallet.at(i).status;
+        if (status.needsUpdate || status.needsBlockRefresh()) {
+            if (first < 0) first = i;
+            ++rows;
+        } else if (first >= 0) {
+            emitRowsChanged(first, i - 1);
+            ++ranges;
+            first = -1;
+        }
+    }
+    if (first >= 0) {
+        emitRowsChanged(first, size - 1);
+        ++ranges;
+    }
+    LogPrint(BCLog::BENCH, "TransactionTableModel::updateConfirmations [%s]: %d of %d rows in %d ranges, %.2fms\n",
+             walletModel->getWalletName().toStdString(), rows, size, ranges, 0.001 * (GetTimeMicros() - nStart));
+}
+
+void TransactionTableModel::emitRowsChanged(int first, int last)
+{
+    // Span every column. The status icon, the bracketed amount and the row
+    // colour all follow the status, and a range wider than one cell is what
+    // makes a view repaint rather than update the single cell.
+    Q_EMIT dataChanged(index(first, Status), index(last, Amount));
 }
 
 int TransactionTableModel::rowCount(const QModelIndex &parent) const
