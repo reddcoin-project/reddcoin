@@ -862,4 +862,41 @@ BOOST_AUTO_TEST_CASE(unload_marks_wallet_before_notifying)
     BOOST_CHECK(marked_when_notified);
 }
 
+//! The stake weight the staking thread publishes is unknown until a pass has
+//! completed and again once the thread stops, and readers must be able to
+//! tell that state from a wallet with nothing stakeable, which is a known
+//! zero. The GUI keys its "waiting" and "no mature coins" messages on that
+//! distinction, and getstakinginfo keys its fallback to the on-demand
+//! computation on it.
+BOOST_AUTO_TEST_CASE(published_stake_weight)
+{
+    uint64_t average = 1;
+    uint64_t total = 1;
+
+    // Nothing published yet: unknown, and the outputs are cleared.
+    BOOST_CHECK(!m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+
+    // A completed pass publishes what it measured.
+    m_wallet.PublishStakeWeight(5362915, 3115853698);
+    BOOST_CHECK(m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 5362915U);
+    BOOST_CHECK_EQUAL(total, 3115853698U);
+
+    // A pass that found nothing stakeable publishes a zero that is known.
+    m_wallet.PublishStakeWeight(0, 0);
+    BOOST_CHECK(m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+
+    // The thread stopping forgets the value: unknown again, not a known zero.
+    m_wallet.PublishStakeWeight(7, 9);
+    m_wallet.ResetPublishedStakeWeight();
+    average = total = 1;
+    BOOST_CHECK(!m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
