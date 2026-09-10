@@ -353,6 +353,7 @@ void CStakeman::ThreadStaker(std::shared_ptr<CWallet> pwallet, ChainstateManager
         }
     }
     pwallet->SetLastCoinStakeSearchInterval(0);
+    pwallet->ResetPublishedStakeWeight();
     LogPrintf("CStakeman::%s Staking thread [%s] stopped\n", __func__, thread_id);
     pwallet->NotifyWalletStakingStatusChanged();
 }

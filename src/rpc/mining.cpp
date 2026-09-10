@@ -704,7 +704,14 @@ static RPCHelpMan getstakinginfo()
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
     int64_t nLastCoinStakeSearchInterval = pwallet->GetLastCoinStakeSearchInterval();
 
-    GetStakeWeight(pwallet.get(), nAverageWeight, nTotalWeight, chainparams.GetConsensus());
+    // While the staking thread runs it publishes the weight of the coins it
+    // examined on its last complete pass; read that rather than rescanning
+    // the wallet under cs_wallet, which on a large wallet takes seconds per
+    // call and stalls everything else that needs the wallet. A wallet that
+    // is not staking has nothing published, so compute it for that case.
+    if (!pwallet->GetPublishedStakeWeight(nAverageWeight, nTotalWeight)) {
+        GetStakeWeight(pwallet.get(), nAverageWeight, nTotalWeight, chainparams.GetConsensus());
+    }
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     const CTxMemPool& mempool = EnsureMemPool(node);

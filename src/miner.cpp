@@ -186,7 +186,8 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         int64_t nSearchTime = txCoinStake.nTime; // search to current time
         if (nSearchTime > nLastCoinStakeSearchTime)
         {
-            if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus()))
+            StakeWeightSummary weight;
+            if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus(), &weight))
             {
                 if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
                 {   // make sure coinstake would meet timestamp protocol
@@ -198,6 +199,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                 }
             }
             pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+            // Publish what the pass measured, beside the interval it already
+            // reports, so the GUI and getstakinginfo need not rescan the wallet.
+            if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
             nLastCoinStakeSearchTime = nSearchTime;
         }
         if (*pfPoSCancel)

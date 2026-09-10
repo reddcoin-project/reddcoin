@@ -256,10 +256,6 @@ public:
 	    }
         return GetPoSVKernelPS(tip);
     }
-    bool getStakeWeight(std::set<CInputCoin>& setCoins, uint64_t& nAverageWeight, uint64_t& nTotalWeight) override
-    {
-      return GetStakeWeight(setCoins, nAverageWeight, nTotalWeight);
-    }
     void setNodeStakingActive(bool active) override
     {
         if (m_context->stakeman) {

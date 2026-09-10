@@ -163,6 +163,8 @@ bool WalletModel::validateAddress(const QString &address)
 
 bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeight)
 {
+    nAverageWeight = nTotalWeight = 0;
+
     int numBlocks = -1;
     bool isSyncing = false;
 
@@ -172,16 +174,11 @@ bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeigh
     if (isSyncing)
         return false;
 
-    std::set<CInputCoin> setCoins;
-    if (!m_wallet->GetStakeWeightSet(setCoins))
-        return false;
-    if (setCoins.empty())
-        return false;
-
-    if (!m_node.getStakeWeight(setCoins, nAverageWeight, nTotalWeight))
-        return false;
-
-    return true;
+    // The staking thread publishes the weight of the coins it examined on
+    // its last complete pass. Reading it costs nothing. Computing it here
+    // used to mean a wallet lock, two full scans of the wallet and a disk
+    // read per UTXO, on the GUI thread, several times per block.
+    return m_wallet->getStakeWeight(nAverageWeight, nTotalWeight);
 }
 
 WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransaction &transaction, const CCoinControl& coinControl)
