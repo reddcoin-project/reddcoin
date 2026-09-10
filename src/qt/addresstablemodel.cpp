@@ -14,6 +14,7 @@
 
 #include <QFont>
 #include <QDebug>
+#include <QHash>
 
 const QString AddressTableModel::Send = "S";
 const QString AddressTableModel::Receive = "R";
@@ -70,6 +71,12 @@ class AddressTablePriv
 {
 public:
     QList<AddressTableEntry> cachedAddressTable;
+    /** Label of every non-change address book entry, keyed by the address
+     *  as EncodeDestination spells it. Unlike cachedAddressTable this is
+     *  never narrowed by pk_hash_only, so labelForAddress() can answer from
+     *  it for any address without taking the wallet lock. Kept current by
+     *  the same notifications that maintain the table. */
+    QHash<QString, QString> labels;
     AddressTableModel *parent;
 
     explicit AddressTablePriv(AddressTableModel *_parent):
@@ -78,17 +85,19 @@ public:
     void refreshAddressTable(interfaces::Wallet& wallet, bool pk_hash_only = false)
     {
         cachedAddressTable.clear();
+        labels.clear();
         {
             for (const auto& address : wallet.getAddresses())
             {
+                const QString address_str = QString::fromStdString(EncodeDestination(address.dest));
+                const QString label = QString::fromStdString(address.name);
+                labels.insert(address_str, label);
                 if (pk_hash_only && !std::holds_alternative<PKHash>(address.dest)) {
                     continue;
                 }
                 AddressTableEntry::Type addressType = translateTransactionType(
                         QString::fromStdString(address.purpose), address.is_mine);
-                cachedAddressTable.append(AddressTableEntry(addressType,
-                                  QString::fromStdString(address.name),
-                                  QString::fromStdString(EncodeDestination(address.dest))));
+                cachedAddressTable.append(AddressTableEntry(addressType, label, address_str));
             }
         }
         // std::lower_bound() and std::upper_bound() require our cachedAddressTable list to be sorted in asc order
@@ -108,6 +117,12 @@ public:
         int upperIndex = (upper - cachedAddressTable.begin());
         bool inModel = (lower != upper);
         AddressTableEntry::Type newEntryType = translateTransactionType(purpose, isMine);
+
+        if (status == CT_DELETED) {
+            labels.remove(address);
+        } else {
+            labels.insert(address, label);
+        }
 
         switch(status)
         {
@@ -411,11 +426,29 @@ bool AddressTableModel::removeRows(int row, int count, const QModelIndex &parent
 
 QString AddressTableModel::labelForAddress(const QString &address) const
 {
-    std::string name;
-    if (getAddressData(address, &name, /* purpose= */ nullptr)) {
-        return QString::fromStdString(name);
+    // Answer from the label index rather than the wallet. The transaction
+    // and minting tables ask this for every row they evaluate, and the
+    // wallet path decodes the address and takes cs_wallet each time, which
+    // on a large wallet is a lock the GUI thread waits on behind the staker.
+    const auto it = priv->labels.constFind(address);
+    if (it != priv->labels.constEnd()) {
+        return it.value();
     }
-    return QString();
+
+    // Not under this spelling. Rows from the wallet models are spelled by
+    // EncodeDestination and so were found above if they are in the book;
+    // what remains is either an address that is not in the book or user
+    // input in another spelling (a bech32 address in upper case). Resolve
+    // the latter by re-spelling it, still without touching the wallet.
+    const std::string canonical = EncodeDestination(DecodeDestination(address.toStdString()));
+    if (canonical.empty()) {
+        return QString();
+    }
+    const QString canonical_str = QString::fromStdString(canonical);
+    if (canonical_str == address) {
+        return QString();
+    }
+    return priv->labels.value(canonical_str);
 }
 
 QString AddressTableModel::purposeForAddress(const QString &address) const
