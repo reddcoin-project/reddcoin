@@ -140,7 +140,7 @@ void BlockAssembler::resetBlock()
     nFees = 0;
 }
 
-std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, bool* pfPoSCancel)
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, bool* pfPoSCancel, const StakeCandidates* candidates, const StakeKernel* kernel)
 {
     int64_t nTimeStart = GetTimeMicros();
 
@@ -183,26 +183,41 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;
-        int64_t nSearchTime = txCoinStake.nTime; // search to current time
-        if (nSearchTime > nLastCoinStakeSearchTime)
-        {
-            StakeWeightSummary weight;
-            if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus(), &weight))
-            {
-                if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
-                {   // make sure coinstake would meet timestamp protocol
-                    // as it would be the same as the block timestamp
-                    coinbaseTx.vout[0].SetEmpty();
-                    coinbaseTx.nTime = txCoinStake.nTime;
-                    pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
-                    *pfPoSCancel = false;
-                }
+        const auto accept_coinstake = [&]() {
+            if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
+            {   // make sure coinstake would meet timestamp protocol
+                // as it would be the same as the block timestamp
+                coinbaseTx.vout[0].SetEmpty();
+                coinbaseTx.nTime = txCoinStake.nTime;
+                pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
+                *pfPoSCancel = false;
             }
-            pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
-            // Publish what the pass measured, beside the interval it already
-            // reports, so the GUI and getstakinginfo need not rescan the wallet.
-            if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
-            nLastCoinStakeSearchTime = nSearchTime;
+        };
+        if (kernel)
+        {
+            // The staking thread searched its candidates without the locks
+            // and found this kernel. Build around it here, under them, where
+            // BuildCoinStake re-checks it against the tip this template is
+            // built on. The thread recorded the search interval and the
+            // stake weight when it searched.
+            assert(candidates != nullptr);
+            if (BuildCoinStake(pwallet, &m_chainstate, pblock->nBits, *candidates, *kernel, txCoinStake, chainparams.GetConsensus()))
+                accept_coinstake();
+        }
+        else
+        {
+            int64_t nSearchTime = txCoinStake.nTime; // search to current time
+            if (nSearchTime > nLastCoinStakeSearchTime)
+            {
+                StakeWeightSummary weight;
+                if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus(), &weight))
+                    accept_coinstake();
+                pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+                // Publish what the pass measured, beside the interval it already
+                // reports, so the GUI and getstakinginfo need not rescan the wallet.
+                if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
+                nLastCoinStakeSearchTime = nSearchTime;
+            }
         }
         if (*pfPoSCancel)
             return nullptr; // reddcoin: there is no point to continue if we failed to create coinstake
