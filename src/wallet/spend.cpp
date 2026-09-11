@@ -83,10 +83,10 @@ void CWallet::AvailableCoins(std::vector<COutput>& vCoins, const CCoinControl* c
         const uint256& wtxid = entry.first;
         const CWalletTx& wtx = entry.second;
 
-        if (!chain().checkFinalTx(*wtx.tx)) {
-            continue;
-        }
-
+        // No finality check: a confirmed transaction is final at every later
+        // tip, an unconfirmed one is only considered below if it is in the
+        // mempool, which accepted it as final. The check took cs_main per
+        // transaction and this scan runs on every staking pass.
         if (wtx.IsImmatureCoinBase())
             continue;
 
