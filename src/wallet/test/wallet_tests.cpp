@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <node/blockstorage.h>
 #include <node/context.h>
 #include <policy/policy.h>
@@ -897,6 +898,100 @@ BOOST_AUTO_TEST_CASE(published_stake_weight)
     BOOST_CHECK(!m_wallet.GetPublishedStakeWeight(average, total));
     BOOST_CHECK_EQUAL(average, 0U);
     BOOST_CHECK_EQUAL(total, 0U);
+}
+
+//! Trust and availability no longer ask the chain whether a transaction is
+//! final: a confirmed transaction is final at every later tip, and an
+//! unconfirmed one counts only once the mempool holds it, which accepted it
+//! as final. Pin every case the old check could have told apart, and the one
+//! place finality still carries information: the "open until" status of a
+//! locktime transaction the wallet holds but the mempool does not.
+BOOST_FIXTURE_TEST_CASE(trusted_and_available_without_finality_check, TestChain100Setup)
+{
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+    const CBlockIndex* tip = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
+    {
+        LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+        BOOST_CHECK(spk_man->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey()));
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CScript ours = GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()));
+
+    // A confirmed transaction paying us three times, recorded in the tip block.
+    CMutableTransaction confirmed_tx;
+    confirmed_tx.vin.emplace_back(COutPoint(GetRandHash(), 0));
+    confirmed_tx.vout.emplace_back(1 * COIN, ours);
+    confirmed_tx.vout.emplace_back(2 * COIN, ours);
+    confirmed_tx.vout.emplace_back(3 * COIN, ours);
+    const CTransactionRef confirmed = MakeTransactionRef(confirmed_tx);
+    wallet->AddToWallet(confirmed, {CWalletTx::Status::CONFIRMED, tip->nHeight, tip->GetBlockHash(), /* index */ 1});
+
+    // An unconfirmed spend of our first output back to us. From us, so it can
+    // be trusted, but only once the mempool holds it.
+    CMutableTransaction unconfirmed_tx;
+    unconfirmed_tx.vin.emplace_back(COutPoint(confirmed->GetHash(), 0));
+    unconfirmed_tx.vout.emplace_back(1 * COIN - 1000, ours);
+    const CTransactionRef unconfirmed = MakeTransactionRef(unconfirmed_tx);
+    wallet->AddToWallet(unconfirmed, {CWalletTx::Status::UNCONFIRMED, /* height */ 0, /* hash */ {}, /* index */ 0});
+
+    // A spend of our second output locked a hundred blocks ahead. Not final,
+    // so the mempool will not hold it; the wallet keeps it until it is.
+    CMutableTransaction locked_tx;
+    locked_tx.vin.emplace_back(COutPoint(confirmed->GetHash(), 1));
+    locked_tx.vin.back().nSequence = 0; // locktime only binds when an input is not marked final
+    locked_tx.vout.emplace_back(2 * COIN - 1000, ours);
+    locked_tx.nLockTime = tip->nHeight + 100;
+    const CTransactionRef locked = MakeTransactionRef(locked_tx);
+    wallet->AddToWallet(locked, {CWalletTx::Status::UNCONFIRMED, /* height */ 0, /* hash */ {}, /* index */ 0});
+
+    const auto trusted = [&](const CTransactionRef& tx) {
+        LOCK(wallet->cs_wallet);
+        return wallet->GetWalletTx(tx->GetHash())->IsTrusted();
+    };
+    const auto available = [&]() {
+        LOCK(wallet->cs_wallet);
+        std::vector<COutput> coins;
+        wallet->AvailableCoins(coins);
+        std::set<COutPoint> outpoints;
+        for (const COutput& coin : coins) outpoints.insert(coin.GetInputCoin().outpoint);
+        return outpoints;
+    };
+    std::unique_ptr<interfaces::Wallet> view = interfaces::MakeWallet(wallet);
+    const auto is_final = [&](const CTransactionRef& tx) {
+        interfaces::WalletTxStatus status;
+        interfaces::WalletOrderForm order_form;
+        bool in_mempool = false;
+        int num_blocks = 0;
+        view->getWalletTxDetails(tx->GetHash(), status, order_form, in_mempool, num_blocks);
+        return status.is_final;
+    };
+
+    // Confirmed: trusted and final. Its third output, which nothing spends,
+    // is the only coin available; the first two are spent by the unconfirmed
+    // transactions even though neither of those is available itself.
+    BOOST_CHECK(trusted(confirmed));
+    BOOST_CHECK(is_final(confirmed));
+    BOOST_CHECK(available() == std::set<COutPoint>{COutPoint(confirmed->GetHash(), 2)});
+
+    // Unconfirmed and outside the mempool: not trusted and not available,
+    // final or not.
+    BOOST_CHECK(!trusted(unconfirmed));
+    BOOST_CHECK(is_final(unconfirmed));
+    BOOST_CHECK(!trusted(locked));
+    BOOST_CHECK(!is_final(locked));
+
+    // Once the mempool holds the unconfirmed spend it is trusted, since it
+    // and its parent are ours, and its output becomes available.
+    wallet->transactionAddedToMempool(unconfirmed, /* mempool_sequence */ 0);
+    BOOST_CHECK(trusted(unconfirmed));
+    BOOST_CHECK(is_final(unconfirmed));
+    BOOST_CHECK((available() == std::set<COutPoint>{COutPoint(confirmed->GetHash(), 2), COutPoint(unconfirmed->GetHash(), 0)}));
+
+    // The locked spend stays out until it is final, whatever else changes.
+    BOOST_CHECK(!trusted(locked));
+    BOOST_CHECK(!is_final(locked));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
