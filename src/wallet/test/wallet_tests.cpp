@@ -1198,4 +1198,79 @@ BOOST_AUTO_TEST_CASE(unload_marks_wallet_before_notifying)
     BOOST_CHECK(marked_at_the_seam);
 }
 
+//! The stake weight the staking thread publishes is unknown until a pass has
+//! completed and again once the thread stops, and readers must be able to
+//! tell that state from a wallet with nothing stakeable, which is a known
+//! zero. The GUI keys its "waiting" and "no mature coins" messages on that
+//! distinction, and the staking interface keys its fallback to the on-demand
+//! computation on it.
+BOOST_AUTO_TEST_CASE(published_stake_weight)
+{
+    uint64_t average = 1;
+    uint64_t total = 1;
+
+    // Nothing published yet: unknown, and the outputs are cleared.
+    BOOST_CHECK(!m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+
+    // A completed pass publishes what it measured.
+    m_wallet.PublishStakeWeight(5362915, 3115853698);
+    BOOST_CHECK(m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 5362915U);
+    BOOST_CHECK_EQUAL(total, 3115853698U);
+
+    // A pass that found nothing stakeable publishes a zero that is known.
+    m_wallet.PublishStakeWeight(0, 0);
+    BOOST_CHECK(m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+
+    // The thread stopping forgets the value: unknown again, not a known zero.
+    m_wallet.PublishStakeWeight(7, 9);
+    m_wallet.ResetPublishedStakeWeight();
+    average = total = 1;
+    BOOST_CHECK(!m_wallet.GetPublishedStakeWeight(average, total));
+    BOOST_CHECK_EQUAL(average, 0U);
+    BOOST_CHECK_EQUAL(total, 0U);
+}
+
+//! The weight a search pass publishes must be the weight the on-demand
+//! computation would report for the same coins at the same moment: the GUI
+//! and getstakinginfo now show the former where they used to compute the
+//! latter. Both sides are exercised on the fixture's staking wallet, which
+//! has just built the proof-of-stake tail of the chain.
+BOOST_FIXTURE_TEST_CASE(stake_weight_published_matches_computed, TestChain100Setup)
+{
+    BOOST_REQUIRE(m_wallet);
+    const Consensus::Params& params = Params().GetConsensus();
+
+    // Building the tail ran search passes through the staking interface, so a
+    // weight has been published and it is not the empty one.
+    uint64_t published_average = 0;
+    uint64_t published_total = 0;
+    BOOST_CHECK(m_wallet->GetPublishedStakeWeight(published_average, published_total));
+    BOOST_CHECK(published_total > 0);
+
+    // On demand, at the mocked clock the test holds still.
+    uint64_t computed_average = 0;
+    uint64_t computed_total = 0;
+    BOOST_REQUIRE(GetStakeWeight(m_wallet.get(), computed_average, computed_total, params));
+    BOOST_CHECK(computed_total > 0);
+
+    // One more pass at the same clock, with the lock order the staking path
+    // keeps (cs_wallet before cs_main). On regtest it finds a kernel on the
+    // first eligible coin, which is the case that must still sum the rest.
+    StakeWeightSummary weight;
+    {
+        LOCK(m_wallet->cs_wallet);
+        const unsigned int nBits = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->nBits);
+        CMutableTransaction tx; // nTime is the same mocked clock GetStakeWeight read
+        CreateCoinStake(m_wallet.get(), &m_node.chainman->ActiveChainstate(), nBits, 60, tx, params, &weight);
+    }
+    BOOST_CHECK(weight.complete);
+    BOOST_CHECK_EQUAL(weight.total, computed_total);
+    BOOST_CHECK_EQUAL(weight.average, computed_average);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
