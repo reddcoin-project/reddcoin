@@ -27,6 +27,7 @@
 #include <node/ui_interface.h>
 #include <psbt.h>
 #include <util/system.h> // for GetBoolArg
+#include <util/time.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h> // for CRecipient
@@ -165,14 +166,16 @@ bool WalletModel::GetStakeWeight(uint64_t& nAverageWeight, uint64_t& nTotalWeigh
 {
     nAverageWeight = nTotalWeight = 0;
 
-    int numBlocks = -1;
-    bool isSyncing = false;
-
-    if (!m_node.tryGetSyncInfo(numBlocks, isSyncing))
-        return false;
-
-    if (isSyncing)
-        return false;
+    // A weight measured against a chain this far behind says nothing about
+    // staking, so report none. The tip time comes from the client model's
+    // cache and costs no lock. This used to try cs_main and give up if it
+    // was busy, and the staking thread holds cs_main for a good part of
+    // every pass, so the status bar showed "waiting" whenever a block
+    // happened to land during one.
+    static constexpr int64_t STALE_TIP_SECONDS = 90 * 60;
+    if (!m_client_model) return false;
+    const int64_t tip_time = m_client_model->getBlockTipTime();
+    if (tip_time > 0 && GetTime() - tip_time >= STALE_TIP_SECONDS) return false;
 
     // The staking thread publishes the weight of the coins it examined on
     // its last complete pass. Reading it costs nothing. Computing it here

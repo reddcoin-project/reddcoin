@@ -179,6 +179,14 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             }
         }
 
+        // The search ends at the first kernel, but the weight must cover the
+        // whole set: a wallet that finds a kernel on every pass, as a large
+        // one does on a quiet network, would otherwise never publish. The
+        // remaining coins are read once more here, which the combine loop
+        // below does anyway on a pass that found a kernel.
+        if (fKernelFound)
+            continue;
+
         static int nMaxStakeSearchInterval = 60;
         if (header.GetBlockTime() + consensusParams.nStakeMinAge > txNew.nTime - nMaxStakeSearchInterval)
             continue; // only count coins meeting min age requirement
@@ -228,13 +236,8 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 break;
             }
         }
-        if (fKernelFound)
-            break; // if kernel is found stop searching
     }
-    // A pass that stopped at a kernel saw only part of the set; leave the
-    // previously published weight standing rather than report a partial sum.
-    if (!fKernelFound)
-        publish_weight();
+    publish_weight();
     if (nCredit == 0 || nCredit > nBalance - nReserveBalance)
         return false;
     for (const auto& pcoin : setCoins)

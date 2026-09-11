@@ -193,9 +193,6 @@ public:
     //! Get node synchronization information.
     virtual void getSyncInfo(int& numBlocks, bool& isSyncing) = 0;
 
-    //! Try to get node synchronization information.
-    virtual bool tryGetSyncInfo(int& numBlocks, bool& isSyncing) = 0;
-
     //! Get wallet client.
     virtual WalletClient& walletClient() = 0;
 
