@@ -86,7 +86,11 @@ WalletTxStatus MakeWalletTxStatus(const CWallet& wallet, const CWalletTx& wtx)
     result.depth_in_main_chain = wtx.GetDepthInMainChain();
     result.time_received = wtx.nTimeReceived;
     result.lock_time = wtx.tx->nLockTime;
-    result.is_final = wallet.chain().checkFinalTx(*wtx.tx);
+    // Finality is settled for a confirmed transaction and for one the mempool
+    // accepted; only an unconfirmed transaction the mempool does not hold, a
+    // locktime transaction the wallet is keeping until it is final, needs the
+    // chain asked, and that is the one case the GUI shows as "open until".
+    result.is_final = result.depth_in_main_chain >= 1 || wtx.InMempool() || wallet.chain().checkFinalTx(*wtx.tx);
     result.is_trusted = wtx.IsTrusted();
     result.is_abandoned = wtx.isAbandoned();
     result.is_coinbase = wtx.IsCoinBase();
