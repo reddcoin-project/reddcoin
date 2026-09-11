@@ -272,6 +272,16 @@ private:
      * Used to keep track of last coinstake interval */
     int64_t nLastCoinStakeSearchInterval = 0;
     /**
+     * Stake weight of the coins the staking thread examined on its last
+     * complete search pass, in coin-days: the average per coin and the sum.
+     * The staking thread writes them, the GUI thread and RPC workers read
+     * them, so they are atomics. m_stake_weight_known is false until a pass
+     * has completed and again once the thread has stopped, so that readers
+     * can tell "nothing stakeable" from "not measured yet". */
+    std::atomic<uint64_t> m_stake_average_weight{0};
+    std::atomic<uint64_t> m_stake_total_weight{0};
+    std::atomic<bool> m_stake_weight_known{false};
+    /**
      * Was this wallet imported
      */
     bool fImporting = false;
@@ -415,8 +425,6 @@ public:
     bool Lock();
 
     bool IsStakingOnly() const;
-
-    bool GetStakeWeightSet(std::set<CInputCoin>& setCoins);
 
     /** Interface to assert chain access */
     bool HaveChain() const { return m_chain ? true : false; }
@@ -830,6 +838,34 @@ public:
     int64_t GetLastCoinStakeSearchInterval() const { return nLastCoinStakeSearchInterval; }
     /** Set this wallet last coinstake search interval. */
     void SetLastCoinStakeSearchInterval(int64_t searchInterval) { nLastCoinStakeSearchInterval = searchInterval; }
+
+    /** Read the stake weight the staking thread last published. Returns
+     *  false, with both values zero, until a search pass has completed or
+     *  after the thread has stopped. Takes no lock. */
+    bool GetPublishedStakeWeight(uint64_t& average, uint64_t& total) const
+    {
+        if (!m_stake_weight_known.load(std::memory_order_acquire)) {
+            average = total = 0;
+            return false;
+        }
+        average = m_stake_average_weight.load(std::memory_order_relaxed);
+        total = m_stake_total_weight.load(std::memory_order_relaxed);
+        return true;
+    }
+    /** Publish the stake weight of a completed search pass. */
+    void PublishStakeWeight(uint64_t average, uint64_t total)
+    {
+        m_stake_average_weight.store(average, std::memory_order_relaxed);
+        m_stake_total_weight.store(total, std::memory_order_relaxed);
+        m_stake_weight_known.store(true, std::memory_order_release);
+    }
+    /** Forget the published stake weight: the staking thread has stopped. */
+    void ResetPublishedStakeWeight()
+    {
+        m_stake_weight_known.store(false, std::memory_order_release);
+        m_stake_average_weight.store(0, std::memory_order_relaxed);
+        m_stake_total_weight.store(0, std::memory_order_relaxed);
+    }
 
     /** Return whether transaction can be abandoned */
     bool TransactionCanBeAbandoned(const uint256& hashTx) const;

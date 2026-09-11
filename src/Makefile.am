@@ -386,7 +386,6 @@ libbitcoin_server_a_SOURCES = \
   pos/kernel.cpp \
   pos/kernelrecord.cpp \
   pos/signer.cpp \
-  pos/stake.cpp \
   pow.cpp \
   rest.cpp \
   rpc/blockchain.cpp \

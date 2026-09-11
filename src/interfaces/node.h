@@ -8,7 +8,6 @@
 
 #include <amount.h>     // For CAmount
 #include <external_signer.h>
-#include <interfaces/staking.h> // For StakeCoin
 #include <net.h>        // For NodeId
 #include <net_types.h>  // For banmap_t
 #include <netaddress.h> // For Network
@@ -152,12 +151,6 @@ public:
     //! Get PoSVKernelPS.
     virtual uint64_t getPoSVKernelPS() = 0;
 
-    //! Compute the average and total coin-age weight of the given stakeable
-    //! coins. The wallet supplies the coins via Wallet::getStakeCoins; the
-    //! chain-side weight loop lives here so the wallet interface stays free of
-    //! chain/tx-index dependencies.
-    virtual bool getStakeWeight(const std::vector<StakeCoin>& coins, uint64_t& nAverageWeight, uint64_t& nTotalWeight) = 0;
-
     //! Set staking active.
     virtual void setNodeStakingActive(bool active) = 0;
 
@@ -209,9 +202,6 @@ public:
 
     //! Get node synchronization information.
     virtual void getSyncInfo(int& numBlocks, bool& isSyncing) = 0;
-
-    //! Try to get node synchronization information.
-    virtual bool tryGetSyncInfo(int& numBlocks, bool& isSyncing) = 0;
 
     //! Get wallet client.
     virtual WalletClient& walletClient() = 0;

@@ -32,16 +32,6 @@ namespace interfaces {
 
 class Handler;
 
-//! Wallet-free description of a coin that can be staked.
-//!
-//! Used at the node/wallet boundary in place of CInputCoin, which is defined in
-//! wallet/coinselection.h and so cannot be named by libbitcoin_server.
-struct StakeCoin
-{
-    COutPoint outpoint;
-    CAmount value{0};
-};
-
 //! Interface giving the node access to one wallet's staking capability.
 //!
 //! Declared here so libbitcoin_server (miner.cpp, staker.cpp, rpc/mining.cpp)
@@ -147,7 +137,14 @@ public:
     virtual int64_t getLastCoinStakeSearchInterval() = 0;
 
     //! Average and total coin-age weight of this wallet's stakeable coins.
+    //! While a staking thread runs this is what its last search pass
+    //! published and costs nothing; otherwise it is computed on demand,
+    //! which scans the wallet under its lock.
     virtual bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) = 0;
+
+    //! Forget the published stake weight. Called when the staking thread
+    //! stops, so readers see "not measured" rather than a stale value.
+    virtual void resetPublishedStakeWeight() = 0;
 
     //! Reserve a destination to receive the coinstake, held until
     //! keepDestination() is called or this object is destroyed.
@@ -179,9 +176,6 @@ public:
     //! Sign the block with the key behind the coinstake output.
     //! Requires the caller to hold lock().
     virtual bool signBlock(CBlock& block) = 0;
-
-    //! Collect the coins this wallet would stake, for weight reporting.
-    virtual bool getStakeCoins(std::vector<StakeCoin>& coins) = 0;
 };
 
 //! Interface letting the node find staking wallets without naming CWallet.

@@ -8,7 +8,6 @@
 
 #include <amount.h>                    // For CAmount
 #include <interfaces/chain.h>          // For ChainClient
-#include <interfaces/staking.h>        // For StakeCoin
 #include <pubkey.h>                    // For CKeyID and CScriptID (definitions needed in CTxDestination instantiation)
 #include <script/standard.h>           // For CTxDestination
 #include <support/allocators/secure.h> // For SecureString
@@ -90,9 +89,11 @@ public:
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
 
-    //! Collect the wallet's stakeable coins, wallet-free, for weight reporting.
-    //! The node turns these into average/total weight via Node::getStakeWeight.
-    virtual bool getStakeCoins(std::vector<StakeCoin>& coins) = 0;
+    //! Stake weight the staking thread last published for this wallet, in
+    //! coin-days: average per coin and total. Returns false, with zeros,
+    //! until a search pass has completed or once the thread has stopped.
+    //! Takes no lock.
+    virtual bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) = 0;
 
     //! Get wallet staking enabled.
     virtual bool getEnableStaking() = 0;
