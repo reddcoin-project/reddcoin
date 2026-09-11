@@ -686,7 +686,11 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
     CAmount amount = 0;
     for (const std::pair<const uint256, CWalletTx>& wtx_pair : wallet.mapWallet) {
         const CWalletTx& wtx = wtx_pair.second;
-        if (wtx.IsCoinBase() || !wallet.chain().checkFinalTx(*wtx.tx) || wtx.GetDepthInMainChain() < min_depth) {
+        // Depth first: a confirmed transaction is final, so only an
+        // unconfirmed one needs the chain asked, and that only when the
+        // caller wanted unconfirmed transactions at all.
+        const int depth = wtx.GetDepthInMainChain();
+        if (wtx.IsCoinBase() || depth < min_depth || (depth < 1 && !wallet.chain().checkFinalTx(*wtx.tx))) {
             continue;
         }
 
@@ -1145,12 +1149,17 @@ static UniValue ListReceived(const CWallet& wallet, const UniValue& params, bool
     for (const std::pair<const uint256, CWalletTx>& pairWtx : wallet.mapWallet) {
         const CWalletTx& wtx = pairWtx.second;
 
-        if (wtx.IsCoinBase() || !wallet.chain().checkFinalTx(*wtx.tx)) {
+        if (wtx.IsCoinBase()) {
             continue;
         }
 
+        // Depth first: a confirmed transaction is final, so only an
+        // unconfirmed one needs the chain asked, and that only when the
+        // caller wanted unconfirmed transactions at all.
         int nDepth = wtx.GetDepthInMainChain();
         if (nDepth < nMinDepth)
+            continue;
+        if (nDepth < 1 && !wallet.chain().checkFinalTx(*wtx.tx))
             continue;
 
         for (const CTxOut& txout : wtx.tx->vout)

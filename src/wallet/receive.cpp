@@ -280,8 +280,15 @@ void CWalletTx::GetAmounts(std::list<COutputEntry>& listReceived,
 bool CWallet::IsTrusted(const CWalletTx& wtx, std::set<uint256>& trusted_parents) const
 {
     AssertLockHeld(cs_wallet);
-    // Quick answer in most cases
-    if (!chain().checkFinalTx(*wtx.tx)) return false;
+    // Quick answer in most cases. No finality check is needed: a confirmed
+    // transaction passed it when it was mined and finality only grows with
+    // the chain, an unconfirmed one in the mempool passed it on acceptance,
+    // and an unconfirmed one outside the mempool is refused below anyway.
+    // The check used to run first, for every transaction, and each call
+    // took cs_main and recomputed the tip's median time past; on a wallet
+    // with hundreds of thousands of transactions that was most of the cost
+    // of every balance and coin scan, and every one of those acquisitions
+    // waited behind whatever else held cs_main, the staking thread included.
     int nDepth = wtx.GetDepthInMainChain();
     if (nDepth >= 1) return true;
     if (nDepth < 0) return false;
