@@ -144,14 +144,9 @@ public:
         }
         return false;
     }
-    bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) override
+    bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) override
     {
-        if (!m_wallet->GetStakeWeightSet(setCoins))
-          return false;
-        if (setCoins.empty())
-          return false;
-
-        return true;
+        return m_wallet->GetPublishedStakeWeight(average_weight, total_weight);
     }
     void setEnableStaking(bool enableStaking) override
     {

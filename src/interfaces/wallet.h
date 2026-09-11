@@ -25,7 +25,6 @@
 
 class CCoinControl;
 class CFeeRate;
-class CInputCoin;
 class CKey;
 class CWallet;
 enum class FeeReason;
@@ -90,8 +89,11 @@ public:
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
 
-    //! Get set of input coins to calculate average and total weight.
-    virtual bool GetStakeWeightSet(std::set<CInputCoin>& setCoins) = 0;
+    //! Stake weight the staking thread last published for this wallet, in
+    //! coin-days: average per coin and total. Returns false, with zeros,
+    //! until a search pass has completed or once the thread has stopped.
+    //! Takes no lock.
+    virtual bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) = 0;
 
     //! Get wallet staking enabled.
     virtual bool getEnableStaking() = 0;
