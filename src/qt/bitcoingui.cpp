@@ -1670,12 +1670,15 @@ void BitcoinGUI::updateWalletStakingStatus()
     uint64_t nAverageWeight = 0, nTotalWeight = 0;
     int64_t nLastCoinStakeSearchInterval;
     bool staking = false;
+    // False until the staking thread has completed a pass and published what
+    // it measured. Until then a zero weight says nothing about the coins.
+    bool weight_known = false;
 
     QString msg;
     QString icon = "";
     if (walletModel) {
         qDebug() << QString("BitcoinGUI::%1: wallet %2 updated").arg(__func__).arg(walletModel->getDisplayName());
-        walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
+        weight_known = walletModel->GetStakeWeight(nAverageWeight, nTotalWeight);
         nLastCoinStakeSearchInterval = walletModel->wallet().getLastCoinStakeSearchInterval();
         staking = nLastCoinStakeSearchInterval && nAverageWeight;
     }
@@ -1699,7 +1702,7 @@ void BitcoinGUI::updateWalletStakingStatus()
         } else if (m_node.isInitialBlockDownload()) {
             msg = tr("Not staking because wallet is syncing");
             icon = ":/icons/warning";
-        } else if (!nAverageWeight) {
+        } else if (weight_known && !nAverageWeight) {
             msg = tr("Not staking because you don't have mature coins");
             icon = ":/icons/warning";
         } else if (!staking) {

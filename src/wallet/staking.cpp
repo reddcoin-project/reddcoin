@@ -95,7 +95,7 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
 }
 
 // Reddcoin: create coin stake transaction
-bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams)
+bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, const Consensus::Params& consensusParams, StakeWeightSummary* weight)
 {
     // The following split & combine thresholds are important to security
     // Should not be adjusted if you don't understand the consequences
@@ -119,6 +119,19 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
     scriptEmpty.clear();
     txNew.vout.push_back(CTxOut(0, scriptEmpty));
 
+    // Every pass examines every stakeable coin, so it can report the stake
+    // weight GetStakeWeight would compute, at no extra cost: the same value
+    // and timestamp feed both. The GUI status and getstakinginfo read the
+    // published result instead of rescanning the wallet themselves.
+    StakeWeightSummary weight_summary;
+    uint64_t nWeightCount = 0;
+    const auto publish_weight = [&]() {
+        if (!weight) return;
+        if (nWeightCount > 0) weight_summary.average = weight_summary.total / nWeightCount;
+        weight_summary.complete = true;
+        *weight = weight_summary;
+    };
+
     // Choose coins to use
     CAmount nReserveBalance = 0;
     if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
@@ -139,12 +152,17 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
         nAvailable += coin.GetInputCoin().txout.nValue;
     }
     nValueIn = nAvailable;
-    if (nAvailable <= nReserveBalance)
+    if (nAvailable <= nReserveBalance) {
+        publish_weight(); // nothing stakeable: zero weight, and known to be zero
         return false;
-    if (setCoins.empty())
+    }
+    if (setCoins.empty()) {
+        publish_weight();
         return false;
+    }
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
+    bool fKernelFound = false;
     // Check if SegWit is active for the next block — needed to filter witness UTXOs
     CBlockIndex* pindexTip = chainstate->m_chain.Tip();
     bool fSegwitActive = DeploymentActiveAfter(pindexTip, consensusParams, Consensus::DEPLOYMENT_SEGWIT);
@@ -204,11 +222,31 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
             return error("%s() : deserialize or I/O error in CreateCoinStake()", __PRETTY_FUNCTION__);
         }
 
+        // Weight, before the age gate below: GetStakeWeight counts every coin
+        // with positive weight, and a coin can carry a little while still
+        // inside the search margin.
+        {
+            const unsigned int nTimeTx = tx->nTime ? tx->nTime : header.GetBlockTime();
+            const int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)txNew.nTime, consensusParams);
+            if (nTimeWeight > 0) {
+                const arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
+                weight_summary.total += bnCoinDayWeight.GetLow64();
+                nWeightCount++;
+            }
+        }
+
+        // The search ends at the first kernel, but the weight must cover the
+        // whole set: a wallet that finds a kernel on every pass, as a large
+        // one does on a quiet network, would otherwise never publish. The
+        // remaining coins are read once more here, which the combine loop
+        // below does anyway on a pass that found a kernel.
+        if (fKernelFound)
+            continue;
+
         static int nMaxStakeSearchInterval = 60;
         if (header.GetBlockTime() + consensusParams.nStakeMinAge > txNew.nTime - nMaxStakeSearchInterval)
             continue; // only count coins meeting min age requirement
 
-        bool fKernelFound = false;
         for (unsigned int n=0; n<std::min(nSearchInterval,(int64_t)nMaxStakeSearchInterval) && !fKernelFound; n++)
         {
             // Search backward in time from the given txNew timestamp
@@ -337,9 +375,8 @@ bool CreateCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned i
                 break;
             }
         }
-        if (fKernelFound)
-            break; // if kernel is found stop searching
     }
+    publish_weight();
     if (nCredit == 0 || nCredit > nAvailable - nReserveBalance)
         return false;
     for (const auto& pcoin : setCoins)
@@ -685,8 +722,17 @@ public:
 
     bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) override
     {
+        // While the staking thread runs it publishes the weight of the coins
+        // it examined on its last complete pass; read that rather than
+        // rescanning the wallet under cs_wallet, which on a large wallet
+        // takes seconds per call and stalls everything else that needs the
+        // wallet. A wallet that is not staking has nothing published, so
+        // compute it for that case.
+        if (m_wallet->GetPublishedStakeWeight(average_weight, total_weight)) return true;
         return GetStakeWeight(m_wallet.get(), average_weight, total_weight, Params().GetConsensus());
     }
+
+    void resetPublishedStakeWeight() override { m_wallet->ResetPublishedStakeWeight(); }
 
     bool reserveDestination(CTxDestination& dest, std::string& error) override
     {
@@ -708,7 +754,13 @@ public:
         CMutableTransaction& tx_new,
         const Consensus::Params& consensus_params) override
     {
-        return CreateCoinStake(m_wallet.get(), &chainstate, nBits, nSearchInterval, tx_new, consensus_params);
+        // Publish what the pass measured, so the GUI and getstakinginfo need
+        // not rescan the wallet. A pass that failed before it could examine
+        // the set leaves the previous value standing.
+        StakeWeightSummary weight;
+        const bool found = CreateCoinStake(m_wallet.get(), &chainstate, nBits, nSearchInterval, tx_new, consensus_params, &weight);
+        if (weight.complete) m_wallet->PublishStakeWeight(weight.average, weight.total);
+        return found;
     }
 
     bool finalizeCoinStakeReward(CChainState& chainstate,
@@ -720,18 +772,6 @@ public:
     }
 
     bool signBlock(CBlock& block) override { return SignBlock(block, *m_wallet); }
-
-    bool getStakeCoins(std::vector<interfaces::StakeCoin>& coins) override
-    {
-        std::set<CInputCoin> set_coins;
-        if (!m_wallet->GetStakeWeightSet(set_coins)) return false;
-        coins.clear();
-        coins.reserve(set_coins.size());
-        for (const CInputCoin& coin : set_coins) {
-            coins.push_back({coin.outpoint, coin.txout.nValue});
-        }
-        return true;
-    }
 
 private:
     std::shared_ptr<CWallet> m_wallet;

@@ -144,17 +144,9 @@ public:
         }
         return false;
     }
-    bool getStakeCoins(std::vector<interfaces::StakeCoin>& coins) override
+    bool getStakeWeight(uint64_t& average_weight, uint64_t& total_weight) override
     {
-        std::set<CInputCoin> set_coins;
-        if (!m_wallet->GetStakeWeightSet(set_coins)) return false;
-        if (set_coins.empty()) return false;
-        coins.clear();
-        coins.reserve(set_coins.size());
-        for (const CInputCoin& coin : set_coins) {
-            coins.push_back({coin.outpoint, coin.txout.nValue});
-        }
-        return true;
+        return m_wallet->GetPublishedStakeWeight(average_weight, total_weight);
     }
     void setEnableStaking(bool enableStaking) override
     {

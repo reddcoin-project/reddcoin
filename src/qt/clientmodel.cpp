@@ -125,6 +125,14 @@ int ClientModel::getNumBlocks() const
     return m_cached_num_blocks;
 }
 
+int64_t ClientModel::getBlockTipTime() const
+{
+    if (m_cached_tip_time == -1) {
+        m_cached_tip_time = m_node.getLastBlockTime();
+    }
+    return m_cached_tip_time;
+}
+
 uint256 ClientModel::getBestBlockHash()
 {
     uint256 tip{WITH_LOCK(m_cached_tip_mutex, return m_cached_tip_blocks)};
@@ -323,6 +331,7 @@ static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_
         clientmodel->cachedBestHeaderTime = tip.block_time;
     } else {
         clientmodel->m_cached_num_blocks = tip.block_height;
+        clientmodel->m_cached_tip_time = tip.block_time;
         WITH_LOCK(clientmodel->m_cached_tip_mutex, clientmodel->m_cached_tip_blocks = tip.block_hash;);
     }
 
