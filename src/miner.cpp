@@ -140,7 +140,7 @@ void BlockAssembler::resetBlock()
     nFees = 0;
 }
 
-std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, bool* pfPoSCancel)
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, bool* pfPoSCancel, const StakeCandidates* candidates, const StakeKernel* kernel)
 {
     int64_t nTimeStart = GetTimeMicros();
 
@@ -183,26 +183,41 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;
-        int64_t nSearchTime = txCoinStake.nTime; // search to current time
-        if (nSearchTime > nLastCoinStakeSearchTime)
-        {
-            StakeWeightSummary weight;
-            if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus(), &weight))
-            {
-                if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
-                {   // make sure coinstake would meet timestamp protocol
-                    // as it would be the same as the block timestamp
-                    coinbaseTx.vout[0].SetEmpty();
-                    coinbaseTx.nTime = txCoinStake.nTime;
-                    pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
-                    *pfPoSCancel = false;
-                }
+        const auto accept_coinstake = [&]() {
+            if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
+            {   // make sure coinstake would meet timestamp protocol
+                // as it would be the same as the block timestamp
+                coinbaseTx.vout[0].SetEmpty();
+                coinbaseTx.nTime = txCoinStake.nTime;
+                pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
+                *pfPoSCancel = false;
             }
-            pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
-            // Publish what the pass measured, beside the interval it already
-            // reports, so the GUI and getstakinginfo need not rescan the wallet.
-            if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
-            nLastCoinStakeSearchTime = nSearchTime;
+        };
+        if (kernel)
+        {
+            // The staking thread searched its candidates without the locks
+            // and found this kernel. Build around it here, under them, where
+            // BuildCoinStake re-checks it against the tip this template is
+            // built on. The thread recorded the search interval and the
+            // stake weight when it searched.
+            assert(candidates != nullptr);
+            if (BuildCoinStake(pwallet, &m_chainstate, pblock->nBits, *candidates, *kernel, txCoinStake, chainparams.GetConsensus()))
+                accept_coinstake();
+        }
+        else
+        {
+            int64_t nSearchTime = txCoinStake.nTime; // search to current time
+            if (nSearchTime > nLastCoinStakeSearchTime)
+            {
+                StakeWeightSummary weight;
+                if (CreateCoinStake(pwallet, &m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus(), &weight))
+                    accept_coinstake();
+                pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+                // Publish what the pass measured, beside the interval it already
+                // reports, so the GUI and getstakinginfo need not rescan the wallet.
+                if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
+                nLastCoinStakeSearchTime = nSearchTime;
+            }
         }
         if (*pfPoSCancel)
             return nullptr; // reddcoin: there is no point to continue if we failed to create coinstake
@@ -561,21 +576,27 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
     ReserveDestination reservedest(pwallet, output_type);
     CTxDestination dest;
 
-    // Compute timeout for pos as sqrt(numUTXO)
-    unsigned int pos_timio;
     {
         LOCK(pwallet->cs_wallet);
 
         std::string strError;
         if (!reservedest.GetReservedDestination(dest, true, strError))
             throw std::runtime_error("Error: Keypool ran out, please call keypoolrefill first");
-
-        std::vector<COutput> vCoins;
-        CCoinControl coincontrol;
-        pwallet->AvailableCoins(vCoins, &coincontrol);
-        pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(vCoins.size());
-        LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, vCoins.size());
     }
+
+    // The coins to search. Collecting them walks the whole wallet under
+    // cs_wallet, seconds on a large one, so it happens once per block the
+    // wallet processes rather than once per pass; the search itself runs
+    // over this set without the lock. The first collection also sizes the
+    // sleep between passes as sqrt(numUTXO).
+    StakeCandidates candidates;
+    CollectStakeCandidates(pwallet, candidates);
+    const unsigned int pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(candidates.coins.size());
+    LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, candidates.coins.size());
+
+    // How far the previous search reached, per thread. This used to be a
+    // static shared by every caller of CreateNewBlock.
+    int64_t nLastCoinStakeSearchTime = GetAdjustedTime();
 
     std::string strMintMessage = _("Info: Staking suspended due to locked wallet.").translated;
     std::string strMintSyncMessage = _("Info: Staking suspended while synchronizing wallet.").translated;
@@ -656,22 +677,73 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
             }
 
             //
-            // Create new block
+            // Search for a kernel, then build the block around it
             //
+            // Collect the candidates again once the wallet's view of the
+            // chain has moved: a block may have matured or spent some of
+            // them. This is the only step that holds cs_wallet for long.
+            {
+                const uint256 hashLastBlock = WITH_LOCK(pwallet->cs_wallet, return pwallet->GetLastBlockHash());
+                if (!candidates.collected || candidates.hashLastBlock != hashLastBlock) {
+                    CollectStakeCandidates(pwallet, candidates);
+                }
+            }
+            if (!candidates.collected) {
+                // The reserve balance setting could not be parsed; the
+                // collection has logged it, and there is nothing to search.
+                if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    return;
+                continue;
+            }
+
             bool fPoSCancel = false;
             CScript scriptPubKey = GetScriptForDestination(dest);
             CBlock *pblock;
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
+            // The search holds neither cs_wallet nor cs_main for the pass;
+            // a pass that finds nothing never takes either. The weight it
+            // measures and the interval it covered are published here, as
+            // CreateNewBlock does for the on-demand path.
+            const int64_t nSearchTime = GetAdjustedTime();
+            if (nSearchTime <= nLastCoinStakeSearchTime) {
+                if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    return;
+                continue;
+            }
+            unsigned int nBits;
+            {
+                LOCK(cs_main);
+                CBlockHeader next;
+                next.nTime = nSearchTime;
+                nBits = GetNextWorkRequired(chainman->ActiveChain().Tip(), &next, Params().GetConsensus());
+            }
+            StakeKernel kernel;
+            StakeWeightSummary weight;
+            const bool found = SearchStakeKernel(pwallet, &chainman->ActiveChainstate(), candidates, nBits, nSearchTime - nLastCoinStakeSearchTime, nSearchTime, Params().GetConsensus(), kernel, &weight);
+            pwallet->SetLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+            if (weight.complete) pwallet->PublishStakeWeight(weight.average, weight.total);
+            nLastCoinStakeSearchTime = nSearchTime;
+            if (!found) {
+                if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    return;
+                continue;
+            }
+
             {
                 LOCK(pwallet->cs_wallet);
-                pblocktemplate = BlockAssembler(chainman->ActiveChainstate(), *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel);
+                pblocktemplate = BlockAssembler(chainman->ActiveChainstate(), *mempool, Params()).CreateNewBlock(scriptPubKey, pwallet, &fPoSCancel, &candidates, &kernel);
             }
 
             if (!pblocktemplate.get())
             {
                 if (fPoSCancel == true)
                 {
+                    // The kernel did not survive the re-check under the
+                    // locks, most often because the wallet spent the coin
+                    // since the candidates were collected. Collect again
+                    // before the next pass rather than wait for a block.
+                    candidates.collected = false;
                     if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                         return;
                     continue;
