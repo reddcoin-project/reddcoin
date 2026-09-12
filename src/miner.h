@@ -185,7 +185,14 @@ public:
      * set) if none is found. The caller must hold staking_wallet->lock() for
      * the whole call, since the coinstake is built, then re-signed against the
      * block's fees, in separate trips into the wallet. */
-    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, interfaces::StakingWallet* staking_wallet=nullptr, bool* pfPoSCancel=nullptr);
+    /** Construct a new block template with coinbase to scriptPubKeyIn.
+     *
+     *  With a staking wallet, the template carries a coinstake and the
+     *  coinbase is emptied. With from_found_kernel the coinstake is built
+     *  around the kernel the wallet's last search found, re-checked against
+     *  the tip this template uses; otherwise the kernel search runs here,
+     *  under the locks, which is what the generate RPCs rely on. */
+    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, interfaces::StakingWallet* staking_wallet=nullptr, bool* pfPoSCancel=nullptr, bool from_found_kernel=false);
 
     inline static std::optional<int64_t> m_last_block_num_txs{};
     inline static std::optional<int64_t> m_last_block_weight{};
