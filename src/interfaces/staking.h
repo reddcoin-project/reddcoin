@@ -50,8 +50,8 @@ public:
     //!
     //! The node holds cs_wallet across whole operations that call back into the
     //! wallet several times (most importantly BlockAssembler::CreateNewBlock,
-    //! which invokes createCoinStake, setLastCoinStakeSearchInterval and
-    //! finalizeCoinStakeReward in turn), so per-method locking inside the
+    //! which invokes createCoinStake or buildCoinStake and then
+    //! finalizeCoinStakeReward), so per-method locking inside the
     //! implementation cannot reproduce the span.
     //! Callers keep the original scope by holding one of these.
     //!
@@ -112,6 +112,47 @@ public:
     //! returns true.
     virtual bool isUnloading() const = 0;
 
+    //! Collect the coins the kernel search runs over. Takes the wallet lock
+    //! for the duration, seconds on a large wallet, so the staking thread
+    //! calls this once per block the wallet processes rather than once per
+    //! pass. Returns false when there is nothing to stake or the reserve
+    //! balance setting is invalid; stakeCandidatesCurrent() tells the two
+    //! apart, since only the second leaves no collection behind.
+    virtual bool collectStakeCandidates() = 0;
+
+    //! Whether the collected candidates still describe the wallet's view of
+    //! the chain. False before any collection, once the wallet has processed
+    //! a block since the collection, and after buildCoinStake() refused a
+    //! kernel.
+    virtual bool stakeCandidatesCurrent() = 0;
+
+    //! Number of candidates the last collection found, used to scale the
+    //! stake search timeout.
+    virtual size_t stakeCandidateCount() = 0;
+
+    //! Search the candidates for a kernel at nTimeTx and up to
+    //! nSearchInterval seconds before it. Holds no wallet lock and takes
+    //! cs_main only around the chain reads for one coin at a time, so the
+    //! pass runs while the GUI and RPC use the wallet. Publishes the stake
+    //! weight of the coins examined and keeps the kernel for
+    //! buildCoinStake(). Must not be called with lock() held: the point is
+    //! that the pass does not hold it.
+    virtual bool searchStakeKernel(CChainState& chainstate,
+        unsigned int nBits,
+        int64_t nSearchInterval,
+        uint32_t nTimeTx,
+        const Consensus::Params& consensus_params) = 0;
+
+    //! Build the coinstake around the kernel the last search found, after
+    //! re-checking it against the tip the block will sit on: unspent in the
+    //! wallet and on the chain, mature, and still meeting the target. A
+    //! refused kernel invalidates the candidates so the next pass collects
+    //! again. Requires the caller to hold lock() and cs_main.
+    virtual bool buildCoinStake(CChainState& chainstate,
+        unsigned int nBits,
+        CMutableTransaction& tx_new,
+        const Consensus::Params& consensus_params) = 0;
+
     //! Number of spendable coins, used to scale the stake search timeout.
     virtual size_t getAvailableCoinCount() = 0;
 
@@ -156,7 +197,9 @@ public:
     //! Record how far the last kernel search advanced, for getstakinginfo.
     virtual void setLastCoinStakeSearchInterval(int64_t interval) = 0;
 
-    //! Search for a kernel and build the coinstake transaction.
+    //! Collect, search and build in one call, for callers that build a block
+    //! on demand such as the generate RPCs. The staking thread runs the three
+    //! steps separately so that its search holds no lock.
     //! Requires the caller to hold lock().
     virtual bool createCoinStake(CChainState& chainstate,
         unsigned int nBits,

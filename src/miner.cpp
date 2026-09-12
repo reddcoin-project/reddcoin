@@ -135,7 +135,7 @@ void BlockAssembler::resetBlock()
     nFees = 0;
 }
 
-std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, interfaces::StakingWallet* staking_wallet, bool* pfPoSCancel)
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, interfaces::StakingWallet* staking_wallet, bool* pfPoSCancel, bool from_found_kernel)
 {
     int64_t nTimeStart = GetTimeMicros();
 
@@ -184,29 +184,43 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         CMutableTransaction txCoinStake;
         txCoinStake.nVersion = POSV_TX_VERSION;   // Explicit: PoS coinstake stays v2 (BIP68-exempt at consensus)
         txCoinStake.nTime = GetAdjustedTime(); // Initialize to current time for stake search
-        int64_t nSearchTime = txCoinStake.nTime; // search to current time
-        // Handle mock time reset (e.g. between tests) - if time went backwards, reset search time
-        if (nSearchTime < nLastCoinStakeSearchTime) {
-            nLastCoinStakeSearchTime = nSearchTime - 1;
-        }
-        if (nSearchTime > nLastCoinStakeSearchTime)
-        {
-            if (staking_wallet->createCoinStake(m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus()))
-            {
-                if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
-                {   // make sure coinstake would meet timestamp protocol
-                    // as it would be the same as the block timestamp
-                    coinbaseTx.vout[0].SetEmpty();
-                    coinbaseTx.nTime = txCoinStake.nTime;
-                    pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
-                    // Add placeholder entries for coinstake fee and sigops (updated later)
-                    pblocktemplate->vTxFees.push_back(0);
-                    pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
-                    *pfPoSCancel = false;
-                }
+        const auto accept_coinstake = [&]() {
+            if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))
+            {   // make sure coinstake would meet timestamp protocol
+                // as it would be the same as the block timestamp
+                coinbaseTx.vout[0].SetEmpty();
+                coinbaseTx.nTime = txCoinStake.nTime;
+                pblock->vtx.push_back(MakeTransactionRef(CTransaction(txCoinStake)));
+                // Add placeholder entries for coinstake fee and sigops (updated later)
+                pblocktemplate->vTxFees.push_back(0);
+                pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
+                *pfPoSCancel = false;
             }
-            staking_wallet->setLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
-            nLastCoinStakeSearchTime = nSearchTime;
+        };
+        if (from_found_kernel)
+        {
+            // The staking thread searched its candidates without the locks
+            // and found a kernel. Build around it here, under them, where the
+            // wallet re-checks it against the tip this template is built on.
+            // The thread recorded the search interval and the stake weight
+            // when it searched.
+            if (staking_wallet->buildCoinStake(m_chainstate, pblock->nBits, txCoinStake, chainparams.GetConsensus()))
+                accept_coinstake();
+        }
+        else
+        {
+            int64_t nSearchTime = txCoinStake.nTime; // search to current time
+            // Handle mock time reset (e.g. between tests) - if time went backwards, reset search time
+            if (nSearchTime < nLastCoinStakeSearchTime) {
+                nLastCoinStakeSearchTime = nSearchTime - 1;
+            }
+            if (nSearchTime > nLastCoinStakeSearchTime)
+            {
+                if (staking_wallet->createCoinStake(m_chainstate, pblock->nBits, nSearchTime-nLastCoinStakeSearchTime, txCoinStake, chainparams.GetConsensus()))
+                    accept_coinstake();
+                staking_wallet->setLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+                nLastCoinStakeSearchTime = nSearchTime;
+            }
         }
         if (*pfPoSCancel)
             return nullptr; // reddcoin: there is no point to continue if we failed to create coinstake
