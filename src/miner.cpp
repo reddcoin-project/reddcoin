@@ -597,19 +597,29 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
     // ReserveDestination this loop used to keep on its stack.
     CTxDestination dest;
 
-    // Compute timeout for pos as sqrt(numUTXO)
-    unsigned int pos_timio;
     {
         auto wallet_lock = staking_wallet.lock();
 
         std::string strError;
         if (!staking_wallet.reserveDestination(dest, strError))
             throw std::runtime_error("Error: Keypool ran out, please call keypoolrefill first");
-
-        const size_t num_coins = staking_wallet.getAvailableCoinCount();
-        pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(num_coins);
-        LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, num_coins);
     }
+
+    // The coins to search. Collecting them walks the whole wallet under its
+    // lock, seconds on a large one, so it happens once per block the wallet
+    // processes rather than once per pass; the search itself runs over the
+    // collected set without the lock. The first collection also sizes the
+    // sleep between passes as sqrt(numUTXO).
+    staking_wallet.collectStakeCandidates();
+    const size_t num_coins = staking_wallet.stakeCandidateCount();
+    const unsigned int pos_timio = gArgs.GetArg("-staketimio", DEFAULT_STAKETIMIO) + 30 * sqrt(num_coins);
+    LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, num_coins);
+
+    // How far the previous search reached, per thread; this used to be the
+    // static CreateNewBlock keeps for its on-demand callers. Starts a full
+    // interval back so that the first pass searches even on a clock that
+    // does not move, as under mock time.
+    int64_t nLastCoinStakeSearchTime = GetAdjustedTime() - 61;
 
     std::string strMintMessage = _("Info: Staking suspended due to locked wallet.").translated;
     std::string strMintSyncMessage = _("Info: Staking suspended while synchronizing wallet.").translated;
@@ -691,7 +701,7 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             }
 
             //
-            // Create new block
+            // Search for a kernel, then build the block around it
             //
             // Take the tip and the wallet's coin view from the same point in
             // time. A block that arrived while this thread was sleeping reaches
@@ -700,20 +710,68 @@ void PoSMiner(interfaces::StakingWallet& staking_wallet, ChainstateManager* chai
             // StakingWallet. No lock is held here, which is what this needs.
             staking_wallet.blockUntilSyncedToCurrentChain();
 
+            // Collect the candidates again once the wallet's view of the
+            // chain has moved, or the last build refused its kernel: a block
+            // may have matured or spent some of them. This is the only step
+            // that holds the wallet lock for long.
+            if (!staking_wallet.stakeCandidatesCurrent()) {
+                staking_wallet.collectStakeCandidates();
+                if (!staking_wallet.stakeCandidatesCurrent()) {
+                    // The reserve balance setting could not be parsed; the
+                    // collection has logged it, and there is nothing to search.
+                    if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                        return;
+                    continue;
+                }
+                LogPrintf("Staker thread [%d]: collected %u stake candidates\n", thread_id, staking_wallet.stakeCandidateCount());
+            }
+
             bool fPoSCancel = false;
             CScript scriptPubKey = GetScriptForDestination(dest);
             CBlock *pblock;
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
+            // The search holds neither the wallet lock nor cs_main for the
+            // pass; a pass that finds nothing never takes either. The weight
+            // it measures and the interval it covered are published from
+            // here, as CreateNewBlock does for its on-demand callers.
+            const int64_t nSearchTime = GetAdjustedTime();
+            if (nSearchTime < nLastCoinStakeSearchTime) {
+                nLastCoinStakeSearchTime = nSearchTime - 1; // the clock went backwards: mock time was reset
+            }
+            if (nSearchTime <= nLastCoinStakeSearchTime) {
+                if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    return;
+                continue;
+            }
+            unsigned int nBits;
+            {
+                LOCK(cs_main);
+                CBlockHeader next;
+                next.nTime = nSearchTime;
+                nBits = GetNextWorkRequired(chainman->ActiveChain().Tip(), &next, Params().GetConsensus());
+            }
+            const bool found = staking_wallet.searchStakeKernel(chainman->ActiveChainstate(), nBits, nSearchTime - nLastCoinStakeSearchTime, nSearchTime, Params().GetConsensus());
+            staking_wallet.setLastCoinStakeSearchInterval(nSearchTime - nLastCoinStakeSearchTime);
+            nLastCoinStakeSearchTime = nSearchTime;
+            if (!found) {
+                if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
+                    return;
+                continue;
+            }
+
             {
                 auto wallet_lock = staking_wallet.lock();
-                pblocktemplate = BlockAssembler(chainman->ActiveChainstate(), *mempool, Params()).CreateNewBlock(scriptPubKey, &staking_wallet, &fPoSCancel);
+                pblocktemplate = BlockAssembler(chainman->ActiveChainstate(), *mempool, Params()).CreateNewBlock(scriptPubKey, &staking_wallet, &fPoSCancel, /* from_found_kernel= */ true);
             }
 
             if (!pblocktemplate.get())
             {
                 if (fPoSCancel == true)
                 {
+                    // The kernel did not survive the re-check under the
+                    // locks; the wallet has marked its candidates for a new
+                    // collection on the next pass.
                     if (!interrupt.sleep_for(std::chrono::milliseconds(pos_timio)))
                         return;
                     continue;

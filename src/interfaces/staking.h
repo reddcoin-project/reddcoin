@@ -153,9 +153,6 @@ public:
         CMutableTransaction& tx_new,
         const Consensus::Params& consensus_params) = 0;
 
-    //! Number of spendable coins, used to scale the stake search timeout.
-    virtual size_t getAvailableCoinCount() = 0;
-
     //! Block until the wallet has processed the current chain tip, so a staking
     //! readout reflects blocks the caller could already have seen.
     //!

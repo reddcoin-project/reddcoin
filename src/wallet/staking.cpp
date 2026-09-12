@@ -823,15 +823,6 @@ public:
         m_wallet->SetLastCoinStakeSearchInterval(interval);
     }
 
-    size_t getAvailableCoinCount() override
-    {
-        LOCK(m_wallet->cs_wallet);
-        std::vector<COutput> coins;
-        CCoinControl coincontrol;
-        m_wallet->AvailableCoins(coins, &coincontrol);
-        return coins.size();
-    }
-
     void blockUntilSyncedToCurrentChain() override { m_wallet->BlockUntilSyncedToCurrentChain(); }
     int64_t getLastCoinStakeSearchInterval() override { return m_wallet->GetLastCoinStakeSearchInterval(); }
 
