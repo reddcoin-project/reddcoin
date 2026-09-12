@@ -275,6 +275,7 @@ BASE_SCRIPTS = [
     'feature_descriptor_legacy_staking.py',
     # RPCs that the --coverage gate reported as untested.
     'rpc_staking.py',
+    'wallet_staking_thread.py',
     'wallet_interest.py',
     'rpc_inflation.py',
     'rpc_checkupdates.py',
