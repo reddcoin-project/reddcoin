@@ -11,9 +11,18 @@ if [[ $QEMU_USER_CMD == qemu-s390* ]]; then
   export LC_ALL=C
 fi
 
+# pip installs go to the user site on Linux. On macOS the runner's Python is
+# Homebrew's, which is externally managed (PEP 668) and refuses any install
+# into it, --user included, so the packages go into a venv under the scratch
+# dir instead. The CI scripts are sourced into one shell, so putting the venv
+# first on PATH here is enough for the functional tests to run with it.
+PIP_USER_FLAG="--user"
 if [ "$CI_OS_NAME" == "macos" ]; then
-  sudo -H pip3 install --upgrade pip
-  IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt" ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
+  mkdir -p "${BASE_SCRATCH_DIR}"
+  python3 -m venv "${BASE_SCRATCH_DIR}/venv"
+  export PATH="${BASE_SCRATCH_DIR}/venv/bin:${PATH}"
+  PIP_USER_FLAG=""
+  IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt" ${CI_RETRY_EXE} pip3 install $PIP_PACKAGES
 fi
 
 # Create folders that are mounted into the docker
@@ -100,8 +109,8 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
   elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
     ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y python3-pip python3-dev libssl-dev
   fi
-  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user setuptools wheel
-  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user scrypt
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install ${PIP_USER_FLAG} setuptools wheel
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install ${PIP_USER_FLAG} scrypt
 fi
 
 if [ "$CI_OS_NAME" == "macos" ]; then
