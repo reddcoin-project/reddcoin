@@ -64,7 +64,6 @@ AC_DEFUN([AX_BOOST_FILESYSTEM],
 		export LDFLAGS
 
 		LIBS_SAVED=$LIBS
-		LIBS="$LIBS $BOOST_SYSTEM_LIB"
 		export LIBS
 
         AC_CACHE_CHECK(whether the Boost::Filesystem library is available,
