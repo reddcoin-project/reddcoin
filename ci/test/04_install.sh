@@ -22,7 +22,10 @@ if [ "$CI_OS_NAME" == "macos" ]; then
   python3 -m venv "${BASE_SCRATCH_DIR}/venv"
   export PATH="${BASE_SCRATCH_DIR}/venv/bin:${PATH}"
   PIP_USER_FLAG=""
-  IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt" ${CI_RETRY_EXE} pip3 install $PIP_PACKAGES
+  # The retry wrapper needs GNU getopt and macOS ships the BSD one. Export
+  # Homebrew's for every retry in this run, not only the first.
+  export IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt"
+  ${CI_RETRY_EXE} pip3 install $PIP_PACKAGES
 fi
 
 # Create folders that are mounted into the docker
