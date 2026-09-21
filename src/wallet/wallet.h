@@ -980,7 +980,9 @@ public:
     //! Make a LegacyScriptPubKeyMan and set it for all types, internal, and external.
     void SetupLegacyScriptPubKeyMan();
 
-    const CKeyingMaterial& GetEncryptionKey() const override;
+    //! Reference to the master key, which lives and dies under cs_wallet
+    //! (Unlock and Lock write it). The reference must not outlive the lock.
+    const CKeyingMaterial& GetEncryptionKey() const override EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool HasEncryptionKeys() const override;
 
     /** Get last block processed height */

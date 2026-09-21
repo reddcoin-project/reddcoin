@@ -1427,19 +1427,20 @@ fi
 
 if test x$use_boost = xyes; then
 
-  dnl Check for Boost headers
-  AX_BOOST_BASE([1.64.0],[],[AC_MSG_ERROR([Boost is not available!])])
+  dnl Check for Boost headers. 1.69 is where Boost.System became header-only;
+  dnl the compiled stub it kept shipping for older link lines was dropped in
+  dnl 1.89, so nothing here asks for a Boost.System library any more.
+  AX_BOOST_BASE([1.69.0],[],[AC_MSG_ERROR([Boost is not available!])])
   if test x$want_boost = xno; then
     AC_MSG_ERROR([[only libbitcoinconsensus can be built without boost]])
   fi
-  AX_BOOST_SYSTEM
   AX_BOOST_FILESYSTEM
 
   if test x$suppress_external_warnings != xno; then
     BOOST_CPPFLAGS=SUPPRESS_WARNINGS($BOOST_CPPFLAGS)
   fi
 
-  BOOST_LIBS="$BOOST_LDFLAGS $BOOST_SYSTEM_LIB $BOOST_FILESYSTEM_LIB"
+  BOOST_LIBS="$BOOST_LDFLAGS $BOOST_FILESYSTEM_LIB"
 fi
 
 if test "x$use_external_signer" != xno; then

@@ -12,7 +12,16 @@
 // For details see https://github.com/bitcoin/bitcoin/pull/22348.
 #define __kernel_entry
 #endif
+// Boost.Process v2 became the default spelling of boost::process, so the v1
+// API RunCommandParseJSON uses has to be named explicitly wherever the v1
+// header exists. Keep this in step with src/util/system.cpp.
+#if __has_include(<boost/process/v1.hpp>)
+#include <boost/process/v1.hpp>
+namespace bp = boost::process::v1;
+#else
 #include <boost/process.hpp>
+namespace bp = boost::process;
+#endif
 #endif // ENABLE_EXTERNAL_SIGNER
 
 #include <boost/test/unit_test.hpp>
@@ -71,7 +80,7 @@ BOOST_AUTO_TEST_CASE(run_command)
     }
     {
         // An invalid command is handled by Boost
-        BOOST_CHECK_EXCEPTION(RunCommandParseJSON("invalid_command"), boost::process::process_error, checkMessage); // Command failed
+        BOOST_CHECK_EXCEPTION(RunCommandParseJSON("invalid_command"), bp::process_error, checkMessage); // Command failed
     }
     {
         // Return non-zero exit code, no output to stderr

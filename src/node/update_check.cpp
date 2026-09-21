@@ -26,6 +26,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/version.hpp>
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -304,9 +305,14 @@ public:
         // anchors; the callback additionally binds the certificate to the host
         // that was asked for, so a valid certificate for some other name is no
         // use. Boost 1.71 spells this rfc2818_verification; the
-        // host_name_verification that replaced it arrived in 1.73.
+        // host_name_verification that replaced it arrived in 1.73, and 1.92
+        // no longer has the old name at all.
         m_ssl_ctx.set_verify_mode(boost::asio::ssl::verify_peer);
+#if BOOST_VERSION >= 107300
+        m_ssl_ctx.set_verify_callback(boost::asio::ssl::host_name_verification(m_host));
+#else
         m_ssl_ctx.set_verify_callback(boost::asio::ssl::rfc2818_verification(m_host));
+#endif
 
         // Server Name Indication. Without it a host that serves several names
         // from one address, which includes anything behind a CDN, cannot tell
