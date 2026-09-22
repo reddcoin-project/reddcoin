@@ -4,10 +4,19 @@
 
 #include <chain.h>
 #include <chainparams.h>
+#include <crypto/scrypt.h>
 #include <pow.h>
+#include <primitives/block.h>
 #include <test/util/setup_common.h>
+#include <uint256.h>
 
 #include <boost/test/unit_test.hpp>
+
+#ifndef WIN32
+#include <algorithm>
+#include <climits>
+#include <pthread.h>
+#endif
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
 
@@ -192,5 +201,45 @@ BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, CBaseChainParams::SIGNET);
 }
+
+#ifndef WIN32
+//! The proof-of-work hash must not depend on the size of the thread stack.
+//!
+//! scrypt's scratchpad is 128 KiB, and musl gives every thread but the main
+//! one a 128 KiB stack. While the scratchpad sat on the stack, reddcoind
+//! segfaulted in the Alpine docker image the first time a header was hashed
+//! off the main thread: at the testnet genesis block used here on testnet and
+//! regtest, and during header sync on mainnet.
+//!
+//! The expected hash was computed independently with OpenSSL's scrypt
+//! (N=1024, r=1, p=1). The guard below the stack is made at least as large as
+//! the scratchpad, so a scratchpad back on the stack faults rather than
+//! writing over whatever is mapped below it.
+BOOST_AUTO_TEST_CASE(pow_hash_on_a_small_thread_stack)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::TESTNET);
+    struct Job {
+        CBlockHeader header;
+        uint256 hash;
+    } job{chainParams->GenesisBlock().GetBlockHeader(), {}};
+
+    pthread_attr_t attr;
+    BOOST_REQUIRE_EQUAL(pthread_attr_init(&attr), 0);
+    BOOST_REQUIRE_EQUAL(pthread_attr_setstacksize(&attr, std::max<size_t>(64 * 1024, PTHREAD_STACK_MIN)), 0);
+    BOOST_REQUIRE_EQUAL(pthread_attr_setguardsize(&attr, SCRYPT_SCRATCHPAD_SIZE), 0);
+    pthread_t thread;
+    const int created{pthread_create(&thread, &attr, [](void* arg) -> void* {
+        auto* job = static_cast<Job*>(arg);
+        job->hash = job->header.GetPoWHash();
+        return nullptr;
+    }, &job)};
+    pthread_attr_destroy(&attr);
+    BOOST_REQUIRE_EQUAL(created, 0);
+    BOOST_REQUIRE_EQUAL(pthread_join(thread, nullptr), 0);
+
+    BOOST_CHECK_EQUAL(job.hash, uint256S("00000a9a56d92855f2590eb528ddfb52ac93811c53c9b50a3e8b25653efd509b"));
+    BOOST_CHECK(CheckProofOfWork(job.hash, job.header.nBits, chainParams->GetConsensus()));
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()
