@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include <string>
 #include <cstring>
+#include <memory>
 
 #if defined(USE_SSE2) && !defined(USE_SSE2_ALWAYS)
 #ifdef _MSC_VER
@@ -563,8 +564,10 @@ void scrypt_detect_sse2(std::string& ret)
 
 void scrypt_1024_1_1_256(const char *input, char *output)
 {
-    char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
-    scrypt_1024_1_1_256_sp(input, output, scratchpad);
+    // Not on the stack: at 128 KiB the scratchpad fills a whole musl thread
+    // stack, so hashing off the main thread overflowed it.
+    std::unique_ptr<char[]> scratchpad{new char[SCRYPT_SCRATCHPAD_SIZE]};
+    scrypt_1024_1_1_256_sp(input, output, scratchpad.get());
 }
 
 void SHA256(unsigned char* input, int len, unsigned char* output)
