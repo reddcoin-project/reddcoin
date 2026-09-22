@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <climits>
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
@@ -214,7 +215,8 @@ BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 //! The expected hash was computed independently with OpenSSL's scrypt
 //! (N=1024, r=1, p=1). The guard below the stack is made at least as large as
 //! the scratchpad, so a scratchpad back on the stack faults rather than
-//! writing over whatever is mapped below it.
+//! writing over whatever is mapped below it. macOS refuses a guard that is not
+//! a whole number of pages, so the size is rounded up to one.
 BOOST_AUTO_TEST_CASE(pow_hash_on_a_small_thread_stack)
 {
     const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::TESTNET);
@@ -223,10 +225,13 @@ BOOST_AUTO_TEST_CASE(pow_hash_on_a_small_thread_stack)
         uint256 hash;
     } job{chainParams->GenesisBlock().GetBlockHeader(), {}};
 
+    const size_t page_size{static_cast<size_t>(sysconf(_SC_PAGESIZE))};
+    const size_t guard_size{(SCRYPT_SCRATCHPAD_SIZE + page_size - 1) / page_size * page_size};
+
     pthread_attr_t attr;
     BOOST_REQUIRE_EQUAL(pthread_attr_init(&attr), 0);
     BOOST_REQUIRE_EQUAL(pthread_attr_setstacksize(&attr, std::max<size_t>(64 * 1024, PTHREAD_STACK_MIN)), 0);
-    BOOST_REQUIRE_EQUAL(pthread_attr_setguardsize(&attr, SCRYPT_SCRATCHPAD_SIZE), 0);
+    BOOST_REQUIRE_EQUAL(pthread_attr_setguardsize(&attr, guard_size), 0);
     pthread_t thread;
     const int created{pthread_create(&thread, &attr, [](void* arg) -> void* {
         auto* job = static_cast<Job*>(arg);
