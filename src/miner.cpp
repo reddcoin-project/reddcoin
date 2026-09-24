@@ -201,7 +201,13 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             // built on. The thread recorded the search interval and the
             // stake weight when it searched.
             assert(candidates != nullptr);
-            if (BuildCoinStake(pwallet, &m_chainstate, pblock->nBits, *candidates, *kernel, txCoinStake, chainparams.GetConsensus()))
+            // The staking thread takes pwallet->cs_wallet around this
+            // CreateNewBlock call, which the analysis cannot see from here.
+            // BuildCoinStake asserts both locks at runtime.
+            const auto build_coinstake = [&]() NO_THREAD_SAFETY_ANALYSIS {
+                return BuildCoinStake(pwallet, &m_chainstate, pblock->nBits, *candidates, *kernel, txCoinStake, chainparams.GetConsensus());
+            };
+            if (build_coinstake())
                 accept_coinstake();
         }
         else

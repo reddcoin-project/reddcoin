@@ -84,9 +84,8 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
 /** Build the coinstake around a found kernel. The search ran without the
  *  locks and possibly against an older tip, so first check the kernel is
  *  still unspent, mature and meets the target at the current tip; then add
- *  the combine inputs, the dev output, the reward and the signatures.
- *  Requires cs_main and cs_wallet. */
-bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, const StakeCandidates& candidates, const StakeKernel& kernel, CMutableTransaction& txNew, const Consensus::Params& consensusParams);
+ *  the combine inputs, the dev output, the reward and the signatures. */
+bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, const StakeCandidates& candidates, const StakeKernel& kernel, CMutableTransaction& txNew, const Consensus::Params& consensusParams) EXCLUSIVE_LOCKS_REQUIRED(::cs_main, pwallet->cs_wallet);
 
 /** Collect, search and build in one call, under cs_main and cs_wallet, for
  *  callers that build a block on demand such as the generate RPCs. The
