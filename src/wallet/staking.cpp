@@ -414,7 +414,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
     return fKernelFound;
 }
 
-bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, const StakeCandidates& candidates, const StakeKernel& kernel, CMutableTransaction& txNew, const Consensus::Params& consensusParams)
+bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned int nBits, const StakeCandidates& candidates, const StakeKernel& kernel, CMutableTransaction& txNew, const Consensus::Params& consensusParams) EXCLUSIVE_LOCKS_REQUIRED(::cs_main, pwallet->cs_wallet)
 {
     AssertLockHeld(cs_main);
     AssertLockHeld(pwallet->cs_wallet);
