@@ -13,12 +13,15 @@
 
 #include <interfaces/chain.h>
 #include <interfaces/wallet.h>
+#include <miner.h>
 #include <node/blockstorage.h>
 #include <node/context.h>
 #include <policy/policy.h>
+#include <pow.h>
 #include <rpc/server.h>
 #include <test/util/logging.h>
 #include <test/util/setup_common.h>
+#include <timedata.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <interfaces/staking.h>
@@ -1366,6 +1369,167 @@ BOOST_FIXTURE_TEST_CASE(trusted_and_available_without_finality_check, TestChain1
     // The locked spend stays out until it is final, whatever else changes.
     BOOST_CHECK(!trusted(locked));
     BOOST_CHECK(!is_final(locked));
+}
+
+//! The staking thread collects the wallet's stakeable coins under the wallet
+//! lock, searches them for a kernel without it, and builds the coinstake
+//! under the locks only once it has found one. The three steps must produce
+//! the coinstake the one-shot path produces, and the build must refuse a
+//! kernel the world has moved under: one the wallet has spent since the
+//! collection, one the chain does not hold, one the chain no longer counts
+//! mature. Both the functions and the staking interface the thread drives
+//! them through are checked, on the fixture's staking wallet, which has just
+//! built the proof-of-stake tail of the chain.
+BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain100Setup)
+{
+    BOOST_REQUIRE(m_wallet);
+    const Consensus::Params& params = Params().GetConsensus();
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const CBlockIndex* tip = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
+    const uint32_t nTimeTx = GetAdjustedTime(); // the mocked clock, held still by the fixture
+    unsigned int nBits;
+    {
+        LOCK(cs_main);
+        CBlockHeader next;
+        next.nTime = nTimeTx;
+        nBits = GetNextWorkRequired(m_node.chainman->ActiveChain().Tip(), &next, params);
+    }
+    const CScript ours = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+
+    // The collection records the wallet's view of the chain and every coin
+    // it may spend, in search order.
+    StakeCandidates candidates;
+    BOOST_REQUIRE(CollectStakeCandidates(m_wallet.get(), candidates));
+    BOOST_CHECK(candidates.collected);
+    BOOST_CHECK(candidates.hashLastBlock == tip->GetBlockHash());
+    BOOST_CHECK_EQUAL(candidates.nReserveBalance, 0);
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<COutput> available;
+        m_wallet->AvailableCoins(available);
+        BOOST_CHECK_EQUAL(candidates.coins.size(), available.size());
+        CAmount sum = 0;
+        for (const COutput& coin : available) sum += coin.GetInputCoin().txout.nValue;
+        BOOST_CHECK_EQUAL(candidates.nAvailable, sum);
+    }
+    BOOST_REQUIRE(!candidates.coins.empty());
+
+    // The search finds a kernel with no wallet lock held (regtest's target is
+    // met by the first eligible coin) and reports the weight of the set.
+    StakeKernel kernel;
+    StakeWeightSummary weight;
+    BOOST_REQUIRE(SearchStakeKernel(m_wallet.get(), &chainstate, candidates, nBits, 60, nTimeTx, params, kernel, &weight));
+    BOOST_CHECK(weight.complete);
+    BOOST_CHECK(weight.total > 0);
+    BOOST_CHECK(kernel.nTime <= nTimeTx);
+    BOOST_CHECK(kernel.nTime > nTimeTx - 60);
+    bool kernel_is_a_candidate = false;
+    for (const CInputCoin& coin : candidates.coins) kernel_is_a_candidate |= coin.outpoint == kernel.outpoint;
+    BOOST_CHECK(kernel_is_a_candidate);
+
+    // Built under the locks, the coinstake is the one the one-shot path
+    // builds at the same clock: same kernel, same inputs, same outputs, same
+    // signatures.
+    CMutableTransaction built;
+    CMutableTransaction oneshot;
+    oneshot.nTime = nTimeTx;
+    StakeWeightSummary oneshot_weight;
+    {
+        LOCK2(m_wallet->cs_wallet, ::cs_main);
+        BOOST_REQUIRE(BuildCoinStake(m_wallet.get(), &chainstate, nBits, candidates, kernel, built, params));
+        BOOST_REQUIRE(CreateCoinStake(m_wallet.get(), &chainstate, nBits, 60, oneshot, params, &oneshot_weight));
+    }
+    BOOST_CHECK_EQUAL(built.nTime, oneshot.nTime);
+    BOOST_CHECK(built.vin[0].prevout == kernel.outpoint);
+    BOOST_CHECK(CTransaction(built).GetHash() == CTransaction(oneshot).GetHash());
+    BOOST_CHECK_EQUAL(weight.total, oneshot_weight.total);
+    BOOST_CHECK_EQUAL(weight.average, oneshot_weight.average);
+
+    // The staking thread drives the same three steps through the interface,
+    // which keeps the candidates and the kernel on the wallet side, and hands
+    // the kernel to the block assembler.
+    std::unique_ptr<interfaces::StakingWallet> staking_wallet = MakeStakingWallet(m_wallet);
+    BOOST_REQUIRE(staking_wallet);
+    BOOST_CHECK(!staking_wallet->stakeCandidatesCurrent());
+    BOOST_CHECK(staking_wallet->collectStakeCandidates());
+    BOOST_CHECK(staking_wallet->stakeCandidatesCurrent());
+    BOOST_CHECK_EQUAL(staking_wallet->stakeCandidateCount(), candidates.coins.size());
+    BOOST_REQUIRE(staking_wallet->searchStakeKernel(chainstate, nBits, 60, nTimeTx, params));
+    {
+        uint64_t published_average = 0;
+        uint64_t published_total = 0;
+        BOOST_CHECK(m_wallet->GetPublishedStakeWeight(published_average, published_total));
+        BOOST_CHECK_EQUAL(published_total, weight.total);
+    }
+
+    // The wallet spends the kernel coin between the search and the build, as
+    // a user sending coins would. The assembler asks the wallet to build,
+    // the wallet finds the spend and refuses, and the assembler reports it
+    // the way it reports a search that found nothing: no template, and the
+    // pass cancelled. The refusal marks the candidates for a new collection.
+    CMutableTransaction spend_tx;
+    spend_tx.vin.emplace_back(kernel.outpoint);
+    spend_tx.vout.emplace_back(kernel.txout.nValue - 1000, ours);
+    m_wallet->AddToWallet(MakeTransactionRef(spend_tx), {CWalletTx::Status::UNCONFIRMED, /* height */ 0, /* hash */ {}, /* index */ 0});
+    {
+        DebugLogHelper refused("spent by the wallet since it was found");
+        auto wallet_lock = staking_wallet->lock();
+        bool cancelled = false;
+        std::unique_ptr<CBlockTemplate> tmpl = BlockAssembler(chainstate, *m_node.mempool, Params()).CreateNewBlock(ours, staking_wallet.get(), &cancelled, /* from_found_kernel= */ true);
+        BOOST_CHECK(!tmpl);
+        BOOST_CHECK(cancelled);
+    }
+    BOOST_CHECK(!staking_wallet->stakeCandidatesCurrent());
+
+    // The next collection leaves the spent coin out.
+    BOOST_CHECK(staking_wallet->collectStakeCandidates());
+    BOOST_CHECK(staking_wallet->stakeCandidatesCurrent());
+    BOOST_CHECK_EQUAL(staking_wallet->stakeCandidateCount(), candidates.coins.size() - 1);
+
+    // The same refusals, directly. A refused kernel leaves the transaction
+    // untouched, so the assembler's template is not half built.
+    const auto build = [&](const StakeKernel& k) {
+        LOCK2(m_wallet->cs_wallet, ::cs_main);
+        CMutableTransaction txNew;
+        const bool ok = BuildCoinStake(m_wallet.get(), &chainstate, nBits, candidates, k, txNew, params);
+        BOOST_CHECK(txNew.vin.empty());
+        return ok;
+    };
+    const auto kernel_on = [&](const CTransactionRef& tx, uint32_t n) {
+        StakeKernel k = kernel;
+        k.outpoint = COutPoint(tx->GetHash(), n);
+        k.txout = tx->vout[n];
+        k.txPrev = tx;
+        k.scriptPubKeyOut = tx->vout[n].scriptPubKey;
+        return k;
+    };
+    {
+        DebugLogHelper refused("spent by the wallet since it was found");
+        BOOST_CHECK(!build(kernel));
+    }
+    {
+        // A coin the chain never held.
+        CMutableTransaction unknown_tx;
+        unknown_tx.vin.emplace_back(COutPoint(GetRandHash(), 0));
+        unknown_tx.vout.emplace_back(1 * COIN, ours);
+        DebugLogHelper refused("spent on the chain since it was found");
+        BOOST_CHECK(!build(kernel_on(MakeTransactionRef(unknown_tx), 0)));
+    }
+    {
+        // The tip's own coinstake output: on the chain, unspent, not yet mature.
+        const CTransactionRef& tip_coinstake = m_coinbase_txns.back();
+        BOOST_REQUIRE(tip_coinstake->IsCoinStake());
+        DebugLogHelper refused("no longer mature at height " + ToString(tip->nHeight + 1));
+        BOOST_CHECK(!build(kernel_on(tip_coinstake, 1)));
+    }
+
+    // A block the wallet processes moves its view, and the candidates are
+    // stale until the thread collects again.
+    stakeBlocks(1);
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    BOOST_CHECK(!staking_wallet->stakeCandidatesCurrent());
+    BOOST_CHECK(staking_wallet->collectStakeCandidates());
+    BOOST_CHECK(staking_wallet->stakeCandidatesCurrent());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
