@@ -13,9 +13,11 @@
 
 #include <interfaces/chain.h>
 #include <interfaces/wallet.h>
+#include <miner.h>
 #include <node/blockstorage.h>
 #include <node/context.h>
 #include <policy/policy.h>
+#include <pos/stake.h>
 #include <rpc/server.h>
 #include <test/util/logging.h>
 #include <test/util/setup_common.h>
@@ -992,6 +994,133 @@ BOOST_FIXTURE_TEST_CASE(trusted_and_available_without_finality_check, TestChain1
     // The locked spend stays out until it is final, whatever else changes.
     BOOST_CHECK(!trusted(locked));
     BOOST_CHECK(!is_final(locked));
+}
+
+//! The staking thread collects the wallet's stakeable coins under the wallet
+//! lock, searches them for a kernel without it, and builds the coinstake
+//! under the locks only once it has found one. Regtest cannot stake in this
+//! harness, so pin the contract between the three steps instead: what a
+//! collection records, what a search over nothing reports, and that a kernel
+//! the wallet has spent, the chain does not hold, or the chain no longer
+//! counts mature is refused at the build, whether called directly or through
+//! the block assembler the thread hands it to.
+BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain100Setup)
+{
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+    const CBlockIndex* tip = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
+    {
+        LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+        BOOST_CHECK(spk_man->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey()));
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CScript ours = GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()));
+    const Consensus::Params& params = Params().GetConsensus();
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const uint32_t search_time = tip->GetBlockTime() + 60;
+
+    // A search over an empty collection finds nothing and reports a zero
+    // weight that is known, which is what lets the GUI say "no mature coins"
+    // rather than "waiting for staking to start".
+    {
+        StakeCandidates none;
+        none.collected = true;
+        StakeKernel kernel;
+        StakeWeightSummary weight;
+        BOOST_CHECK(!SearchStakeKernel(wallet.get(), &chainstate, none, tip->nBits, /* nSearchInterval */ 60, search_time, params, kernel, &weight));
+        BOOST_CHECK(weight.complete);
+        BOOST_CHECK_EQUAL(weight.total, 0U);
+        BOOST_CHECK_EQUAL(weight.average, 0U);
+    }
+
+    // A confirmed transaction paying us twice, recorded in the tip block.
+    CMutableTransaction confirmed_tx;
+    confirmed_tx.vin.emplace_back(COutPoint(GetRandHash(), 0));
+    confirmed_tx.vout.emplace_back(1 * COIN, ours);
+    confirmed_tx.vout.emplace_back(2 * COIN, ours);
+    const CTransactionRef confirmed = MakeTransactionRef(confirmed_tx);
+    wallet->AddToWallet(confirmed, {CWalletTx::Status::CONFIRMED, tip->nHeight, tip->GetBlockHash(), /* index */ 1});
+
+    // The collection records the wallet's view of the chain, its trusted
+    // balance and the coins it may spend, in the order the search runs.
+    StakeCandidates candidates;
+    BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
+    BOOST_CHECK(candidates.collected);
+    BOOST_CHECK(candidates.hashLastBlock == tip->GetBlockHash());
+    BOOST_CHECK_EQUAL(candidates.nBalance, 3 * COIN);
+    BOOST_CHECK_EQUAL(candidates.nReserveBalance, 0);
+    std::set<COutPoint> collected;
+    for (const CInputCoin& coin : candidates.coins) collected.insert(coin.outpoint);
+    BOOST_CHECK((collected == std::set<COutPoint>{COutPoint(confirmed->GetHash(), 0), COutPoint(confirmed->GetHash(), 1)}));
+
+    // A reserve the balance cannot cover leaves nothing to stake. The
+    // collection still counts as done, so the thread does not repeat it
+    // every pass, and records the reserve it applied.
+    gArgs.ForceSetArg("-reservebalance", "4");
+    BOOST_CHECK(!CollectStakeCandidates(wallet.get(), candidates));
+    BOOST_CHECK(candidates.collected);
+    BOOST_CHECK(candidates.coins.empty());
+    BOOST_CHECK_EQUAL(candidates.nReserveBalance, 4 * COIN);
+    gArgs.ForceSetArg("-reservebalance", "0");
+    BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
+    BOOST_CHECK_EQUAL(candidates.coins.size(), 2U);
+
+    // A kernel as the search would report it, on one of our coins.
+    const auto kernel_on = [&](const CTransactionRef& tx, uint32_t n) {
+        StakeKernel kernel;
+        kernel.outpoint = COutPoint(tx->GetHash(), n);
+        kernel.txout = tx->vout[n];
+        kernel.header = tip->GetBlockHeader();
+        kernel.txPrev = tx;
+        kernel.nTime = search_time;
+        kernel.scriptPubKeyOut = ours;
+        kernel.type = TxoutType::PUBKEYHASH;
+        return kernel;
+    };
+    const auto build = [&](const StakeKernel& kernel) {
+        LOCK2(wallet->cs_wallet, ::cs_main);
+        CMutableTransaction txNew;
+        const bool built = BuildCoinStake(wallet.get(), &chainstate, tip->nBits, candidates, kernel, txNew, params);
+        BOOST_CHECK(txNew.vin.empty()); // a refused kernel leaves the transaction untouched
+        return built;
+    };
+
+    // The wallet spends the first output after the collection: the build
+    // finds the spend and refuses the kernel, before asking the chain.
+    CMutableTransaction spend_tx;
+    spend_tx.vin.emplace_back(COutPoint(confirmed->GetHash(), 0));
+    spend_tx.vout.emplace_back(1 * COIN - 1000, ours);
+    wallet->AddToWallet(MakeTransactionRef(spend_tx), {CWalletTx::Status::UNCONFIRMED, /* height */ 0, /* hash */ {}, /* index */ 0});
+    {
+        DebugLogHelper refused("spent by the wallet since it was found");
+        BOOST_CHECK(!build(kernel_on(confirmed, 0)));
+    }
+
+    // The second output is unspent as far as the wallet knows, but the chain
+    // never held this transaction: refused as spent on the chain.
+    {
+        DebugLogHelper refused("spent on the chain since it was found");
+        BOOST_CHECK(!build(kernel_on(confirmed, 1)));
+    }
+
+    // The tip's own coinbase is on the chain and unspent, and not yet mature.
+    {
+        DebugLogHelper refused("no longer mature at height " + ToString(tip->nHeight + 1));
+        BOOST_CHECK(!build(kernel_on(m_coinbase_txns.back(), 0)));
+    }
+
+    // The thread hands a found kernel to the block assembler, which builds
+    // under the locks and reports a refused kernel the way it reports a
+    // search that found nothing: no template, and the pass cancelled.
+    {
+        LOCK(wallet->cs_wallet);
+        bool cancelled = false;
+        const StakeKernel kernel = kernel_on(m_coinbase_txns.back(), 0);
+        std::unique_ptr<CBlockTemplate> tmpl = BlockAssembler(chainstate, *m_node.mempool, Params()).CreateNewBlock(ours, wallet.get(), &cancelled, &candidates, &kernel);
+        BOOST_CHECK(!tmpl);
+        BOOST_CHECK(cancelled);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

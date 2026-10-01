@@ -37,6 +37,8 @@ class CChainParams;
 class CScheduler;
 class CScript;
 class CWallet;
+struct StakeCandidates;
+struct StakeKernel;
 
 namespace Consensus { struct Params; };
 
@@ -178,8 +180,14 @@ public:
     explicit BlockAssembler(CChainState& chainstate, const CTxMemPool& mempool, const CChainParams& params);
     explicit BlockAssembler(CChainState& chainstate, const CTxMemPool& mempool, const CChainParams& params, const Options& options);
 
-    /** Construct a new block template with coinbase to scriptPubKeyIn */
-    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet=nullptr, bool* pfPoSCancel=nullptr);
+    /** Construct a new block template with coinbase to scriptPubKeyIn.
+     *
+     *  With a wallet, the template carries a coinstake and the coinbase is
+     *  emptied. Given a kernel the staking thread already found among the
+     *  candidates, the coinstake is built around it (re-checked against the
+     *  tip this template uses); without one, the kernel search runs here,
+     *  under the locks, which is what the generate RPCs rely on. */
+    std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet=nullptr, bool* pfPoSCancel=nullptr, const StakeCandidates* candidates=nullptr, const StakeKernel* kernel=nullptr);
 
     inline static std::optional<int64_t> m_last_block_num_txs{};
     inline static std::optional<int64_t> m_last_block_weight{};
