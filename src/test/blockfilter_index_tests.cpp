@@ -13,6 +13,7 @@
 #include <test/util/setup_common.h>
 #include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -320,6 +321,9 @@ BOOST_FIXTURE_TEST_CASE(blockfilter_index_initial_sync, BuildChainTestingSetup)
 
     filter_index.Interrupt();
     filter_index.Stop();
+
+    // Let scheduler events finish running to avoid accessing any memory related to filter_index after it is destructed
+    SyncWithValidationInterfaceQueue();
 }
 
 BOOST_FIXTURE_TEST_CASE(blockfilter_index_init_destroy, BasicTestingSetup)

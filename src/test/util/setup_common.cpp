@@ -558,9 +558,12 @@ TestChain100Setup::~TestChain100Setup()
     }
 #endif // ENABLE_WALLET
 
-    // Stop and clean up txindex
+    // Stop and clean up txindex. Stop() only unregisters it, and the scheduler
+    // keeps running until ~ChainTestingSetup, so let a callback already in
+    // flight (e.g. ChainStateFlushed) finish before the index is freed.
     if (g_txindex) {
         g_txindex->Stop();
+        SyncWithValidationInterfaceQueue();
         g_txindex.reset();
     }
     gArgs.ForceSetArg("-segwitheight", "0");

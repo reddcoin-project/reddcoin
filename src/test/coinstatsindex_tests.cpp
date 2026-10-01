@@ -6,6 +6,7 @@
 #include <test/util/setup_common.h>
 #include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -77,6 +78,9 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
 
     // Shutdown sequence (c.f. Shutdown() in init.cpp)
     coin_stats_index.Stop();
+
+    // Let scheduler events finish running to avoid accessing any memory related to coin_stats_index after it is destructed
+    SyncWithValidationInterfaceQueue();
 
     // Rest of shutdown sequence and destructors happen in ~TestingSetup()
 }
