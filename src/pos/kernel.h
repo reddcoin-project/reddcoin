@@ -28,8 +28,28 @@ static const bool DEFAULT_PRINTCOINAGE = false;
 // Compute the hash modifier for proof-of-stake
 bool ComputeNextStakeModifier(CChainState* active_chainstate, const CBlockIndex* pindexPrev, uint64_t &nStakeModifier, bool& fGeneratedStakeModifier);
 
+// Everything the stake kernel needs to know about the coin it is hashing:
+// the block that created the coin, the creating transaction's timestamp and
+// the coin's value. The block files are one source for these; the UTXO set
+// and the block index are another, and carry the same values, which is where
+// GetCoinAge already reads them from.
+struct StakeKernelSource {
+    uint256 hashBlockFrom;
+    unsigned int nTimeBlockFrom{0};
+    //! Raw creating-transaction time. Zero, as proof-of-work era transactions
+    //! have, means fall back to nTimeBlockFrom, which the kernel does itself.
+    unsigned int nTimeTxPrev{0};
+    CAmount nValueIn{0};
+};
+
 // Check whether stake kernel meets hash target
 // Sets hashProofOfStake on success return
+bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPrev, unsigned int nBits, const StakeKernelSource& source, unsigned int nTxPrevOffset, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake = false);
+
+// As above, reading the source values out of a block header and the creating
+// transaction. The two overloads hash the same preimage; this one exists for
+// callers that already hold the block and the transaction, such as the
+// validator.
 bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPrev, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake = false);
 
 // Check kernel hash target and coinstake signature
@@ -52,6 +72,14 @@ uint64_t GetCoinAge(CChainState* active_chainstate, const CTransaction& tx, cons
 // spent in the view, or its creating block is not on the active chain.
 // Requires cs_main.
 bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, uint32_t& nTimeBlockFrom, uint32_t& nTimeTxPrev) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+// Resolve everything the kernel needs about a coin's source from the UTXO set
+// and the block index, with no block-file read. The values are the ones the
+// block files hold: the Coin carries the creating transaction's nTime and its
+// height, and a block on the active chain carries its own time and hash.
+// Returns false if the coin is absent or spent in the view, or its creating
+// block is not on the active chain. Requires cs_main.
+bool GetStakeKernelSource(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, StakeKernelSource& source) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 // Function to calculate the coin age weight
 int64_t GetCoinAgeWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd, const Consensus::Params& consensusParams);
