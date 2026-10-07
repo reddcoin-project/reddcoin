@@ -1499,8 +1499,9 @@ BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain
         StakeKernel k = kernel;
         k.outpoint = COutPoint(tx->GetHash(), n);
         k.txout = tx->vout[n];
-        k.txPrev = tx;
         k.scriptPubKeyOut = tx->vout[n].scriptPubKey;
+        // source is left as the found kernel's: every case below is refused
+        // before BuildCoinStake reads the block file to confirm it.
         return k;
     };
     {

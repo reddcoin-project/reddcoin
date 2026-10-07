@@ -6,6 +6,7 @@
 #define BITCOIN_WALLET_STAKING_H
 
 #include <interfaces/staking.h>
+#include <pos/kernel.h>
 #include <primitives/block.h>
 #include <script/standard.h>
 #include <sync.h>
@@ -73,16 +74,18 @@ bool CollectStakeCandidates(const CWallet* pwallet, StakeCandidates& candidates)
 struct StakeKernel {
     COutPoint outpoint;
     CTxOut txout;
-    CBlockHeader header;      //!< block the coin was created in
-    CTransactionRef txPrev;   //!< transaction that created it
+    //! What the search hashed, read from the UTXO set. BuildCoinStake reads
+    //! the same values from the block files and refuses the kernel if the two
+    //! disagree, so a divergent chainstate costs a pass rather than a block.
+    StakeKernelSource source;
     uint32_t nTime{0};        //!< coinstake time at which the kernel met the target
     CScript scriptPubKeyOut;  //!< output script: the coin's own, or its pubkey for a keyhash coin
     TxoutType type{TxoutType::NONSTANDARD};
 };
 
 //! Search the candidates for a kernel at nTimeTx and up to nSearchInterval
-//! seconds before it. Takes no wallet lock: each coin's source is read
-//! through the transaction index, and cs_main is held only around the chain
+//! seconds before it. Takes no wallet lock, and reads no block files: each
+//! coin's source comes from the UTXO set, and cs_main is held only around the chain
 //! reads for one coin at a time, so the search runs while the GUI and RPC
 //! use the wallet and the node validates blocks. Reports the stake weight of
 //! the coins it examined through weight, if given.
