@@ -304,6 +304,16 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         nSpendHeight = pindexTip->nHeight + 1;
     }
 
+    // What the pass cost, for -debug=bench. Every pass walks the whole
+    // candidate set, whether or not it finds a kernel, because the weight has
+    // to cover all of it; the counts below say how much of the set survived
+    // each filter and how many block files the pass opened, which is the
+    // number this work exists to drive to zero.
+    const int64_t nTimeStart = GetTimeMicros();
+    size_t nExamined = 0;
+    size_t nWeighed = 0;
+    size_t nSearched = 0;
+
     bool fKernelFound = false;
     for (const CInputCoin& pcoin : candidates.coins)
     {
@@ -340,6 +350,8 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         if (!fSegwitActive && IsWitnessOutput(pcoin.txout.scriptPubKey))
             continue;
 
+        ++nExamined;
+
         // Weight, before the age gate below: GetStakeWeight counts every coin
         // with positive weight, and a coin can carry a little while still
         // inside the search margin.
@@ -350,6 +362,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
                 const arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
                 weight_summary.total += bnCoinDayWeight.GetLow64();
                 nWeightCount++;
+                ++nWeighed;
             }
         }
 
@@ -371,6 +384,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         // reads the chain.
         bool foundStake = false;
         unsigned int nKernelOffset = 0;
+        ++nSearched;
         {
             LOCK(cs_main);
             // When creating a new stake block, use current chain tip as parent
@@ -405,6 +419,13 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         fKernelFound = true;
     }
     publish_weight();
+
+    LogPrint(BCLog::BENCH, "SearchStakeKernel [%s]: %u candidates, %u examined, %u weighed, %u searched over %ds, kernel %s, no block files read, %.2fms\n",
+             pwallet->GetName(), candidates.coins.size(), nExamined, nWeighed, nSearched,
+             std::min(nSearchInterval, (int64_t)60),
+             fKernelFound ? "found" : "not found",
+             0.001 * (GetTimeMicros() - nTimeStart));
+
     return fKernelFound;
 }
 
