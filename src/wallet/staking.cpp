@@ -27,71 +27,68 @@ typedef std::vector<unsigned char> valtype;
 
 bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t & nTotalWeight, const Consensus::Params& consensusParams)
 {
-      // Choose coins to use
-      LOCK(pwallet->cs_wallet);
-      CAmount nBalance = pwallet->GetBalance().m_mine_trusted;
-      CAmount nReserveBalance = 0;
-      if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
-          return error("CreateCoinStake : invalid reserve balance amount");
-      if (nBalance <= nReserveBalance)
-          return false;
+    nAverageWeight = nTotalWeight = 0;
 
-      std::vector<CTransactionRef> vwtxPrev;
-      std::set<CInputCoin> setCoins;
+    CAmount nReserveBalance = 0;
+    if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
+        return error("GetStakeWeight : invalid reserve balance amount");
 
-      CAmount nValueIn = 0;
+    // A coin's age needs the creating transaction's timestamp, and the time
+    // of its block only where that timestamp is zero, as proof-of-work era
+    // transactions have. The wallet holds the transaction, so the common case
+    // needs nothing beyond it: no block file, and no coin selection, which
+    // used to run here against the whole balance for a set of coins it then
+    // threw away. The staking thread searches every spendable coin, so this
+    // counts every spendable coin and the two agree.
+    struct Candidate {
+        CAmount nValue{0};
+        unsigned int nTimeTxPrev{0};
+        uint256 hashBlock;
+    };
+    std::vector<Candidate> coins;
+    CAmount nAvailable = 0;
+    {
+        LOCK(pwallet->cs_wallet);
+        std::vector<COutput> vAvailableCoins;
+        CCoinControl temp;
+        pwallet->AvailableCoins(vAvailableCoins, &temp);
+        coins.reserve(vAvailableCoins.size());
+        for (const COutput& out : vAvailableCoins) {
+            const CAmount nValue = out.tx->tx->vout[out.i].nValue;
+            coins.push_back({nValue, out.tx->tx->nTime, out.tx->m_confirm.hashBlock});
+            nAvailable += nValue;
+        }
+    }
+    if (nAvailable <= nReserveBalance)
+        return false;
+    if (coins.empty())
+        return false;
 
-      std::vector<COutput> vAvailableCoins;
-      CCoinControl temp;
-      CoinSelectionParams coin_selection_params;
-      pwallet->AvailableCoins(vAvailableCoins, &temp);
-      if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
-          return false;
-      if (setCoins.empty())
-          return false;
+    const int64_t nTimeNow = GetTime();
+    uint64_t nWeightCount = 0;
+    for (const Candidate& coin : coins)
+    {
+        int64_t nTimeTxPrev = coin.nTimeTxPrev;
+        if (nTimeTxPrev == 0) {
+            // Fall back to the containing block's time, which is what the
+            // kernel does with a zero transaction timestamp.
+            if (coin.hashBlock.IsNull()) continue;
+            if (!pwallet->chain().findBlock(coin.hashBlock, interfaces::FoundBlock().time(nTimeTxPrev))) continue;
+        }
 
-      nAverageWeight = nTotalWeight = 0;
-      uint64_t nWeightCount = 0;
+        const int64_t nTimeWeight = GetCoinAgeWeight(nTimeTxPrev, nTimeNow, consensusParams);
+        if (nTimeWeight > 0)
+        {
+            const arith_uint512 bnCoinDayWeight = arith_uint512(coin.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
+            nTotalWeight += bnCoinDayWeight.GetLow64();
+            nWeightCount++;
+        }
+    }
 
-      for (const auto& pcoin : setCoins)
-      {
-          CDiskTxPos postx;
-          if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
-              continue;
+    if (nWeightCount > 0)
+        nAverageWeight = nTotalWeight / nWeightCount;
 
-          // Read block header
-          CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
-          CBlockHeader header;
-          CTransactionRef txRef;
-          try {
-              file >> header;
-              fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
-              file >> txRef;
-          } catch (std::exception &e) {
-              return error("%s() : deserialize or I/O error in GetStakeWeight()", __PRETTY_FUNCTION__);
-          }
-
-          CMutableTransaction tx(*txRef);
-
-          // Deal with transaction timestamp
-          unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
-
-          int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
-          arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
-
-          // Weight is greater than zero
-          if (nTimeWeight > 0)
-          {
-              nTotalWeight += bnCoinDayWeight.GetLow64();
-              nWeightCount++;
-          }
-
-      }
-
-  if (nWeightCount > 0)
-      nAverageWeight = nTotalWeight / nWeightCount;
-
-  return true;
+    return true;
 }
 
 namespace {
