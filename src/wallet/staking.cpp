@@ -487,13 +487,11 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
     scriptEmpty.clear();
     txNew.vout.push_back(CTxOut(0, scriptEmpty));
 
-    std::vector<CTransactionRef> vwtxPrev;
     CAmount nCredit = 0;
     const CScript& scriptPubKeyKernel = kernel.txout.scriptPubKey;
 
     txNew.vin.push_back(CTxIn(kernel.outpoint.hash, kernel.outpoint.n));
     nCredit += kernel.txout.nValue;
-    vwtxPrev.push_back(txPrev);
     txNew.vout.push_back(CTxOut(0, kernel.scriptPubKeyOut));
     // Age the kernel from the UTXO Coin (single source of truth,
     // same source GetCoinAge/ConnectBlock use). Value is identical
@@ -514,19 +512,8 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
         if (txNew.vout.size() == 2 && ((pcoin.txout.scriptPubKey == scriptPubKeyKernel || pcoin.txout.scriptPubKey == txNew.vout[1].scriptPubKey))
             && pcoin.outpoint.hash != txNew.vin[0].prevout.hash)
         {
-            // The candidates were collected before the search; a coin the
-            // wallet or the chain has spent since would invalidate the block.
-            if (pwallet->IsSpent(pcoin.outpoint.hash, pcoin.outpoint.n) || chainstate->CoinsTip().AccessCoin(pcoin.outpoint).IsSpent())
-                continue;
-            CBlockHeader header;
-            CTransactionRef tx;
-            switch (ReadCoinSource(pcoin.outpoint, header, tx)) {
-            case CoinSource::MISSING: continue;
-            case CoinSource::FAILED: return false;
-            case CoinSource::OK: break;
-            }
-
-            // Stop adding more inputs if already too many inputs
+            // The limits first, since they are free and most candidates
+            // stop here. Stop adding more inputs if already too many inputs
             if (txNew.vin.size() >= 100)
                 break;
             // Stop adding more inputs if value is already pretty significant
@@ -538,16 +525,21 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             // Do not add additional significant input
             if (pcoin.txout.nValue > nCombineThreshold)
                 continue;
-            // Do not add input that is still too young. Age from the UTXO Coin
-            // (single source of truth); raw coin.nTime is identical to the disk
-            // tx->nTime, so behaviour is unchanged. Fall back defensively.
-            uint32_t nCombineBlockTime, nCombineTxPrevTime = tx->nTime;
-            GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nCombineBlockTime, nCombineTxPrevTime);
+
+            // The candidates were collected before the search; a coin the
+            // wallet or the chain has spent since would invalidate the block.
+            if (pwallet->IsSpent(pcoin.outpoint.hash, pcoin.outpoint.n) || chainstate->CoinsTip().AccessCoin(pcoin.outpoint).IsSpent())
+                continue;
+            // Do not add input that is still too young. Age from the UTXO
+            // Coin, the source GetCoinAge validates against, rather than
+            // opening this coin's block file for its timestamp.
+            uint32_t nCombineBlockTime, nCombineTxPrevTime;
+            if (!GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nCombineBlockTime, nCombineTxPrevTime))
+                continue;
             if (nCombineTxPrevTime + consensusParams.nStakeMaxAge > txNew.nTime)
                 continue;
             txNew.vin.push_back(CTxIn(pcoin.outpoint.hash, pcoin.outpoint.n));
             nCredit += pcoin.txout.nValue;
-            vwtxPrev.push_back(tx);
         }
     }
 
@@ -598,12 +590,13 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             txNew.vout[2].nValue = nDevCredit;
         }
 
-        // Sign using wallet's SignTransaction (supports both legacy and descriptor wallets)
+        // Sign using wallet's SignTransaction (supports both legacy and descriptor wallets).
+        // The prevouts come from the UTXO set, which is where
+        // FinalizeCoinStakeReward takes them when it re-signs over the final
+        // amounts, so both signings see the same coins.
         std::map<COutPoint, Coin> coins;
-        for (size_t i = 0; i < vwtxPrev.size(); ++i) {
-            const CTxIn& txin = txNew.vin[i];
-            const CTransactionRef& prevTx = vwtxPrev[i];
-            coins[txin.prevout] = Coin(prevTx->vout[txin.prevout.n], 0, prevTx->IsCoinBase(), prevTx->IsCoinStake(), prevTx->nTime);
+        for (const CTxIn& txin : txNew.vin) {
+            coins[txin.prevout] = chainstate->CoinsTip().AccessCoin(txin.prevout);
         }
         std::map<int, std::string> input_errors;
         if (!pwallet->SignTransaction(txNew, coins, SIGHASH_ALL, input_errors)) {
