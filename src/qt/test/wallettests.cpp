@@ -11,6 +11,8 @@
 #include <qt/addresstablemodel.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/clientmodel.h>
+#include <qt/mintingfilterproxy.h>
+#include <qt/mintingtablemodel.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/qvalidatedlineedit.h>
@@ -31,6 +33,8 @@
 #include <qt/receiverequestdialog.h>
 
 #include <memory>
+#include <set>
+#include <utility>
 
 #include <QAbstractButton>
 #include <QAction>
@@ -499,6 +503,127 @@ void TestLabelIndex(interfaces::Node& node)
     QCOMPARE(addresses->labelForAddress(bech32_address), QString("witness label"));
 }
 
+//! A minting table row, as far as the model exposes it: transaction and amount.
+using MintingRows = std::multiset<std::pair<uint256, CAmount>>;
+
+//! The rows a minting table holds.
+MintingRows MintingTableRows(const QAbstractItemModel& model)
+{
+    MintingRows rows;
+    for (int row = 0; row < model.rowCount({}); ++row) {
+        const QString hash = model.data(model.index(row, MintingTableModel::TxHash, {}), Qt::DisplayRole).toString();
+        const CAmount amount = model.data(model.index(row, MintingTableModel::Balance, {}), Qt::EditRole).toLongLong();
+        rows.emplace(uint256S(hash.toStdString()), amount);
+    }
+    return rows;
+}
+
+//! The rows it should hold, worked out from the wallet itself: every unspent
+//! output of the wallet in a confirmed transaction, a coinbase needing two
+//! confirmations.
+MintingRows ConfirmedUnspentOutputs(const CWallet& wallet)
+{
+    LOCK(wallet.cs_wallet);
+    MintingRows rows;
+    for (const auto& entry : wallet.mapWallet) {
+        const CWalletTx& wtx = entry.second;
+        if (wtx.GetDepthInMainChain() < (wtx.IsCoinBase() ? 2 : 1)) continue;
+        for (unsigned int n = 0; n < wtx.tx->vout.size(); ++n) {
+            if (!wallet.IsMine(wtx.tx->vout[n]) || wallet.IsSpent(entry.first, n)) continue;
+            rows.emplace(entry.first, wtx.tx->vout[n].nValue);
+        }
+    }
+    return rows;
+}
+
+//! The minting table lists the wallet's confirmed unspent outputs. A staked
+//! block changes it by the rows involved, the kernel leaving and the stake
+//! outputs arriving, without the proxy on top being told to start over.
+void TestMintingTable(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    std::shared_ptr<CWallet> wallet = LoadCoinbaseWallet(node, test);
+    QVERIFY(wallet);
+
+    std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    OptionsModel optionsModel;
+    ClientModel clientModel(node, &optionsModel);
+    AddWallet(wallet);
+    WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    RemoveWallet(wallet, std::nullopt);
+
+    // A sorting proxy sits on the model, as on the minting page.
+    MintingTableModel* model = walletModel.getMintingTableModel();
+    MintingFilterProxy proxy;
+    proxy.setSourceModel(model);
+    proxy.setDynamicSortFilter(true);
+    proxy.setSortRole(Qt::EditRole);
+    proxy.sort(MintingTableModel::CoinDay, Qt::DescendingOrder);
+
+    // The chain already holds stake blocks, so some of the wallet's outputs
+    // are spent kernels: the initial load must leave those out.
+    const MintingRows loaded = MintingTableRows(*model);
+    QVERIFY(!loaded.empty());
+    QVERIFY(loaded == ConfirmedUnspentOutputs(*wallet));
+    QCOMPARE(proxy.rowCount({}), model->rowCount({}));
+
+    int inserted = 0;
+    int removed = 0;
+    int relaid = 0;
+    QObject::connect(model, &QAbstractItemModel::rowsInserted, [&inserted](const QModelIndex&, int first, int last) { inserted += last - first + 1; });
+    QObject::connect(model, &QAbstractItemModel::rowsRemoved, [&removed](const QModelIndex&, int first, int last) { removed += last - first + 1; });
+    QObject::connect(model, &QAbstractItemModel::modelReset, [&relaid] { ++relaid; });
+    QObject::connect(&proxy, &QAbstractItemModel::layoutChanged, [&relaid] { ++relaid; });
+    QObject::connect(&proxy, &QAbstractItemModel::modelReset, [&relaid] { ++relaid; });
+
+    // A notification for a transaction whose outputs have not changed moves nothing.
+    wallet->NotifyTransactionChanged(loaded.begin()->first, CT_UPDATED);
+    QCoreApplication::processEvents(); // the notification reaches the model through the event loop
+    QCOMPARE(inserted, 0);
+    QCOMPARE(removed, 0);
+    QCOMPARE(relaid, 0);
+
+    // Stake a block and let the wallet see it. The wallet announces the
+    // coinstake under its own hash only; the kernel it spent is not named.
+    test.stakeBlocks(1);
+    const CTransactionRef coinstake = test.m_coinbase_txns.back();
+    QVERIFY(coinstake->IsCoinStake());
+    auto rows_of = [](const MintingRows& rows, const uint256& txid) {
+        int count = 0;
+        for (const auto& row : rows) {
+            if (row.first == txid) ++count;
+        }
+        return count;
+    };
+    for (const CTxIn& txin : coinstake->vin) {
+        QVERIFY2(rows_of(loaded, txin.prevout.hash) > 0, "the kernel was not listed before it was staked");
+    }
+    QCOMPARE(rows_of(loaded, coinstake->GetHash()), 0);
+    {
+        LOCK2(wallet->cs_wallet, ::cs_main);
+        const CBlockIndex* tip = node.context()->chainman->ActiveChain().Tip();
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    {
+        const uint256 tip_hash = WITH_LOCK(wallet->cs_wallet, return wallet->GetLastBlockHash());
+        const int tip_height = WITH_LOCK(wallet->cs_wallet, return wallet->GetLastBlockHeight());
+        WalletRescanReserver reserver(*wallet);
+        reserver.reserve();
+        CWallet::ScanResult result = wallet->ScanForWalletTransactions(tip_hash, tip_height, {} /* max height */, reserver, true /* fUpdate */);
+        QCOMPARE(result.status, CWallet::ScanResult::SUCCESS);
+    }
+    QCoreApplication::processEvents();
+
+    const MintingRows staked = MintingTableRows(*model);
+    QVERIFY(staked == ConfirmedUnspentOutputs(*wallet));
+    QVERIFY2(rows_of(staked, coinstake->GetHash()) > 0, "the stake outputs were not listed");
+    QCOMPARE(rows_of(staked, coinstake->GetHash()), inserted);
+    QCOMPARE(removed, int(coinstake->vin.size()));
+    QCOMPARE(relaid, 0);
+    QCOMPARE(proxy.rowCount({}), model->rowCount({}));
+}
+
 //! Qt on macOS crashes inside the framework on the "minimal" platform when it
 //! looks up unimplemented cocoa functions (https://bugreports.qt.io/browse/QTBUG-49686).
 bool SkipOnMacMinimalPlatform(const char* test_name)
@@ -533,4 +658,10 @@ void WalletTests::labelIndexTests()
 {
     if (SkipOnMacMinimalPlatform("labelIndexTests")) return;
     TestLabelIndex(m_node);
+}
+
+void WalletTests::mintingTableTests()
+{
+    if (SkipOnMacMinimalPlatform("mintingTableTests")) return;
+    TestMintingTable(m_node);
 }

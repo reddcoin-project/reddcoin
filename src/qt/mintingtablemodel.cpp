@@ -4,7 +4,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/mintingtablemodel.h>
-#include <qt/mintingfilterproxy.h>
 
 #include <interfaces/node.h>
 #include <pos/kernelrecord.h>
@@ -28,6 +27,8 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
+#include <vector>
 
 // Amount column is right-aligned it contains numbers
 static int column_alignments[] = {
@@ -44,7 +45,7 @@ struct TxLessThan
 {
     bool operator()(const KernelRecord &a, const KernelRecord &b) const
     {
-        return a.hash < b.hash;
+        return a.hash != b.hash ? a.hash < b.hash : a.idx < b.idx;
     }
     bool operator()(const KernelRecord &a, const uint256 &b) const
     {
@@ -60,19 +61,17 @@ struct TxLessThan
 struct TransactionNotification2
 {
     TransactionNotification2() {}
-    TransactionNotification2(uint256 _hash, ChangeType _status):
-        hash(_hash), status(_status) {}
+    explicit TransactionNotification2(uint256 _hash):
+        hash(_hash) {}
 
     void invoke(QObject *ttm) const
     {
         QString strHash = QString::fromStdString(hash.GetHex());
         QMetaObject::invokeMethod(ttm, "updateTransaction", Qt::QueuedConnection,
-                                  Q_ARG(QString, strHash),
-                                  Q_ARG(int, status));
+                                  Q_ARG(QString, strHash));
     }
 private:
     uint256 hash;
-    ChangeType status;
 };
 
 // Private implementation
@@ -93,19 +92,22 @@ public:
      */
     QList<KernelRecord> cachedWallet;
 
-    /** True when initial wallet data has been loaded */
-    bool m_loaded = false;
+    /** True when initial wallet data has been loaded. Read by the wallet's notification threads. */
+    std::atomic<bool> m_loaded{false};
 
     /** True while a rescan is in progress */
-    bool m_loading = false;
+    std::atomic<bool> m_loading{false};
 
     /** Queued notifications during load/rescan */
     std::vector<TransactionNotification2> vQueueNotifications;
 
-    void NotifyTransactionChanged(const uint256& hash, ChangeType status)
+    void NotifyTransactionChanged(const uint256& hash, ChangeType /* status */)
     {
-        TransactionNotification2 notification(hash, status);
-        if (!m_loaded || m_loading) {
+        // Nothing to keep in step until the initial load has run. After that
+        // rows are reconciled against the wallet, whatever the kind of change.
+        if (!m_loaded) return;
+        TransactionNotification2 notification(hash);
+        if (m_loading) {
             vQueueNotifications.push_back(notification);
             return;
         }
@@ -122,155 +124,65 @@ public:
     }
 
     /* Query entire wallet anew from core.
+     * One pass over the wallet under a single lock, yielding unspent outputs only.
      */
     void refreshWallet()
     {
-        cachedWallet.clear();
-        const auto& vwtx = walletModel->wallet().getWalletTxs();
-        for(const auto& wtx : vwtx) {
-            std::vector<KernelRecord> txList = KernelRecord::decomposeOutput(walletModel->wallet(), wtx);
-
-            int numBlocks;
-            interfaces::WalletTxStatus status;
-            interfaces::WalletOrderForm orderForm;
-            bool inMempool;
-            walletModel->wallet().getWalletTxDetails(wtx.tx->GetHash(), status, orderForm, inMempool, numBlocks);
-
-            if(KernelRecord::showTransaction(wtx.is_coinbase, status.depth_in_main_chain))
-                for(const KernelRecord& kr : txList) {
-                    if(!kr.spent) {
-                        cachedWallet.append(kr);
-                    }
-                }
-        }
+        // Accept notifications before reading the wallet, so that a change
+        // landing after the read is queued behind it rather than lost.
         m_loaded = true;
-        vQueueNotifications.clear();
+        cachedWallet.clear();
+        for (const auto& output : walletModel->wallet().getMintingOutputs()) {
+            cachedWallet.append(KernelRecord(output));
+        }
+        std::sort(cachedWallet.begin(), cachedWallet.end(), TxLessThan());
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
        with that of the core.
 
-       Call with transaction that was added, removed or changed.
+       Call with transaction that was added, removed or changed. Its rows, and
+       those of the transactions it spends from, are brought in line with the
+       wallet's unspent outputs: a spent output is one row removed, a new one
+       is one row inserted.
      */
-    void updateWallet(const uint256 &hash, int status)
+    void updateWallet(const uint256 &hash)
     {
-        qDebug() << "MintingTablePriv::updateWallet: " + QString::fromStdString(hash.ToString()) + " " + QString::number(status);
-        {
-            // Find transaction in wallet
-            auto wtx = walletModel->wallet().getWalletTx(hash);
-            bool inWallet = wtx.tx != nullptr;
+        std::vector<uint256> txids;
+        const std::vector<interfaces::WalletMintingOutput> outputs = walletModel->wallet().getMintingOutputs(hash, txids);
 
-            // Find bounds of this transaction in model
-            QList<KernelRecord>::iterator lower = std::lower_bound(
-                cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            QList<KernelRecord>::iterator upper = std::upper_bound(
-                cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            int lowerIndex = (lower - cachedWallet.begin());
-            int upperIndex = (upper - cachedWallet.begin());
-            bool inModel = (lower != upper);
-
-            // Determine whether to show transaction or not
-            bool showTransaction = false;
-            if (inWallet) {
-                int numBlocks;
-                interfaces::WalletTxStatus status;
-                interfaces::WalletOrderForm orderForm;
-                bool inMempool;
-                walletModel->wallet().getWalletTxDetails(wtx.tx->GetHash(), status, orderForm, inMempool, numBlocks);
-
-                showTransaction = KernelRecord::showTransaction(wtx.is_coinbase, status.depth_in_main_chain);
+        for (const uint256& txid : txids) {
+            // Outputs the wallet lists for this transaction, in output order
+            std::vector<const interfaces::WalletMintingOutput*> wanted;
+            for (const auto& output : outputs) {
+                if (output.outpoint.hash == txid) wanted.push_back(&output);
             }
 
-            if(status == CT_UPDATED)
-            {
-                if(showTransaction && !inModel)
-                    status = CT_NEW; /* Not in model, but want to show, treat as new */
-                if(!showTransaction && inModel)
-                    status = CT_DELETED; /* In model, but want to hide, treat as deleted */
-            }
+            // Walk them against the rows the model holds for it
+            int row = std::lower_bound(cachedWallet.begin(), cachedWallet.end(), txid, TxLessThan()) - cachedWallet.begin();
+            size_t next = 0;
+            while (true) {
+                const bool have_row = row < cachedWallet.size() && cachedWallet.at(row).hash == txid;
+                const bool have_wanted = next < wanted.size();
+                if (!have_row && !have_wanted) break;
 
-            qDebug() << "    inWallet=" + QString::number(inWallet) +
-        	                " inModel=" + QString::number(inModel) +
-                                " Index=" + QString::number(lowerIndex) + "-" + QString::number(upperIndex) +
-                                " showTransaction=" + QString::number(showTransaction) + " derivedStatus=" + QString::number(status);
-
-            switch(status)
-            {
-            case CT_NEW:
-                if(inModel)
-                {
-                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_NEW, but transaction is already in model";
-                    break;
-                }
-                if(!inWallet)
-                {
-                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_NEW, but transaction is not in wallet";
-                    break;
-                }
-                if(showTransaction)
-                {
+                const int wanted_idx = have_wanted ? int(wanted[next]->outpoint.n) : 0;
+                if (have_row && (!have_wanted || cachedWallet.at(row).idx < wanted_idx)) {
+                    // Spent, or no longer shown -- remove the row
+                    parent->beginRemoveRows(QModelIndex(), row, row);
+                    cachedWallet.removeAt(row);
+                    parent->endRemoveRows();
+                } else if (!have_row || wanted_idx < cachedWallet.at(row).idx) {
                     // Added -- insert at the right position
-                    std::vector<KernelRecord> toInsert =
-                            KernelRecord::decomposeOutput(walletModel->wallet(), wtx);
-                    if(toInsert.size() != 0) /* only if something to insert */
-                    {
-                        parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex+toInsert.size()-1);
-                        int insert_idx = lowerIndex;
-                        for (const KernelRecord &rec : toInsert)
-                        {
-                            if(!rec.spent)
-                            {
-                                cachedWallet.insert(insert_idx, rec);
-                                insert_idx += 1;
-                            }
-                        }
-                        parent->endInsertRows();
-                    }
+                    parent->beginInsertRows(QModelIndex(), row, row);
+                    cachedWallet.insert(row, KernelRecord(*wanted[next]));
+                    parent->endInsertRows();
+                    ++row;
+                    ++next;
+                } else {
+                    ++row;
+                    ++next;
                 }
-                break;
-            case CT_DELETED:
-                if(!inModel)
-                {
-                    qWarning() << "MintingTablePriv::updateWallet: Warning: Got CT_DELETED, but transaction is not in model";
-                    break;
-                }
-                // Removed -- remove entire transaction from table
-                parent->beginRemoveRows(QModelIndex(), lowerIndex, upperIndex-1);
-                cachedWallet.erase(lower, upper);
-                parent->endRemoveRows();
-                break;
-            case CT_UPDATED:
-                // Updated -- remove spent coins from table
-                std::vector<KernelRecord> toCheck = KernelRecord::decomposeOutput(walletModel->wallet(), wtx);
-                if(!toCheck.empty())
-                {
-                    for(const KernelRecord &rec : toCheck)
-                    {
-                        if(rec.spent)
-                        {
-                            for(int i = lowerIndex; i < upperIndex; i++)
-                            {
-                                if(i>=cachedWallet.size())
-                                {
-                                    qWarning() << "MintingTablePriv::updateWallet: Warning: cachedWallet is smaller than expected, access item " + QString::number(i) +
-                                	" not in size " + QString::number(cachedWallet.size());
-                                    break;
-                                }
-                                KernelRecord cachedRec = cachedWallet.at(i);
-                                if((rec.address == cachedRec.address)
-                                   && (rec.nValue == cachedRec.nValue)
-                                   && (rec.idx == cachedRec.idx))
-                                {
-                                    parent->beginRemoveRows(QModelIndex(), i, i);
-                                    cachedWallet.removeAt(i);
-                                    parent->endRemoveRows();
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                break;
             }
         }
     }
@@ -340,29 +252,27 @@ MintingTableModel::~MintingTableModel()
     delete priv;
 }
 
-void MintingTableModel::updateTransaction(const QString &hash, int status)
+void MintingTableModel::updateTransaction(const QString &hash)
 {
-    // Skip per-transaction minting updates during IBD. Staking data is not
-    // meaningful until fully synced, and the hard LOCK(cs_wallet) calls in
-    // updateWallet() would block the GUI thread while blockConnected()
-    // holds the lock on the scheduler thread.
-    if (walletModel->node().isInitialBlockDownload()) return;
+    // The initial load is deferred past IBD; until it has run there are no
+    // rows to keep in step.
+    if (!priv->m_loaded) return;
 
     uint256 updated;
     updated.SetHex(hash.toStdString());
 
-    priv->updateWallet(updated, status);
-    // Force deletion of empty rows
-    if (mintingProxyModel) {
-        mintingProxyModel->invalidate();
-    }
+    // Rows come and go through the insert and remove signals, which a proxy
+    // follows on its own; nothing here needs it to filter and sort afresh.
+    priv->updateWallet(updated);
 }
 
 void MintingTableModel::updateAge()
 {
     // If initial load was deferred during IBD, trigger it once IBD completes
     if (!priv->m_loaded && !walletModel->node().isInitialBlockDownload()) {
+        beginResetModel();
         priv->refreshWallet();
+        endResetModel();
     }
 
     if (priv->size() == 0) return;
@@ -375,11 +285,6 @@ void MintingTableModel::updateAge()
     priv->invalidateCaches();
 
     Q_EMIT dataChanged(index(0, Age), index(priv->size()-1, MintProbability));
-}
-
-void MintingTableModel::setMintingProxyModel(MintingFilterProxy *mintingProxy)
-{
-    mintingProxyModel = mintingProxy;
 }
 
 int MintingTableModel::rowCount(const QModelIndex &parent) const
