@@ -123,7 +123,6 @@ void MintingView::setModel(WalletModel *model)
         mintingProxyModel->setSourceModel(model->getMintingTableModel());
         mintingProxyModel->setDynamicSortFilter(true);
         mintingProxyModel->setSortRole(Qt::EditRole);
-        model->getMintingTableModel()->setMintingProxyModel(mintingProxyModel);
 
         mintingView->setModel(mintingProxyModel);
         mintingView->setAlternatingRowColors(true);

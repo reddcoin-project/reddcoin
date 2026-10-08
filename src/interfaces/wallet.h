@@ -43,6 +43,7 @@ class Handler;
 struct WalletAddress;
 struct WalletBalances;
 struct WalletTx;
+struct WalletMintingOutput;
 struct WalletTxOut;
 struct WalletTxStatus;
 
@@ -256,6 +257,16 @@ public:
     //! Return wallet transaction output information.
     virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) = 0;
 
+    //! Return the outputs the minting table lists: every unspent output of
+    //! the wallet whose transaction is confirmed (twice, for a coinbase).
+    //! Unlike listCoins() this includes immature stake and locked coins.
+    virtual std::vector<WalletMintingOutput> getMintingOutputs() = 0;
+
+    //! Return the same for one transaction and for each wallet transaction
+    //! it spends from. txids receives every transaction the answer covers,
+    //! including those with nothing left to list.
+    virtual std::vector<WalletMintingOutput> getMintingOutputs(const uint256& txid, std::vector<uint256>& txids) = 0;
+
     //! Get required fee.
     virtual CAmount getRequiredFee(unsigned int tx_bytes) = 0;
 
@@ -441,6 +452,15 @@ struct WalletTxOut
     int64_t time;
     int depth_in_main_chain = -1;
     bool is_spent = false;
+};
+
+//! Unspent wallet output as listed in the minting table.
+struct WalletMintingOutput
+{
+    COutPoint outpoint;
+    CTxOut txout;
+    //! Timestamp of the transaction, which stake age is counted from.
+    int64_t tx_time;
 };
 
 //! Return implementation of Wallet interface. This function is defined in

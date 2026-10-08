@@ -12,7 +12,6 @@
 
 class CWallet;
 class MintingTablePriv;
-class MintingFilterProxy;
 class KernelRecord;
 class WalletModel;
 
@@ -36,7 +35,6 @@ public:
     };
 
 
-    void setMintingProxyModel(MintingFilterProxy *mintingProxy);
     int rowCount(const QModelIndex &parent) const override;
     int columnCount(const QModelIndex &parent) const override;
     QVariant data(const QModelIndex &index, int role) const override;
@@ -52,7 +50,6 @@ private:
     QStringList columns;
     int mintingInterval;
     MintingTablePriv *priv;
-    MintingFilterProxy *mintingProxyModel{nullptr};
     double m_cached_difficulty{0};
 
     QString lookupAddress(const std::string &address, bool tooltip) const;
@@ -66,7 +63,7 @@ private:
     QString formatTxCoinDay(const KernelRecord *wtx) const;
 
 public Q_SLOTS:
-    void updateTransaction(const QString &hash, int status);
+    void updateTransaction(const QString &hash);
     void updateAge();
     void updateDisplayUnit();
 

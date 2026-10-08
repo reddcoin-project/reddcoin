@@ -15,70 +15,14 @@
 
 #include <math.h>
 
-bool KernelRecord::showTransaction(bool isCoinbase, int depth)
+KernelRecord::KernelRecord(const interfaces::WalletMintingOutput& output):
+    hash(output.outpoint.hash), nTime(output.tx_time), address(""), nValue(output.txout.nValue),
+    idx(output.outpoint.n), spent(false), prevMinutes(0), prevDifficulty(0), prevProbability(0)
 {
-    if (isCoinbase) {
-        if (depth < 2)
-            return false;
-    } else {
-        if (depth == 0)
-            return false;
+    CTxDestination destination;
+    if (ExtractDestination(output.txout.scriptPubKey, destination)) {
+        address = EncodeDestination(destination);
     }
-
-    return true;
-}
-
-bool KernelRecord::showTransaction(bool isCoinbase, bool isCoinstake, int depth)
-{
-    if (isCoinbase) {
-        if (depth < 2)
-            return false;
-    } else if (isCoinstake) {
-        if (depth < 0)
-            return false;
-    } else {
-        if (depth <= 0)
-            return false;
-    }
-
-    return true;
-}
-
-std::vector<KernelRecord> KernelRecord::decomposeOutput(interfaces::Wallet& wallet, const interfaces::WalletTx &wtx)
-{
-    std::vector<KernelRecord> parts;
-    int64_t nTime = wtx.tx->nTime;
-    uint256 hash = wtx.tx->GetHash();
-    std::map<std::string, std::string> mapValue = wtx.value_map;
-
-    int numBlocks;
-    interfaces::WalletTxStatus status;
-    interfaces::WalletOrderForm orderForm;
-    bool inMempool;
-    wallet.getWalletTxDetails(hash, status, orderForm, inMempool, numBlocks);
-
-    if (showTransaction(wtx.is_coinbase, wtx.is_coinstake, status.depth_in_main_chain)) {
-        for (size_t nOut = 0; nOut < wtx.tx->vout.size(); nOut++) {
-            CTxOut txOut = wtx.tx->vout[nOut];
-            if (wallet.txoutIsMine(txOut)) {
-                CTxDestination address;
-                std::string addrStr;
-
-                if (ExtractDestination(txOut.scriptPubKey, address)) {
-                    // Sent to Bitcoin Address
-                    addrStr = EncodeDestination(address);
-                } else {
-                    // Sent to IP, or other non-address transaction like OP_EVAL
-                    addrStr = mapValue["to"];
-                }
-                std::vector<interfaces::WalletTxOut> coins = wallet.getCoins({COutPoint(hash, nOut)});
-                bool isSpent = coins.size() >= 1 ? coins[0].is_spent : true;
-                parts.push_back(KernelRecord(hash, nTime, addrStr, txOut.nValue, nOut, isSpent));
-            }
-        }
-    }
-
-    return parts;
 }
 
 std::string KernelRecord::getTxID()
