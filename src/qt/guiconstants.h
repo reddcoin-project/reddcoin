@@ -11,6 +11,9 @@
 /* Milliseconds between model updates */
 static const int MODEL_UPDATE_DELAY = 250;
 
+/* Minting table update interval in milliseconds (age is in hours; 30s is plenty) */
+static const int MINTING_UPDATE_DELAY = 30 * 1000;
+
 /* Milliseconds between new update checks */
 static const int CHECK_UPDATE_DELAY = 86400000; // 24 hours
 
