@@ -26,6 +26,7 @@
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -39,6 +40,7 @@ using interfaces::Wallet;
 using interfaces::WalletAddress;
 using interfaces::WalletBalances;
 using interfaces::WalletClient;
+using interfaces::WalletMintingOutput;
 using interfaces::WalletOrderForm;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
@@ -111,6 +113,20 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     result.depth_in_main_chain = depth;
     result.is_spent = wallet.IsSpent(wtx.GetHash(), n);
     return result;
+}
+
+//! Append the outputs of a wallet transaction that the minting table lists.
+void AppendMintingOutputs(const CWallet& wallet,
+    const CWalletTx& wtx,
+    std::vector<WalletMintingOutput>& result) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    if (wtx.GetDepthInMainChain() < (wtx.IsCoinBase() ? 2 : 1)) return;
+    const uint256& hash = wtx.GetHash();
+    for (unsigned int n = 0; n < wtx.tx->vout.size(); ++n) {
+        const CTxOut& txout = wtx.tx->vout[n];
+        if (wallet.IsSpent(hash, n) || !wallet.IsMine(txout)) continue;
+        result.push_back({COutPoint(hash, n), txout, wtx.tx->nTime});
+    }
 }
 
 class WalletImpl : public Wallet
@@ -464,6 +480,35 @@ public:
                     result.back() = MakeWalletTxOut(*m_wallet, it->second, output.n, depth);
                 }
             }
+        }
+        return result;
+    }
+    std::vector<WalletMintingOutput> getMintingOutputs() override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<WalletMintingOutput> result;
+        for (const auto& entry : m_wallet->mapWallet) {
+            AppendMintingOutputs(*m_wallet, entry.second, result);
+        }
+        return result;
+    }
+    std::vector<WalletMintingOutput> getMintingOutputs(const uint256& txid, std::vector<uint256>& txids) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<WalletMintingOutput> result;
+        txids.assign(1, txid);
+        auto it = m_wallet->mapWallet.find(txid);
+        if (it == m_wallet->mapWallet.end()) return result;
+        // A confirmed spend is announced under its own hash only, so the
+        // transactions it spends from are answered for here as well.
+        for (const CTxIn& txin : it->second.tx->vin) {
+            if (std::find(txids.begin(), txids.end(), txin.prevout.hash) == txids.end()) {
+                txids.push_back(txin.prevout.hash);
+            }
+        }
+        for (const uint256& hash : txids) {
+            auto mi = m_wallet->mapWallet.find(hash);
+            if (mi != m_wallet->mapWallet.end()) AppendMintingOutputs(*m_wallet, mi->second, result);
         }
         return result;
     }

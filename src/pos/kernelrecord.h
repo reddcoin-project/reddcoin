@@ -33,9 +33,7 @@ public:
     {
     }
 
-    static bool showTransaction(bool isCoinbase, int depth);
-    static bool showTransaction(bool isCoinbase, bool isCoinstake, int depth);
-    static std::vector<KernelRecord> decomposeOutput(interfaces::Wallet &wallet, const interfaces::WalletTx &wtx);
+    explicit KernelRecord(const interfaces::WalletMintingOutput& output);
 
 
     uint256 hash;
@@ -51,6 +49,7 @@ public:
     int64_t getCoinAgeWeight(int nTimeOffset = 0) const;
     double getProbToMintStake(double difficulty, int timeOffset = 0) const;
     double getProbToMintWithinNMinutes(double difficulty, int minutes);
+    void invalidateCache() { prevDifficulty = 0; }
 protected:
     int prevMinutes;
     double prevDifficulty;
