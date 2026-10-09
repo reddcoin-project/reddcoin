@@ -174,9 +174,16 @@ Codesigner only: Sign the macOS binary:
 
     transfer bitcoin-osx-unsigned.tar.gz to macOS for signing
     tar xf bitcoin-osx-unsigned.tar.gz
-    ./detached-sig-create.sh -s "Key ID"
-    Enter the keychain password and authorize the signature
+    ./detached-sig-create.sh /path/to/codesign.p12 /path/to/AuthKey_<key id>.p8 <issuer id>
+    Enter the passphrase for each key when prompted
     Move signature-osx.tar.gz back to the guix-build host
+
+The second and third arguments are an App Store Connect API key and its issuer ID, and make the script
+submit the signed bundle to Apple for notarization and add the ticket to the detached signature. See
+signapple's [notarization notes](https://github.com/achow101/signapple/blob/master/docs/notarization.md)
+for how to create the key. The signing host needs a signapple with the `notarize` command, which is newer
+than the one pinned in `contrib/guix/manifest.scm`; the pinned one only has to apply the signature. The host
+does not have to be a Mac. Given the certificate alone, the script signs without notarizing.
 
 Codesigner only: Sign the windows binaries:
 
