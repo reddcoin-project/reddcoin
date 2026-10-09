@@ -375,9 +375,15 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
 //
 bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPrev, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
 {
+    const StakeKernelSource source{blockFrom.GetHash(), blockFrom.nTime, txPrev->nTime, txPrev->vout[prevout.n].nValue};
+    return CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, source, nTxPrevOffset, prevout, nTimeTx, hashProofOfStake, fPrintProofOfStake);
+}
+
+bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPrev, unsigned int nBits, const StakeKernelSource& source, unsigned int nTxPrevOffset, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
+{
     const Consensus::Params& params = Params().GetConsensus();
-    unsigned int nTimeBlockFrom = blockFrom.nTime;
-    unsigned int nTimeTxPrev = txPrev->nTime;
+    unsigned int nTimeBlockFrom = source.nTimeBlockFrom;
+    unsigned int nTimeTxPrev = source.nTimeTxPrev;
 
     // Note: pindexPrev parameter is the block being validated, but for stake modifier
     // calculation we need to use the chain tip's parent (grandparent of block being validated)
@@ -401,8 +407,8 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPre
 
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
-    int64_t nValueIn = txPrev->vout[prevout.n].nValue;
-    uint256 hashBlockFrom = blockFrom.GetHash();
+    int64_t nValueIn = source.nValueIn;
+    const uint256& hashBlockFrom = source.hashBlockFrom;
     arith_uint512 bnCoinDayWeight = arith_uint512(nValueIn) * GetCoinAgeWeight((int64_t)nTimeTxPrev, (int64_t)nTimeTx, params) / COIN / (24 * 60 * 60);
 
     // Calculate hash
@@ -425,7 +431,7 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPre
         nStakeModifier, nStakeModifierHeight,
         DateTimeStrFormat("%Y-%m-%d %H:%M:%S", nStakeModifierTime),
         active_chainstate->m_blockman.LookupBlockIndex(hashBlockFrom)->nHeight,
-        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", blockFrom.GetBlockTime()));
+        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)nTimeBlockFrom));
 
     LogPrint(BCLog::POS, "%s : check modifier=0x%016x nTimeBlockFrom=%u nTxPrevOffset=%u nTimeTxPrev=%u nPrevout=%u nTimeTx=%u hashProof=%s\n",
         __func__,
@@ -506,6 +512,26 @@ bool GetCoinAgeTimes(CChainState* active_chainstate, CCoinsViewCache& view, cons
         return false;
     nTimeBlockFrom = pindex->GetBlockTime();
     nTimeTxPrev = coin.nTime;
+    return true;
+}
+
+bool GetStakeKernelSource(CChainState* active_chainstate, CCoinsViewCache& view, const COutPoint& outpoint, StakeKernelSource& source)
+{
+    AssertLockHeld(cs_main);
+    const Coin& coin = view.AccessCoin(outpoint);
+    if (coin.IsSpent())
+        return false;
+    const CBlockIndex* pindex = active_chainstate->m_chain[coin.nHeight];
+    if (!pindex)
+        return false;
+    // Identical to what a block-file read yields: the index entry is the
+    // header of the block that created the coin, so its hash and time are the
+    // header's, and the Coin carries the creating transaction's nTime, which
+    // is the value GetCoinAge already validates every stake against.
+    source.hashBlockFrom = pindex->GetBlockHash();
+    source.nTimeBlockFrom = pindex->nTime;
+    source.nTimeTxPrev = coin.nTime;
+    source.nValueIn = coin.out.nValue;
     return true;
 }
 

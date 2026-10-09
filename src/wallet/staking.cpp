@@ -27,71 +27,68 @@ typedef std::vector<unsigned char> valtype;
 
 bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t & nTotalWeight, const Consensus::Params& consensusParams)
 {
-      // Choose coins to use
-      LOCK(pwallet->cs_wallet);
-      CAmount nBalance = pwallet->GetBalance().m_mine_trusted;
-      CAmount nReserveBalance = 0;
-      if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
-          return error("CreateCoinStake : invalid reserve balance amount");
-      if (nBalance <= nReserveBalance)
-          return false;
+    nAverageWeight = nTotalWeight = 0;
 
-      std::vector<CTransactionRef> vwtxPrev;
-      std::set<CInputCoin> setCoins;
+    CAmount nReserveBalance = 0;
+    if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
+        return error("GetStakeWeight : invalid reserve balance amount");
 
-      CAmount nValueIn = 0;
+    // A coin's age needs the creating transaction's timestamp, and the time
+    // of its block only where that timestamp is zero, as proof-of-work era
+    // transactions have. The wallet holds the transaction, so the common case
+    // needs nothing beyond it: no block file, and no coin selection, which
+    // used to run here against the whole balance for a set of coins it then
+    // threw away. The staking thread searches every spendable coin, so this
+    // counts every spendable coin and the two agree.
+    struct Candidate {
+        CAmount nValue{0};
+        unsigned int nTimeTxPrev{0};
+        uint256 hashBlock;
+    };
+    std::vector<Candidate> coins;
+    CAmount nAvailable = 0;
+    {
+        LOCK(pwallet->cs_wallet);
+        std::vector<COutput> vAvailableCoins;
+        CCoinControl temp;
+        pwallet->AvailableCoins(vAvailableCoins, &temp);
+        coins.reserve(vAvailableCoins.size());
+        for (const COutput& out : vAvailableCoins) {
+            const CAmount nValue = out.tx->tx->vout[out.i].nValue;
+            coins.push_back({nValue, out.tx->tx->nTime, out.tx->m_confirm.hashBlock});
+            nAvailable += nValue;
+        }
+    }
+    if (nAvailable <= nReserveBalance)
+        return false;
+    if (coins.empty())
+        return false;
 
-      std::vector<COutput> vAvailableCoins;
-      CCoinControl temp;
-      CoinSelectionParams coin_selection_params;
-      pwallet->AvailableCoins(vAvailableCoins, &temp);
-      if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
-          return false;
-      if (setCoins.empty())
-          return false;
+    const int64_t nTimeNow = GetTime();
+    uint64_t nWeightCount = 0;
+    for (const Candidate& coin : coins)
+    {
+        int64_t nTimeTxPrev = coin.nTimeTxPrev;
+        if (nTimeTxPrev == 0) {
+            // Fall back to the containing block's time, which is what the
+            // kernel does with a zero transaction timestamp.
+            if (coin.hashBlock.IsNull()) continue;
+            if (!pwallet->chain().findBlock(coin.hashBlock, interfaces::FoundBlock().time(nTimeTxPrev))) continue;
+        }
 
-      nAverageWeight = nTotalWeight = 0;
-      uint64_t nWeightCount = 0;
+        const int64_t nTimeWeight = GetCoinAgeWeight(nTimeTxPrev, nTimeNow, consensusParams);
+        if (nTimeWeight > 0)
+        {
+            const arith_uint512 bnCoinDayWeight = arith_uint512(coin.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
+            nTotalWeight += bnCoinDayWeight.GetLow64();
+            nWeightCount++;
+        }
+    }
 
-      for (const auto& pcoin : setCoins)
-      {
-          CDiskTxPos postx;
-          if (!g_txindex->FindTxPosition(pcoin.outpoint.hash, postx))
-              continue;
+    if (nWeightCount > 0)
+        nAverageWeight = nTotalWeight / nWeightCount;
 
-          // Read block header
-          CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
-          CBlockHeader header;
-          CTransactionRef txRef;
-          try {
-              file >> header;
-              fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
-              file >> txRef;
-          } catch (std::exception &e) {
-              return error("%s() : deserialize or I/O error in GetStakeWeight()", __PRETTY_FUNCTION__);
-          }
-
-          CMutableTransaction tx(*txRef);
-
-          // Deal with transaction timestamp
-          unsigned int nTimeTx = tx.nTime ? tx.nTime : header.GetBlockTime();
-
-          int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTx, (int64_t)GetTime(), consensusParams);
-          arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
-
-          // Weight is greater than zero
-          if (nTimeWeight > 0)
-          {
-              nTotalWeight += bnCoinDayWeight.GetLow64();
-              nWeightCount++;
-          }
-
-      }
-
-  if (nWeightCount > 0)
-      nAverageWeight = nTotalWeight / nWeightCount;
-
-  return true;
+    return true;
 }
 
 namespace {
@@ -307,6 +304,16 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         nSpendHeight = pindexTip->nHeight + 1;
     }
 
+    // What the pass cost, for -debug=bench. Every pass walks the whole
+    // candidate set, whether or not it finds a kernel, because the weight has
+    // to cover all of it; the counts below say how much of the set survived
+    // each filter and how many block files the pass opened, which is the
+    // number this work exists to drive to zero.
+    const int64_t nTimeStart = GetTimeMicros();
+    size_t nExamined = 0;
+    size_t nWeighed = 0;
+    size_t nSearched = 0;
+
     bool fKernelFound = false;
     for (const CInputCoin& pcoin : candidates.coins)
     {
@@ -319,8 +326,14 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         // Staking one produces a block that fails TestBlockValidity with
         // bad-txns-premature-spend-of-coinbase/coinstake, which is the same
         // rule CheckTxInputs applies. The chainstate is authoritative and
-        // current, so ask it instead. Held for this lookup alone; the disk
-        // read and the age arithmetic below need no lock.
+        // current, so ask it instead.
+        //
+        // The same lock covers the coin's source for the kernel: its block's
+        // hash and time and the creating transaction's time, which used to
+        // cost a seek and a transaction deserialize per coin per pass and now
+        // come from the Coin and the block index beside the maturity check.
+        // Held for these lookups alone; the age arithmetic below needs no lock.
+        StakeKernelSource source;
         {
             LOCK(cs_main);
             const Coin& coin = chainstate->CoinsTip().AccessCoin(pcoin.outpoint);
@@ -329,43 +342,38 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
             if ((coin.IsCoinBase() || coin.IsCoinStake()) &&
                 nSpendHeight - coin.nHeight < consensusParams.GetCoinbaseMaturity())
                 continue;
+            if (!GetStakeKernelSource(chainstate, chainstate->CoinsTip(), pcoin.outpoint, source))
+                continue;
         }
 
         // Skip witness UTXOs if SegWit is not yet active
         if (!fSegwitActive && IsWitnessOutput(pcoin.txout.scriptPubKey))
             continue;
 
-        CBlockHeader header;
-        CTransactionRef tx;
-        switch (ReadCoinSource(pcoin.outpoint, header, tx)) {
-        case CoinSource::MISSING: continue;
-        case CoinSource::FAILED: return false;
-        case CoinSource::OK: break;
-        }
+        ++nExamined;
 
         // Weight, before the age gate below: GetStakeWeight counts every coin
         // with positive weight, and a coin can carry a little while still
         // inside the search margin.
         {
-            const unsigned int nTimeTxPrev = tx->nTime ? tx->nTime : header.GetBlockTime();
+            const unsigned int nTimeTxPrev = source.nTimeTxPrev ? source.nTimeTxPrev : source.nTimeBlockFrom;
             const int64_t nTimeWeight = GetCoinAgeWeight((int64_t)nTimeTxPrev, (int64_t)nTimeTx, consensusParams);
             if (nTimeWeight > 0) {
                 const arith_uint512 bnCoinDayWeight = arith_uint512(pcoin.txout.nValue) * nTimeWeight / COIN / (24 * 60 * 60);
                 weight_summary.total += bnCoinDayWeight.GetLow64();
                 nWeightCount++;
+                ++nWeighed;
             }
         }
 
         // The search ends at the first kernel, but the weight must cover the
         // whole set: a wallet that finds a kernel on every pass, as a large
-        // one does on a quiet network, would otherwise never publish. The
-        // remaining coins are read once more here, which the combine loop
-        // in BuildCoinStake does anyway on a pass that found a kernel.
+        // one does on a quiet network, would otherwise never publish.
         if (fKernelFound)
             continue;
 
         static const int nMaxStakeSearchInterval = 60;
-        if (header.GetBlockTime() + consensusParams.nStakeMinAge > nTimeTx - nMaxStakeSearchInterval)
+        if ((int64_t)source.nTimeBlockFrom + consensusParams.nStakeMinAge > (int64_t)nTimeTx - nMaxStakeSearchInterval)
             continue; // only count coins meeting min age requirement
 
         // Search backward in time from the given timestamp, nSearchInterval
@@ -376,6 +384,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
         // reads the chain.
         bool foundStake = false;
         unsigned int nKernelOffset = 0;
+        ++nSearched;
         {
             LOCK(cs_main);
             // When creating a new stake block, use current chain tip as parent
@@ -383,7 +392,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
             for (unsigned int n = 0; n < std::min(nSearchInterval, (int64_t)nMaxStakeSearchInterval); n++)
             {
                 uint256 hashProofOfStake = uint256();
-                if (CheckStakeKernelHash(chainstate, pindexPrev, nBits, header, pcoin.outpoint.n, tx, pcoin.outpoint, nTimeTx - n, hashProofOfStake)) {
+                if (CheckStakeKernelHash(chainstate, pindexPrev, nBits, source, pcoin.outpoint.n, pcoin.outpoint, nTimeTx - n, hashProofOfStake)) {
                     foundStake = true;
                     nKernelOffset = n;
                     break;
@@ -403,14 +412,20 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
 
         kernel.outpoint = pcoin.outpoint;
         kernel.txout = pcoin.txout;
-        kernel.header = header;
-        kernel.txPrev = tx;
+        kernel.source = source;
         kernel.nTime = nTimeTx - nKernelOffset;
         kernel.scriptPubKeyOut = scriptPubKeyOut;
         kernel.type = whichType;
         fKernelFound = true;
     }
     publish_weight();
+
+    LogPrint(BCLog::BENCH, "SearchStakeKernel [%s]: %u candidates, %u examined, %u weighed, %u searched over %ds, kernel %s, no block files read, %.2fms\n",
+             pwallet->GetName(), candidates.coins.size(), nExamined, nWeighed, nSearched,
+             std::min(nSearchInterval, (int64_t)60),
+             fKernelFound ? "found" : "not found",
+             0.001 * (GetTimeMicros() - nTimeStart));
+
     return fKernelFound;
 }
 
@@ -440,9 +455,41 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             return false;
         }
     }
+    // The search ran off the UTXO set, so it never opened a block file. Every
+    // validator checks this kernel against its own block files, so read them
+    // here, once, for the one coin that is about to go into a block, and
+    // refuse it if the two sources disagree. A divergent chainstate then
+    // costs a pass and says so, instead of producing a block the network
+    // rejects for a reason nothing here would explain.
+    CBlockHeader header;
+    CTransactionRef txPrev;
+    switch (ReadCoinSource(kernel.outpoint, header, txPrev)) {
+    case CoinSource::MISSING:
+        LogPrintf("CreateCoinStake : kernel %s is not in the transaction index\n", kernel.outpoint.ToString());
+        return false;
+    case CoinSource::FAILED:
+        return false;
+    case CoinSource::OK:
+        break;
+    }
+    {
+        const StakeKernelSource from_disk{header.GetHash(), header.nTime, txPrev->nTime, txPrev->vout[kernel.outpoint.n].nValue};
+        if (from_disk.hashBlockFrom != kernel.source.hashBlockFrom ||
+            from_disk.nTimeBlockFrom != kernel.source.nTimeBlockFrom ||
+            from_disk.nTimeTxPrev != kernel.source.nTimeTxPrev ||
+            from_disk.nValueIn != kernel.source.nValueIn) {
+            LogPrintf("CreateCoinStake : kernel %s disagrees between the UTXO set and the block file (block %s/%u vs %s/%u, tx time %u vs %u, value %d vs %d); refusing to stake it\n",
+                      kernel.outpoint.ToString(),
+                      kernel.source.hashBlockFrom.ToString(), kernel.source.nTimeBlockFrom,
+                      from_disk.hashBlockFrom.ToString(), from_disk.nTimeBlockFrom,
+                      kernel.source.nTimeTxPrev, from_disk.nTimeTxPrev,
+                      kernel.source.nValueIn, from_disk.nValueIn);
+            return false;
+        }
+    }
     {
         uint256 hashProofOfStake;
-        if (!CheckStakeKernelHash(chainstate, pindexPrev, nBits, kernel.header, kernel.outpoint.n, kernel.txPrev, kernel.outpoint, kernel.nTime, hashProofOfStake)) {
+        if (!CheckStakeKernelHash(chainstate, pindexPrev, nBits, header, kernel.outpoint.n, txPrev, kernel.outpoint, kernel.nTime, hashProofOfStake)) {
             LogPrintf("CreateCoinStake : kernel %s no longer meets the target at the current tip\n", kernel.outpoint.ToString());
             return false;
         }
@@ -458,18 +505,16 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
     scriptEmpty.clear();
     txNew.vout.push_back(CTxOut(0, scriptEmpty));
 
-    std::vector<CTransactionRef> vwtxPrev;
     CAmount nCredit = 0;
     const CScript& scriptPubKeyKernel = kernel.txout.scriptPubKey;
 
     txNew.vin.push_back(CTxIn(kernel.outpoint.hash, kernel.outpoint.n));
     nCredit += kernel.txout.nValue;
-    vwtxPrev.push_back(kernel.txPrev);
     txNew.vout.push_back(CTxOut(0, kernel.scriptPubKeyOut));
     // Age the kernel from the UTXO Coin (single source of truth,
     // same source GetCoinAge/ConnectBlock use). Value is identical
     // to the disk header.GetBlockTime(); fall back to it defensively.
-    uint32_t nKernelBlockTime = kernel.header.GetBlockTime();
+    uint32_t nKernelBlockTime = header.GetBlockTime();
     uint32_t nKernelTxPrevTime;
     GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), kernel.outpoint, nKernelBlockTime, nKernelTxPrevTime);
     if (GetCoinAgeWeight(nKernelBlockTime, (int64_t)txNew.nTime, consensusParams) < nStakeSplitAge && nCredit >= nCombineThreshold)
@@ -485,19 +530,8 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
         if (txNew.vout.size() == 2 && ((pcoin.txout.scriptPubKey == scriptPubKeyKernel || pcoin.txout.scriptPubKey == txNew.vout[1].scriptPubKey))
             && pcoin.outpoint.hash != txNew.vin[0].prevout.hash)
         {
-            // The candidates were collected before the search; a coin the
-            // wallet or the chain has spent since would invalidate the block.
-            if (pwallet->IsSpent(pcoin.outpoint.hash, pcoin.outpoint.n) || chainstate->CoinsTip().AccessCoin(pcoin.outpoint).IsSpent())
-                continue;
-            CBlockHeader header;
-            CTransactionRef tx;
-            switch (ReadCoinSource(pcoin.outpoint, header, tx)) {
-            case CoinSource::MISSING: continue;
-            case CoinSource::FAILED: return false;
-            case CoinSource::OK: break;
-            }
-
-            // Stop adding more inputs if already too many inputs
+            // The limits first, since they are free and most candidates
+            // stop here. Stop adding more inputs if already too many inputs
             if (txNew.vin.size() >= 100)
                 break;
             // Stop adding more inputs if value is already pretty significant
@@ -509,16 +543,21 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             // Do not add additional significant input
             if (pcoin.txout.nValue > nCombineThreshold)
                 continue;
-            // Do not add input that is still too young. Age from the UTXO Coin
-            // (single source of truth); raw coin.nTime is identical to the disk
-            // tx->nTime, so behaviour is unchanged. Fall back defensively.
-            uint32_t nCombineBlockTime, nCombineTxPrevTime = tx->nTime;
-            GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nCombineBlockTime, nCombineTxPrevTime);
+
+            // The candidates were collected before the search; a coin the
+            // wallet or the chain has spent since would invalidate the block.
+            if (pwallet->IsSpent(pcoin.outpoint.hash, pcoin.outpoint.n) || chainstate->CoinsTip().AccessCoin(pcoin.outpoint).IsSpent())
+                continue;
+            // Do not add input that is still too young. Age from the UTXO
+            // Coin, the source GetCoinAge validates against, rather than
+            // opening this coin's block file for its timestamp.
+            uint32_t nCombineBlockTime, nCombineTxPrevTime;
+            if (!GetCoinAgeTimes(chainstate, chainstate->CoinsTip(), pcoin.outpoint, nCombineBlockTime, nCombineTxPrevTime))
+                continue;
             if (nCombineTxPrevTime + consensusParams.nStakeMaxAge > txNew.nTime)
                 continue;
             txNew.vin.push_back(CTxIn(pcoin.outpoint.hash, pcoin.outpoint.n));
             nCredit += pcoin.txout.nValue;
-            vwtxPrev.push_back(tx);
         }
     }
 
@@ -569,12 +608,13 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             txNew.vout[2].nValue = nDevCredit;
         }
 
-        // Sign using wallet's SignTransaction (supports both legacy and descriptor wallets)
+        // Sign using wallet's SignTransaction (supports both legacy and descriptor wallets).
+        // The prevouts come from the UTXO set, which is where
+        // FinalizeCoinStakeReward takes them when it re-signs over the final
+        // amounts, so both signings see the same coins.
         std::map<COutPoint, Coin> coins;
-        for (size_t i = 0; i < vwtxPrev.size(); ++i) {
-            const CTxIn& txin = txNew.vin[i];
-            const CTransactionRef& prevTx = vwtxPrev[i];
-            coins[txin.prevout] = Coin(prevTx->vout[txin.prevout.n], 0, prevTx->IsCoinBase(), prevTx->IsCoinStake(), prevTx->nTime);
+        for (const CTxIn& txin : txNew.vin) {
+            coins[txin.prevout] = chainstate->CoinsTip().AccessCoin(txin.prevout);
         }
         std::map<int, std::string> input_errors;
         if (!pwallet->SignTransaction(txNew, coins, SIGHASH_ALL, input_errors)) {
