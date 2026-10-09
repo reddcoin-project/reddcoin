@@ -44,6 +44,94 @@ void CheckUniqueFileid(const BerkeleyEnvironment& env, const std::string& filena
     }
 }
 
+//! Whether ResetChangedLSNs() may be used with the Berkeley DB this is built
+//! against. It reaches below the documented interface, so it is enabled only
+//! for the version it has been tested with; anything else keeps lsn_reset().
+#if DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR == 8
+constexpr bool RESET_CHANGED_LSNS_SUPPORTED{true};
+#else
+constexpr bool RESET_CHANGED_LSNS_SUPPORTED{false};
+#endif
+
+//! Clear the log sequence number of every page of a database file that
+//! carries one, so that the file no longer refers to the environment's log
+//! and can be opened without it.
+//!
+//! This is the loop DbEnv::lsn_reset() runs, with one difference: lsn_reset()
+//! takes every page for writing, so the whole file is written back whatever
+//! was changed, while a page whose LSN is already clear is left alone here.
+//! After a small write only the pages that write touched are written.
+//!
+//! As in lsn_reset(), the LSN is the first field of every kind of page, and
+//! file 0, offset 1 marks a page as not logged. The wallet uses neither
+//! Berkeley DB's own encryption nor its page checksums, which lsn_reset() has
+//! to allow for, so neither is handled.
+//!
+//! No handle on the file may be open and its changes must have been
+//! checkpointed. Returns false if a page could not be read or written, or if
+//! a page that was cleared does not read back clear from the file itself;
+//! some pages may have been cleared by then, which leaves the file valid, and
+//! the caller falls back to lsn_reset(). The read back matters: with Berkeley
+//! DB 5.3 every call here succeeds and the pages are never written.
+bool ResetChangedLSNs(DbEnv& dbenv, const fs::path& directory, const std::string& filename, int64_t& pages, int64_t& pages_reset)
+{
+    pages = 0;
+    pages_reset = 0;
+    std::vector<db_pgno_t> reset;
+
+    // The file as a whole, not the "main" database inside it. DB_RDWRMASTER
+    // is how lsn_reset() opens it too.
+    Db master(&dbenv, 0);
+    int ret = master.open(nullptr, filename.c_str(), nullptr, DB_UNKNOWN, DB_RDWRMASTER, 0);
+    if (ret != 0) {
+        master.close(0);
+        return false;
+    }
+
+    u_int32_t page_size = 0;
+    if (master.get_pagesize(&page_size) != 0 || page_size == 0) {
+        master.close(0);
+        return false;
+    }
+
+    DbMpoolFile* mpf = master.get_mpf();
+    for (db_pgno_t pgno = 0;; ++pgno) {
+        void* page = nullptr;
+        ret = mpf->get(&pgno, nullptr, 0, &page);
+        if (ret != 0) break;
+        const DB_LSN* lsn = static_cast<const DB_LSN*>(page);
+        const bool logged = lsn->file != 0 || lsn->offset != 1;
+        ret = mpf->put(page, DB_PRIORITY_UNCHANGED, 0);
+        if (ret != 0) break;
+        ++pages;
+        if (!logged) continue;
+
+        ret = mpf->get(&pgno, nullptr, DB_MPOOL_DIRTY, &page);
+        if (ret != 0) break;
+        DB_LSN* dirty_lsn = static_cast<DB_LSN*>(page);
+        dirty_lsn->file = 0;
+        dirty_lsn->offset = 1;
+        ret = mpf->put(page, DB_PRIORITY_UNCHANGED, 0);
+        if (ret != 0) break;
+        reset.push_back(pgno);
+    }
+
+    // Closing the handle writes the pages changed above.
+    const int close_ret = master.close(0);
+    if (ret != DB_PAGE_NOTFOUND || close_ret != 0) return false;
+
+    // Take nothing on trust: read each of those pages back from the file.
+    fsbridge::ifstream file(directory / filename, std::ios::binary);
+    for (const db_pgno_t pgno : reset) {
+        DB_LSN lsn;
+        file.seekg(static_cast<int64_t>(pgno) * page_size);
+        if (!file.read(reinterpret_cast<char*>(&lsn), sizeof(lsn))) return false;
+        if (lsn.file != 0 || lsn.offset != 1) return false;
+    }
+    pages_reset = reset.size();
+    return true;
+}
+
 RecursiveMutex cs_db;
 std::map<std::string, std::weak_ptr<BerkeleyEnvironment>> g_dbenvs GUARDED_BY(cs_db); //!< Map from directory name to db environment.
 } // namespace
@@ -289,6 +377,24 @@ void BerkeleyEnvironment::CheckpointLSN(const std::string& strFile)
     if (fMockDb)
         return;
     dbenv->lsn_reset(strFile.c_str(), 0);
+}
+
+int64_t BerkeleyEnvironment::CheckpointResetChangedLSNs(const std::string& strFile)
+{
+    dbenv->txn_checkpoint(0, 0, 0);
+    if (fMockDb)
+        return 0;
+    if (RESET_CHANGED_LSNS_SUPPORTED) {
+        int64_t pages;
+        int64_t pages_reset;
+        if (ResetChangedLSNs(*dbenv, Directory(), strFile, pages, pages_reset)) {
+            LogPrint(BCLog::WALLETDB, "BerkeleyEnvironment::CheckpointResetChangedLSNs: %s: %d of %d pages reset\n", strFile, pages_reset, pages);
+            return pages_reset;
+        }
+        LogPrintf("BerkeleyEnvironment::CheckpointResetChangedLSNs: could not reset the changed pages of %s, resetting all of them\n", strFile);
+    }
+    dbenv->lsn_reset(strFile.c_str(), 0);
+    return -1;
 }
 
 BerkeleyDatabase::~BerkeleyDatabase()
@@ -591,9 +697,12 @@ bool BerkeleyDatabase::PeriodicFlush()
     LogPrint(BCLog::WALLETDB, "Flushing %s\n", strFile);
     int64_t nStart = GetTimeMillis();
 
-    // Flush wallet file so it's self contained
+    // Flush wallet file so it's self contained. This runs two seconds after
+    // every write to the wallet, so it must cost what the write did, not
+    // what the file weighs: only the pages changed since the last flush are
+    // written.
     env->CloseDb(strFile);
-    env->CheckpointLSN(strFile);
+    env->CheckpointResetChangedLSNs(strFile);
     m_refcount = -1;
 
     LogPrint(BCLog::WALLETDB, "Flushed %s %dms\n", strFile, GetTimeMillis() - nStart);

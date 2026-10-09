@@ -69,6 +69,14 @@ public:
     void Close();
     void Flush(bool fShutdown);
     void CheckpointLSN(const std::string& strFile);
+    /** Checkpoint, then clear the LSN of each page of strFile that carries
+     *  one. Leaves the file as self-contained as CheckpointLSN() does, but
+     *  writes only the pages changed since the last reset, where
+     *  CheckpointLSN() writes all of them.
+     *  @return the number of pages written, or -1 if every page was reset
+     *  the way CheckpointLSN() does it, because this build's Berkeley DB is
+     *  not one the page-by-page reset is enabled for, or because it failed. */
+    int64_t CheckpointResetChangedLSNs(const std::string& strFile);
 
     void CloseDb(const std::string& strFile);
     void ReloadDbEnv();
