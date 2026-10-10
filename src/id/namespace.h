@@ -105,6 +105,7 @@ class NamespaceManager {
     std::vector<NamespaceInfo> GetNamespaces() const;
     std::vector<PricingTier> GetPricingTiers(const std::string& namespaceId) const;
     CAmount CalculateMinPrice(const std::string& namespaceId) const;
+    CAmount CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId) const;
 
     // Hash calculation (public so P2P layer can verify)
     uint256 CalculateConfigHash(const NamespaceInfo& config);

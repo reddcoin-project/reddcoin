@@ -4,6 +4,7 @@
 
 #include <id/reddid.h>
 #include <id/namespace.h>
+#include <id/auction.h>
 #include <id/reddid_db.h>
 
 #include <logging.h>
@@ -57,6 +58,7 @@ bool ReddIDManager::Init() {
 
         // Create other managers
         namespaceManager = std::make_unique<NamespaceManager>(*this);
+        auctionManager = std::make_unique<AuctionManager>(*this);
 
         // Initialize chainstate reference
         if (node && node->chainman) {
@@ -70,6 +72,14 @@ bool ReddIDManager::Init() {
         // Initialize mmanagers in order
         if (!namespaceManager->Init(this)) {
             LogPrintf("Warning: Failed to load namespace data\n");
+        }
+
+        if (!auctionManager->Init(this)) {
+            LogPrintf("Warning: Failed to initialize auction manager\n");
+        }
+
+        if (auctionManager && chainstate) {
+            auctionManager->SetChainState(chainstate);
         }
 
         // Set initialization flag to true
@@ -100,6 +110,11 @@ bool ReddIDManager::Start() {
         return false;
     }
 
+    if (!auctionManager->Start()) {
+        LogPrintf("Failed to start auction manager\n");
+        return false;
+    }
+
     m_running = true;
     return true;
 }
@@ -114,6 +129,7 @@ void ReddIDManager::Interrupt() {
     }
 
     if (namespaceManager) namespaceManager->Interrupt();
+    if (auctionManager) auctionManager->Interrupt();
 
     // Flag as not running, but don't clean up yet
     m_running = false;
@@ -131,7 +147,12 @@ bool ReddIDManager::Stop() {
         namespaceManager->Stop();
     }
 
+    if (auctionManager) {
+        auctionManager->Stop();
+    }
+
     // Clear member pointers
+    auctionManager.reset();
     namespaceManager.reset();
     reddidDB.reset();
 
@@ -217,4 +238,8 @@ bool ReddIDManager::ValidateUserID(const std::string& name, const std::string& n
 
 CAmount ReddIDManager::CalculateMinPriceForNamespace(const std::string& namespaceId) {
     return namespaceManager->CalculateMinPrice(namespaceId);
+}
+
+CAmount ReddIDManager::CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId) {
+    return namespaceManager->CalculateMinPriceForUserID(name, namespaceId);
 }

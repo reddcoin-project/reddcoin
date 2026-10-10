@@ -1270,6 +1270,53 @@ BOOST_AUTO_TEST_CASE(load_restores_namespaces_tiers_auctions_and_bids)
     BOOST_CHECK(bids[0].bidder == bidder);
 }
 
+// The minimum price of a user ID is the price of a pricing tier of its
+// namespace, or REDDID_MIN_FEE when the namespace has no tier that applies.
+BOOST_AUTO_TEST_CASE(min_price_for_user_id_uses_pricing_tiers)
+{
+    NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
+
+    // Unknown namespace, and a namespace without tiers
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("alice", "nosuchns"), REDDID_MIN_FEE);
+    CreateTestNamespace("priced", MakeKeyID());
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("alice", "priced"), REDDID_MIN_FEE);
+    BOOST_CHECK_EQUAL(REDDID_MIN_FEE, 5000 * COIN);
+
+    BOOST_REQUIRE(nsMgr->AddPricingTier("priced", 3, 9000 * COIN));
+    BOOST_REQUIRE(nsMgr->AddPricingTier("priced", 5, 4000 * COIN));
+    BOOST_REQUIRE(nsMgr->AddPricingTier("priced", 8, 1000 * COIN));
+
+    // Shorter than every tier: the default applies
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("ab", "priced"), REDDID_MIN_FEE);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abc", "priced"), 9000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcd", "priced"), 9000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcde", "priced"), 4000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcdefg", "priced"), 4000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcdefgh", "priced"), 1000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID(std::string(32, 'a'), "priced"), 1000 * COIN);
+
+    // The tiers of one namespace do not apply to another
+    CreateTestNamespace("plain", MakeKeyID());
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcdefgh", "plain"), REDDID_MIN_FEE);
+}
+
+// SUSPECTED BUG (documented, not fixed): the lookup takes the last tier, in
+// the order in which the tiers are held, whose minimum length the name
+// reaches. That is the tier for the longest matching length only if the tiers
+// were added in ascending order of length. Added in another order, a shorter
+// tier that comes later overrides a longer one.
+BOOST_AUTO_TEST_CASE(min_price_for_user_id_depends_on_tier_order)
+{
+    NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
+    CreateTestNamespace("unordered", MakeKeyID());
+    BOOST_REQUIRE(nsMgr->AddPricingTier("unordered", 8, 1000 * COIN));
+    BOOST_REQUIRE(nsMgr->AddPricingTier("unordered", 3, 9000 * COIN));
+
+    // Eight characters reach both tiers; the tier for three characters was added last
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abcdefgh", "unordered"), 9000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateMinPriceForUserID("abc", "unordered"), 9000 * COIN);
+}
+
 // SUSPECTED BUG (documented, not fixed): every auction shares one key prefix
 // in the database, and Load takes all of them. An auction for a user ID, which
 // belongs to another subsystem, is loaded as a namespace auction (and is

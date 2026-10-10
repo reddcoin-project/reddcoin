@@ -1034,6 +1034,29 @@ CAmount NamespaceManager::CalculateMinPrice(const std::string& namespaceId) cons
     }
 }
 
+CAmount NamespaceManager::CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId) const {
+    CAmount basePrice = REDDID_MIN_FEE;
+
+    // Get namespace info
+    NamespaceInfo namespaceInfo;
+    if (!GetNamespaceInfo(namespaceId, namespaceInfo)) {
+        return basePrice;
+    }
+
+    // Get pricing tiers for this namespace
+    std::vector<PricingTier> tiers = GetPricingTiers(namespaceId);
+
+    // Find the appropriate tier based on name length
+    CAmount tierPrice = basePrice;
+    for (const auto& tier : tiers) {
+        if (name.size() >= static_cast<size_t>(tier.minLength)) {
+            tierPrice = tier.minPrice;
+        }
+    }
+
+    return tierPrice;
+}
+
 CAmount NamespaceManager::CalculateRenewalFee(const std::string& namespaceId) const {
     // Base renewal fee is 25% of equivalent auction price
     CAmount auctionPrice = CalculateMinPrice(namespaceId);

@@ -22,6 +22,7 @@
 #include <vector>
 
 // Forward declarations
+class AuctionManager;
 class CChainState;
 class NamespaceManager;
 class ReddIDDB;
@@ -716,6 +717,7 @@ class ReddIDManager {
     // Component managers
     std::unique_ptr<ReddIDDB> reddidDB;
     std::unique_ptr<NamespaceManager> namespaceManager;
+    std::unique_ptr<AuctionManager> auctionManager;
 
  public:
     ReddIDManager(NodeContext& nodeIn);
@@ -732,6 +734,7 @@ class ReddIDManager {
     // Accessor methods for the component managers (internal use)
     ReddIDDB* GetReddIDDB() const { return reddidDB.get(); }
     NamespaceManager* GetNamespaceManager() const { return namespaceManager.get(); }
+    AuctionManager* GetAuctionManager() const { return auctionManager.get(); }
     // There is no P2P manager yet, so the component managers are handed a null pointer
     ReddIDP2PManager* GetP2PManager() const { return nullptr; }
 
@@ -744,6 +747,7 @@ class ReddIDManager {
 
     // Validation helper functions
     CAmount CalculateMinPriceForNamespace(const std::string& namespaceId);
+    CAmount CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId);
 };
 
 #endif // BITCOIN_ID_REDDID_H

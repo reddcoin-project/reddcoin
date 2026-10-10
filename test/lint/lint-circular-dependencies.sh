@@ -34,6 +34,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "qt/mintingtablemodel -> qt/walletmodel -> qt/mintingtablemodel"
     # Introduced with ReddID. id/reddid.h holds both the record types that the
     # component managers use and the ReddIDManager that owns those managers.
+    "id/auction -> id/reddid -> id/auction"
     "id/namespace -> id/reddid -> id/namespace"
     "id/reddid -> id/reddid_db -> id/reddid"
 )
