@@ -36,6 +36,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     # component managers use and the ReddIDManager that owns those managers.
     "id/auction -> id/reddid -> id/auction"
     "id/namespace -> id/reddid -> id/namespace"
+    "id/profile -> id/reddid -> id/profile"
     "id/reddid -> id/reddid_db -> id/reddid"
 )
 

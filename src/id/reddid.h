@@ -25,6 +25,7 @@
 class AuctionManager;
 class CChainState;
 class NamespaceManager;
+class ProfileManager;
 class ReddIDDB;
 class ReddIDP2PManager;
 struct NodeContext;
@@ -718,6 +719,7 @@ class ReddIDManager {
     std::unique_ptr<ReddIDDB> reddidDB;
     std::unique_ptr<NamespaceManager> namespaceManager;
     std::unique_ptr<AuctionManager> auctionManager;
+    std::unique_ptr<ProfileManager> profileManager;
 
  public:
     ReddIDManager(NodeContext& nodeIn);
@@ -735,6 +737,7 @@ class ReddIDManager {
     ReddIDDB* GetReddIDDB() const { return reddidDB.get(); }
     NamespaceManager* GetNamespaceManager() const { return namespaceManager.get(); }
     AuctionManager* GetAuctionManager() const { return auctionManager.get(); }
+    ProfileManager* GetProfileManager() const { return profileManager.get(); }
     // There is no P2P manager yet, so the component managers are handed a null pointer
     ReddIDP2PManager* GetP2PManager() const { return nullptr; }
 
@@ -744,6 +747,9 @@ class ReddIDManager {
     bool ValidateReddID(const std::string& reddId);
     bool ValidateNamespace(const std::string& namespaceId);
     bool ValidateUserID(const std::string& name, const std::string& namespaceId);
+
+    // ReddID profile operations
+    bool CalculateReputation(const std::string& reddId, ReddIDReputation& result);
 
     // Validation helper functions
     CAmount CalculateMinPriceForNamespace(const std::string& namespaceId);

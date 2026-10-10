@@ -7,10 +7,14 @@
 #include <amount.h>
 #include <id/auction.h>
 #include <id/namespace.h>
+#include <id/profile.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
+#include <id/transaction_handler.h>
 #include <key.h>
+#include <primitives/transaction.h>
 #include <test/reddid_auction_test_util.h>
+#include <test/reddid_profile_test_util.h>
 #include <test/reddid_test_fixture.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
@@ -68,6 +72,12 @@ BOOST_AUTO_TEST_CASE(fixture_manager_is_initialized_and_running)
     BOOST_CHECK(aMgr->IsRunning());
     BOOST_CHECK(aMgr->GetDB() == reddidManager->GetReddIDDB());
     BOOST_CHECK(aMgr->GetNamespaceManager() == nsMgr);
+
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    BOOST_REQUIRE(pMgr != nullptr);
+    BOOST_CHECK(pMgr->IsInitialized());
+    BOOST_CHECK(pMgr->IsRunning());
+    BOOST_CHECK(pMgr->GetDB() == reddidManager->GetReddIDDB());
 }
 
 BOOST_AUTO_TEST_CASE(manager_uses_active_chainstate)
@@ -88,6 +98,7 @@ BOOST_AUTO_TEST_CASE(init_and_start_are_idempotent)
     ReddIDDB* db = reddidManager->GetReddIDDB();
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     AuctionManager* aMgr = reddidManager->GetAuctionManager();
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
 
     BOOST_CHECK(reddidManager->Init());
     BOOST_CHECK(reddidManager->Start());
@@ -96,6 +107,7 @@ BOOST_AUTO_TEST_CASE(init_and_start_are_idempotent)
     BOOST_CHECK(reddidManager->GetReddIDDB() == db);
     BOOST_CHECK(reddidManager->GetNamespaceManager() == nsMgr);
     BOOST_CHECK(reddidManager->GetAuctionManager() == aMgr);
+    BOOST_CHECK(reddidManager->GetProfileManager() == pMgr);
     BOOST_CHECK(reddidManager->IsInitialized());
     BOOST_CHECK(reddidManager->IsRunning());
 }
@@ -109,7 +121,12 @@ BOOST_AUTO_TEST_CASE(start_before_init_fails)
     BOOST_CHECK(manager.GetReddIDDB() == nullptr);
     BOOST_CHECK(manager.GetNamespaceManager() == nullptr);
     BOOST_CHECK(manager.GetAuctionManager() == nullptr);
+    BOOST_CHECK(manager.GetProfileManager() == nullptr);
     BOOST_CHECK(manager.GetChainState() == nullptr);
+
+    // Without a profile manager there is no reputation to calculate
+    ReddIDReputation reputation;
+    BOOST_CHECK(!manager.CalculateReputation("alice", reputation));
 
     // Interrupt and Stop on a manager that never started are no-ops
     manager.Interrupt();
@@ -130,6 +147,7 @@ BOOST_AUTO_TEST_CASE(disabled_manager_inits_but_does_not_start)
     BOOST_CHECK(manager.GetReddIDDB() == nullptr);
     BOOST_CHECK(manager.GetNamespaceManager() == nullptr);
     BOOST_CHECK(manager.GetAuctionManager() == nullptr);
+    BOOST_CHECK(manager.GetProfileManager() == nullptr);
     BOOST_CHECK(!manager.Start());
     BOOST_CHECK(!manager.IsRunning());
 
@@ -143,6 +161,7 @@ BOOST_AUTO_TEST_CASE(stop_releases_components)
     BOOST_CHECK(!reddidManager->IsInitialized());
     BOOST_CHECK(reddidManager->GetNamespaceManager() == nullptr);
     BOOST_CHECK(reddidManager->GetAuctionManager() == nullptr);
+    BOOST_CHECK(reddidManager->GetProfileManager() == nullptr);
     BOOST_CHECK(reddidManager->GetReddIDDB() == nullptr);
 
     // A second Stop() is a no-op
@@ -173,18 +192,26 @@ BOOST_AUTO_TEST_CASE(stopped_manager_can_be_initialized_again)
     BOOST_CHECK(aMgr->GetDB() == reddidManager->GetReddIDDB());
     BOOST_CHECK(aMgr->GetNamespaceManager() == nsMgr);
     BOOST_CHECK(aMgr->GetActiveAuctions().empty());
+
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    BOOST_REQUIRE(pMgr != nullptr);
+    BOOST_CHECK(pMgr->IsInitialized());
+    BOOST_CHECK(pMgr->IsRunning());
+    BOOST_CHECK(pMgr->GetDB() == reddidManager->GetReddIDDB());
 }
 
 // SUSPECTED BUG (documented, not fixed): Interrupt() clears m_running and
 // Stop() returns early when m_running is false. A node shuts down with
 // Interrupt() followed by Stop(), so Stop() does none of its work in that
-// sequence: the namespace and auction managers are not stopped (and so not
-// saved) and the components are not released until the manager is destroyed.
+// sequence: the namespace, auction and profile managers are not stopped (and
+// so not saved) and the components are not released until the manager is
+// destroyed.
 BOOST_AUTO_TEST_CASE(stop_after_interrupt_does_nothing)
 {
     ReddIDDB* db = reddidManager->GetReddIDDB();
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     AuctionManager* aMgr = reddidManager->GetAuctionManager();
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
 
     reddidManager->Interrupt();
     BOOST_CHECK(!reddidManager->IsRunning());
@@ -193,6 +220,8 @@ BOOST_AUTO_TEST_CASE(stop_after_interrupt_does_nothing)
     BOOST_CHECK(nsMgr->IsInitialized());
     BOOST_CHECK(!aMgr->IsRunning());
     BOOST_CHECK(aMgr->IsInitialized());
+    BOOST_CHECK(!pMgr->IsRunning());
+    BOOST_CHECK(pMgr->IsInitialized());
 
     BOOST_CHECK(reddidManager->Stop());
     BOOST_CHECK(reddidManager->IsInitialized());
@@ -203,6 +232,9 @@ BOOST_AUTO_TEST_CASE(stop_after_interrupt_does_nothing)
     BOOST_CHECK(nsMgr->GetDB() == db);
     BOOST_CHECK(aMgr->IsInitialized());
     BOOST_CHECK(aMgr->GetDB() == db);
+    BOOST_CHECK(reddidManager->GetProfileManager() == pMgr);
+    BOOST_CHECK(pMgr->IsInitialized());
+    BOOST_CHECK(pMgr->GetDB() == db);
 }
 
 BOOST_AUTO_TEST_CASE(interrupted_manager_rejects_new_namespace_auctions)
@@ -229,6 +261,7 @@ BOOST_AUTO_TEST_CASE(interrupted_manager_can_be_started_again)
     BOOST_CHECK(reddidManager->GetNamespaceManager() == nsMgr);
     BOOST_CHECK(nsMgr->IsRunning());
     BOOST_CHECK(reddidManager->GetAuctionManager()->IsRunning());
+    BOOST_CHECK(reddidManager->GetProfileManager()->IsRunning());
 }
 
 // Current behaviour: unlike the namespace manager, the auction manager does
@@ -485,6 +518,177 @@ BOOST_AUTO_TEST_CASE(shutdown_reverts_namespace_auctions_to_their_state_at_start
     // A second bidder can now take the lead at the reserve price, without the 5% increment
     BOOST_CHECK(nsMgr->BidOnNamespaceAuction(namespaceAuction, MakeKeyID(), nsReserve, nsBid));
     BOOST_CHECK_EQUAL(nsMgr->GetAuctionBids(namespaceAuction).size(), 2U);
+}
+
+// ===================================================================
+// Category 4: Profiles and reputations
+// ===================================================================
+
+// Current behaviour: like the auction manager, the profile manager does not
+// look at whether it is running. After Interrupt() it still takes profiles
+// and connections and calculates reputations.
+BOOST_AUTO_TEST_CASE(interrupted_profile_manager_still_takes_profiles)
+{
+    MockTimeGuard mockTime(T0);
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    BOOST_REQUIRE(pMgr->CreateProfile(TestProfile("alice", MakeKeyID())));
+
+    reddidManager->Interrupt();
+    BOOST_CHECK(!pMgr->IsRunning());
+
+    BOOST_CHECK(pMgr->CreateProfile(TestProfile("bob", MakeKeyID())));
+    BOOST_CHECK(pMgr->CreateConnection(TestConnection("bob", "alice", CONNECTION_FOLLOW)));
+    ReddIDReputation reputation;
+    BOOST_CHECK(reddidManager->CalculateReputation("alice", reputation));
+    BOOST_CHECK_EQUAL(reputation.engagementScore, 1.5);
+}
+
+BOOST_AUTO_TEST_CASE(calculate_reputation_needs_an_initialized_manager)
+{
+    MockTimeGuard mockTime(T0);
+    BOOST_REQUIRE(reddidManager->GetProfileManager()->CreateProfile(TestProfile("alice", MakeKeyID())));
+
+    ReddIDReputation reputation;
+    BOOST_CHECK(reddidManager->CalculateReputation("alice", reputation));
+    BOOST_CHECK(!reddidManager->CalculateReputation("nobody", reputation));
+
+    BOOST_REQUIRE(reddidManager->Stop());
+    BOOST_CHECK(!reddidManager->CalculateReputation("alice", reputation));
+}
+
+BOOST_AUTO_TEST_CASE(profile_state_survives_a_restart_with_a_database_on_disk)
+{
+    DatabaseOnDisk onDisk;
+    MockTimeGuard mockTime(T0);
+    Restart(*reddidManager);
+
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    CKeyID alice = MakeKeyID();
+    CKeyID bob = MakeKeyID();
+    ReddIDProfile created = TestProfile("alice", alice);
+    created.displayName = "Alice";
+    created.avatarHash = uint256S("a1");
+    created.emailHash = uint256S("e1");
+    created.socialData = "{\"x\":1}";
+    created.messagingPubkey = {2, 3, 4};
+    created.verificationStatus = VERIFICATION_SELF;
+    created.flags = 5;
+    BOOST_REQUIRE(pMgr->CreateProfile(created));
+    BOOST_REQUIRE(pMgr->CreateProfile(TestProfile("bob", bob)));
+    BOOST_REQUIRE(pMgr->CreateProfile(TestProfile("carol", bob)));
+    BOOST_REQUIRE(pMgr->DeactivateProfile("carol", bob));
+
+    ReddIDConnection friendship = TestConnection("alice", "bob", CONNECTION_FRIEND);
+    friendship.visibility = 1;
+    friendship.metadata = "kept";
+    BOOST_REQUIRE(pMgr->CreateConnection(friendship));
+    BOOST_REQUIRE(pMgr->CreateConnection(TestConnection("bob", "alice", CONNECTION_ENDORSE)));
+    BOOST_REQUIRE(pMgr->CreateConnection(TestConnection("carol", "alice", CONNECTION_FOLLOW)));
+    BOOST_REQUIRE(pMgr->AddNamespaceResolution("alice", "redd", "al"));
+    BOOST_REQUIRE(pMgr->AddNamespaceResolution("alice", "crypto", "alice1"));
+
+    ReddIDReputation attested;
+    attested.reddId = "bob";
+    attested.overallScore = 80.0;
+    attested.calculationProof = uint256S("a77e57");
+    attested.calculatorSignatures = "sigs";
+    attested.lastCalculated = T0 - 5;
+    BOOST_REQUIRE(pMgr->UpdateReputation(attested));
+    ReddIDReputation before;
+    BOOST_REQUIRE(reddidManager->CalculateReputation("alice", before));
+    uint256 hashBefore = pMgr->CalculateProfileHash(created);
+
+    Restart(*reddidManager);
+    pMgr = reddidManager->GetProfileManager();
+    BOOST_REQUIRE(pMgr != nullptr);
+
+    ReddIDProfile profile;
+    BOOST_REQUIRE(pMgr->GetProfile("alice", profile));
+    BOOST_CHECK(pMgr->CalculateProfileHash(profile) == hashBefore);
+    BOOST_CHECK_EQUAL(profile.displayName, "Alice");
+    BOOST_CHECK_EQUAL(profile.verificationStatus, VERIFICATION_SELF);
+    BOOST_CHECK_EQUAL(static_cast<int>(profile.flags), 5);
+    BOOST_CHECK(pMgr->IsProfileOwner("alice", alice));
+    BOOST_CHECK(pMgr->IsProfileActive("alice"));
+    BOOST_CHECK(pMgr->IsProfileActive("bob"));
+    BOOST_CHECK(!pMgr->IsProfileActive("carol"));
+    std::vector<std::string> owned;
+    BOOST_CHECK(pMgr->GetProfilesByOwner(bob, owned));
+    BOOST_CHECK_EQUAL(owned.size(), 2U);
+
+    ReddIDConnection connection;
+    BOOST_REQUIRE(pMgr->GetConnection("alice", "bob", connection));
+    BOOST_CHECK_EQUAL(connection.connectionType, CONNECTION_FRIEND);
+    BOOST_CHECK_EQUAL(connection.visibility, 1);
+    BOOST_CHECK_EQUAL(connection.metadata, "kept");
+    BOOST_CHECK_EQUAL(pMgr->GetConnections("alice").size(), 1U);
+    BOOST_CHECK_EQUAL(pMgr->CountIncomingByType("alice", CONNECTION_ENDORSE), 1);
+    BOOST_CHECK_EQUAL(pMgr->CountIncomingByType("alice", CONNECTION_FOLLOW), 1);
+    BOOST_CHECK_EQUAL(pMgr->CountIncomingByType("bob", CONNECTION_FRIEND), 1);
+
+    BOOST_CHECK_EQUAL(pMgr->ResolveNamespace("alice", "redd"), "al");
+    BOOST_CHECK_EQUAL(pMgr->ResolveNamespace("alice", "crypto"), "alice1");
+    BOOST_CHECK_EQUAL(pMgr->ResolveReddID("alice1", "crypto"), "alice");
+    BOOST_CHECK(pMgr->UpdateNamespaceResolution("alice", "redd", "al2"));
+
+    ReddIDReputation reputation;
+    BOOST_REQUIRE(pMgr->GetReputation("bob", reputation));
+    BOOST_CHECK_EQUAL(reputation.overallScore, 80.0);
+    BOOST_CHECK(reputation.calculationProof == uint256S("a77e57"));
+    BOOST_CHECK_EQUAL(reputation.calculatorSignatures, "sigs");
+    BOOST_CHECK_EQUAL(reputation.lastCalculated, T0 - 5);
+
+    // The same inputs give the same reputation after the restart
+    BOOST_REQUIRE(pMgr->GetReputation("alice", reputation));
+    BOOST_CHECK_SMALL(reputation.overallScore - before.overallScore, 0.005);
+    ReddIDReputation after;
+    BOOST_REQUIRE(reddidManager->CalculateReputation("alice", after));
+    BOOST_CHECK_SMALL(after.overallScore - before.overallScore, 1e-9);
+    // SELF, endorsed by bob (80), followed by carol and with one friend
+    BOOST_CHECK_SMALL(after.verificationScore - 23.2, 1e-9);
+    BOOST_CHECK_SMALL(after.engagementScore - 3.0, 1e-9);
+
+    // The profiles carry on
+    BOOST_CHECK(!pMgr->CreateProfile(TestProfile("alice", MakeKeyID())));
+    created.bio = "After the restart";
+    BOOST_CHECK(pMgr->UpdateProfile(created));
+}
+
+// What ProfileManager::Stop saves is what every operation has saved already;
+// a profile that was erased stays erased.
+BOOST_AUTO_TEST_CASE(erased_profile_is_not_restored_by_a_restart)
+{
+    DatabaseOnDisk onDisk;
+    MockTimeGuard mockTime(T0);
+    Restart(*reddidManager);
+
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    CKeyID owner = MakeKeyID();
+    BOOST_REQUIRE(pMgr->CreateProfile(TestProfile("alice", owner)));
+    BOOST_REQUIRE(pMgr->CreateProfile(TestProfile("bob", owner)));
+    BOOST_REQUIRE(pMgr->CreateConnection(TestConnection("alice", "bob", CONNECTION_FOLLOW)));
+    BOOST_REQUIRE(pMgr->CreateConnection(TestConnection("bob", "alice", CONNECTION_FOLLOW)));
+    BOOST_REQUIRE(pMgr->RemoveConnection("bob", "alice", owner));
+
+    CMutableTransaction mtx;
+    mtx.vout.emplace_back(0, CreateProfileUpdateOpReturn("alice", uint256()));
+    BOOST_REQUIRE(pMgr->UndoTransaction(CTransaction(mtx), 1));
+    BOOST_REQUIRE(!pMgr->ProfileExists("alice"));
+
+    Restart(*reddidManager);
+    pMgr = reddidManager->GetProfileManager();
+
+    BOOST_CHECK(!pMgr->ProfileExists("alice"));
+    BOOST_CHECK(pMgr->ProfileExists("bob"));
+    BOOST_CHECK(pMgr->GetConnections("bob").empty());
+    // SUSPECTED BUG (documented, not fixed): the reputation and the connections
+    // of the erased profile are still in the database. They are no longer
+    // loaded, but they are found by the lookups that fall back to the database.
+    ReddIDReputation reputation;
+    BOOST_CHECK(pMgr->GetReputation("alice", reputation));
+    BOOST_CHECK_EQUAL(pMgr->GetConnections("alice").size(), 1U);
+    // The connections that are loaded are those of the profiles that exist
+    BOOST_CHECK_EQUAL(pMgr->CountIncomingByType("bob", CONNECTION_FOLLOW), 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

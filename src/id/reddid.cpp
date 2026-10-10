@@ -5,6 +5,7 @@
 #include <id/reddid.h>
 #include <id/namespace.h>
 #include <id/auction.h>
+#include <id/profile.h>
 #include <id/reddid_db.h>
 
 #include <logging.h>
@@ -59,6 +60,7 @@ bool ReddIDManager::Init() {
         // Create other managers
         namespaceManager = std::make_unique<NamespaceManager>(*this);
         auctionManager = std::make_unique<AuctionManager>(*this);
+        profileManager = std::make_unique<ProfileManager>(*this);
 
         // Initialize chainstate reference
         if (node && node->chainman) {
@@ -76,6 +78,10 @@ bool ReddIDManager::Init() {
 
         if (!auctionManager->Init(this)) {
             LogPrintf("Warning: Failed to initialize auction manager\n");
+        }
+
+        if (!profileManager->Init(this)) {
+            LogPrintf("Warning: Failed to initialize profile manager\n");
         }
 
         if (auctionManager && chainstate) {
@@ -115,6 +121,11 @@ bool ReddIDManager::Start() {
         return false;
     }
 
+    if (!profileManager->Start()) {
+        LogPrintf("Failed to start profile manager\n");
+        return false;
+    }
+
     m_running = true;
     return true;
 }
@@ -130,6 +141,7 @@ void ReddIDManager::Interrupt() {
 
     if (namespaceManager) namespaceManager->Interrupt();
     if (auctionManager) auctionManager->Interrupt();
+    if (profileManager) profileManager->Interrupt();
 
     // Flag as not running, but don't clean up yet
     m_running = false;
@@ -151,7 +163,12 @@ bool ReddIDManager::Stop() {
         auctionManager->Stop();
     }
 
+    if (profileManager) {
+        profileManager->Stop();
+    }
+
     // Clear member pointers
+    profileManager.reset();
     auctionManager.reset();
     namespaceManager.reset();
     reddidDB.reset();
@@ -234,6 +251,26 @@ bool ReddIDManager::ValidateUserID(const std::string& name, const std::string& n
     }
 
     return true;
+}
+
+bool ReddIDManager::CalculateReputation(const std::string& reddId, ReddIDReputation& result) {
+    if (!m_initialized || !profileManager || !auctionManager) {
+        LogPrintf("ERROR: ReddIDManager::CalculateReputation: Manager not initialized\n");
+        return false;
+    }
+
+    // Get profile to resolve owner CKeyID for auction stats lookup
+    ReddIDProfile profile;
+    if (!profileManager->GetProfile(reddId, profile)) {
+        return false;
+    }
+
+    // Gather auction/deposit stats for this user
+    BidderStats bidderStats;
+    auctionManager->GetBidderStats(profile.owner, bidderStats);
+
+    // Delegate to ProfileManager with the auction stats
+    return profileManager->CalculateReputation(reddId, bidderStats, result);
 }
 
 CAmount ReddIDManager::CalculateMinPriceForNamespace(const std::string& namespaceId) {

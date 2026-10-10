@@ -155,6 +155,7 @@ BITCOIN_CORE_H = \
   i2p.h \
   id/auction.h \
   id/namespace.h \
+  id/profile.h \
   id/reddid.h \
   id/reddid_db.h \
   id/transaction_handler.h \
@@ -363,6 +364,7 @@ libbitcoin_server_a_SOURCES = \
   i2p.cpp \
   id/auction.cpp \
   id/namespace.cpp \
+  id/profile.cpp \
   id/reddid.cpp \
   id/reddid_db.cpp \
   id/transaction_handler.cpp \

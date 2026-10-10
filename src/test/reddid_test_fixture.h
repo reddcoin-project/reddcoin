@@ -8,6 +8,7 @@
 #include <id/reddid.h>
 #include <id/namespace.h>
 #include <id/auction.h>
+#include <id/profile.h>
 #include <id/reddid_db.h>
 #include <node/context.h>
 #include <scheduler.h>
