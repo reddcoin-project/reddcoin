@@ -32,6 +32,10 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "consensus/tx_verify -> validation -> consensus/tx_verify"
     "pos/kernel -> validation -> pos/kernel"
     "qt/mintingtablemodel -> qt/walletmodel -> qt/mintingtablemodel"
+    # Introduced with ReddID. id/reddid.h holds both the record types that the
+    # component managers use and the ReddIDManager that owns those managers.
+    "id/namespace -> id/reddid -> id/namespace"
+    "id/reddid -> id/reddid_db -> id/reddid"
 )
 
 EXIT_CODE=0

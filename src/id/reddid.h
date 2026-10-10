@@ -21,6 +21,16 @@
 #include <unordered_map>
 #include <vector>
 
+// Forward declarations
+class CChainState;
+class NamespaceManager;
+class ReddIDDB;
+class ReddIDP2PManager;
+struct NodeContext;
+
+/** Whether the ReddID system is enabled when -reddid is not given */
+static const bool DEFAULT_ENABLE_REDDID = false;
+
 /**
  * Constants for ReddID operation
  */
@@ -690,6 +700,50 @@ class ReddIDReputation {
         READWRITE(obj.calculationProof);
         READWRITE(obj.calculatorSignatures);
     }
+};
+
+/**
+ * Main ReddID manager class
+ */
+class ReddIDManager {
+ private:
+    std::atomic<bool> m_running{false};
+    std::atomic<bool> m_initialized{false};
+    NodeContext* node;
+
+    CChainState* chainstate;  // Reference to the chain state
+
+    // Component managers
+    std::unique_ptr<ReddIDDB> reddidDB;
+    std::unique_ptr<NamespaceManager> namespaceManager;
+
+ public:
+    ReddIDManager(NodeContext& nodeIn);
+    ~ReddIDManager();
+
+    // Node lifecycle methods
+    bool Init();
+    bool Start();
+    void Interrupt();
+    bool Stop();
+    bool IsRunning() const { return m_running; }
+    bool IsInitialized() const { return m_initialized; }
+
+    // Accessor methods for the component managers (internal use)
+    ReddIDDB* GetReddIDDB() const { return reddidDB.get(); }
+    NamespaceManager* GetNamespaceManager() const { return namespaceManager.get(); }
+    // There is no P2P manager yet, so the component managers are handed a null pointer
+    ReddIDP2PManager* GetP2PManager() const { return nullptr; }
+
+    CChainState* GetChainState() const { return chainstate; }
+
+    // Core operations
+    bool ValidateReddID(const std::string& reddId);
+    bool ValidateNamespace(const std::string& namespaceId);
+    bool ValidateUserID(const std::string& name, const std::string& namespaceId);
+
+    // Validation helper functions
+    CAmount CalculateMinPriceForNamespace(const std::string& namespaceId);
 };
 
 #endif // BITCOIN_ID_REDDID_H
