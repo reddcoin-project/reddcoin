@@ -122,6 +122,7 @@ BITCOIN_TESTS =\
   test/prevector_tests.cpp \
   test/raii_event_tests.cpp \
   test/random_tests.cpp \
+  test/reddid_db_tests.cpp \
   test/reddid_opreturn_tests.cpp \
   test/reddid_security_tests.cpp \
   test/reverselock_tests.cpp \
