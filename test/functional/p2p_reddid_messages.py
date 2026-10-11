@@ -18,189 +18,44 @@ Node 0 runs ReddID (-reddid=1), node 1 does not, which is the default.
   unit tests pin each of these paths as a suspected bug.
 - Node 1 ignores every ReddID message and stays up.
 
-The message encoders below are written from the serialization of the message
-classes in src/id/reddid_p2p.h and of the types in src/id/reddid.h, and so are
-a second, independent statement of the wire format.
+The message encoders in test_framework/reddid.py are written from the
+serialization of the message classes in src/id/reddid_p2p.h and of the types
+in src/id/reddid.h, and so are a second, independent statement of the wire
+format.
 """
 
 import os
-import struct
 import time
 
 from test_framework.messages import (
     NODE_NETWORK,
     NODE_REDDID,
     NODE_WITNESS,
-    hash256,
-    ser_compact_size,
     ser_string,
 )
-from test_framework import p2p
-from test_framework.p2p import P2PInterface, p2p_lock
+from test_framework.reddid import (
+    COIN,
+    DAY,
+    PEER_SERVICES,
+    REDDID_COMMANDS,
+    ReddIDPeer,
+    key_id,
+    msg_reddid,
+    reddid_msg,
+    ser_bid,
+    ser_connection,
+    ser_finalize,
+    ser_namespace_announce,
+    ser_namespace_config,
+    ser_profile,
+    ser_profile_request,
+    ser_profile_update,
+    ser_reputation,
+    ser_user_announce,
+    user_auction_id,
+)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
-
-COIN = 100000000
-DAY = 24 * 60 * 60
-
-REDDID_COMMANDS = [
-    "nsaucann", "nsaucbid", "nsaucfin", "nsauccan", "nsconreq", "nsconres",
-    "uidaucann", "uidaucbid", "uidaucfin", "uidauccan",
-    "ridaucann", "ridaucbid", "ridaucfin", "ridprofup", "ridconn", "ridprofreq", "ridprofres", "ridrep",
-]
-
-PEER_SERVICES = NODE_NETWORK | NODE_WITNESS | NODE_REDDID
-
-
-class msg_reddid:
-    """A ReddID message with its payload as raw bytes."""
-    __slots__ = ("payload",)
-    msgtype = b""
-
-    def __init__(self, payload=b""):
-        self.payload = payload
-
-    def serialize(self):
-        return self.payload
-
-    def deserialize(self, f):
-        self.payload = f.read()
-
-    def __repr__(self):
-        return "msg_reddid(%s, %d bytes)" % (self.msgtype.decode(), len(self.payload))
-
-
-MESSAGE_CLASSES = {}
-for _command in REDDID_COMMANDS:
-    _cls = type("msg_" + _command, (msg_reddid,), {"msgtype": _command.encode(), "__slots__": ()})
-    MESSAGE_CLASSES[_command] = _cls
-    # The framework refuses to read a message type that it does not know
-    p2p.MESSAGEMAP[_command.encode()] = _cls
-
-
-def reddid_msg(command, payload):
-    return MESSAGE_CLASSES[command](payload)
-
-
-class ReddIDPeer(P2PInterface):
-    """A peer that records the ReddID messages it receives and the order of all messages."""
-
-    def __init__(self):
-        super().__init__()
-        self.reddid_messages = []
-        self.order = []
-        for command in REDDID_COMMANDS:
-            setattr(self, "on_" + command, self.on_reddid)
-
-    def on_message(self, message):
-        self.order.append(message.msgtype.decode('ascii'))
-        super().on_message(message)
-
-    def on_reddid(self, message):
-        self.reddid_messages.append((message.msgtype.decode('ascii'), message.payload))
-
-    def take(self):
-        """The ReddID messages received since the last call, after a ping round trip."""
-        self.sync_with_ping()
-        with p2p_lock:
-            messages = self.reddid_messages
-            self.reddid_messages = []
-        return messages
-
-    def commands(self):
-        return [command for command, _ in self.take()]
-
-
-# --- Encoders ---
-
-def i32(v):
-    return struct.pack("<i", v)
-
-
-def i64(v):
-    return struct.pack("<q", v)
-
-
-def u8(v):
-    return struct.pack("<B", v)
-
-
-def key_id(byte):
-    return bytes([byte]) * 20
-
-
-def ser_namespace_info(ns_id, owner, expiration=0, config_hash=bytes(32), last_updated=0):
-    r = ser_string(ns_id.encode()) + owner
-    r += u8(1) + u8(1) + u8(1)  # allowNumbers, allowHyphens, allowUnderscores
-    for v in (3, 32, 365, 30, 10, 70, 15, 5, 3, 7):
-        # minLength, maxLength, renewalPeriod, gracePeriod, namespaceRevenuePct,
-        # burnPct, nodePct, devPct, minAuctionDuration, maxAuctionDuration
-        r += i32(v)
-    r += i32(500)  # minBidIncrement, in hundredths
-    r += config_hash + i64(last_updated) + i64(expiration)
-    return r
-
-
-def ser_namespace_config(now, ns_id, owner, tiers=()):
-    # The hash covers the configuration with the hash itself and the time of
-    # the last update set to zero
-    config_hash = hash256(ser_namespace_info(ns_id, owner))
-    r = i64(now) + ser_namespace_info(ns_id, owner, config_hash=config_hash)
-    r += ser_compact_size(len(tiers))
-    for min_length, min_price in tiers:
-        r += ser_string(ns_id.encode()) + i32(min_length) + i64(min_price)
-    return r
-
-
-def ser_namespace_announce(now, auction_id, ns_id, creator, start, end, reserve):
-    return i64(now) + auction_id + ser_string(ns_id.encode()) + creator + i64(start) + i64(end) + i64(reserve) + u8(0) + bytes(32)
-
-
-def ser_user_announce(now, auction_id, name, ns_id, creator, start, end, reserve):
-    return i64(now) + auction_id + ser_string(name.encode()) + ser_string(ns_id.encode()) + creator + i64(start) + i64(end) + i64(reserve) + u8(0)
-
-
-def ser_bid(timestamp, auction_id, bid_id, bidder, amount, deposit=0):
-    return i64(timestamp) + auction_id + bid_id + bidder + i64(amount) + i64(deposit)
-
-
-def ser_finalize(now, auction_id, bid_id, price, creator):
-    return i64(now) + auction_id + bid_id + i64(price) + creator
-
-
-def ser_profile(redd_id, owner, now, bio=b"bio"):
-    r = ser_string(redd_id.encode()) + owner + ser_string(redd_id.encode()) + bytes(32) + ser_string(bio) + bytes(32)
-    r += ser_string(b"") + ser_string(b"")  # socialData, messagingPubkey
-    r += u8(0)  # verificationStatus
-    r += i64(now) + i64(now) + i64(now + 365 * DAY) + i64(now)  # creation, lastUpdated, expiration, lastActivity
-    r += u8(1) + u8(0)  # active, flags
-    return r
-
-
-def ser_profile_update(now, redd_id, profile):
-    return i64(now) + ser_string(redd_id.encode()) + hash256(profile) + profile
-
-
-def ser_profile_request(now, redd_id):
-    return i64(now) + ser_string(redd_id.encode())
-
-
-def ser_connection(now, from_id, to_id, connection_type):
-    r = i64(now) + ser_string(from_id.encode()) + ser_string(to_id.encode()) + u8(connection_type)
-    r += i64(now) + i64(now) + i32(0) + ser_string(b"") + bytes(32)
-    return r
-
-
-def ser_reputation(now, redd_id, score, last_calculated):
-    r = i64(now) + ser_string(redd_id.encode())
-    for _ in range(6):
-        r += i32(score * 100)
-    r += i64(last_calculated) + bytes(32) + ser_string(b"")
-    return r
-
-
-def user_auction_id(name, ns_id, start):
-    return hash256(ser_string(name.encode()) + ser_string(ns_id.encode()) + i64(start))
 
 
 class ReddIDMessagesTest(BitcoinTestFramework):

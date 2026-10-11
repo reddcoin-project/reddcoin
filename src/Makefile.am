@@ -407,6 +407,7 @@ libbitcoin_server_a_SOURCES = \
   rpc/misc.cpp \
   rpc/net.cpp \
   rpc/rawtransaction.cpp \
+  rpc/reddid.cpp \
   rpc/server.cpp \
   script/sigcache.cpp \
   shutdown.cpp \
@@ -425,6 +426,7 @@ libbitcoin_server_a_SOURCES = \
 
 if ENABLE_WALLET
 libbitcoin_server_a_SOURCES += wallet/init.cpp
+libbitcoin_server_a_SOURCES += wallet/rpcreddid.cpp
 endif
 if !ENABLE_WALLET
 libbitcoin_server_a_SOURCES += dummywallet.cpp

@@ -21,6 +21,12 @@ void RegisterMiningRPCCommands(CRPCTable &tableRPC);
 void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC);
 /** Register raw transaction RPC commands */
 void RegisterSignerRPCCommands(CRPCTable &tableRPC);
+/** Register the ReddID RPC commands that need no wallet */
+void RegisterReddIDRPCCommands(CRPCTable &tableRPC);
+/** Register the ReddID RPC commands that use a wallet. Defined in
+ *  wallet/rpcreddid.cpp, which is only built with a wallet, and called by
+ *  WalletInit::Construct(). */
+void RegisterReddIDWalletRPCCommands(CRPCTable &tableRPC);
 
 static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
 {
@@ -29,6 +35,7 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterMiscRPCCommands(t);
     RegisterMiningRPCCommands(t);
     RegisterRawTransactionRPCCommands(t);
+    RegisterReddIDRPCCommands(t);
 #ifdef ENABLE_EXTERNAL_SIGNER
     RegisterSignerRPCCommands(t);
 #endif // ENABLE_EXTERNAL_SIGNER
