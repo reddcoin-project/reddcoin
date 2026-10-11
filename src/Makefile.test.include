@@ -129,15 +129,19 @@ BITCOIN_TESTS =\
   test/reddid_auction_tx_tests.cpp \
   test/reddid_db_tests.cpp \
   test/reddid_deposit_tests.cpp \
+  test/reddid_expiration_tests.cpp \
   test/reddid_manager_tests.cpp \
+  test/reddid_manager_tx_tests.cpp \
   test/reddid_namespace_tests.cpp \
   test/reddid_opreturn_tests.cpp \
   test/reddid_profile_state_tests.cpp \
   test/reddid_profile_tests.cpp \
+  test/reddid_reorg_tests.cpp \
   test/reddid_reputation_tests.cpp \
   test/reddid_security_p2p_tests.cpp \
   test/reddid_security_tests.cpp \
   test/reddid_settlement_tests.cpp \
+  test/reddid_userid_tests.cpp \
   test/reddid_validation_tests.cpp \
   test/reverselock_tests.cpp \
   test/rpc_tests.cpp \

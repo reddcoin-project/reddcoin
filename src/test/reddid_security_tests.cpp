@@ -196,6 +196,38 @@ BOOST_AUTO_TEST_CASE(opreturn_bid_truncated_data)
     BOOST_CHECK(data.size() < 40);
 }
 
+// ===================================================================
+// 4C: Consensus Safety Tests
+// ===================================================================
+
+// --- ProcessReddIDTransaction with null reddid pointer ---
+BOOST_AUTO_TEST_CASE(process_tx_null_reddid_returns_false)
+{
+    CMutableTransaction mtx;
+    mtx.vin.resize(1);
+    mtx.vin[0].prevout = COutPoint(MakeTestHash(), 0);  // non-null prevout so not coinbase
+    mtx.vout.resize(1);
+    CTransaction tx(mtx);
+
+    BOOST_CHECK(!tx.IsCoinBase());
+    // Null manager should return false, not crash
+    BOOST_CHECK_EQUAL(ProcessReddIDTransaction(tx, 1, nullptr), false);
+}
+
+// --- ProcessReddIDTransaction with coinbase ---
+BOOST_AUTO_TEST_CASE(process_tx_coinbase_returns_true)
+{
+    CMutableTransaction mtx;
+    mtx.vin.resize(1);
+    mtx.vin[0].prevout.SetNull();
+    mtx.vout.resize(1);
+    CTransaction tx(mtx);
+
+    BOOST_CHECK(tx.IsCoinBase());
+    // Coinbase should be skipped (return true), even with null manager
+    BOOST_CHECK_EQUAL(ProcessReddIDTransaction(tx, 1, nullptr), true);
+}
+
 // --- ParseReddIDScript: too-short script ---
 BOOST_AUTO_TEST_CASE(parse_script_too_short)
 {

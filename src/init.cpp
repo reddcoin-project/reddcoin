@@ -176,6 +176,11 @@ void Interrupt(NodeContext& node)
     }
     if (node.stakeman)
         node.stakeman->Interrupt();
+
+    if (node.reddid) {
+        node.reddid->Interrupt();
+    }
+
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Interrupt(); });
     if (g_coin_stats_index) {
         g_coin_stats_index->Interrupt();
@@ -261,6 +266,12 @@ void Shutdown(NodeContext& node)
     }
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Stop(); });
     DestroyAllBlockFilterIndexes();
+
+    // Shutdown ReddID components if initialized
+    if (node.reddid) {
+        node.reddid->Stop();
+        node.reddid.reset();
+    }
 
     // Any future callbacks will be dropped. This should absolutely be safe - if
     // missing a callback results in an unrecoverable situation, unclean shutdown
@@ -1596,6 +1607,17 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!client->load()) {
             return false;
         }
+    }
+
+    // ********************************************************* Step 9.1: Initialize ReddID system
+
+    if (args.GetBoolArg("-reddid", DEFAULT_ENABLE_REDDID)) {
+        node.reddid = std::make_unique<ReddIDManager>(node);
+        if (!node.reddid->Init()) {
+            return InitError(_("Failed to initialize ReddID system"));
+        }
+        nLocalServices = ServiceFlags(nLocalServices | NODE_REDDID);
+        node.reddid->Start();
     }
 
     // ********************************************************* Step 10: data directory maintenance

@@ -65,25 +65,36 @@ struct ReddIDTestingSetup : public RegTestingSetup {
         bool initOk = reddidManager->Init();
         assert(initOk);
 
-        // Temporarily hide the scheduler so Start() doesn't register a
-        // periodic timer that outlives the manager between test cases.
-        // The scheduler thread of the fixture reads m_node.scheduler when it
-        // begins to run, so the pointer is not taken away before the thread
-        // services the queue: a callback that has run there proves it.
+        bool startOk = StartWithoutScheduler(*reddidManager);
+        assert(startOk);
+    }
+
+    /**
+     * Start a manager with the scheduler hidden, so that Start() does not
+     * schedule the periodic task. The task holds a pointer to the manager and
+     * cannot be cancelled, so it must not be given to a scheduler that
+     * outlives the manager or keeps running after the manager was stopped.
+     *
+     * The scheduler thread of the fixture reads m_node.scheduler when it
+     * begins to run, so the pointer is not taken away before the thread
+     * services the queue: a callback that has run there proves it.
+     */
+    bool StartWithoutScheduler(ReddIDManager& manager)
+    {
         SyncWithValidationInterfaceQueue();
         auto savedScheduler = std::move(m_node.scheduler);
-        bool startOk = reddidManager->Start();
+        bool startOk = manager.Start();
         m_node.scheduler = std::move(savedScheduler);
-        assert(startOk);
+        return startOk;
     }
 
     ~ReddIDTestingSetup()
     {
         if (reddidManager) {
-            // Stop() must run while m_running is still true so it executes
-            // full cleanup including UnregisterValidationInterface.
+            // Stop() saves and releases the component managers, unless the
+            // test has interrupted the manager: then Stop() does nothing and
+            // their destructors save them.
             reddidManager->Stop();
-            SyncWithValidationInterfaceQueue();
             reddidManager.reset();
         }
     }

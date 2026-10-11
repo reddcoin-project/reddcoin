@@ -38,6 +38,9 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "id/namespace -> id/reddid -> id/namespace"
     "id/profile -> id/reddid -> id/profile"
     "id/reddid -> id/reddid_db -> id/reddid"
+    # NodeContext owns the ReddIDManager, which takes the chainstate manager
+    # and the scheduler from the NodeContext it is constructed with.
+    "id/reddid -> node/context -> id/reddid"
 )
 
 EXIT_CODE=0

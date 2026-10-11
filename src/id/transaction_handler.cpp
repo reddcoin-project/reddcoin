@@ -13,6 +13,20 @@
 
 #include <vector>
 
+bool ProcessReddIDTransaction(const CTransaction& tx, int nHeight, ReddIDManager* reddid)
+{
+    // Skip coinbase and coinstake transactions
+    if (tx.IsCoinBase() || tx.IsCoinStake()) {
+        return true;
+    }
+
+    if (!reddid) {
+        return false;
+    }
+
+    return reddid->ProcessTransaction(tx, nHeight);
+}
+
 bool ParseReddIDScript(const CScript& script, unsigned char& opCode, std::vector<unsigned char>& data) {
     if (script.size() < 2 || script[0] != OP_RETURN) {
         return false;
@@ -258,4 +272,42 @@ CScript CreateAuctionSettleOpReturn(const uint256& auctionId, const uint256& bid
     CScript script;
     script << OP_RETURN << data;
     return script;
+}
+
+// ReddIDManager's OP_RETURN helpers forward to the free functions above. They
+// are defined here so that id/reddid.cpp does not depend on this file. The
+// leading :: is required: without it each member would call itself.
+
+bool ReddIDManager::ParseReddIDOpReturn(const CScript& script, unsigned char& opCode, std::vector<unsigned char>& data) {
+    return ::ParseReddIDOpReturn(script, opCode, data);
+}
+
+CScript ReddIDManager::CreateNamespaceAuctionOpReturn(const std::string& namespaceId) {
+    return ::CreateNamespaceAuctionOpReturn(namespaceId);
+}
+
+CScript ReddIDManager::CreateUserIDAuctionOpReturn(const std::string& name, const std::string& namespaceId) {
+    return ::CreateUserIDAuctionOpReturn(name, namespaceId);
+}
+
+CScript ReddIDManager::CreateUserIDBidOpReturn(const uint256& auctionId, CAmount bidAmount) {
+    return ::CreateUserIDBidOpReturn(auctionId, bidAmount);
+}
+
+CScript ReddIDManager::CreateProfileUpdateOpReturn(const std::string& reddId, const uint256& profileHash) {
+    return ::CreateProfileUpdateOpReturn(reddId, profileHash);
+}
+
+CScript ReddIDManager::CreateConnectionOpReturn(const std::string& fromReddId, const std::string& toReddId,
+                                               SocialConnectionType type) {
+    return ::CreateConnectionOpReturn(fromReddId, toReddId, type);
+}
+
+CScript ReddIDManager::CreateBidDepositOpReturn(const uint256& auctionId, CAmount bidAmount,
+                                               uint8_t depositVout, const CKeyID& bidderPKH) {
+    return ::CreateBidDepositOpReturn(auctionId, bidAmount, depositVout, bidderPKH);
+}
+
+CScript ReddIDManager::CreateAuctionSettleOpReturn(const uint256& auctionId, const uint256& bidId) {
+    return ::CreateAuctionSettleOpReturn(auctionId, bidId);
 }

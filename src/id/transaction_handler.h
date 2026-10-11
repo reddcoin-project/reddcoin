@@ -16,6 +16,18 @@
 #include <string>
 #include <vector>
 
+class ReddIDManager;
+
+/**
+ * Process a transaction for ReddID operations
+ *
+ * @param tx The transaction to process
+ * @param nHeight The block height
+ * @param reddid The ReddID manager instance
+ * @return True if the transaction was processed, false otherwise
+ */
+bool ProcessReddIDTransaction(const CTransaction& tx, int nHeight, ReddIDManager* reddid);
+
 /**
  * Parse an OP_RETURN script for ReddID operations
  *

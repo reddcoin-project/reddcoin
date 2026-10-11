@@ -23,6 +23,7 @@
 
 // Forward declarations
 class AuctionManager;
+class CBlock;
 class CChainState;
 class NamespaceManager;
 class ProfileManager;
@@ -743,17 +744,59 @@ class ReddIDManager {
 
     CChainState* GetChainState() const { return chainstate; }
 
+    // Expiration operations
+    bool ExpireUserID(const std::string& name, const std::string& namespaceId);
+    void CheckExpiredUserIDs();
+
+    // Block undo operations (reorg safety)
+    bool UndoBlock(const CBlock& block, int nHeight);
+    bool UndoTransaction(const CTransaction& tx, int nHeight);
+
     // Core operations
+    bool ProcessTransaction(const CTransaction& tx, int nHeight);
     bool ValidateReddID(const std::string& reddId);
     bool ValidateNamespace(const std::string& namespaceId);
     bool ValidateUserID(const std::string& name, const std::string& namespaceId);
 
+    // User ID operations
+    bool CreateUserIDAuction(const std::string& name, const std::string& namespaceId,
+                           const CKeyID& creator, CAmount reservePrice, int durationDays,
+                           AuctionType type, uint256& auctionId);
+    bool FinalizeUserIDAuction(const uint256& auctionId);
+    bool CancelUserIDAuction(const uint256& auctionId, const CKeyID& creator);
+    bool TransferUserID(const std::string& name, const std::string& namespaceId,
+                       const CKeyID& from, const CKeyID& to);
+    bool RenewUserID(const std::string& name, const std::string& namespaceId, const CKeyID& owner);
+
     // ReddID profile operations
     bool CalculateReputation(const std::string& reddId, ReddIDReputation& result);
+
+    // Getters
+    bool GetUserIDInfo(const std::string& name, const std::string& namespaceId, UserIDInfo& result);
+
+    // Auction discovery
+    std::vector<BidInfo> GetAuctionBids(const uint256& auctionId);
 
     // Validation helper functions
     CAmount CalculateMinPriceForNamespace(const std::string& namespaceId);
     CAmount CalculateMinPriceForUserID(const std::string& name, const std::string& namespaceId);
+    CAmount CalculateRenewalFee(const std::string& name, const std::string& namespaceId);
+
+    // OP_RETURN helpers. These forward to the free functions of the same
+    // names and are defined in id/transaction_handler.cpp.
+    bool ParseReddIDOpReturn(const CScript& script, unsigned char& opCode,
+                           std::vector<unsigned char>& data);
+    CScript CreateNamespaceAuctionOpReturn(const std::string& namespaceId);
+    CScript CreateUserIDAuctionOpReturn(const std::string& name,
+                                      const std::string& namespaceId);
+    CScript CreateUserIDBidOpReturn(const uint256& auctionId, CAmount bidAmount);
+    CScript CreateProfileUpdateOpReturn(const std::string& reddId, const uint256& profileHash);
+    CScript CreateConnectionOpReturn(const std::string& fromReddId,
+                                   const std::string& toReddId,
+                                   SocialConnectionType type);
+    CScript CreateBidDepositOpReturn(const uint256& auctionId, CAmount bidAmount,
+                                    uint8_t depositVout, const CKeyID& bidderPKH);
+    CScript CreateAuctionSettleOpReturn(const uint256& auctionId, const uint256& bidId);
 };
 
 #endif // BITCOIN_ID_REDDID_H
