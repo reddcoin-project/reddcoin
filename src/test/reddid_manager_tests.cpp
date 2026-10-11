@@ -10,6 +10,7 @@
 #include <id/profile.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 #include <id/transaction_handler.h>
 #include <key.h>
 #include <primitives/transaction.h>
@@ -204,11 +205,77 @@ BOOST_AUTO_TEST_CASE(manager_uses_active_chainstate)
     BOOST_CHECK(reddidManager->GetChainState() == &m_node.chainman->ActiveChainstate());
 }
 
-BOOST_AUTO_TEST_CASE(no_p2p_manager_yet)
+BOOST_AUTO_TEST_CASE(manager_creates_and_starts_the_p2p_manager)
 {
-    BOOST_CHECK(reddidManager->GetP2PManager() == nullptr);
-    BOOST_CHECK(reddidManager->GetNamespaceManager()->GetP2P() == nullptr);
-    BOOST_CHECK(reddidManager->GetAuctionManager()->GetP2P() == nullptr);
+    ReddIDP2PManager* p2p = reddidManager->GetP2PManager();
+    BOOST_REQUIRE(p2p != nullptr);
+    BOOST_CHECK(p2p->IsInitialized());
+    BOOST_CHECK(p2p->IsRunning());
+    // The component managers announce through it
+    BOOST_CHECK(reddidManager->GetNamespaceManager()->GetP2P() == p2p);
+    BOOST_CHECK(reddidManager->GetAuctionManager()->GetP2P() == p2p);
+}
+
+// In the shutdown of a node Interrupt() is followed by a Stop() that does
+// nothing, so the P2P manager is still there, interrupted, when the manager
+// is destroyed. It is the member that is destroyed first, before the
+// component managers that hold a pointer to it and that save their state from
+// their destructors.
+BOOST_AUTO_TEST_CASE(interrupt_stops_the_p2p_manager_and_keeps_it)
+{
+    ReddIDP2PManager* p2p = reddidManager->GetP2PManager();
+    BOOST_REQUIRE(p2p != nullptr);
+
+    reddidManager->Interrupt();
+    BOOST_CHECK(reddidManager->GetP2PManager() == p2p);
+    BOOST_CHECK(!p2p->IsRunning());
+    BOOST_CHECK(p2p->IsInitialized());
+
+    BOOST_CHECK(reddidManager->Stop());
+    BOOST_CHECK(reddidManager->GetP2PManager() == p2p);
+    BOOST_CHECK(p2p->IsInitialized());
+
+    // The component managers still work, and announce nothing
+    NamespaceInfo config;
+    config.id = "late";
+    config.owner = MakeKeyID();
+    BOOST_CHECK(reddidManager->GetNamespaceManager()->CreateNamespace(config));
+
+    // What the node does next: the manager is destroyed without Stop()
+    // having stopped anything, and the component managers save themselves
+    reddidManager.reset();
+}
+
+// A node whose connection manager does not exist when the manager starts:
+// the handlers are not registered, which is logged and is not an error, and
+// nothing is relayed.
+BOOST_AUTO_TEST_CASE(manager_starts_without_a_connection_manager)
+{
+    BOOST_REQUIRE(reddidManager->Stop());
+    auto savedConnman = std::move(m_node.connman);
+    {
+        ASSERT_DEBUG_LOG("Warning: Failed to register ReddID message handlers");
+        BOOST_REQUIRE(reddidManager->Init());
+        BOOST_REQUIRE(StartWithoutScheduler(*reddidManager));
+    }
+    BOOST_REQUIRE(reddidManager->GetP2PManager() != nullptr);
+    BOOST_CHECK(reddidManager->GetP2PManager()->IsRunning());
+
+    CKeyID owner = MakeKeyID();
+    CreateTestNamespace("nonet", owner);
+    AuctionInfo auction;
+    auction.name = "alice";
+    auction.namespaceId = "nonet";
+    auction.creator = owner;
+    auction.reservePrice = 5000 * COIN;
+    auction.startTime = GetTime();
+    auction.endTime = auction.startTime + 7 * 24 * 60 * 60;
+    uint256 auctionId;
+    {
+        ASSERT_DEBUG_LOG("Cannot relay message: node or connman not available");
+        BOOST_CHECK(reddidManager->GetAuctionManager()->CreateAuction(auction, auctionId));
+    }
+    m_node.connman = std::move(savedConnman);
 }
 
 BOOST_AUTO_TEST_CASE(init_and_start_are_idempotent)
@@ -287,6 +354,7 @@ BOOST_AUTO_TEST_CASE(stop_releases_components)
     BOOST_CHECK(reddidManager->GetNamespaceManager() == nullptr);
     BOOST_CHECK(reddidManager->GetAuctionManager() == nullptr);
     BOOST_CHECK(reddidManager->GetProfileManager() == nullptr);
+    BOOST_CHECK(reddidManager->GetP2PManager() == nullptr);
     BOOST_CHECK(reddidManager->GetReddIDDB() == nullptr);
 
     // A second Stop() is a no-op

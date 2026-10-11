@@ -47,6 +47,16 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "id/auction -> validation -> id/auction"
     "id/reddid -> validation -> id/reddid"
     "id/reddid -> validation -> id/transaction_handler -> id/reddid"
+    # The ReddID P2P manager reads and changes the state of the component
+    # managers, which announce through it, and ReddIDManager owns it.
+    "id/auction -> id/reddid_p2p -> id/auction"
+    "id/namespace -> id/reddid_p2p -> id/namespace"
+    "id/profile -> id/reddid_p2p -> id/profile"
+    "id/reddid -> id/reddid_p2p -> id/reddid"
+    # PeerManager reaches the ReddIDManager through the NodeContext, which
+    # owns the PeerManager.
+    "net_processing -> node/context -> net_processing"
+    "net_processing -> node/context -> staker -> net_processing"
 )
 
 EXIT_CODE=0

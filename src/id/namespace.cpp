@@ -4,6 +4,7 @@
 
 #include <id/namespace.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 
 #include <crypto/common.h>
 #include <hash.h>
@@ -341,6 +342,20 @@ bool NamespaceManager::UpdateNamespace(const NamespaceInfo& namespaceInfo) {
         return false;
     }
 
+    // Announce update via P2P if available
+    if (reddidP2P != nullptr) {
+        try {
+            // Send namespace config update
+            if (!reddidP2P->SendNamespaceConfig(nullptr, nsInfo.id)) {
+                LogPrintf("WARNING: NamespaceManager::UpdateNamespace: Failed to announce namespace update: %s\n", nsInfo.id);
+                // Don't fail the operation on P2P failure
+            }
+        } catch (const std::exception& e) {
+            LogPrintf("WARNING: NamespaceManager::UpdateNamespace: Exception in P2P announcement: %s\n", e.what());
+            // Don't fail the operation on P2P failure
+        }
+    }
+
     LogPrint(BCLog::REDDID, "Updated namespace: %s\n", nsInfo.id);
     return true;
 }
@@ -543,6 +558,13 @@ bool NamespaceManager::CreateNamespaceAuction(const std::string& namespaceId, co
         return false;
     }
 
+    // Announce auction via P2P
+    if (reddidP2P != nullptr) {
+        reddidP2P->AnnounceNamespaceAuction(auction);
+    } else {
+        LogPrintf("Warning: P2P manager not available, auction will not be announced\n");
+    }
+
     return true;
 }
 
@@ -623,6 +645,13 @@ bool NamespaceManager::BidOnNamespaceAuction(const uint256& auctionId, const CKe
 
     if (!reddidDB->WriteAuction(auctionId, auction)) {
         return false;
+    }
+
+    // Announce bid via P2P
+    if (reddidP2P != nullptr) {
+        reddidP2P->AnnounceNamespaceBid(bid);
+    } else {
+        LogPrintf("Warning: P2P manager not available, auction will not be announced\n");
     }
 
     return true;
@@ -785,6 +814,13 @@ bool NamespaceManager::CancelNamespaceAuction(const uint256& auctionId, const CK
     // Mark auction as canceled
     auction.state = AUCTION_CANCELED;
     reddidDB->WriteAuction(auctionId, auction);
+
+    // Announce cancellation via P2P
+    if (reddidP2P != nullptr) {
+        reddidP2P->AnnounceNamespaceCancel(auctionId);
+    } else {
+        LogPrintf("Warning: P2P manager not available, auction will not be announced\n");
+    }
 
     return true;
 }

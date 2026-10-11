@@ -5,6 +5,7 @@
 #include <id/profile.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 
 #include <hash.h>
 #include <key.h>
@@ -321,6 +322,9 @@ bool ProfileManager::UpdateProfile(const ReddIDProfile& profile) {
     if (!reddidDB->WriteProfile(profile.reddId, profile)) {
         return false;
     }
+
+    // Announce via P2P
+    reddidP2P->AnnounceProfileUpdate(profile.reddId, profile);
 
     return true;
 }

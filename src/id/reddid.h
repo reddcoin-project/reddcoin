@@ -721,6 +721,7 @@ class ReddIDManager {
     std::unique_ptr<NamespaceManager> namespaceManager;
     std::unique_ptr<AuctionManager> auctionManager;
     std::unique_ptr<ProfileManager> profileManager;
+    std::unique_ptr<ReddIDP2PManager> p2pManager;
 
  public:
     ReddIDManager(NodeContext& nodeIn);
@@ -739,8 +740,7 @@ class ReddIDManager {
     NamespaceManager* GetNamespaceManager() const { return namespaceManager.get(); }
     AuctionManager* GetAuctionManager() const { return auctionManager.get(); }
     ProfileManager* GetProfileManager() const { return profileManager.get(); }
-    // There is no P2P manager yet, so the component managers are handed a null pointer
-    ReddIDP2PManager* GetP2PManager() const { return nullptr; }
+    ReddIDP2PManager* GetP2PManager() const { return p2pManager.get(); }
 
     CChainState* GetChainState() const { return chainstate; }
 

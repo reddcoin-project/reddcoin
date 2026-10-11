@@ -6,6 +6,7 @@
 #include <id/namespace.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 
 #include <chain.h>
 #include <coins.h>
@@ -324,6 +325,17 @@ bool AuctionManager::CreateAuction(AuctionInfo& auction, uint256& auctionId) {
             return false;
         }
 
+        // Announce via P2P
+        if (reddidP2P) {
+            if (auction.name.empty()) {
+                // Namespace auction
+                reddidP2P->AnnounceNamespaceAuction(auction);
+            } else {
+                // User ID auction
+                reddidP2P->AnnounceUserIDAuction(auction);
+            }
+        }
+
         LogPrint(BCLog::REDDID, "Successfully created auction %s for %s.%s\n",
                 auctionId.ToString(), auction.name, auction.namespaceId);
         return true;
@@ -447,6 +459,17 @@ bool AuctionManager::PlaceBid(const uint256& auctionId, const CKeyID& bidder, CA
             }
             LogPrintf("Error: AuctionManager::PlaceBid: Failed to update auction in database\n");
             return false;
+        }
+
+        // Announce bid via P2P
+        if (reddidP2P) {
+            if (auction.name.empty()) {
+                // Namespace auction
+                reddidP2P->AnnounceNamespaceBid(bid);
+            } else {
+                // User ID auction
+                reddidP2P->AnnounceUserIDBid(bid);
+            }
         }
 
         LogPrint(BCLog::REDDID, "Successfully placed bid %s on auction %s: %s RDD\n",
@@ -649,6 +672,17 @@ bool AuctionManager::CancelAuction(const uint256& auctionId, const CKeyID& creat
             return false;
         }
 
+        // Announce cancellation via P2P
+        if (reddidP2P) {
+            if (auction.name.empty()) {
+                // Namespace auction
+                reddidP2P->AnnounceNamespaceCancel(auctionId);
+            } else {
+                // User ID auction
+                reddidP2P->AnnounceUserIDCancel(auctionId);
+            }
+        }
+
         LogPrint(BCLog::REDDID, "Successfully canceled auction %s\n", auctionId.ToString());
         return true;
     } catch (const std::exception& e) {
@@ -705,6 +739,21 @@ bool AuctionManager::ProcessExpiredAuctions(int64_t currentTime) {
             if (!UpdateAuctionState(auctionId, AUCTION_CANCELED)) {
                 LogPrintf("Error: Failed to cancel expired pending auction: %s\n", auctionId.ToString());
                 continue;
+            }
+
+            // Announce cancellation via P2P if appropriate
+            if (reddidP2P) {
+                auto it = auctions.find(auctionId);
+                if (it != auctions.end()) {
+                    const AuctionInfo& auction = it->second;
+                    if (auction.name.empty()) {
+                        // Namespace auction
+                        reddidP2P->AnnounceNamespaceCancel(auctionId);
+                    } else {
+                        // User ID auction
+                        reddidP2P->AnnounceUserIDCancel(auctionId);
+                    }
+                }
             }
         }
 

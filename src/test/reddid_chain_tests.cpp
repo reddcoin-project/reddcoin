@@ -17,6 +17,7 @@
 #include <id/profile.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 #include <id/transaction_handler.h>
 #include <key.h>
 #include <miner.h>
@@ -30,6 +31,7 @@
 #include <streams.h>
 #include <sync.h>
 #include <test/reddid_auction_test_util.h>
+#include <test/reddid_p2p_test_util.h>
 #include <test/reddid_profile_test_util.h>
 #include <test/util/logging.h>
 #include <test/util/setup_common.h>
@@ -54,18 +56,6 @@
 using namespace reddid_test;
 
 namespace {
-/** Counts the log lines that contain the message during the lifetime of the object. */
-struct LogCounter {
-    int count{0};
-    DebugLogHelper helper;
-
-    explicit LogCounter(const std::string& message)
-        : helper(message, [this](const std::string* line) {
-              if (line) ++count;
-              return false;
-          }) {}
-};
-
 /** 'R' + OP_NAMESPACE_AUCTION_BID + auction ID + amount */
 CScript NamespaceBidRecord(const uint256& auctionId, CAmount amount)
 {
@@ -1278,6 +1268,74 @@ BOOST_AUTO_TEST_CASE(mempool_accepts_a_spend_of_a_forfeited_deposit)
     BOOST_REQUIRE(aMgr->SetAuctionConfig(config));
     CMutableTransaction withRecord = SpendDeposit(s.winner, RecordScript(OP_DEPOSIT_FORFEIT, s.auctionId, s.winningBidId));
     BOOST_CHECK(ToMempool(withRecord));
+}
+
+// A block is applied with cs_main and the lock of the mempool held, and the
+// auction manager announces a bid that it places. The announcement takes the
+// lock of the peer list and the send lock of each peer under those two.
+BOOST_AUTO_TEST_CASE(applying_a_block_announces_to_subscribed_peers)
+{
+    ReddIDP2PManager* p2p = reddidManager->GetP2PManager();
+    BOOST_REQUIRE(p2p != nullptr);
+    BOOST_CHECK(aMgr->GetP2P() == p2p);
+    ConnmanTestMsg& connman = static_cast<ConnmanTestMsg&>(*m_node.connman);
+    uint256 auctionId = NewAuction("erin");
+
+    // The connection manager of the fixture does not advertise NODE_REDDID,
+    // as that of a node without -reddid: nothing is relayed
+    {
+        LogCounter refused("Not relaying ReddID messages - service not enabled");
+        DepositBid bid = MakeDepositBid(auctionId, alice, 6000 * COIN);
+        Stake({bid.tx});
+        BOOST_CHECK(aMgr->IsDepositLocked(bid.utxo));
+        BOOST_CHECK_EQUAL(refused.count, 1);
+    }
+
+    // It advertises the service and has no peers: the bid goes to no one
+    SetLocalServices(connman, m_node.peerman.get(), REDDID_PEER_SERVICES);
+    {
+        LogCounter relayed("Relayed uidaucbid message to 0 nodes");
+        DepositBid bid = MakeDepositBid(auctionId, bob, 7000 * COIN);
+        Stake({bid.tx});
+        BOOST_CHECK(aMgr->IsDepositLocked(bid.utxo));
+        BOOST_CHECK_EQUAL(relayed.count, 1);
+    }
+
+    // With a subscribed peer and one that is not subscribed
+    CNode* subscribed = NewTestPeer(0);
+    CNode* stranger = NewTestPeer(1);
+    connman.AddTestNode(*subscribed);
+    connman.AddTestNode(*stranger);
+    p2p->SubscribeNode(subscribed->GetId());
+    {
+        LogCounter relayed("Relayed uidaucbid message to 1 nodes");
+        DepositBid bid = MakeDepositBid(auctionId, carol, 8000 * COIN);
+        Stake({bid.tx});
+        BOOST_CHECK(aMgr->IsDepositLocked(bid.utxo));
+        BOOST_CHECK_EQUAL(relayed.count, 1);
+
+        const std::vector<SentMessage> sent = SentMessages(*subscribed);
+        BOOST_REQUIRE_EQUAL(sent.size(), 1U);
+        BOOST_CHECK_EQUAL(sent[0].command, "uidaucbid");
+        const CAuctionBid msg = Decode<CAuctionBid>(sent[0]);
+        BOOST_CHECK(msg.auctionId == auctionId);
+        BOOST_CHECK(msg.bidder == carol);
+        BOOST_CHECK_EQUAL(msg.bidAmount, 8000 * COIN);
+        BOOST_CHECK(msg.bidId == BidOf(auctionId, carol).bidId);
+        BOOST_CHECK(SentMessages(*stranger).empty());
+    }
+
+    // Disconnecting the block announces nothing: a peer that applied the bid
+    // on the strength of the message is not told that it is gone
+    ClearSent(*subscribed);
+    const int height = Height();
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, IndexAt(height)));
+    BOOST_REQUIRE_EQUAL(Height(), height - 1);
+    BOOST_CHECK_EQUAL(Bids(auctionId).size(), 2U);
+    BOOST_CHECK(SentMessages(*subscribed).empty());
+
+    connman.ClearTestNodes();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

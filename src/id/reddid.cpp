@@ -7,6 +7,7 @@
 #include <id/auction.h>
 #include <id/profile.h>
 #include <id/reddid_db.h>
+#include <id/reddid_p2p.h>
 
 #include <logging.h>
 #include <node/context.h>
@@ -66,6 +67,7 @@ bool ReddIDManager::Init() {
         namespaceManager = std::make_unique<NamespaceManager>(*this);
         auctionManager = std::make_unique<AuctionManager>(*this);
         profileManager = std::make_unique<ProfileManager>(*this);
+        p2pManager = std::make_unique<ReddIDP2PManager>(*node);
 
         // Initialize chainstate reference
         if (node && node->chainman) {
@@ -79,6 +81,11 @@ bool ReddIDManager::Init() {
         // Initialize mmanagers in order
         if (!namespaceManager->Init(this)) {
             LogPrintf("Warning: Failed to load namespace data\n");
+        }
+
+        if (!p2pManager->Init(this)) {
+            LogPrintf("Failed to initialize ReddID P2P manager\n");
+            return false;
         }
 
         if (!auctionManager->Init(this)) {
@@ -131,6 +138,18 @@ bool ReddIDManager::Start() {
         return false;
     }
 
+    // Start P2P manager
+    if (!p2pManager->Start()) {
+        LogPrintf("Error: Failed to start ReddID P2P manager\n");
+        return false;
+    }
+
+    // Register message handlers
+    if (!p2pManager->RegisterMessageHandlers()) {
+        LogPrintf("Warning: Failed to register ReddID message handlers\n");
+        // Continue anyway, as some functionality may still work
+    }
+
     // Schedule periodic tasks
     if (node && node->scheduler) {
         node->scheduler->scheduleEvery([this]() {
@@ -169,6 +188,10 @@ void ReddIDManager::Interrupt() {
     if (auctionManager) auctionManager->Interrupt();
     if (profileManager) profileManager->Interrupt();
 
+    if (p2pManager) {
+        p2pManager->Interrupt();
+    }
+
     // Flag as not running, but don't clean up yet
     m_running = false;
 }
@@ -179,6 +202,11 @@ bool ReddIDManager::Stop() {
     }
 
     LogPrintf("Stopping ReddID manager\n");
+
+    // Stop P2P manager
+    if (p2pManager) {
+        p2pManager->Stop();
+    }
 
     // Save data
     if (namespaceManager) {
@@ -194,6 +222,7 @@ bool ReddIDManager::Stop() {
     }
 
     // Clear member pointers
+    p2pManager.reset();
     profileManager.reset();
     auctionManager.reset();
     namespaceManager.reset();

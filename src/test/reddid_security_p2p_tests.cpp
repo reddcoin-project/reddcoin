@@ -6,6 +6,7 @@
 
 #include <id/namespace.h>
 #include <id/reddid.h>
+#include <id/reddid_p2p.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/reddid_test_fixture.h>
@@ -27,6 +28,33 @@ static CScript MakeReddIDScript(unsigned char opCode, const std::vector<unsigned
 }
 
 BOOST_FIXTURE_TEST_SUITE(reddid_security_p2p_tests, ReddIDTestingSetup)
+
+// --- CNamespaceConfig with > MAX_PRICING_TIERS ---
+BOOST_AUTO_TEST_CASE(namespace_config_oversized_pricing_tiers)
+{
+    // Build a CNamespaceConfig with too many pricing tiers
+    CNamespaceConfig config;
+    config.config.id = "test";
+    config.config.owner = MakeKeyID();
+    config.config.minLength = 3;
+    config.config.maxLength = 32;
+    config.config.renewalPeriod = 365;
+    config.config.gracePeriod = 30;
+    config.config.namespaceRevenuePct = 10;
+    config.config.burnPct = 70;
+    config.config.nodePct = 15;
+    config.config.devPct = 5;
+
+    // Fill with MAX_PRICING_TIERS + 1 tiers
+    for (size_t i = 0; i <= MAX_PRICING_TIERS; ++i) {
+        PricingTier tier;
+        tier.minLength = i + 1;
+        tier.minPrice = (i + 1) * COIN;
+        config.pricingTiers.push_back(tier);
+    }
+
+    BOOST_CHECK(config.pricingTiers.size() > MAX_PRICING_TIERS);
+}
 
 // --- Namespace ID exceeding MAX_NAMESPACE_LENGTH in P2P ---
 BOOST_AUTO_TEST_CASE(p2p_oversized_namespace_id)
