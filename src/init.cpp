@@ -269,6 +269,10 @@ void Shutdown(NodeContext& node)
 
     // Shutdown ReddID components if initialized
     if (node.reddid) {
+        if (node.chainman) {
+            LOCK(cs_main);
+            node.chainman->ActiveChainstate().SetReddIDManager(nullptr);
+        }
         node.reddid->Stop();
         node.reddid.reset();
     }
@@ -1618,6 +1622,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
         nLocalServices = ServiceFlags(nLocalServices | NODE_REDDID);
         node.reddid->Start();
+        WITH_LOCK(cs_main, chainman.ActiveChainstate().SetReddIDManager(node.reddid.get()));
     }
 
     // ********************************************************* Step 10: data directory maintenance

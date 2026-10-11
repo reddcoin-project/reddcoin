@@ -94,8 +94,10 @@ class AuctionManager {
     // Transaction processing
     bool ProcessTransaction(const CTransaction& tx, int nHeight);
     bool UndoTransaction(const CTransaction& tx, int nHeight);
-    // Reads the UTXO set through CoinsTip() without holding cs_main. Exempt
-    // from the thread safety analysis until the locking is addressed.
+    // Reads the UTXO set through CoinsTip(). The node gets here with cs_main
+    // held, from CChainState::ConnectTip; unit tests call ProcessTransaction
+    // without it, so the lock cannot be required of the callers and the
+    // function is exempt from the thread safety analysis.
     bool GetTransactionSender(const CTransaction& tx, CKeyID& sender) NO_THREAD_SAFETY_ANALYSIS;
 
     // Database operations

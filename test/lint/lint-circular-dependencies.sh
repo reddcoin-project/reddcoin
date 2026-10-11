@@ -41,6 +41,12 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     # NodeContext owns the ReddIDManager, which takes the chainstate manager
     # and the scheduler from the NodeContext it is constructed with.
     "id/reddid -> node/context -> id/reddid"
+    # Validation applies and undoes ReddID records at the chain tip and asks
+    # the auction manager about deposit locks when a transaction enters the
+    # mempool; the ReddID managers read the chain and the UTXO set.
+    "id/auction -> validation -> id/auction"
+    "id/reddid -> validation -> id/reddid"
+    "id/reddid -> validation -> id/transaction_handler -> id/reddid"
 )
 
 EXIT_CODE=0

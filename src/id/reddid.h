@@ -748,6 +748,10 @@ class ReddIDManager {
     bool ExpireUserID(const std::string& name, const std::string& namespaceId);
     void CheckExpiredUserIDs();
 
+    // The node calls ProcessTransaction and UndoBlock with cs_main held, from
+    // CChainState::ConnectTip and CChainState::DisconnectTip. They are not
+    // annotated as requiring the lock, because unit tests call them without it.
+
     // Block undo operations (reorg safety)
     bool UndoBlock(const CBlock& block, int nHeight);
     bool UndoTransaction(const CTransaction& tx, int nHeight);

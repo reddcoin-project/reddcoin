@@ -150,13 +150,18 @@ class ManualScheduler {
         m_node.scheduler = std::move(m_saved);
     }
 
-    void RunTasksDueWithin(std::chrono::seconds delta) {
+    /** Returns a future that is ready when the tasks that became due have run. */
+    std::future<void> StartTasksDueWithin(std::chrono::seconds delta) {
         m_node.scheduler->MockForward(delta);
         // Tasks run one at a time in the order of their times, so this one
         // runs after every task that the line above made due.
-        std::promise<void> done;
-        m_node.scheduler->scheduleFromNow([&done] { done.set_value(); }, std::chrono::milliseconds{0});
-        done.get_future().wait();
+        auto done = std::make_shared<std::promise<void>>();
+        m_node.scheduler->scheduleFromNow([done] { done->set_value(); }, std::chrono::milliseconds{0});
+        return done->get_future();
+    }
+
+    void RunTasksDueWithin(std::chrono::seconds delta) {
+        StartTasksDueWithin(delta).wait();
     }
 };
 } // namespace
@@ -582,8 +587,8 @@ BOOST_AUTO_TEST_CASE(auction_manager_is_given_the_active_chainstate)
 // Start() gives the scheduler of the node a task that runs every minute and
 // calls AuctionManager::CheckExpiredAuctions, NamespaceManager::
 // CheckExpiredNamespaces, ReddIDManager::CheckExpiredUserIDs and
-// ProfileManager::CheckExpiredProfiles, in that order. The task holds a
-// pointer to the manager and is never cancelled.
+// ProfileManager::CheckExpiredProfiles, in that order, with cs_main held. The
+// task holds a pointer to the manager and is never cancelled.
 // ===================================================================
 
 BOOST_AUTO_TEST_CASE(start_schedules_one_periodic_task)
@@ -770,6 +775,33 @@ BOOST_FIXTURE_TEST_CASE(periodic_task_finalizes_an_auction_with_deposits_without
     // The finalize record of the creator, which would have begun the settlement, comes too late
     BOOST_CHECK(reddidManager->ProcessTransaction(CTransaction(TxFrom(creator, RecordScript(OP_AUCTION_FINALIZE, auctionId))), 1));
     BOOST_CHECK_EQUAL(GetAuction(aMgr, auctionId).state, AUCTION_FINALIZED);
+}
+
+// The task changes state that block connection and mempool acceptance read
+// and change with cs_main held, so it takes cs_main for each run: while this
+// thread holds the lock the task that is due does not run.
+BOOST_FIXTURE_TEST_CASE(periodic_task_runs_with_cs_main_held, AuctionTestingSetup)
+{
+    ManualScheduler scheduler(m_node);
+    BOOST_REQUIRE(reddidManager->Stop());
+    BOOST_REQUIRE(reddidManager->Init());
+    BOOST_REQUIRE(reddidManager->Start());
+    ProfileManager* pMgr = reddidManager->GetProfileManager();
+    ReddIDProfile eve = TestProfile("eve", MakeKeyID());
+    eve.expirationTime = T0 + DAY;
+    BOOST_REQUIRE(pMgr->CreateProfile(eve));
+    SetMockTime(T0 + 2 * DAY);
+
+    std::future<void> ran;
+    {
+        LOCK(cs_main);
+        ran = scheduler.StartTasksDueWithin(std::chrono::seconds{60});
+        // Without the lock in the task this wait would end at once
+        BOOST_CHECK(ran.wait_for(std::chrono::milliseconds{300}) == std::future_status::timeout);
+        BOOST_CHECK(pMgr->IsProfileActive("eve"));
+    }
+    ran.wait();
+    BOOST_CHECK(!pMgr->IsProfileActive("eve"));
 }
 
 // ===================================================================

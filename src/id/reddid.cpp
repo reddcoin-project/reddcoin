@@ -134,6 +134,10 @@ bool ReddIDManager::Start() {
     // Schedule periodic tasks
     if (node && node->scheduler) {
         node->scheduler->scheduleEvery([this]() {
+            // The task changes the state that the validation code reads and
+            // changes when blocks are connected and disconnected and when
+            // transactions enter the mempool, all with cs_main held.
+            LOCK(cs_main);
             // Check for expired auctions
             auctionManager->CheckExpiredAuctions();
             // Check for expired namespaces (cascades to user IDs)
