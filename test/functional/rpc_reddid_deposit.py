@@ -6,11 +6,14 @@
 
 reddidplacebid, reddidfinalizeauction and reddidsettleauction are the commands
 that build transactions. The records in those transactions take effect when a
-block connects them, on every node that knows the auction.
+block connects them, on every node that knows the auction. The test checks
+what each command puts into its transaction, since the node reads the records
+by position: the deposit of a bid by its index among the outputs, and the
+sender of a transaction from its first input.
 
 One node runs ReddID with three wallets: the default wallet, which also stakes
 the blocks, and a second wallet bid, and a third creates the auctions. The test
-follows three auctions:
+follows these auctions:
 
 - dave: two bids with deposits, the locks on the deposits, the finalization
   that starts the settlement, the settlement by reddidsettleauction within
@@ -18,11 +21,14 @@ follows three auctions:
   the settlement.
 - erin: one bid, a reorganization across the bid, a winner that does not
   settle, and the default record after the window.
-- frank: one bid, and a finalization that the creator key did not pay for.
+- frank: one bid, a creator key with no coin, and a finalization that the
+  creator key did not pay for.
+- grace, heidi, ivan and judy: many bids in a row, none of which is lost.
 
-Much of this does not work through the commands. Every such step is asserted
-as it is, under a comment that starts with SUSPECTED BUG, and the test then
-does by hand what the command should have done so that it can go on.
+What still looks wrong is asserted as it is, under a comment that starts with
+SUSPECTED BUG. Where a command now refuses what the node would ignore, the
+test sends the record in a transaction that it builds by hand, to show that
+the node does ignore it.
 """
 
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
@@ -45,6 +51,7 @@ from test_framework.util import (
 )
 
 NO_LOCK = "Deposit lock not found for specified UTXO"
+NOT_CREATOR = "The key of the creator of this auction does not belong to this wallet"
 NO_SENDER = "The wallet has no confirmed coin at a legacy address, which a bid needs as its first input"
 WINDOW = 3
 
@@ -158,30 +165,45 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_equal(signed['complete'], True)
         return signed['hex']
 
-    def create_auction(self, name):
+    def raw_record(self, wallet, payload):
+        """Send a ReddID record in a transaction that the wallet funds from any of its coins, and return its ID."""
+        raw = wallet.createrawtransaction([], [{"data": payload}])
+        return self.nodes[0].sendrawtransaction(wallet.signrawtransactionwithwallet(wallet.fundrawtransaction(raw)['hex'])['hex'])
+
+    def create_auction(self, name, fund=True):
         """A three day auction that the third wallet creates, with a coin for its creator key."""
         auction = self.creator.createuseridauction(name, "redd", 10000, 3)
-        # SUSPECTED BUG: the finalization of an auction is accepted from its
-        # creator only, and the creator is a key that createuseridauction took
-        # from the wallet. The finalization counts only if the first input of
-        # its transaction is a coin of that key, so the key needs a coin, and
-        # it must be the only coin that the wallet can choose.
-        self.staker.sendtoaddress(auction['creator_address'], 10)
-        self.mine()
         self.creator_address[auction['auction_id']] = auction['creator_address']
+        # SUSPECTED BUG: the finalization of an auction is accepted from its
+        # creator only, and the node takes the creator to be the key of the
+        # first input of the transaction. The creator is a key that
+        # createuseridauction took from the wallet: it has to be sent a coin,
+        # and the coin has to confirm, before the auction can be finalized.
+        if fund:
+            self.staker.sendtoaddress(auction['creator_address'], 10)
+            self.mine()
         return auction['auction_id']
 
-    def finalize_as_creator(self, auction_id):
-        """reddidfinalizeauction from the third wallet, which can only choose the coin of the creator key."""
-        others = [{"txid": coin['txid'], "vout": coin['vout']} for coin in self.creator.listunspent() if coin['address'] != self.creator_address[auction_id]]
-        if others:
-            self.creator.lockunspent(False, others)
+    def finalize(self, auction_id):
+        """reddidfinalizeauction from the wallet of the creator. Checks the transaction that it built."""
+        node = self.nodes[0]
+        address = self.creator_address[auction_id]
         result = self.creator.reddidfinalizeauction(auction_id)
-        if others:
-            self.creator.lockunspent(True, others)
-        assert_equal(result['auction_id'], auction_id)
-        assert_equal(result['state'], "settlement")
-        return result
+        txid = result.pop('txid')
+        # The command reports the state that the auction has: nothing
+        # happens to it before a block connects the transaction
+        assert_equal(result, {"auction_id": auction_id, "state": "active"})
+        assert_equal(node.getuserauctioninfo(auction_id)['state'], 1)
+        assert txid in node.getrawmempool()
+        tx = node.getrawtransaction(txid, True)
+        # The first input is a confirmed coin of the creator key, though the
+        # wallet has larger coins, and the change returns to its address
+        spent = self.creator.gettransaction(tx['vin'][0]['txid'], True, True)
+        assert spent['confirmations'] > 0
+        assert_equal(spent['decoded']['vout'][tx['vin'][0]['vout']]['scriptPubKey']['address'], address)
+        assert_equal(tx['vout'][0]['scriptPubKey']['hex'], "6a22" + (b'R"' + bytes.fromhex(auction_id)[::-1]).hex())
+        assert_equal([out['scriptPubKey']['address'] for out in tx['vout'][1:]], [address])
+        return txid
 
     def run_test(self):
         node = self.nodes[0]
@@ -194,6 +216,8 @@ class ReddIDDepositTest(BitcoinTestFramework):
         self.creator = creator = node.get_wallet_rpc("creator")
         for _ in range(4):
             first.sendtoaddress(second.getnewaddress("", "legacy"), 500000)
+        # A coin for the third wallet that is not at the address of a creator
+        first.sendtoaddress(creator.getnewaddress("", "legacy"), 1000)
         self.mine()
 
         self.log.info("No wallet has a deposit to begin with")
@@ -345,8 +369,12 @@ class ReddIDDepositTest(BitcoinTestFramework):
         run_expiry_task(node)
         advance_clock(self.nodes, 3 * DAY)
         with expiry_task_idle(node):
+            # The node accepts the finalization from the creator only, and
+            # the command is for the wallet that holds the key of the creator
+            for wallet in (first, second):
+                assert_raises_rpc_error(-4, NOT_CREATOR, wallet.reddidfinalizeauction, dave)
             with node.assert_debug_log(["Settlement begun for auction " + dave]):
-                self.finalize_as_creator(dave)
+                self.finalize(dave)
                 self.mine()
             finalized = node.getblockcount()
             info = node.getuserauctioninfo(dave, True)
@@ -454,7 +482,7 @@ class ReddIDDepositTest(BitcoinTestFramework):
         run_expiry_task(node)
         advance_clock(self.nodes, 3 * DAY)
         with expiry_task_idle(node):
-            self.finalize_as_creator(erin)
+            self.finalize(erin)
             self.mine()
             finalized = node.getblockcount()
             assert_equal(node.getuserauctioninfo(erin)['state'], 4)
@@ -465,15 +493,11 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_equal(second.getaddressinfo(only['bidder'])['ismine'], False)
         assert_equal(first.getaddressinfo(only['bidder'])['ismine'], True)
 
-        def send_default():
-            raw = second.createrawtransaction([], [{"data": default}])
-            return node.sendrawtransaction(second.signrawtransactionwithwallet(second.fundrawtransaction(raw)['hex'])['hex'])
-
         # Blocks finalized + 1 to finalized + WINDOW are the window: a default
         # record in them is mined and ignored
         for height in range(finalized + 1, finalized + WINDOW + 1):
             with node.assert_debug_log(["Not past settlement deadline yet"]):
-                early = send_default()
+                early = self.raw_record(second, default)
                 self.mine()
             assert_equal(node.getblockcount(), height)
             assert_equal(node.getrawtransaction(early, True)['confirmations'], 1)
@@ -485,7 +509,7 @@ class ReddIDDepositTest(BitcoinTestFramework):
         # party of the auction. The second wallet pays for this one and
         # signs it.
         with node.assert_debug_log(["Default processed for auction " + erin]):
-            send_default()
+            self.raw_record(second, default)
             self.mine()
         assert_equal(node.getblockcount(), finalized + WINDOW + 1)
         assert_equal(node.getuserauctioninfo(erin)['state'], 6)
@@ -505,25 +529,39 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_equal(len(again), 1)
         assert_equal(again[0]['state'], 0)
 
-        self.log.info("A finalization that the creator key did not pay for is mined and ignored")
-        # On an auction of its own, so that no auction needs more than one
-        # block between its end and the finalization that the test expects
-        frank = creator.createuseridauction("frank", "redd", 10000, 3)['auction_id']
+        self.log.info("reddidfinalizeauction needs a confirmed coin of the creator key")
+        # On an auction of its own, whose creator key has no coin yet
+        frank = self.create_auction("frank", fund=False)
+        address = self.creator_address[frank]
+        no_coin = "The wallet has no confirmed coin at the address of the creator of this auction, %s, which the finalization needs as its first input" % address
         self.place_bid(second, frank, Decimal("10000"))
         run_expiry_task(node)
         advance_clock(self.nodes, 3 * DAY)
-        # SUSPECTED BUG: the command reports the new state before anything
-        # has happened, and builds the transaction from any coin. The node
-        # rejects it when the block connects ("Unauthorized finalization
-        # attempt"), and the auction stays active.
         with expiry_task_idle(node):
+            # The wallet of the creator has coins, and none of the creator key
+            assert creator.getbalance() > 900
+            mempool = node.getrawmempool()
+            assert_raises_rpc_error(-4, no_coin, creator.reddidfinalizeauction, frank)
+            # A coin that is not in a block yet is not one that the node
+            # reads the sender from
+            funding = first.sendtoaddress(address, 10)
+            assert_raises_rpc_error(-4, no_coin, creator.reddidfinalizeauction, frank)
+            assert_equal(sorted(node.getrawmempool()), sorted(mempool + [funding]))
+
+            self.log.info("A finalization that the creator key did not pay for is mined and ignored")
+            # The command does not build one. The record in a transaction of
+            # another wallet is rejected by the node when the block connects.
             with node.assert_debug_log(["Unauthorized finalization attempt"]):
-                ignored = first.reddidfinalizeauction(frank)
-                assert_equal(ignored['state'], "settlement")
-                assert_equal(ignored['auction_id'], frank)
+                ignored = self.raw_record(first, (b'R"' + bytes.fromhex(frank)[::-1]).hex())
                 self.mine()
-            assert_equal(node.getrawtransaction(ignored['txid'], True)['confirmations'], 1)
+            assert_equal(node.getrawtransaction(ignored, True)['confirmations'], 1)
             assert_equal(node.getuserauctioninfo(frank)['state'], 1)
+
+            # That block confirmed the coin of the creator key
+            with node.assert_debug_log(["Settlement begun for auction " + frank]):
+                self.finalize(frank)
+                self.mine()
+            assert_equal(node.getuserauctioninfo(frank)['state'], 4)
 
         self.log.info("Every bid that the command sends is placed")
         # Twelve bids on one auction, from two wallets in turn, each 5% above

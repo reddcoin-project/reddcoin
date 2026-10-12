@@ -175,11 +175,10 @@ class ReddIDSyncTest(BitcoinTestFramework):
             assert_raises_rpc_error(-8, "User ID not found", other.getuseridinfo, "bobby", "shared")
 
             self.log.info("A finalization in a transaction starts the settlement on both nodes")
-            # The first input must be the coin of the creator key: see rpc_reddid_deposit.py
-            others = [{"txid": coin['txid'], "vout": coin['vout']} for coin in node.listunspent() if coin['address'] != alice['creator_address']]
-            node.lockunspent(False, others)
+            # The command puts the coin of the creator key first: see rpc_reddid_deposit.py
+            assert_raises_rpc_error(-4, "The key of the creator of this auction does not belong to this wallet", other.reddidfinalizeauction, alice_id)
             start = node.reddidfinalizeauction(alice_id)
-            node.lockunspent(True, others)
+            assert_equal(start['state'], "active")
             self.relay(node, start['txid'])
             self.mine()
             for each in (node, other):

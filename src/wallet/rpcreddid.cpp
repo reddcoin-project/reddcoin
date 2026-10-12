@@ -223,6 +223,22 @@ static CTransactionRef CommitReddIDTransaction(CWallet& wallet, const NodeContex
     return tx;
 }
 
+// The name of the state of an auction
+static std::string AuctionStateName(AuctionState state)
+{
+    switch (state) {
+        case AUCTION_PENDING:    return "pending";
+        case AUCTION_ACTIVE:     return "active";
+        case AUCTION_ENDED:      return "ended";
+        case AUCTION_FINALIZED:  return "finalized";
+        case AUCTION_SETTLEMENT: return "settlement";
+        case AUCTION_COMPLETED:  return "completed";
+        case AUCTION_DEFAULTED:  return "defaulted";
+        case AUCTION_CANCELED:   return "canceled";
+        default:                 return "unknown";
+    }
+}
+
 // The address type argument of a command, or an error if it names none
 static OutputType ParseAddressType(const std::string& address_type)
 {
@@ -2791,7 +2807,10 @@ static RPCHelpMan reddidsettleauction()
 static RPCHelpMan reddidfinalizeauction()
 {
     return RPCHelpMan{"reddidfinalizeauction",
-                "\nFinalize an ended auction, triggering settlement or completion.\n",
+                "\nFinalize an ended auction, triggering settlement or completion.\n"
+                "Sends a transaction with the finalization, which takes effect when a block connects it.\n"
+                "The node accepts a finalization from the creator of the auction only: the first input of\n"
+                "the transaction is a confirmed coin at the address of the creator, which the wallet must have.\n",
                 {
                     {"auction_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The auction identifier"},
                 },
@@ -2800,7 +2819,7 @@ static RPCHelpMan reddidfinalizeauction()
                     {
                         {RPCResult::Type::STR_HEX, "txid", "The transaction id"},
                         {RPCResult::Type::STR_HEX, "auction_id", "The auction identifier"},
-                        {RPCResult::Type::STR, "state", "The new auction state"},
+                        {RPCResult::Type::STR, "state", "The state of the auction now. It changes when a block connects the transaction"},
                     }
                 },
                 RPCExamples{
@@ -2823,6 +2842,8 @@ static RPCHelpMan reddidfinalizeauction()
     AuctionManager* auctionManager = reddIDManager->GetAuctionManager();
     if (!auctionManager)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Auction manager not available");
+
+    EnsureWalletIsUnlocked(*pwallet);
 
     uint256 auctionId = ParseHashV(request.params[0], "auction_id");
 
@@ -2850,39 +2871,35 @@ static RPCHelpMan reddidfinalizeauction()
     CScript opReturnScript;
     opReturnScript << OP_RETURN << data;
 
+    // The node accepts a finalization from the creator of the auction only,
+    // and the creator is the sender of the transaction: the key of its first
+    // input that spends a confirmed coin. A transaction from any other coin
+    // is mined and ignored, so the command needs such a coin of the creator.
+    const CTxDestination creatorDest = PKHash(auction.creator);
+    if (!WalletHoldsKey(*pwallet, auction.creator))
+        throw JSONRPCError(RPC_WALLET_ERROR, "The key of the creator of this auction does not belong to this wallet");
+    COutPoint creatorCoin;
+    if (!FindSenderCoin(*pwallet, *auctionManager, &auction.creator, creatorCoin))
+        throw JSONRPCError(RPC_WALLET_ERROR,
+            strprintf("The wallet has no confirmed coin at the address of the creator of this auction, %s, which the finalization needs as its first input",
+                      EncodeDestination(creatorDest)));
+
+    // vin[0]: the coin of the creator. vout[0]: the record. The change
+    // returns to the address of the creator, so that the key still has a
+    // coin when the name is auctioned again after a default.
     CMutableTransaction rawTx;
+    rawTx.vin.push_back(CTxIn(creatorCoin));
     rawTx.vout.push_back(CTxOut(0, opReturnScript));
 
-    CAmount nFeeRet;
-    int nChangePosInOut = -1;
-    bilingual_str fundError;
-    CCoinControl coinControl;
-    std::set<int> setSubtractFeeFromOutputs;
+    FundAndSignReddIDTransaction(*pwallet, rawTx, creatorDest);
+    CTransactionRef tx = CommitReddIDTransaction(*pwallet, node, std::move(rawTx));
 
-    if (!pwallet->FundTransaction(rawTx, nFeeRet, nChangePosInOut, fundError,
-                                   /*lockUnspents=*/true, setSubtractFeeFromOutputs, coinControl))
-        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Failed to fund transaction: %s", fundError.original));
-
-    if (!pwallet->SignTransaction(rawTx))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to sign transaction");
-
-    CTransactionRef tx = MakeTransactionRef(std::move(rawTx));
-    mapValue_t mapValue;
-    pwallet->CommitTransaction(tx, std::move(mapValue), {});
-
-    // Determine new state description
-    std::string stateStr;
-    std::vector<BidInfo> bids = reddIDManager->GetAuctionBids(auctionId);
-    bool hasBids = false;
-    for (const auto& bid : bids) {
-        if (!bid.refunded) { hasBids = true; break; }
-    }
-    stateStr = hasBids ? "settlement" : "finalized";
-
+    // The transaction is in the mempool and nothing has happened to the
+    // auction: it is finalized, or not, when a block connects the transaction
     UniValue result(UniValue::VOBJ);
     result.pushKV("txid", tx->GetHash().GetHex());
     result.pushKV("auction_id", auctionId.GetHex());
-    result.pushKV("state", stateStr);
+    result.pushKV("state", AuctionStateName(auction.state));
     return result;
 },
     };
