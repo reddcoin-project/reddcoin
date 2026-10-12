@@ -270,10 +270,9 @@ BOOST_AUTO_TEST_CASE(nsaucbid_rejections)
     BOOST_CHECK_EQUAL(SendFromNewPeer("nsaucbid", BidMessage(auctionId, bidder, 5000 * COIN - 1)), Outcome::REJECTED);
     BOOST_CHECK(GetAuction(aMgr, auctionId).state == AUCTION_PENDING);
 
-    // Below the minimum increment over the current bid: 5% in this namespace.
-    // The minimum is computed in floating point: see REDDID_FLOAT_SLACK.
+    // Below the minimum increment over the current bid: 5% in this namespace
     const uint256 active = ActiveAuction("bobby");
-    BOOST_CHECK_EQUAL(SendFromNewPeer("nsaucbid", BidMessage(active, bidder, 5250 * COIN - 1 - REDDID_FLOAT_SLACK)), Outcome::REJECTED);
+    BOOST_CHECK_EQUAL(SendFromNewPeer("nsaucbid", BidMessage(active, bidder, 5250 * COIN - 1)), Outcome::REJECTED);
     BOOST_CHECK_EQUAL(GetAuction(aMgr, active).currentBid, 5000 * COIN);
 
     // A canceled auction
@@ -648,6 +647,14 @@ BOOST_AUTO_TEST_CASE(nsconres_rejections)
     shares.config.burnPct = 71;
     BOOST_CHECK_EQUAL(SendFromNewPeer("nsconres", rehash(shares)), Outcome::REJECTED);
 
+    // A minimum bid increment outside 1% to 20%: a peer cannot give a node a
+    // namespace in which the next bid may be lower, or has to be absurdly higher
+    for (double increment : {-5.0, 0.0, 0.99, 20.01, 21474836.0}) {
+        CNamespaceConfig bad = ConfigMessage("fresh", owner);
+        bad.config.minBidIncrement = increment;
+        BOOST_CHECK_EQUAL(SendFromNewPeer("nsconres", rehash(bad)), Outcome::REJECTED);
+    }
+
     // The hash of the message is not the hash of its configuration
     CNamespaceConfig badHash = ConfigMessage("fresh", owner);
     badHash.config.maxLength = 20;
@@ -952,9 +959,8 @@ BOOST_AUTO_TEST_CASE(uidaucbid_rejections)
         BOOST_CHECK_EQUAL(SendFromNewPeer(command, BidMessage(canceled, bidder, 6000 * COIN)), Outcome::REJECTED);
         // Below the reserve price, for the first bid
         BOOST_CHECK_EQUAL(SendFromNewPeer(command, BidMessage(pending, bidder, 5000 * COIN - 1)), Outcome::REJECTED);
-        // Below the minimum increment, for a later bid. The minimum is computed
-        // in floating point: see REDDID_FLOAT_SLACK.
-        BOOST_CHECK_EQUAL(SendFromNewPeer(command, BidMessage(active, bidder, 5250 * COIN - 1 - REDDID_FLOAT_SLACK)), Outcome::REJECTED);
+        // Below the minimum increment, for a later bid
+        BOOST_CHECK_EQUAL(SendFromNewPeer(command, BidMessage(active, bidder, 5250 * COIN - 1)), Outcome::REJECTED);
         BOOST_CHECK_EQUAL(SendFromNewPeer(command, uint256::ONE), Outcome::REJECTED);
     }
     BOOST_CHECK(NothingSent());

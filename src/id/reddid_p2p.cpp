@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <id/reddid_p2p.h>
+#include <id/amounts.h>
 #include <id/reddid.h>
 #include <id/namespace.h>
 #include <id/auction.h>
@@ -642,17 +643,8 @@ bool ReddIDP2PManager::ProcessAuctionBid(CNode* pfrom, const CAuctionBid& msg) {
 
         // If there are existing bids, check if this bid meets minimum increment
         if (auction.currentBid > 0) {
-            // Get namespace info for minimum bid increment
-            double minIncrementPct = 0.05;  // Default 5%
-
-            if (namespaceManager) {
-                NamespaceInfo namespaceInfo;
-                if (namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
-                    minIncrementPct = namespaceInfo.minBidIncrement / 100.0;
-                }
-            }
-
-            CAmount minBid = auction.currentBid * (1.0 + minIncrementPct);
+            // The minimum bid increment of the namespace, 5% by default
+            CAmount minBid = MinimumNextBidForAuction(namespaceManager, auction);
             if (msg.bidAmount < minBid) {
                 LogPrint(BCLog::REDDID, "Bid amount %s does not meet minimum increment (minimum: %s)\n",
                         FormatMoney(msg.bidAmount), FormatMoney(minBid));
@@ -869,7 +861,7 @@ bool ReddIDP2PManager::ProcessUserIDAuctionAnnounce(CNode* pfrom, const CUserIDA
         auction.currentBid = 0;
         auction.type = msg.type;
         auction.state = AUCTION_PENDING;
-        auction.depositAmount = auction.reservePrice * 0.1;  // Default 10% deposit
+        auction.depositAmount = PercentOfAmount(auction.reservePrice, 10);  // Default 10% deposit
 
         // Save the auction
         uint256 auctionId = msg.auctionId;
@@ -919,15 +911,8 @@ bool ReddIDP2PManager::ProcessUserIDAuctionBid(CNode* pfrom, const CAuctionBid& 
 
     // Check if bid amount is greater than current bid
     if (auction.currentBid > 0) {
-        // Calculate minimum increment (based on namespace settings)
-        NamespaceInfo namespaceInfo;
-        double minIncrement = 0.05;  // Default 5%
-
-        if (namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
-            minIncrement = namespaceInfo.minBidIncrement / 100.0;
-        }
-
-        CAmount minBid = auction.currentBid * (1.0 + minIncrement);
+        // The minimum bid increment of the namespace, 5% by default
+        CAmount minBid = MinimumNextBidForAuction(namespaceManager, auction);
         if (msg.bidAmount < minBid) {
             LogPrint(BCLog::REDDID, "Bid amount %s is less than minimum bid %s\n",
                     FormatMoney(msg.bidAmount), FormatMoney(minBid));

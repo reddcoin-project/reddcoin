@@ -341,9 +341,8 @@ BOOST_AUTO_TEST_CASE(legacy_bid_record_rejected)
     BOOST_CHECK(aMgr->GetAuctionBids(auctionId).empty());
 
     BOOST_CHECK(Process(TxFrom(bidder, CreateUserIDBidOpReturn(auctionId, 5000 * COIN))));
-    // Less than 5% above the highest bid. The minimum is computed in floating
-    // point: see REDDID_FLOAT_SLACK.
-    BOOST_CHECK(!Process(TxFrom(MakeKeyID(), CreateUserIDBidOpReturn(auctionId, 5250 * COIN - 1 - REDDID_FLOAT_SLACK))));
+    // Less than 5% above the highest bid
+    BOOST_CHECK(!Process(TxFrom(MakeKeyID(), CreateUserIDBidOpReturn(auctionId, 5250 * COIN - 1))));
     BOOST_CHECK(Process(TxFrom(MakeKeyID(), CreateUserIDBidOpReturn(auctionId, 5250 * COIN))));
     BOOST_CHECK_EQUAL(aMgr->GetAuctionBids(auctionId).size(), 2U);
 }

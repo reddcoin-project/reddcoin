@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <core_io.h>
+#include <id/amounts.h>
 #include <id/auction.h>
 #include <id/namespace.h>
 #include <id/profile.h>
@@ -26,6 +27,7 @@
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 
+#include <algorithm>
 #include <set>
 #include <stdint.h>
 #include <string>
@@ -2532,8 +2534,11 @@ static RPCHelpMan reddidplacebid()
     if (auction.state != AUCTION_ACTIVE && auction.state != AUCTION_PENDING)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Auction is not active or pending");
 
-    // Check minimum bid
-    CAmount minBid = auction.currentBid > 0 ? auction.currentBid + 1 : auction.reservePrice;
+    // Check minimum bid: the reserve price and, over a current bid, the
+    // minimum increment, as the node checks them when a block connects the bid
+    CAmount minBid = auction.reservePrice;
+    if (auction.currentBid > 0)
+        minBid = std::max(minBid, MinimumNextBidForAuction(reddIDManager->GetNamespaceManager(), auction));
     if (bidAmount < minBid)
         throw JSONRPCError(RPC_INVALID_PARAMETER,
             strprintf("Bid amount %s is below minimum %s",
@@ -2544,7 +2549,7 @@ static RPCHelpMan reddidplacebid()
     std::string configId = auction.namespaceId.empty() ? "namespace" : "userid";
     if (!auctionManager->GetAuctionConfig(configId, config))
         config = AuctionConfig::UserIDDefaults();
-    CAmount depositAmount = (bidAmount * config.depositPercentage) / 100;
+    CAmount depositAmount = PercentOfAmount(bidAmount, config.depositPercentage);
     if (depositAmount <= 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Deposit amount calculated to zero");
 

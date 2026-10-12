@@ -624,10 +624,9 @@ BOOST_AUTO_TEST_CASE(renewal_fee_by_length)
     BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("a"), 25000 * COIN);
     BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("ab"), 12500 * COIN);
     BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("abc"), 6250 * COIN);
-    // Four characters and more get a 10% discount. The fee with a discount is
-    // computed in floating point: see REDDID_FLOAT_SLACK.
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("abcd"), 2250 * COIN));
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("abcdefgh"), 2250 * COIN));
+    // Four characters and more get a 10% discount
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("abcd"), 2250 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("abcdefgh"), 2250 * COIN);
 }
 
 BOOST_AUTO_TEST_CASE(renewal_fee_age_discount)
@@ -636,22 +635,22 @@ BOOST_AUTO_TEST_CASE(renewal_fee_age_discount)
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     CreateTestNamespace("oldns", MakeKeyID());
     CreateTestNamespace("old", MakeKeyID());
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("oldns"), 2250 * COIN));
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("oldns"), 2250 * COIN);
     BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("old"), 6250 * COIN);
 
     // The age is counted from lastUpdated: exactly 365 days is not yet "older"
     SetMockTime(TEST_TIME + 365 * DAY);
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("oldns"), 2250 * COIN));
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("oldns"), 2250 * COIN);
 
     // More than one year: a further 5%
     SetMockTime(TEST_TIME + 366 * DAY);
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("oldns"), 2125 * COIN));
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("old"), 11875 * COIN / 2));
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("oldns"), 2125 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("old"), 11875 * COIN / 2);
 
     // More than two years: another 5%
     SetMockTime(TEST_TIME + 731 * DAY);
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("oldns"), 2000 * COIN));
-    BOOST_CHECK(IsFloatAmount(nsMgr->CalculateRenewalFee("old"), 5625 * COIN));
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("oldns"), 2000 * COIN);
+    BOOST_CHECK_EQUAL(nsMgr->CalculateRenewalFee("old"), 5625 * COIN);
     SetMockTime(0);
 }
 

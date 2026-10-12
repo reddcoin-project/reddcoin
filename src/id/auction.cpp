@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <id/auction.h>
+#include <id/amounts.h>
 #include <id/namespace.h>
 #include <id/reddid.h>
 #include <id/reddid_db.h>
@@ -308,7 +309,7 @@ bool AuctionManager::CreateAuction(AuctionInfo& auction, uint256& auctionId) {
         auction.state = AUCTION_PENDING;
 
         // Calculate deposit amount (10% of reserve price for regular IDs)
-        auction.depositAmount = auction.reservePrice * 0.1;
+        auction.depositAmount = PercentOfAmount(auction.reservePrice, 10);
 
         // Set block height
         auction.blockHeight = chainstate ? chainstate->m_chain.Height() : 0;
@@ -1154,7 +1155,7 @@ bool AuctionManager::ProcessTransaction(const CTransaction& tx, int nHeight) {
                                 depositPct = config.depositPercentage;
                             }
 
-                            CAmount minDeposit = (bidAmount * depositPct) / 100;
+                            CAmount minDeposit = PercentOfAmount(bidAmount, depositPct);
                             if (depositAmount < minDeposit) {
                                 LogPrintf("ERROR: AuctionManager: Deposit too low: %s < %s (%d%% of %s)\n",
                                          FormatMoney(depositAmount), FormatMoney(minDeposit),
@@ -1541,17 +1542,8 @@ bool AuctionManager::ValidateBid(const uint256& auctionId, const CKeyID& bidder,
 
         // If there are existing bids, check if this bid meets minimum increment
         if (auction.currentBid > 0) {
-            // Get namespace for minimum bid increment
-            double minIncrementPct = 0.05;  // Default 5%
-
-            if (namespaceManager) {
-                NamespaceInfo namespaceInfo;
-                if (namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
-                    minIncrementPct = namespaceInfo.minBidIncrement / 100.0;
-                }
-            }
-
-            CAmount minBid = auction.currentBid * (1.0 + minIncrementPct);
+            // The minimum bid increment of the namespace, 5% by default
+            CAmount minBid = MinimumNextBidForAuction(namespaceManager, auction);
             if (bidAmount < minBid) {
                 LogPrintf("Error: AuctionManager::ValidateBid: Bid increment too low: %s (minimum: %s)\n",
                          FormatMoney(bidAmount), FormatMoney(minBid));
@@ -1607,10 +1599,10 @@ void AuctionManager::DistributeAuctionProceeds(const AuctionInfo& auction, const
         }
 
         // Calculate distribution amounts
-        CAmount burnAmount = (winningBid.bidAmount * burnPct) / 100;
-        CAmount namespaceAmount = (winningBid.bidAmount * namespacePct) / 100;
-        CAmount nodeAmount = (winningBid.bidAmount * nodePct) / 100;
-        CAmount devAmount = (winningBid.bidAmount * devPct) / 100;
+        CAmount burnAmount = PercentOfAmount(winningBid.bidAmount, burnPct);
+        CAmount namespaceAmount = PercentOfAmount(winningBid.bidAmount, namespacePct);
+        CAmount nodeAmount = PercentOfAmount(winningBid.bidAmount, nodePct);
+        CAmount devAmount = PercentOfAmount(winningBid.bidAmount, devPct);
 
         // Log distribution (in a real implementation, this would create actual transactions)
         LogPrintf("Auction proceeds distribution for %s.%s:\n", auction.name, auction.namespaceId);

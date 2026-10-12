@@ -418,8 +418,7 @@ BOOST_AUTO_TEST_CASE(renewal_fee_usage_discount)
     };
     for (const auto& c : cases) {
         AddUserID("alice", NS, owner, T0 + 100 * DAY, c.transactions);
-        // With a discount the fee is computed in floating point: see REDDID_FLOAT_SLACK
-        BOOST_CHECK_MESSAGE(IsFloatAmount(reddidManager->CalculateRenewalFee("alice", NS), full * (100 - c.percent) / 100),
+        BOOST_CHECK_MESSAGE(reddidManager->CalculateRenewalFee("alice", NS) == full * (100 - c.percent) / 100,
                             "transactions " << c.transactions << ": fee " << reddidManager->CalculateRenewalFee("alice", NS));
     }
 
@@ -427,13 +426,18 @@ BOOST_AUTO_TEST_CASE(renewal_fee_usage_discount)
     AddUserID("alice", NS, owner, T0 + 100 * DAY, -100);
     BOOST_CHECK_EQUAL(reddidManager->CalculateRenewalFee("alice", NS), full);
 
-    // The fee is calculated in floating point and cut off, not rounded: half
-    // of an odd price loses the half base unit
+    // The fee is rounded down: half of an odd price loses the half base unit
     BOOST_REQUIRE(nsMgr->AddPricingTier(NS, 3, 9001));
     AddUserID("alice", NS, owner, T0 + 100 * DAY, 0);
     BOOST_CHECK_EQUAL(reddidManager->CalculateRenewalFee("alice", NS), 4500);
     AddUserID("alice", NS, owner, T0 + 100 * DAY, 10);
-    BOOST_CHECK(IsFloatAmount(reddidManager->CalculateRenewalFee("alice", NS), 4275));
+    BOOST_CHECK_EQUAL(reddidManager->CalculateRenewalFee("alice", NS), 4275);
+    // and so does the fee less the discount: 95% of 4501 is 4275.95
+    BOOST_REQUIRE(nsMgr->AddPricingTier(NS, 3, 9003));
+    BOOST_CHECK_EQUAL(reddidManager->CalculateRenewalFee("alice", NS), 4275);
+    // The largest price there can be
+    BOOST_REQUIRE(nsMgr->AddPricingTier(NS, 3, MAX_MONEY));
+    BOOST_CHECK_EQUAL(reddidManager->CalculateRenewalFee("alice", NS), MAX_MONEY / 2 / 100 * 95);
 }
 
 // ===================================================================

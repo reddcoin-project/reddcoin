@@ -24,9 +24,11 @@ as it is, under a comment that starts with SUSPECTED BUG, and the test then
 does by hand what the command should have done so that it can go on.
 """
 
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
+import struct
 
 from test_framework.reddid import (
+    COIN,
     DAY,
     acquire_namespace,
     advance_clock,
@@ -123,6 +125,18 @@ class ReddIDDepositTest(BitcoinTestFramework):
             assert_equal(wallet.reddidlistmydeposits(), locks)
         raise AssertionError("no bid had its outputs in the accepted order")
 
+    def raw_bid(self, wallet, auction_id, amount):
+        """Send a bid with a deposit of 15% in a transaction that is made by hand, and return its ID."""
+        bidder = wallet.getnewaddress("", "legacy")
+        key_hash = bytes.fromhex(wallet.getaddressinfo(bidder)['scriptPubKey'])[3:23]
+        deposit = (amount * Decimal("0.15")).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+        # The record: the auction, the bid in base units, the index of the
+        # deposit among the outputs and the key that the deposit is paid to
+        payload = b'R' + b'D' + bytes.fromhex(auction_id)[::-1] + struct.pack("<q", int(amount * COIN)) + bytes([1]) + key_hash
+        raw = wallet.createrawtransaction([], [{"data": payload.hex()}, {bidder: deposit}])
+        funded = wallet.fundrawtransaction(raw, {"changePosition": 2})
+        return self.nodes[0].sendrawtransaction(wallet.signrawtransactionwithwallet(funded['hex'])['hex'])
+
     def spend(self, wallet, txid, vout, amount, payload=None):
         """A signed transaction of the wallet that spends one output, with a ReddID record if a payload is given."""
         outputs = [{"data": payload}] if payload else []
@@ -195,34 +209,21 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_equal(info['current_bid'], Decimal("10000"))
         assert_equal(info['current_bidder'], low['bidder'])
 
-        self.log.info("The command accepts a bid that the node then rejects")
-        # SUSPECTED BUG: the command asks for more than the highest bid, the
-        # node for 5% more. The transaction is made, relayed and mined, and
-        # the bid does not count. A bid with its outputs in another order is
-        # rejected for the order before the node looks at the amount (see
-        # place_bid), so the bid is repeated until its outputs are in the
-        # order that the node accepts: that one is rejected for its amount.
-        assert_raises_rpc_error(-8, "Bid amount 10000.00 is below minimum 10000.00000001", second.reddidplacebid, dave, 10000)
-        for _ in range(MAX_BIDS):
-            short = second.reddidplacebid(dave, Decimal("10499"))
-            vout = node.getrawtransaction(short['txid'], True)['vout']
-            in_order = vout[0]['scriptPubKey']['type'] == 'nulldata' and vout[1]['scriptPubKey'].get('address') == short['bidder_address']
-            if in_order:
-                assert_equal(vout[1]['value'], Decimal("10499") * Decimal("0.15"))
-                # The minimum is computed in floating point and is printed as
-                # 10500.00 or, by a build with extended-precision evaluation
-                # (32-bit x86), as 10499.99999999
-                with node.assert_debug_log(["AuctionManager::ValidateBid: Bid increment too low: 10499.00 (minimum: ", "AuctionManager::PlaceBid: Invalid bid"]):
-                    self.mine()
-            else:
-                self.mine()
-            assert_equal(node.getrawtransaction(short['txid'], True)['confirmations'], 1)
-            assert_equal(self.bid_count(dave), 1)
-            assert_equal(second.reddidlistmydeposits(), [])
-            if in_order:
-                break
-        else:
-            raise AssertionError("no bid had its outputs in the accepted order")
+        self.log.info("The command refuses a bid below the minimum of the node")
+        # The minimum over a bid is that bid and 5% more, in this namespace:
+        # the command and the node take it from the same place
+        mempool = node.getrawmempool()
+        assert_raises_rpc_error(-8, "Bid amount 10000.00 is below minimum 10500.00", second.reddidplacebid, dave, 10000)
+        assert_raises_rpc_error(-8, "Bid amount 10499.99999999 is below minimum 10500.00", second.reddidplacebid, dave, Decimal("10499.99999999"))
+        assert_equal(node.getrawmempool(), mempool)
+
+        self.log.info("The node ignores such a bid in a transaction that the command did not build")
+        short = self.raw_bid(second, dave, Decimal("10499.99999999"))
+        with node.assert_debug_log(["AuctionManager::ValidateBid: Bid increment too low: 10499.99999999 (minimum: 10500.00)", "AuctionManager::PlaceBid: Invalid bid"]):
+            self.mine()
+        assert_equal(node.getrawtransaction(short, True)['confirmations'], 1)
+        assert_equal(self.bid_count(dave), 1)
+        assert_equal(second.reddidlistmydeposits(), [])
 
         high = self.place_bid(second, dave, Decimal("12000"))
         info = node.getuserauctioninfo(dave, True)

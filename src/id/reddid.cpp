@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <id/reddid.h>
+#include <id/amounts.h>
 #include <id/namespace.h>
 #include <id/auction.h>
 #include <id/profile.h>
@@ -647,14 +648,15 @@ CAmount ReddIDManager::CalculateRenewalFee(const std::string& name, const std::s
     // Calculate equivalent auction price
     CAmount auctionPrice = CalculateMinPriceForUserID(name, namespaceId);
 
-    // Calculate renewal price (default: 50% of auction price)
-    CAmount renewalFee = auctionPrice * 0.5;
+    // Calculate renewal price (default: 50% of auction price), rounded down
+    CAmount renewalFee = PercentOfAmount(auctionPrice, 50);
 
     // Apply usage discount if applicable
     if (userID.transactionCount > 0) {
-        // Simple discount formula: 5% discount per 10 transactions, up to 25%
-        double usageDiscount = std::min(0.25, (userID.transactionCount / 10) * 0.05);
-        renewalFee = renewalFee * (1.0 - usageDiscount);
+        // Simple discount formula: 5% discount per 10 transactions, up to 25%.
+        // The fee less the discount is rounded down again.
+        int usageDiscount = std::min(5, userID.transactionCount / 10) * 5;
+        renewalFee = PercentOfAmount(renewalFee, 100 - usageDiscount);
     }
 
     return renewalFee;

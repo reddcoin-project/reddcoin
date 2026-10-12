@@ -133,4 +133,12 @@ class NamespaceManager {
     ReddIDP2PManager* GetP2P() const { return reddidP2P; }
 };
 
+/**
+ * The lowest bid that an auction accepts over its current bid: the current
+ * bid and the minimum increment of the namespace of the auction, or 5% where
+ * the namespace is not known. The node and the commands take the minimum from
+ * here, so that a command does not build a bid that the node then rejects.
+ */
+CAmount MinimumNextBidForAuction(const NamespaceManager* namespaceManager, const AuctionInfo& auction);
+
 #endif // BITCOIN_ID_NAMESPACE_H

@@ -153,6 +153,7 @@ BITCOIN_CORE_H = \
   httprpc.h \
   httpserver.h \
   i2p.h \
+  id/amounts.h \
   id/auction.h \
   id/namespace.h \
   id/profile.h \

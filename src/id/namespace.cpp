@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <id/namespace.h>
+#include <id/amounts.h>
 #include <id/reddid_db.h>
 #include <id/reddid_p2p.h>
 
@@ -536,7 +537,7 @@ bool NamespaceManager::CreateNamespaceAuction(const std::string& namespaceId, co
     auction.endTime = auction.startTime + (durationDays * 24 * 60 * 60);
     auction.reservePrice = reservePrice;
     auction.currentBid = 0;
-    auction.depositAmount = reservePrice * 0.2;  // 20% deposit for namespaces
+    auction.depositAmount = PercentOfAmount(reservePrice, 20);  // 20% deposit for namespaces
     auction.state = AUCTION_PENDING;
     auction.type = type;
 
@@ -596,9 +597,8 @@ bool NamespaceManager::BidOnNamespaceAuction(const uint256& auctionId, const CKe
 
     // Check if bid is higher than current bid
     if (auction.currentBid > 0) {
-        // Calculate minimum increment (5%)
-        CAmount minIncrement = auction.currentBid * 0.05;
-        if (bidAmount < auction.currentBid + minIncrement) {
+        // The minimum increment is 5%: the namespace does not exist yet
+        if (bidAmount < MinimumNextBid(auction.currentBid, REDDID_DEFAULT_BID_INCREMENT_HUNDREDTHS)) {
             return false;
         }
     }
@@ -1097,13 +1097,13 @@ CAmount NamespaceManager::CalculateRenewalFee(const std::string& namespaceId) co
     // Base renewal fee is 25% of equivalent auction price
     CAmount auctionPrice = CalculateMinPrice(namespaceId);
 
-    // Apply length-based discounts
-    double discount = 0.0;
+    // Apply length-based discounts, in percent
+    int discount = 0;
     size_t length = namespaceId.size();
 
     if (length >= 4) {
         // 10% discount for 4+ character namespaces
-        discount = 0.1;
+        discount = 10;
     }
 
     // Apply age-based discounts
@@ -1115,17 +1115,18 @@ CAmount NamespaceManager::CalculateRenewalFee(const std::string& namespaceId) co
 
         if (ageDays > 365) {
             // 5% discount for namespaces older than 1 year
-            discount += 0.05;
+            discount += 5;
         }
 
         if (ageDays > 730) {
             // Additional 5% discount for namespaces older than 2 years
-            discount += 0.05;
+            discount += 5;
         }
     }
 
-    // Calculate final fee with discount
-    CAmount fee = auctionPrice * 0.25 * (1.0 - discount);
+    // Calculate final fee with discount: a quarter of the price, less the
+    // discount, rounded down once
+    CAmount fee = MulDivAmount(auctionPrice, 100 - discount, 400);
 
     // Ensure minimum fee
     CAmount minFee = 1000 * COIN;  // 1,000 RDD minimum
@@ -1658,9 +1659,20 @@ void NamespaceManager::DistributeNamespaceAuctionProceeds(const AuctionInfo& auc
     // For now, just log the distribution
     LogPrintf("Distributing namespace auction proceeds for %s:\n", auction.namespaceId);
     LogPrintf("  Total amount: %d RDD\n", winningBid.bidAmount / COIN);
-    LogPrintf("  Burn pool: %d RDD (70%%)\n", (winningBid.bidAmount * 0.7) / COIN);
-    LogPrintf("  Node operators: %d RDD (15%%)\n", (winningBid.bidAmount * 0.15) / COIN);
-    LogPrintf("  Development fund: %d RDD (15%%)\n", (winningBid.bidAmount * 0.15) / COIN);
+    LogPrintf("  Burn pool: %d RDD (70%%)\n", PercentOfAmount(winningBid.bidAmount, 70) / COIN);
+    LogPrintf("  Node operators: %d RDD (15%%)\n", PercentOfAmount(winningBid.bidAmount, 15) / COIN);
+    LogPrintf("  Development fund: %d RDD (15%%)\n", PercentOfAmount(winningBid.bidAmount, 15) / COIN);
+}
+
+CAmount MinimumNextBidForAuction(const NamespaceManager* namespaceManager, const AuctionInfo& auction) {
+    int32_t incrementHundredths = REDDID_DEFAULT_BID_INCREMENT_HUNDREDTHS;
+
+    NamespaceInfo namespaceInfo;
+    if (namespaceManager && namespaceManager->GetNamespaceInfo(auction.namespaceId, namespaceInfo)) {
+        incrementHundredths = PercentToHundredths(namespaceInfo.minBidIncrement);
+    }
+
+    return MinimumNextBid(auction.currentBid, incrementHundredths);
 }
 
 bool NamespaceManager::GetNamespaceFromCache(const std::string& namespaceId, NamespaceInfo& info) const {

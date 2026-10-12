@@ -15,6 +15,7 @@
 #include <util/time.h>
 #include <key.h>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1056,10 +1057,9 @@ BOOST_FIXTURE_TEST_CASE(raised_bid_is_a_second_bid_record, AuctionTestingSetup)
     uint256 firstBid, secondBid, rejected;
 
     BOOST_REQUIRE(aMgr->PlaceBid(auctionId, bidder, 5000 * COIN, firstBid));
-    // The raise has to clear the minimum increment over the bidder's own bid.
-    // The minimum is computed in floating point: see REDDID_FLOAT_SLACK.
+    // The raise has to clear the minimum increment over the bidder's own bid
     BOOST_CHECK(!aMgr->PlaceBid(auctionId, bidder, 5000 * COIN, rejected));
-    BOOST_CHECK(!aMgr->PlaceBid(auctionId, bidder, 5250 * COIN - 1 - REDDID_FLOAT_SLACK, rejected));
+    BOOST_CHECK(!aMgr->PlaceBid(auctionId, bidder, 5250 * COIN - 1, rejected));
     BOOST_CHECK(!GetBid(aMgr, firstBid).refunded);
 
     BOOST_REQUIRE(aMgr->PlaceBid(auctionId, bidder, 6000 * COIN, secondBid));
@@ -1091,31 +1091,16 @@ BOOST_FIXTURE_TEST_CASE(raised_bid_is_a_second_bid_record, AuctionTestingSetup)
     BOOST_CHECK_EQUAL(stats.auctionParticipations, 1);
 }
 
-// SUSPECTED BUG (documented, not fixed): the minimum next bid is computed as
-// currentBid * (1.0 + minBidIncrement / 100.0) in double precision and
-// truncated. For bids above 2^53 satoshis (about 90 million RDD) the result
-// differs from 105% of the current bid: it can be lower, so that a bid one
-// satoshi short of 5% is accepted, or higher, so that a bid of exactly 5%
-// more is rejected.
-//
-// SUSPECTED BUG (documented, not fixed): because the minimum increment is
-// computed in floating point, a build that evaluates double expressions with
-// extended precision (FLT_EVAL_METHOD is not 0, as on 32-bit x86 with the x87
-// unit) computes a minimum that is one satoshi lower for some bids, 5000 RDD
-// among them: there the minimum next bid is 5249.99999999 RDD and not 5250.
-// Nodes can disagree on whether a bid is valid.
-BOOST_FIXTURE_TEST_CASE(minimum_increment_is_computed_in_floating_point, AuctionTestingSetup)
+// The minimum next bid is the current bid and the minimum increment of the
+// namespace on it, rounded down to a whole base unit, for every amount and in
+// every build.
+BOOST_FIXTURE_TEST_CASE(minimum_increment_is_exact, AuctionTestingSetup)
 {
     uint256 bidId;
 
-    // Small amounts behave like integer arithmetic, but for one satoshi with
-    // extended precision
     uint256 exactId = NewAuction("exact");
     BOOST_REQUIRE(aMgr->PlaceBid(exactId, MakeKeyID(), 5000 * COIN, bidId));
-    BOOST_CHECK(!aMgr->PlaceBid(exactId, MakeKeyID(), 5250 * COIN - 2, bidId));
-#if FLT_EVAL_METHOD == 0
     BOOST_CHECK(!aMgr->PlaceBid(exactId, MakeKeyID(), 5250 * COIN - 1, bidId));
-#endif
     BOOST_CHECK(aMgr->PlaceBid(exactId, MakeKeyID(), 5250 * COIN, bidId));
 
     uint256 smallId = NewAuction("small");
@@ -1124,25 +1109,46 @@ BOOST_FIXTURE_TEST_CASE(minimum_increment_is_computed_in_floating_point, Auction
     BOOST_CHECK(!aMgr->PlaceBid(smallId, MakeKeyID(), 525000000000, bidId));
     BOOST_CHECK(aMgr->PlaceBid(smallId, MakeKeyID(), 525000000001, bidId));
 
-    // How amounts above 2^53 satoshis round depends on the precision of the
-    // intermediate results
-#if FLT_EVAL_METHOD == 0
-    // 100,000,000.00000001 RDD: 105% is 10500000000000001.05 satoshis
+    // Amounts above 2^53 base units, which a double cannot hold.
+    // 100,000,000.00000001 RDD: 105% is 10500000000000001.05 base units
     uint256 lowId = NewAuction("roundsdown");
     const CAmount lowCurrent = 10000000000000001;
     BOOST_REQUIRE(aMgr->PlaceBid(lowId, MakeKeyID(), lowCurrent, bidId));
-    BOOST_CHECK_EQUAL(lowCurrent * 105 / 100, 10500000000000001);
-    BOOST_CHECK(!aMgr->PlaceBid(lowId, MakeKeyID(), 10499999999999999, bidId));
-    BOOST_CHECK(aMgr->PlaceBid(lowId, MakeKeyID(), 10500000000000000, bidId));
+    BOOST_CHECK(!aMgr->PlaceBid(lowId, MakeKeyID(), 10500000000000000, bidId));
+    BOOST_CHECK(aMgr->PlaceBid(lowId, MakeKeyID(), 10500000000000001, bidId));
 
-    // 100,000,000.00000003 RDD: 105% is 10500000000000003.15 satoshis
-    uint256 highId = NewAuction("roundsup");
+    // 100,000,000.00000003 RDD: 105% is 10500000000000003.15 base units
+    uint256 highId = NewAuction("alsodown");
     const CAmount highCurrent = 10000000000000003;
     BOOST_REQUIRE(aMgr->PlaceBid(highId, MakeKeyID(), highCurrent, bidId));
-    BOOST_CHECK_EQUAL(highCurrent * 105 / 100, 10500000000000003);
-    BOOST_CHECK(!aMgr->PlaceBid(highId, MakeKeyID(), 10500000000000003, bidId));
-    BOOST_CHECK(aMgr->PlaceBid(highId, MakeKeyID(), 10500000000000004, bidId));
-#endif
+    BOOST_CHECK(!aMgr->PlaceBid(highId, MakeKeyID(), 10500000000000002, bidId));
+    BOOST_CHECK(aMgr->PlaceBid(highId, MakeKeyID(), 10500000000000003, bidId));
+
+    // 5% more than all the money there can be is more than an amount can
+    // hold: the minimum is then the largest amount, and not an overflow
+    uint256 topId = NewAuction("highest");
+    BOOST_REQUIRE(aMgr->PlaceBid(topId, MakeKeyID(), MAX_MONEY, bidId));
+    BOOST_CHECK(!aMgr->PlaceBid(topId, MakeKeyID(), MAX_MONEY + 1, bidId));
+    BOOST_CHECK(!aMgr->PlaceBid(topId, MakeKeyID(), std::numeric_limits<CAmount>::max() - 1, bidId));
+}
+
+// The increment is the one of the namespace, which can have two decimals
+BOOST_FIXTURE_TEST_CASE(minimum_increment_of_the_namespace, AuctionTestingSetup)
+{
+    NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
+    NamespaceInfo info;
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo(NS, info));
+    info.id = "decimals";
+    info.minBidIncrement = 7.55;
+    BOOST_REQUIRE(nsMgr->CreateNamespace(info));
+
+    uint256 bidId, auctionId;
+    AuctionInfo auction = reddid_test::UserAuction("alice", "decimals", creator, 5000 * COIN, GetTime());
+    BOOST_REQUIRE(aMgr->CreateAuction(auction, auctionId));
+    BOOST_REQUIRE(aMgr->PlaceBid(auctionId, MakeKeyID(), 5000 * COIN + 1, bidId));
+    // 107.55% of 500000000001 is 537750000001.0755
+    BOOST_CHECK(!aMgr->PlaceBid(auctionId, MakeKeyID(), 537750000000, bidId));
+    BOOST_CHECK(aMgr->PlaceBid(auctionId, MakeKeyID(), 537750000001, bidId));
 }
 
 BOOST_FIXTURE_TEST_CASE(bid_on_ended_or_closed_auction_is_rejected, AuctionTestingSetup)

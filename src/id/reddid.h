@@ -6,6 +6,7 @@
 #define BITCOIN_ID_REDDID_H
 
 #include <amount.h>
+#include <id/amounts.h>
 #include <key.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
@@ -234,7 +235,7 @@ class NamespaceInfo {
             READWRITE(minBidIncrementInt);
             const_cast<NamespaceInfo&>(obj).minBidIncrement = minBidIncrementInt / 100.0;
         } else {
-            int32_t minBidIncrementInt = static_cast<int32_t>(obj.minBidIncrement * 100.0 + 0.5);  // Round to nearest
+            int32_t minBidIncrementInt = PercentToHundredths(obj.minBidIncrement);
             READWRITE(minBidIncrementInt);
         }
 

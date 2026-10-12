@@ -18,36 +18,8 @@
 #include <validationinterface.h>
 #include <key.h>
 
-#include <cfloat>
 #include <memory>
 #include <string>
-
-/**
- * SUSPECTED BUG (documented, not fixed): the node computes minimum bids and
- * renewal fees in floating point and cuts the result off. A build that
- * evaluates double expressions with extended precision (FLT_EVAL_METHOD is
- * not 0, as on 32-bit x86 with the x87 unit) can get an intermediate result
- * just below the whole number that double precision rounds it to, and then
- * the amount is one base unit lower. Nodes built that way disagree with the
- * others on whether a bid is valid.
- *
- * The number of base units by which such an amount can be lower in this build
- * than the amount that exact arithmetic gives.
- */
-#if FLT_EVAL_METHOD == 0
-static constexpr CAmount REDDID_FLOAT_SLACK{0};
-#else
-static constexpr CAmount REDDID_FLOAT_SLACK{1};
-#endif
-
-/**
- * Whether an amount that the node computed in floating point is the exact
- * amount, or lower by no more than the slack.
- */
-inline bool IsFloatAmount(CAmount actual, CAmount exact)
-{
-    return actual <= exact && actual >= exact - REDDID_FLOAT_SLACK;
-}
 
 /**
  * Test fixture that initializes ReddIDManager with in-memory database.

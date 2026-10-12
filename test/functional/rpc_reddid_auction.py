@@ -186,11 +186,8 @@ class ReddIDAuctionTest(BitcoinTestFramework):
         assert_equal(first_bid['bid_time'], now + 1)
         assert_equal(node.getbalance(), balance)
         assert_equal(node.getrawmempool(), [])
-        # The next bid must be 5% higher. The node computes the minimum in
-        # floating point, and a build with extended-precision evaluation
-        # (32-bit x86) gets 10499.99999999 where the others get 10500, so the
-        # bid that is refused here is two base units short.
-        assert_raises_rpc_error(-1, "Failed to place bid", node.bidonuseridauction, auction_id, "10499.99999998")
+        # The next bid must be 5% higher
+        assert_raises_rpc_error(-1, "Failed to place bid", node.bidonuseridauction, auction_id, "10499.99999999")
         # The account is no longer read as the address type
         second_bid = node.bidonuseridauction(auction_id, 10500, "account")
         assert_raises_rpc_error(-8, "Unknown address type", node.bidonuseridauction, auction_id, 20000, "account", "nonsense")
