@@ -190,11 +190,11 @@ class ReddIDSyncTest(BitcoinTestFramework):
             assert_equal(other.getuserauctioninfo(bobby_id)['state'], 0)
 
         self.log.info("The settlement registers the user ID on both nodes")
-        # reddidsettleauction cannot build this transaction: see rpc_reddid_deposit.py
-        payload = (b'RS' + bytes.fromhex(alice_id)[::-1] + bytes.fromhex(lock['bid_id'])[::-1]).hex()
-        raw = other.createrawtransaction([{"txid": bid['txid'], "vout": 1}], [{"data": payload}, {self.stake_address: Decimal("1799.99")}])
-        settle = other.sendrawtransaction(other.signrawtransactionwithwallet(raw)['hex'])
-        self.relay(other, settle)
+        # The wallet of node 0 holds no key of the winning bid
+        assert_raises_rpc_error(-4, "Winning bid deposit key does not belong to this wallet", node.reddidsettleauction, alice_id)
+        settle = other.reddidsettleauction(alice_id)
+        assert_equal(settle['bid_id'], lock['bid_id'])
+        self.relay(other, settle['txid'])
         self.mine()
         user_id = node.getuseridinfo("alice", "shared")
         assert_equal(user_id['owner'], bid['bidder_address'])

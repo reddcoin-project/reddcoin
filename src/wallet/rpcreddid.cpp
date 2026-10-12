@@ -2709,6 +2709,8 @@ static RPCHelpMan reddidsettleauction()
     if (!auctionManager)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Auction manager not available");
 
+    EnsureWalletIsUnlocked(*pwallet);
+
     uint256 auctionId = ParseHashV(request.params[0], "auction_id");
 
     // Validate auction is in SETTLEMENT state
@@ -2733,13 +2735,34 @@ static RPCHelpMan reddidsettleauction()
     if (!found)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "No winning bid found for auction");
 
-    // Verify winner's deposit key belongs to this wallet
-    CTxDestination winnerDest = PKHash(winningBid.bidder);
-    if (pwallet->IsMine(GetScriptForDestination(winnerDest)) == ISMINE_NO)
+    // Verify winner's deposit key belongs to this wallet: the wallet has to
+    // sign for the deposit, so watching the address is not enough
+    if (!WalletHoldsKey(*pwallet, winningBid.bidder))
         throw JSONRPCError(RPC_WALLET_ERROR, "Winning bid deposit key does not belong to this wallet");
+
+    // The node accepts a settlement in the blocks up to the one after the
+    // deadline height, and ignores a later one
+    const int tipHeight = EnsureChainman(node).ActiveChain().Height();
+    if (auction.settlementDeadlineHeight > 0 && tipHeight > auction.settlementDeadlineHeight)
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+            strprintf("The settlement window of this auction has ended: the settlement had to be in block %d or an earlier one",
+                      auction.settlementDeadlineHeight + 1));
 
     // Build transaction
     CMutableTransaction rawTx;
+
+    // vin[0]: the deposit of the winning bid, which the node requires the
+    // settlement to spend. It is a confirmed coin of the key of the bid, so
+    // the node also reads the sender from it. A winning bid that was placed
+    // without a deposit is settled from another coin of the wallet.
+    if (!winningBid.depositUtxo.IsNull()) {
+        rawTx.vin.push_back(CTxIn(winningBid.depositUtxo));
+    } else {
+        COutPoint senderCoin;
+        if (!FindSenderCoin(*pwallet, *auctionManager, nullptr, senderCoin))
+            throw JSONRPCError(RPC_WALLET_ERROR, "The wallet has no confirmed coin at a legacy address, which a settlement needs as its first input");
+        rawTx.vin.push_back(CTxIn(senderCoin));
+    }
 
     // vout[0]: OP_RETURN
     CScript opReturnScript = reddIDManager->CreateAuctionSettleOpReturn(auctionId, winningBid.bidId);
@@ -2747,25 +2770,13 @@ static RPCHelpMan reddidsettleauction()
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to create OP_RETURN script");
     rawTx.vout.push_back(CTxOut(0, opReturnScript));
 
-    // Force-include the deposit UTXO as input
-    CCoinControl coinControl;
-    coinControl.Select(winningBid.depositUtxo);
-
-    CAmount nFeeRet;
-    int nChangePosInOut = -1;
-    bilingual_str fundError;
-    std::set<int> setSubtractFeeFromOutputs;
-
-    if (!pwallet->FundTransaction(rawTx, nFeeRet, nChangePosInOut, fundError,
-                                   /*lockUnspents=*/true, setSubtractFeeFromOutputs, coinControl))
-        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Failed to fund transaction: %s", fundError.original));
-
-    if (!pwallet->SignTransaction(rawTx))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to sign transaction");
-
-    CTransactionRef tx = MakeTransactionRef(std::move(rawTx));
-    mapValue_t mapValue;
-    pwallet->CommitTransaction(tx, std::move(mapValue), {});
+    // Fund, sign, broadcast. The deposit pays the fee and the rest of it
+    // returns to the wallet as change; the wallet adds coins if it is too
+    // small for the fee.
+    ReddIDChangeKey changeKey(*pwallet, rawTx);
+    FundAndSignReddIDTransaction(*pwallet, rawTx, changeKey.Destination());
+    CTransactionRef tx = CommitReddIDTransaction(*pwallet, node, std::move(rawTx));
+    changeKey.KeepIfUsed(*tx);
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("txid", tx->GetHash().GetHex());

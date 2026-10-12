@@ -13,8 +13,9 @@ the blocks, and a second wallet bid, and a third creates the auctions. The test
 follows three auctions:
 
 - dave: two bids with deposits, the locks on the deposits, the finalization
-  that starts the settlement, the settlement within its window and the
-  registration of the user ID, and a reorganization across the settlement.
+  that starts the settlement, the settlement by reddidsettleauction within
+  its window and the registration of the user ID, and a reorganization across
+  the settlement.
 - erin: one bid, a reorganization across the bid, a winner that does not
   settle, and the default record after the window.
 - frank: one bid, and a finalization that the creator key did not pay for.
@@ -371,34 +372,41 @@ class ReddIDDepositTest(BitcoinTestFramework):
         self.log.info("reddidsettleauction is for the wallet of the winner")
         for wallet in (first, creator):
             assert_raises_rpc_error(-4, "Winning bid deposit key does not belong to this wallet", wallet.reddidsettleauction, dave)
+        # The wallet has to sign for the deposit: watching its address is not enough
+        with second_wallet(node, "watcher") as watcher:
+            watcher.importaddress(high['bidder'], "", False)
+            assert_equal(watcher.getaddressinfo(high['bidder'])['iswatchonly'], True)
+            assert_raises_rpc_error(-4, "Winning bid deposit key does not belong to this wallet", watcher.reddidsettleauction, dave)
 
-        self.log.info("reddidsettleauction makes a transaction with no inputs")
-        # SUSPECTED BUG: the command selects the deposit for the wallet to
-        # spend and does not add it to the transaction. The wallet needs
-        # nothing else, so the transaction has no input at all. The mempool
-        # refuses it, the command does not look at that and reports success.
-        with node.assert_debug_log(["Transaction cannot be broadcast immediately, bad-txns-vin-empty"]):
-            broken = second.reddidsettleauction(dave)
-        assert_equal(broken['auction_id'], dave)
-        assert_equal(broken['bid_id'], high['bid_id'])
-        assert_equal(broken['settlement_amount'], Decimal("1800"))
-        assert_raises_rpc_error(-5, "No such mempool or blockchain transaction", node.getrawtransaction, broken['txid'])
-        in_wallet = second.gettransaction(broken['txid'])
-        assert_equal(in_wallet['confirmations'], 0)
-        assert_equal(node.decoderawtransaction(in_wallet['hex'])['vin'], [])
-        second.abandontransaction(broken['txid'])
-        self.mine()
+        self.log.info("reddidsettleauction spends the deposit of the winner, and the block completes the auction")
+        # The next block, finalized + 1, is within the window, which ends
+        # with block finalized + WINDOW
+        mempool = node.getrawmempool()
+        settled = second.reddidsettleauction(dave)
+        settle_txid = settled.pop('txid')
+        assert_equal(settled, {
+            "auction_id": dave,
+            "bid_id": high['bid_id'],
+            "settlement_amount": Decimal("1800"),
+        })
+        # The mempool lets a settlement of the auction spend the locked deposit
+        assert_equal(sorted(node.getrawmempool()), sorted(mempool + [settle_txid]))
+        tx = node.getrawtransaction(settle_txid, True)
+        # The deposit is the first input, and the only one: it is more than the fee
+        assert_equal([(vin['txid'], vin['vout']) for vin in tx['vin']], [(high['txid'], 1)])
+        assert_equal(tx['vout'][0]['scriptPubKey']['hex'], "6a42" + record(b'S', dave, high['bid_id']))
+        # SUSPECTED BUG: the winner pays the fee of the transaction and
+        # nothing else. The bid of 12000 is paid to nobody, and the deposit
+        # returns to the wallet of the winner as change.
+        assert_equal(len(tx['vout']), 2)
+        assert_equal(second.getaddressinfo(tx['vout'][1]['scriptPubKey']['address'])['ismine'], True)
+        assert tx['vout'][1]['value'] > Decimal("1799")
+        # Nothing has changed before the block
         assert_equal(node.getuserauctioninfo(dave)['state'], 4)
-
-        self.log.info("A settlement record in a transaction that spends the deposit completes the auction")
-        # What the command should have built: block finalized + 2 is within
-        # the window, which ends with block finalized + WINDOW
-        settle = self.spend(second, high['txid'], 1, Decimal("1800"), record(b'S', dave, high['bid_id']))
-        # A settlement of the auction may spend the locked deposit
-        settle_txid = node.sendrawtransaction(settle)
+        assert_equal(node.reddidgetdepositlock(high['txid'], 1)['state'], "active")
         with node.assert_debug_log(["Settlement completed for auction " + dave]):
             settle_block = self.mine()
-        assert_equal(node.getblockcount(), finalized + 2)
+        assert_equal(node.getblockcount(), finalized + 1)
         assert_equal(node.getrawtransaction(settle_txid, True)['confirmations'], 1)
         assert_equal(node.getuserauctioninfo(dave)['state'], 5)
         user_id = node.getuseridinfo("dave", "redd")
@@ -412,7 +420,7 @@ class ReddIDDepositTest(BitcoinTestFramework):
 
         self.log.info("A reorganization across the settlement")
         node.invalidateblock(settle_block)
-        assert_equal(node.getblockcount(), finalized + 1)
+        assert_equal(node.getblockcount(), finalized)
         assert_equal(node.getuserauctioninfo(dave)['state'], 4)
         assert_raises_rpc_error(-8, "User ID not found", node.getuseridinfo, "dave", "redd")
         assert_equal(node.reddidgetdepositlock(high['txid'], 1)['state'], "active")
@@ -471,6 +479,8 @@ class ReddIDDepositTest(BitcoinTestFramework):
             assert_equal(node.getrawtransaction(early, True)['confirmations'], 1)
             assert_equal(node.getuserauctioninfo(erin)['state'], 4)
             assert_equal(node.reddidgetdepositlock(only['txid'], 1)['state'], "active")
+        # The command does not build a settlement that the node would ignore
+        assert_raises_rpc_error(-8, "The settlement window of this auction has ended: the settlement had to be in block %d or an earlier one" % (finalized + WINDOW), first.reddidsettleauction, erin)
         # SUSPECTED BUG: anyone may send the record; nothing ties it to a
         # party of the auction. The second wallet pays for this one and
         # signs it.
