@@ -7,8 +7,8 @@
 The message classes, the peer and the encoders for the 18 ReddID peer-to-peer
 messages, and the steps that several tests share: running the periodic task of
 a node and checking that it does not run again by itself, restarting a node on
-the clock it had, mining with a chosen wallet and acquiring a namespace through
-its auction.
+the clock it had, mining with a chosen wallet, acquiring a namespace through
+its auction and a wallet that owns nothing.
 
 The encoders are written from the serialization of the message classes in
 src/id/reddid_p2p.h and of the types in src/id/reddid.h.
@@ -241,6 +241,21 @@ def expiry_task_idle(*nodes):
                     if EXPIRY_TASK_LOG in log.read():
                         raise AssertionError("The periodic ReddID task of node %d ran during steps that need it not to (\"%s\" in its log); the failure above follows from that" % (node.index, EXPIRY_TASK_LOG)) from e
             raise
+
+
+@contextmanager
+def second_wallet(node, name):
+    """A new legacy wallet on the node for the steps inside the with statement.
+
+    It holds no key of the other wallets of the node: it is the wallet of
+    someone who is not the creator of an auction or the owner of a record.
+    """
+    node.createwallet(wallet_name=name, descriptors=False)
+    wallet = node.get_wallet_rpc(name)
+    try:
+        yield wallet
+    finally:
+        wallet.unloadwallet()
 
 
 def advance_clock(nodes, seconds):

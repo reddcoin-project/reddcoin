@@ -31,6 +31,7 @@
 #include <set>
 #include <stdint.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The ReddID commands that use a wallet. This file is built only with a
@@ -63,6 +64,48 @@ static CKeyID GetNewWalletDestination(CWallet* pwallet, std::string& error, Outp
     }
 
     return keyID;
+}
+
+// The address type argument of a command, or an error if it names none
+static OutputType ParseAddressType(const std::string& address_type)
+{
+    if (address_type == "p2sh-segwit") return OutputType::P2SH_SEGWIT;
+    if (address_type == "bech32") return OutputType::BECH32;
+    if (address_type != "legacy") throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
+    return OutputType::LEGACY;
+}
+
+// Whether the wallet holds the private key of a key that owns a ReddID record:
+// the creator of an auction, the owner of a namespace, of a user ID or of a
+// profile. The commands that act for an owner ask this of the key in the
+// record. They do not take a key from the wallet for the call: a new key is
+// never the owner.
+//
+// A key that the wallet only watches does not count, and IsMine does not say
+// which it is: a descriptor wallet without private keys reports every script
+// that it knows as spendable. So the wallet is asked for the key itself. A
+// legacy wallet says whether it has the key, locked or not. A descriptor
+// wallet has to derive it, which it can only do when it is unlocked: a locked
+// one is told to unlock.
+static bool WalletHoldsKey(const CWallet& wallet, const CKeyID& keyId) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    if (keyId.IsNull() || wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+
+    const CScript script = GetScriptForDestination(PKHash(keyId));
+    if (wallet.IsMine(script) != ISMINE_SPENDABLE) return false;
+
+    if (const LegacyScriptPubKeyMan* legacy = wallet.GetLegacyScriptPubKeyMan()) {
+        return legacy->HaveKey(keyId);
+    }
+
+    EnsureWalletIsUnlocked(wallet);
+    SignatureData sigdata;
+    for (ScriptPubKeyMan* spk_man : wallet.GetScriptPubKeyMans(script, sigdata)) {
+        const DescriptorScriptPubKeyMan* descriptors = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
+        CKey key;
+        if (descriptors && descriptors->GetKey(script, keyId, key)) return true;
+    }
+    return false;
 }
 
 static RPCHelpMan createnamespacesauction()
@@ -372,32 +415,11 @@ static RPCHelpMan cancelnamespacesauction()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Auction not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
-    if (request.params.size() > 4) {
-        std::string address_type = request.params[4].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
-    }
 
-    // Get optional label
-    std::string label = "";
-    if (request.params.size() > 5) {
-        label = request.params[5].get_str();
-    }
-
-    // Get creator address using the HD wallet functionality
-    std::string error;
-    CKeyID creatorKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (creatorKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
+    // The wallet must hold the key of the creator of the auction
+    const CKeyID creatorKeyId = auction.creator;
+    if (!WalletHoldsKey(*pwallet, creatorKeyId)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "You are not the creator of this auction");
     }
 
     // Cancel auction
@@ -520,36 +542,20 @@ static RPCHelpMan configurenamespacess()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Namespace not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the namespace
     if (request.params.size() > 4) {
-        std::string address_type = request.params[4].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[4].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 5) {
-        label = request.params[5].get_str();
+        request.params[5].get_str();  // the label
     }
 
-    // Get owner address using the HD wallet functionality
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check ownership
-    if (namespaceInfo.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the namespace
+    const CKeyID ownerKeyId = namespaceInfo.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_MISC_ERROR, "You are not the owner of this namespace");
     }
 
@@ -690,14 +696,13 @@ static RPCHelpMan configurenamespacess()
         configUpdated = true;
     }
 
-    // Check if we have pricing tiers to update
+    // Check if we have pricing tiers to update. They are all read before
+    // anything is changed, so that a tier that is refused changes nothing.
+    bool replaceTiers = false;
+    std::vector<std::pair<int, CAmount>> newTiers;
     if (request.params.size() > 2 && !request.params[2].isNull()) {
         UniValue tiersArray = request.params[2].get_array();
 
-        // Clear existing pricing tiers
-        namespaceManager->RemovePricingTier(namespaceId, 0); // Remove all tiers
-
-        // Add new pricing tiers
         for (size_t i = 0; i < tiersArray.size(); i++) {
             UniValue tierObj = tiersArray[i].get_obj();
 
@@ -712,13 +717,22 @@ static RPCHelpMan configurenamespacess()
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "min_length must be at least 1");
             }
 
-            if (minPrice < 0) {
+            // The namespace manager stores no tier with a price of zero
+            if (minPrice <= 0) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "min_price must be positive");
             }
 
-            namespaceManager->AddPricingTier(namespaceId, minLength, minPrice);
+            // and one tier for a length: a second one would replace the first
+            for (const auto& tier : newTiers) {
+                if (tier.first == minLength) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("More than one pricing tier with min_length %d", minLength));
+                }
+            }
+
+            newTiers.emplace_back(minLength, minPrice);
         }
 
+        replaceTiers = true;
         configUpdated = true;
     }
 
@@ -728,6 +742,24 @@ static RPCHelpMan configurenamespacess()
 
         if (!namespaceManager->UpdateNamespace(namespaceInfo)) {
             throw JSONRPCError(RPC_MISC_ERROR, "Failed to update namespace configuration");
+        }
+    }
+
+    // The tiers that were given replace the tiers that there are. This is
+    // not atomic: if the namespace manager fails at one step, which the
+    // checks above leave only a database error to cause, the steps before it
+    // stay done and the command reports the failure.
+    if (replaceTiers) {
+        for (const PricingTier& tier : namespaceManager->GetPricingTiers(namespaceId)) {
+            if (!namespaceManager->RemovePricingTier(namespaceId, tier.minLength)) {
+                throw JSONRPCError(RPC_MISC_ERROR, "Failed to remove a pricing tier");
+            }
+        }
+
+        for (const auto& tier : newTiers) {
+            if (!namespaceManager->AddPricingTier(namespaceId, tier.first, tier.second)) {
+                throw JSONRPCError(RPC_MISC_ERROR, "Failed to add a pricing tier");
+            }
         }
     }
 
@@ -829,36 +861,20 @@ static RPCHelpMan renewnamespace()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Namespace not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the namespace
     if (request.params.size() > 2) {
-        std::string address_type = request.params[2].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[2].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 3) {
-        label = request.params[3].get_str();
+        request.params[3].get_str();  // the label
     }
 
-    // Get owner address using the HD wallet functionality
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check ownership
-    if (namespaceInfo.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the namespace
+    const CKeyID ownerKeyId = namespaceInfo.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_MISC_ERROR, "You are not the owner of this namespace");
     }
 
@@ -962,36 +978,20 @@ static RPCHelpMan transfernamespace()
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid destination address key ID");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the namespace
     if (request.params.size() > 3) {
-        std::string address_type = request.params[3].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[3].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 4) {
-        label = request.params[4].get_str();
+        request.params[4].get_str();  // the label
     }
 
-    // Get owner address using the HD wallet functionality
-    std::string error;
-    CKeyID fromKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (fromKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check ownership
-    if (namespaceInfo.owner != fromKeyId) {
+    // The wallet must hold the key of the owner of the namespace
+    const CKeyID fromKeyId = namespaceInfo.owner;
+    if (!WalletHoldsKey(*pwallet, fromKeyId)) {
         throw JSONRPCError(RPC_MISC_ERROR, "You are not the owner of this namespace");
     }
 
@@ -1325,32 +1325,21 @@ static RPCHelpMan canceluseridauction()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Auction not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // creator of the auction
     if (request.params.size() > 2) {
-        std::string address_type = request.params[2].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[2].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 3) {
-        label = request.params[3].get_str();
+        request.params[3].get_str();  // the label
     }
 
-    // Get bidder address using the HD wallet functionality
-    std::string error;
-    CKeyID creatorKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (creatorKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
+    // The wallet must hold the key of the creator of the auction
+    const CKeyID creatorKeyId = auction.creator;
+    if (!WalletHoldsKey(*pwallet, creatorKeyId)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "You are not the creator of this auction");
     }
 
     // Cancel auction
@@ -1429,38 +1418,20 @@ static RPCHelpMan renewuserid()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "User ID not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the user ID
     if (request.params.size() > 3) {
-        std::string address_type = request.params[3].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[3].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 4) {
-        label = request.params[4].get_str();
+        request.params[4].get_str();  // the label
     }
 
-    // [... other code ...]
-
-    // Get creator address using the HD wallet functionality
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check ownership
-    if (userID.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the user ID
+    const CKeyID ownerKeyId = userID.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_MISC_ERROR, "You are not the owner of this user ID");
     }
 
@@ -1545,38 +1516,20 @@ static RPCHelpMan transferuserid()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "User ID not found");
     }
 
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the user ID
     if (request.params.size() > 4) {
-        std::string address_type = request.params[4].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[4].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 5) {
-        label = request.params[5].get_str();
+        request.params[5].get_str();  // the label
     }
 
-    // [... other code ...]
-
-    // Get creator address using the HD wallet functionality
-    std::string error;
-    CKeyID fromKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (fromKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check ownership
-    if (userID.owner != fromKeyId) {
+    // The wallet must hold the key of the owner of the user ID
+    const CKeyID fromKeyId = userID.owner;
+    if (!WalletHoldsKey(*pwallet, fromKeyId)) {
         throw JSONRPCError(RPC_MISC_ERROR, "You are not the owner of this user ID");
     }
 
@@ -1712,37 +1665,20 @@ static RPCHelpMan createuserconnection()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Target ReddID not found");
     }
 
-    // Get owner address
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the source ReddID
     if (request.params.size() > 6) {
-        std::string address_type = request.params[6].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[6].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 7) {
-        label = request.params[7].get_str();
+        request.params[7].get_str();  // the label
     }
 
-    // Get owner key from wallet
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check if user is the owner of the source ReddID
-    if (fromProfile.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the source ReddID
+    const CKeyID ownerKeyId = fromProfile.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER,
                          "You are not the owner of the source ReddID");
     }
@@ -1908,37 +1844,20 @@ static RPCHelpMan updateuserconnection()
                          "Connection does not exist between these ReddIDs");
     }
 
-    // Get owner address
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the source ReddID
     if (request.params.size() > 6) {
-        std::string address_type = request.params[6].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[6].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 7) {
-        label = request.params[7].get_str();
+        request.params[7].get_str();  // the label
     }
 
-    // Get owner key from wallet
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check if user is the owner of the source ReddID
-    if (fromProfile.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the source ReddID
+    const CKeyID ownerKeyId = fromProfile.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER,
                          "You are not the owner of the source ReddID");
     }
@@ -2066,37 +1985,20 @@ static RPCHelpMan removeuserconnection()
                          "Connection does not exist between these ReddIDs");
     }
 
-    // Get owner address
-    // Determine address type
-    OutputType output_type = OutputType::LEGACY;
+    // The address type is still checked, and it and the label are not used:
+    // they were for a new key, and the command acts with the key of the
+    // owner of the source ReddID
     if (request.params.size() > 3 && !request.params[3].isNull()) {
-        std::string address_type = request.params[3].get_str();
-        if (address_type == "p2sh-segwit") {
-            output_type = OutputType::P2SH_SEGWIT;
-        } else if (address_type == "bech32") {
-            output_type = OutputType::BECH32;
-        } else if (address_type != "legacy") {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown address type");
-        }
+        ParseAddressType(request.params[3].get_str());
     }
 
-    // Get optional label
-    std::string label = "";
     if (request.params.size() > 4 && !request.params[4].isNull()) {
-        label = request.params[4].get_str();
+        request.params[4].get_str();  // the label
     }
 
-    // Get owner key from wallet
-    std::string error;
-    CKeyID ownerKeyId = GetNewWalletDestination(pwallet, error, output_type, label);
-
-    if (ownerKeyId.IsNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR,
-            strprintf("Could not get new address: %s", error));
-    }
-
-    // Check if user is the owner of the source ReddID
-    if (fromProfile.owner != ownerKeyId) {
+    // The wallet must hold the key of the owner of the source ReddID
+    const CKeyID ownerKeyId = fromProfile.owner;
+    if (!WalletHoldsKey(*pwallet, ownerKeyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER,
                          "You are not the owner of the source ReddID");
     }

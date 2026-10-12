@@ -8,7 +8,8 @@ One node runs ReddID and takes a namespace through its auction. The test then
 follows user ID auctions made with createuseridauction, bidonuseridauction and
 finalizeuseridauction, which change the state of the node with no transaction,
 and checks the commands that list and show auctions, bids and user IDs, the
-commands for the owner of a user ID, the periodic task and
+commands for the creator of an auction and for the owner of a user ID, which
+ask the wallet for the key in the record, the periodic task and
 reddidgetauctionconfig and reddidsetauctionconfig.
 
 The auctions with deposits, which do use transactions, are in
@@ -25,6 +26,7 @@ from test_framework.reddid import (
     expiry_task_idle,
     keep_clock,
     run_expiry_task,
+    second_wallet,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -35,6 +37,7 @@ from test_framework.util import (
 HOUR = 60 * 60
 CREATE_FAILED = "Failed to create user ID auction"
 NOT_OWNER = "You are not the owner of this user ID"
+NOT_CREATOR = "You are not the creator of this auction"
 
 USERID_DEFAULTS = {
     "config_id": "userid",
@@ -226,23 +229,39 @@ class ReddIDAuctionTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "sort_dir must be 'asc' or 'desc'", node.getuseridauctionbids, auction_id, "time", "up")
         assert_equal(len(node.getuserauctioninfo(auction_id, True)['bids']), 3)
 
-        self.log.info("canceluseridauction does not accept the key that created the auction")
-        # SUSPECTED BUG: the command compares the creator of the auction with
-        # a key that it takes from the wallet for this call, the next unused
-        # one. A wallet can therefore never pass with a key that it has
-        # already been given, which the creator is. Every call uses up a key.
-        # (Not tried: a creator that is the next key of the wallet, which
-        # another wallet with the same seed could have used.)
-        # The auction for bob has no bid and its state would allow the
-        # cancellation. The command has one error for every refusal;
-        # ReddIDManager::CancelUserIDAuction, which compares the keys first,
-        # logs nothing, so the test asserts that the call does not get as far
-        # as AuctionManager::CancelAuction, which logs when it starts.
+        self.log.info("canceluseridauction is for the wallet that holds the key of the creator")
+        erin = node.createuseridauction("erin", "redd", 10000, 3)
+        # A wallet with no key of the auction is refused, and so is one that
+        # only watches the address of the creator. The auction has no bid and
+        # its state would allow the cancellation.
+        with second_wallet(node, "stranger") as stranger:
+            with node.assert_debug_log([], unexpected_msgs=["Canceling auction " + erin['auction_id']]):
+                assert_raises_rpc_error(-1, NOT_CREATOR, stranger.canceluseridauction, erin['auction_id'])
+                stranger.importaddress(erin['creator_address'], "", False)
+                assert_equal(stranger.getaddressinfo(erin['creator_address'])['iswatchonly'], True)
+                assert_raises_rpc_error(-1, NOT_CREATOR, stranger.canceluseridauction, erin['auction_id'])
+        assert_equal(node.getuserauctioninfo(erin['auction_id'])['state'], 0)
+        # The wallet of the creator passes with the key that it holds, and no
+        # call takes a key from the wallet. An auction with bids cannot be
+        # cancelled.
         before = self.key_index(node)
-        with node.assert_debug_log([], unexpected_msgs=["Canceling auction " + bob['auction_id']]):
-            assert_raises_rpc_error(-1, "Failed to cancel auction", node.canceluseridauction, bob['auction_id'])
-            assert_raises_rpc_error(-1, "Failed to cancel auction", node.canceluseridauction, bob['auction_id'], "account", "legacy", "label")
-        assert_equal(self.key_index(node), before + 3)
+        with node.assert_debug_log(["AuctionManager::CancelAuction: Cannot cancel auction with bids: " + auction_id]):
+            assert_raises_rpc_error(-1, "Failed to cancel auction", node.canceluseridauction, auction_id)
+        assert_equal(node.getuserauctioninfo(auction_id)['state'], 1)
+        # SUSPECTED BUG: no transaction cancels the auction. It is cancelled
+        # on this node, which tells its peers in a message that a node accepts
+        # from anyone.
+        with node.assert_debug_log(["Successfully canceled auction " + erin['auction_id']]):
+            assert_equal(node.canceluseridauction(erin['auction_id'], "account", "legacy", "label"), {
+                "auction_id": erin['auction_id'],
+                "name": "erin",
+                "namespace_id": "redd",
+                "state": 8,
+            })
+        assert_equal(node.getuserauctioninfo(erin['auction_id'])['state'], 8)
+        assert_equal(node.getrawmempool(), [])
+        assert_equal(self.key_index(node), before + 1)
+        assert_raises_rpc_error(-8, "Auction is not active", node.bidonuseridauction, erin['auction_id'], 10000)
         assert_raises_rpc_error(-8, "Unknown address type", node.canceluseridauction, bob['auction_id'], "account", "nonsense")
         assert_raises_rpc_error(-8, "Auction not found", node.canceluseridauction, "00" * 32)
         assert_equal(node.getuserauctioninfo(bob['auction_id'])['state'], 0)
@@ -309,29 +328,58 @@ class ReddIDAuctionTest(BitcoinTestFramework):
             twin_bid = node.bidonuseridauction(twin['auction_id'], 10000)
             assert_equal(node.getuserauctioninfo(twin['auction_id'])['state'], 1)
 
-            self.log.info("renewuserid and transferuserid do not accept the key that owns the user ID")
-            # SUSPECTED BUG: both commands compare the owner of the user ID with a
-            # key that they take from the wallet for the call, the next unused
-            # one. A wallet can never pass with a key that it has already been
-            # given: the wallet that holds the key of the owner is told that it is
-            # not the owner, and each call uses up a key. (Not tried: an owner
-            # that is the next key of the wallet. Nothing that the commands do
-            # after this check is tested.)
+            self.log.info("renewuserid and transferuserid are for the wallet that holds the key of the owner")
             assert_equal(node.getaddressinfo(winner)['ismine'], True)
             target = node.getnewaddress("", "legacy")
-            before = self.key_index(node)
-            assert_raises_rpc_error(-1, NOT_OWNER, node.renewuserid, "alice", "redd")
-            assert_raises_rpc_error(-1, NOT_OWNER, node.renewuserid, "alice", "redd", "account", "legacy", "label")
-            assert_raises_rpc_error(-1, NOT_OWNER, node.transferuserid, "alice", "redd", target)
-            assert_raises_rpc_error(-1, NOT_OWNER, node.transferuserid, "alice", "redd", target, "account", "legacy", "label")
-            assert_equal(self.key_index(node), before + 5)
+            with second_wallet(node, "watcher") as stranger:
+                for watching in (False, True):
+                    if watching:
+                        stranger.importaddress(winner, "", False)
+                    assert_raises_rpc_error(-1, NOT_OWNER, stranger.renewuserid, "alice", "redd")
+                    assert_raises_rpc_error(-1, NOT_OWNER, stranger.transferuserid, "alice", "redd", target)
             assert_raises_rpc_error(-8, "User ID not found", node.renewuserid, "bob", "redd")
             assert_raises_rpc_error(-8, "User ID not found", node.transferuserid, "bob", "redd", target)
-            # The address type of renewuserid is the fourth argument; it was read from the fifth
+            # The address type and the label were for the key that the commands
+            # used to take from the wallet. The address type is still checked.
+            # That of renewuserid is the fourth argument; it was read from the fifth.
             assert_raises_rpc_error(-8, "Unknown address type", node.renewuserid, "alice", "redd", "account", "nonsense")
             assert_raises_rpc_error(-8, "Unknown address type", node.transferuserid, "alice", "redd", target, "account", "nonsense")
-            # The owner is checked before the address is, so a bad address is not reported
-            assert_raises_rpc_error(-1, NOT_OWNER, node.transferuserid, "alice", "redd", "notanaddress")
+            assert_raises_rpc_error(-5, "Invalid to address", node.transferuserid, "alice", "redd", "notanaddress")
+            assert_equal(node.getuseridinfo("alice", "redd"), user_id)
+
+            self.log.info("renewuserid adds the renewal period of the namespace to the expiration")
+            before = self.key_index(node)
+            balance = node.getbalance()
+            # SUSPECTED BUG: the command reports a renewal fee, half of the
+            # price of the name, and nothing is paid: there is no
+            # transaction. The user ID is renewed on this node alone, as
+            # often as the owner likes.
+            assert_equal(node.renewuserid("alice", "redd"), {
+                "name": "alice",
+                "namespace_id": "redd",
+                "expiration_time": end + 2 * 365 * DAY,
+                "renewal_fee": Decimal("5000"),
+            })
+            assert_equal(node.renewuserid("alice", "redd", "account", "legacy", "label")['expiration_time'], end + 3 * 365 * DAY)
+            user_id['expiration_time'] = end + 3 * 365 * DAY
+            assert_equal(node.getuseridinfo("alice", "redd"), user_id)
+            assert_equal(node.getbalance(), balance)
+            assert_equal(node.getrawmempool(), [])
+
+            self.log.info("transferuserid gives the user ID to another key")
+            # SUSPECTED BUG: again with no transaction, on this node alone
+            assert_equal(node.transferuserid("alice", "redd", target, "account", "legacy", "label"), {
+                "name": "alice",
+                "namespace_id": "redd",
+                "previous_owner": winner,
+                "new_owner": target,
+            })
+            user_id['owner'] = target
+            assert_equal(node.getuseridinfo("alice", "redd"), user_id)
+            assert_equal(self.key_index(node), before + 1)
+            # The wallet holds the key of the new owner too
+            assert_equal(node.renewuserid("alice", "redd")['expiration_time'], end + 4 * 365 * DAY)
+            user_id['expiration_time'] = end + 4 * 365 * DAY
             assert_equal(node.getuseridinfo("alice", "redd"), user_id)
 
             self.log.info("The periodic task cancels an ended auction with no bid and finalizes one with bids")

@@ -13,15 +13,21 @@ None of these commands builds a transaction: each changes the state of the
 node that it is called on, and nothing of it reaches node 1. That and the other
 things that look wrong are asserted as they are, each under a comment that
 starts with SUSPECTED BUG, so that the commit that fixes one finds its test.
+
+The commands that only the creator of an auction or the owner of a namespace
+may use ask the wallet for the key in the record: a wallet that holds it
+passes, and one that does not hold it, or only watches its address, does not.
 """
 
 from decimal import Decimal
 
+from test_framework.descriptors import descsum_create
 from test_framework.reddid import (
     DAY,
     advance_clock,
     keep_clock,
     run_expiry_task,
+    second_wallet,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -31,6 +37,7 @@ from test_framework.util import (
 
 AUCTION_SECONDS = 14 * DAY
 NOT_OWNER = "You are not the owner of this namespace"
+NOT_CREATOR = "You are not the creator of this auction"
 
 
 class ReddIDNamespaceTest(BitcoinTestFramework):
@@ -215,30 +222,39 @@ class ReddIDNamespaceTest(BitcoinTestFramework):
         verbose = node.getnamespaceauctioninfo(auction_id, True)['bids']
         assert_equal(sorted(bid['amount'] for bid in verbose), [Decimal("60000"), Decimal("63000"), Decimal("70000")])
 
-        self.log.info("cancelnamespacesauction does not accept the key that created the auction")
+        self.log.info("cancelnamespacesauction is for the wallet that holds the key of the creator")
         assert_raises_rpc_error(-8, "Auction not found", node.cancelnamespacesauction, "00" * 32)
-        # SUSPECTED BUG: the command compares the creator of the auction with
-        # a key that it takes from the wallet for this call, the next unused
-        # one. A wallet can therefore never pass with a key that it has
-        # already been given, which the creator is. Every call uses up a key
-        # of the wallet. (Not tried: a creator that is the next key of the
-        # wallet, which another wallet with the same seed could have used.)
-        # The command has one error for every refusal, and
-        # NamespaceManager::CancelNamespaceAuction logs nothing for any of
-        # them, so the test cannot tell them apart. The creator is compared
-        # before the bids are looked at: the first call below, on the auction
-        # with bids, is refused for the key as the others are, and the rule
-        # that an auction with bids cannot be cancelled is reached by none.
-        assert_raises_rpc_error(-1, "Failed to cancel auction", node.cancelnamespacesauction, auction_id)
+        fifth = node.createnamespacesauction("fifth", 50000, 14)
+        # A wallet with no key of the auction is refused, and so is one that
+        # only watches the address of the creator
+        with second_wallet(node, "stranger") as stranger:
+            assert_raises_rpc_error(-1, NOT_CREATOR, stranger.cancelnamespacesauction, fifth['auction_id'])
+            stranger.importaddress(fifth['creator_address'], "", False)
+            assert_equal(stranger.getaddressinfo(fifth['creator_address'])['iswatchonly'], True)
+            assert_raises_rpc_error(-1, NOT_CREATOR, stranger.cancelnamespacesauction, fifth['auction_id'])
+            assert_equal(node.getnamespaceauctioninfo(fifth['auction_id'])['state'], 0)
+        # The wallet of the creator passes with the key that it holds, and no
+        # call takes a key from the wallet. An auction with bids cannot be
+        # cancelled: the command has one error for that and for every other
+        # refusal of the namespace manager.
         before = self.key_index(node)
-        assert_raises_rpc_error(-1, "Failed to cancel auction", node.cancelnamespacesauction, second['auction_id'])
-        assert_raises_rpc_error(-1, "Failed to cancel auction", node.cancelnamespacesauction, second['auction_id'], "account")
-        assert_equal(self.key_index(node), before + 3)
-        assert_equal(node.getnamespaceauctioninfo(second['auction_id'])['state'], 0)
-        # The command reads an address type and a label from the fifth and
-        # sixth argument, and its help knows two arguments: a call with more
-        # than two is refused before the command runs. Left as it is.
+        assert_raises_rpc_error(-1, "Failed to cancel auction", node.cancelnamespacesauction, auction_id)
+        assert_equal(node.getnamespaceauctioninfo(auction_id)['state'], 1)
+        # SUSPECTED BUG: no transaction cancels the auction. It is cancelled
+        # on this node, and a node that had it would be told by a message
+        # that it accepts from any peer.
+        assert_equal(node.cancelnamespacesauction(fifth['auction_id'], "account"), {
+            "auction_id": fifth['auction_id'],
+            "namespace_id": "fifth",
+            "state": 8,
+        })
+        assert_equal(node.getnamespaceauctioninfo(fifth['auction_id'])['state'], 8)
+        assert_equal(node.getrawmempool(), [])
+        assert_equal(self.key_index(node), before + 1)
+        assert_raises_rpc_error(-8, "Auction is not active", node.bidonnamespacesauction, fifth['auction_id'], 60000)
+        # The command has two arguments
         assert_raises_rpc_error(-1, "cancelnamespacesauction \"auction_id\" ( \"account\" )", node.cancelnamespacesauction, second['auction_id'], "account", "legacy")
+        assert_equal(node.getnamespaceauctioninfo(second['auction_id'])['state'], 0)
 
         self.log.info("finalizenamespacesauction waits for the end of the auction")
         assert_raises_rpc_error(-8, "Auction not found", node.finalizenamespacesauction, "00" * 32)
@@ -324,29 +340,35 @@ class ReddIDNamespaceTest(BitcoinTestFramework):
         assert_equal(other.getnamespacelist(), [])
         assert_raises_rpc_error(-8, "Namespace not found", other.getnamespaceinfo, "redd")
 
-        self.log.info("configurenamespacess, renewnamespace and transfernamespace do not accept the key that owns the namespace")
-        # SUSPECTED BUG: the three commands compare the owner of the namespace
-        # with a key that they take from the wallet for the call, the next
-        # unused one. A wallet can never pass with a key that it has already
-        # been given: the wallet that holds the key of the owner is told that
-        # it is not the owner, and each call uses up a key. (Not tried: an
-        # owner that is the next key of the wallet. Nothing that the commands
-        # do after this check is tested.)
+        self.log.info("configurenamespacess, renewnamespace and transfernamespace are for the wallet that holds the key of the owner")
         assert_equal(node.getaddressinfo(winner)['ismine'], True)
         target = other.getnewaddress("", "legacy")
-        before = self.key_index(node)
-        assert_raises_rpc_error(-1, NOT_OWNER, node.configurenamespacess, "redd", {"min_length": 4})
-        assert_raises_rpc_error(-1, NOT_OWNER, node.configurenamespacess, "redd", {}, [{"min_length": 1, "min_price": 5}], "account", "legacy", "label")
-        assert_raises_rpc_error(-1, NOT_OWNER, node.renewnamespace, "redd")
-        assert_raises_rpc_error(-1, NOT_OWNER, node.renewnamespace, "redd", "account", "legacy", "label")
-        assert_raises_rpc_error(-1, NOT_OWNER, node.transfernamespace, "redd", target)
-        assert_raises_rpc_error(-1, NOT_OWNER, node.transfernamespace, "redd", target, "account", "legacy", "label")
-        assert_equal(self.key_index(node), before + 7)
+        with second_wallet(node, "watcher") as stranger:
+            for watching in (False, True):
+                if watching:
+                    stranger.importaddress(winner, "", False)
+                assert_raises_rpc_error(-1, NOT_OWNER, stranger.configurenamespacess, "redd", {"min_length": 4})
+                assert_raises_rpc_error(-1, NOT_OWNER, stranger.renewnamespace, "redd")
+                assert_raises_rpc_error(-1, NOT_OWNER, stranger.transfernamespace, "redd", target)
+        # A wallet without private keys that knows the address of the owner
+        # calls it its own, and holds no key
+        if self.is_sqlite_compiled():
+            node.createwallet(wallet_name="keyless", descriptors=True, disable_private_keys=True)
+            keyless = node.get_wallet_rpc("keyless")
+            assert_equal(keyless.importdescriptors([{"desc": descsum_create("addr(%s)" % winner), "timestamp": "now"}])[0]['success'], True)
+            assert_equal(keyless.getaddressinfo(winner)['ismine'], True)
+            assert_raises_rpc_error(-1, NOT_OWNER, keyless.configurenamespacess, "redd", {"min_length": 4})
+            assert_raises_rpc_error(-1, NOT_OWNER, keyless.renewnamespace, "redd")
+            # transfernamespace is for legacy wallets, which it says first
+            assert_raises_rpc_error(-4, "This type of wallet does not support this command", keyless.transfernamespace, "redd", target)
+            keyless.unloadwallet()
         assert_raises_rpc_error(-8, "Namespace not found", node.configurenamespacess, "nothere", {})
         assert_raises_rpc_error(-8, "Namespace not found", node.renewnamespace, "nothere")
         assert_raises_rpc_error(-8, "Namespace not found", node.transfernamespace, "nothere", target)
         assert_raises_rpc_error(-5, "Invalid destination address", node.transfernamespace, "redd", "notanaddress")
-        # The address type of configurenamespacess is the fifth argument
+        # The address type and the label were for the key that the commands
+        # used to take from the wallet. The address type is still checked.
+        # That of configurenamespacess is the fifth argument.
         assert_raises_rpc_error(-8, "Unknown address type", node.configurenamespacess, "redd", {}, None, "account", "nonsense")
         assert_raises_rpc_error(-8, "Unknown address type", node.renewnamespace, "redd", "account", "nonsense")
         assert_raises_rpc_error(-8, "Unknown address type", node.transfernamespace, "redd", target, "account", "nonsense")
@@ -354,11 +376,102 @@ class ReddIDNamespaceTest(BitcoinTestFramework):
         namespace['pricing_tiers'] = tiers
         assert_equal(node.getnamespaceinfo("redd"), namespace)
 
+        self.log.info("configurenamespacess changes the configuration and replaces the pricing tiers")
+        before = self.key_index(node)
+        balance = node.getbalance()
+        # What the command refuses changes nothing
+        assert_raises_rpc_error(-8, "min_length must be between 1 and 10", node.configurenamespacess, "redd", {"min_length": 11})
+        assert_raises_rpc_error(-8, "Revenue percentages must sum to 100% (current: 105%)", node.configurenamespacess, "redd", {"burn_pct": 75})
+        assert_raises_rpc_error(-8, "min_bid_increment must be between 1.0 and 10.0", node.configurenamespacess, "redd", {"min_bid_increment": 10.5})
+        assert_raises_rpc_error(-8, "min_price must be positive", node.configurenamespacess, "redd", {"min_length": 4}, [{"min_length": 2, "min_price": 30000}, {"min_length": 1, "min_price": 0}])
+        assert_raises_rpc_error(-8, "Pricing tier must have min_length and min_price", node.configurenamespacess, "redd", {"min_length": 4}, [{"min_length": 2}])
+        assert_raises_rpc_error(-8, "More than one pricing tier with min_length 2", node.configurenamespacess, "redd", {"min_length": 4}, [{"min_length": 2, "min_price": 30000}, {"min_length": 3, "min_price": 20000}, {"min_length": 2, "min_price": 40000}])
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+        # A call that changes nothing returns the configuration
+        assert_equal(node.configurenamespacess("redd", {}), namespace)
+        advance_clock(self.nodes, 10)
+        # SUSPECTED BUG: no transaction carries the change and nothing is
+        # paid for it. The configuration changes on this node alone: the
+        # other node does not have the namespace, and is not given it.
+        configured = node.configurenamespacess("redd", {"allow_hyphens": False, "min_length": 4, "burn_pct": 65, "node_pct": 20, "min_bid_increment": 7.55}, [{"min_length": 2, "min_price": 30000}, {"min_length": 6, "min_price": 2000}], "account", "legacy", "label")
+        namespace.update({
+            "allow_hyphens": False,
+            "min_length": 4,
+            "burn_pct": 65,
+            "node_pct": 20,
+            "min_bid_increment": Decimal("7.55"),
+            "last_updated": node.mocktime,
+            "pricing_tiers": [
+                {"min_length": 2, "min_price": Decimal("30000")},
+                {"min_length": 6, "min_price": Decimal("2000")},
+            ],
+        })
+        assert_equal(configured, namespace)
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+        # The tiers alone
+        tiers = [{"min_length": 1, "min_price": Decimal("90000")}, {"min_length": 3, "min_price": Decimal("20000")}, {"min_length": 6, "min_price": Decimal("3000")}]
+        namespace['pricing_tiers'] = tiers
+        assert_equal(node.configurenamespacess("redd", {}, tiers), namespace)
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+        assert_equal(node.getbalance(), balance)
+        assert_equal(node.getrawmempool(), [])
+        other.syncwithvalidationinterfacequeue()
+        assert_equal(other.getnamespacelist(), [])
+
+        self.log.info("renewnamespace adds the renewal period to the expiration")
+        # SUSPECTED BUG: the command reports a renewal fee, and nothing is
+        # paid: there is no transaction. The namespace is renewed on this
+        # node alone, as often as the owner likes.
+        advance_clock(self.nodes, 10)
+        fee = Decimal("2250")  # A quarter of the price of a namespace of four characters, less 10%
+        assert_equal(node.renewnamespace("redd"), {
+            "id": "redd",
+            "owner": winner,
+            "previous_expiration": end + 365 * DAY,
+            "new_expiration": end + 2 * 365 * DAY,
+            "renewal_fee": fee,
+        })
+        assert_equal(node.renewnamespace("redd", "account", "legacy", "label"), {
+            "id": "redd",
+            "owner": winner,
+            "previous_expiration": end + 2 * 365 * DAY,
+            "new_expiration": end + 3 * 365 * DAY,
+            "renewal_fee": fee,
+        })
+        namespace.update({"last_updated": node.mocktime, "expiration": end + 3 * 365 * DAY})
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+        assert_equal(node.getbalance(), balance)
+        assert_equal(node.getrawmempool(), [])
+
+        self.log.info("transfernamespace gives the namespace to another key")
+        advance_clock(self.nodes, 10)
+        assert_raises_rpc_error(-1, "Failed to transfer namespace", node.transfernamespace, "redd", winner)
+        # SUSPECTED BUG: again with no transaction, on this node alone. The
+        # wallet of the other node holds the key of the new owner, and that
+        # node does not have the namespace.
+        assert_equal(node.transfernamespace("redd", target, "account", "legacy", "label"), {
+            "id": "redd",
+            "previous_owner": winner,
+            "new_owner": target,
+            "transfer_time": node.mocktime,
+        })
+        namespace.update({"owner": target, "last_updated": node.mocktime})
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+        assert_equal(self.key_index(node), before + 1)
+        assert_equal(other.getaddressinfo(target)['ismine'], True)
+        assert_raises_rpc_error(-8, "Namespace not found", other.renewnamespace, "redd")
+        # The wallet that gave the namespace away is no longer its owner
+        assert_raises_rpc_error(-1, NOT_OWNER, node.configurenamespacess, "redd", {"min_length": 3})
+        assert_raises_rpc_error(-1, NOT_OWNER, node.renewnamespace, "redd")
+        assert_raises_rpc_error(-1, NOT_OWNER, node.transfernamespace, "redd", winner)
+        assert_equal(node.getnamespaceinfo("redd"), namespace)
+
         self.log.info("The periodic task leaves namespace auctions alone")
         # The auction for "third" has ended with no bid. The task cancels a
         # user ID auction in that state (see rpc_reddid_auction.py); a
         # namespace auction stays pending for good.
-        assert_equal(node.getnamespaceauctioninfo(third['auction_id'])['end_time'], node.mocktime)
+        assert_equal(node.getnamespaceauctioninfo(third['auction_id'])['end_time'], end)
+        assert node.mocktime > end
         run_expiry_task(node)
         assert_equal(node.getnamespaceauctioninfo(third['auction_id'])['state'], 0)
         assert_equal(node.getnamespaceauctioninfo(second['auction_id'])['state'], 0)

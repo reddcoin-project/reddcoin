@@ -11,6 +11,10 @@ getuserconnections, createuserconnection, updateuserconnection,
 removeuserconnection, getuserreputation, updateuserreputation,
 calculateuserreputation and getuserreputationhistory do with them.
 
+The three commands that change connections are for the owner of the source
+profile: they ask the wallet for the key that the profile names. The test peer
+names a key of the wallet as the owner of a fourth profile for that.
+
 What looks wrong is asserted as it is, under a comment that starts with
 SUSPECTED BUG.
 """
@@ -27,6 +31,7 @@ from test_framework.reddid import (
     reddid_msg,
     ser_connection,
     ser_profile,
+    second_wallet,
     ser_profile_update,
     ser_reputation,
 )
@@ -161,15 +166,9 @@ class ReddIDSocialTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "Target ReddID not found", node.createuserconnection, "bobby", "nobody", 0)
         assert_raises_rpc_error(-8, "Unknown address type", node.createuserconnection, "bobby", "alice", 0, 0, "metadata", "account", "nonsense")
 
-        self.log.info("createuserconnection, updateuserconnection and removeuserconnection accept no key that the wallet has been given")
-        # SUSPECTED BUG: the three commands compare the owner of the source
-        # profile with a key that they take from the wallet for the call, the
-        # next unused one. A wallet can never pass with a key that it has
-        # already been given, and each call uses up a key. Here the wallet
-        # does not hold the keys of the owners at all, which a peer named.
-        # (Not tried: an owner that is the next key of the wallet, which a
-        # peer that knew that key could name. Nothing that the commands do
-        # after this check is tested.)
+        self.log.info("createuserconnection, updateuserconnection and removeuserconnection are for the wallet that holds the key of the owner")
+        # The wallet holds none of the keys that the peer named as the owners
+        # of the three profiles. No call takes a key from the wallet.
         before = self.key_index(node)
         assert_raises_rpc_error(-8, NOT_OWNER, node.createuserconnection, "bobby", "alice", 0)
         assert_raises_rpc_error(-8, NOT_OWNER, node.createuserconnection, "bobby", "alice", 1, 2, "metadata", "account", "legacy", "label")
@@ -177,7 +176,7 @@ class ReddIDSocialTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, NOT_OWNER, node.updateuserconnection, "alice", "bobby", 1, 2, "metadata", "account", "legacy", "label")
         assert_raises_rpc_error(-8, NOT_OWNER, node.removeuserconnection, "alice", "bobby")
         assert_raises_rpc_error(-8, NOT_OWNER, node.removeuserconnection, "alice", "bobby", "account", "legacy", "label")
-        assert_equal(self.key_index(node), before + 7)
+        assert_equal(self.key_index(node), before + 1)
         # The connection is looked for before the owner is checked
         assert_raises_rpc_error(-8, NO_CONNECTION, node.updateuserconnection, "bobby", "alice", 1)
         assert_raises_rpc_error(-8, NO_CONNECTION, node.removeuserconnection, "bobby", "alice")
@@ -186,11 +185,84 @@ class ReddIDSocialTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "Source ReddID not found", node.removeuserconnection, "nobody", "alice")
         assert_raises_rpc_error(-8, "Invalid connection type, must be between 0 and 3", node.updateuserconnection, "alice", "bobby", 4)
         assert_raises_rpc_error(-8, "Invalid visibility, must be between 0 and 2", node.updateuserconnection, "alice", "bobby", 1, 3)
+        # The address type and the label were for the key that the commands
+        # used to take from the wallet. The address type is still checked.
         assert_raises_rpc_error(-8, "Unknown address type", node.updateuserconnection, "alice", "bobby", 1, 0, "metadata", "account", "nonsense")
         assert_raises_rpc_error(-8, "Unknown address type", node.removeuserconnection, "alice", "bobby", "account", "nonsense")
         # Nothing changed
         assert_equal(node.getuserconnections("alice"), outgoing)
         assert_equal(node.getuserconnections("bobby"), {"reddid": "bobby", "outgoing_connections": []})
+
+        self.log.info("The wallet that holds the key of the owner creates, updates and removes connections")
+        # A fourth profile, whose owner the peer names as a key of the wallet
+        mine = node.getnewaddress("", "legacy")
+        owner = bytes.fromhex(node.getaddressinfo(mine)['scriptPubKey'])[3:23]
+        with node.assert_debug_log(["Successfully processed profile update for dave"]):
+            peer.send_message(reddid_msg("ridprofup", ser_profile_update(now, "dave", ser_profile("dave", owner, now))))
+            peer.sync_with_ping()
+        # A wallet that only watches the address of the owner is not the owner
+        with second_wallet(node, "watcher") as watcher:
+            assert_raises_rpc_error(-8, NOT_OWNER, watcher.createuserconnection, "dave", "alice", 0)
+            watcher.importaddress(mine, "", False)
+            assert_equal(watcher.getaddressinfo(mine)['iswatchonly'], True)
+            assert_raises_rpc_error(-8, NOT_OWNER, watcher.createuserconnection, "dave", "alice", 0)
+        assert_equal(node.getuserconnections("dave"), {"reddid": "dave", "outgoing_connections": []})
+
+        before = self.key_index(node)
+        # SUSPECTED BUG: no transaction makes the connection and nothing
+        # announces it. It is stored on this node alone.
+        with_metadata = node.createuserconnection("dave", "alice", 1, 2, "met at work", "account", "legacy", "label")
+        assert_equal(with_metadata, {
+            "from_reddid": "dave",
+            "to_reddid": "alice",
+            "connection_type": 1,
+            "type_name": "friend",
+            "creation_time": now,
+            "visibility": 2,
+            "metadata": "met at work",
+            "owner_address": mine,
+        })
+        to_alice = {
+            "to_reddid": "alice",
+            "connection_type": 1,
+            "type_name": "friend",
+            "creation_time": now,
+            "last_interaction": now,
+            "visibility": 2,
+            "metadata": "met at work",
+        }
+        assert_equal(node.getuserconnections("dave"), {"reddid": "dave", "outgoing_connections": [to_alice]})
+        assert_equal(node.createuserconnection("dave", "carol", 0)['owner_address'], mine)
+        to_carol_from_dave = dict(to_alice, to_reddid="carol", connection_type=0, type_name="follow", visibility=0, metadata="")
+        assert_equal(sorted(node.getuserconnections("dave")['outgoing_connections'], key=lambda c: c['to_reddid']), [to_alice, to_carol_from_dave])
+        assert_equal(len(node.getuserconnections("alice", None, "incoming")['incoming_connections']), 2)
+
+        # An update keeps the visibility and the metadata that it is not given
+        assert_equal(node.updateuserconnection("dave", "alice", 2), dict(with_metadata, connection_type=2, type_name="endorse", last_interaction=now))
+        assert_equal(node.updateuserconnection("dave", "alice", 3, 1, "", "account", "legacy", "label"), dict(with_metadata, connection_type=3, type_name="block", last_interaction=now, visibility=1, metadata=""))
+        to_alice.update({"connection_type": 3, "type_name": "block", "visibility": 1, "metadata": ""})
+        assert_equal(sorted(node.getuserconnections("dave")['outgoing_connections'], key=lambda c: c['to_reddid']), [to_alice, to_carol_from_dave])
+        # A second connection to the same ReddID replaces the first
+        node.createuserconnection("dave", "alice", 0)
+        to_alice.update({"connection_type": 0, "type_name": "follow", "visibility": 0})
+        assert_equal(sorted(node.getuserconnections("dave")['outgoing_connections'], key=lambda c: c['to_reddid']), [to_alice, to_carol_from_dave])
+
+        assert_equal(node.removeuserconnection("dave", "alice", "account", "legacy", "label"), {
+            "from_reddid": "dave",
+            "to_reddid": "alice",
+            "removed": True,
+            "owner_address": mine,
+        })
+        assert_equal(node.getuserconnections("dave"), {"reddid": "dave", "outgoing_connections": [to_carol_from_dave]})
+        assert_equal(node.getuserconnections("alice", None, "incoming"), {"reddid": "alice", "incoming_connections": [from_carol]})
+        assert_raises_rpc_error(-8, NO_CONNECTION, node.removeuserconnection, "dave", "alice")
+        assert_raises_rpc_error(-8, NO_CONNECTION, node.updateuserconnection, "dave", "alice", 1)
+        assert_equal(node.removeuserconnection("dave", "carol")['removed'], True)
+        assert_equal(node.getuserconnections("dave"), {"reddid": "dave", "outgoing_connections": []})
+        assert_equal(self.key_index(node), before + 1)
+        assert_equal(node.getrawmempool(), [])
+        # The connections of the other profiles are as they were
+        assert_equal(node.getuserconnections("alice"), outgoing)
 
         self.log.info("getuserreputation shows the reputation that the peer sent")
         reputation = node.getuserreputation("alice")
