@@ -45,9 +45,6 @@ from test_framework.util import (
     assert_raises_rpc_error,
 )
 
-# Bounds the number of bids that are sent until one has its outputs in the
-# order that the node accepts. One in three has: 60 fail with probability 3e-11.
-MAX_BIDS = 60
 SHARED = ("auction_id", "name", "namespace_id", "creator", "start_time", "end_time", "reserve_price", "type")
 
 
@@ -139,20 +136,12 @@ class ReddIDSyncTest(BitcoinTestFramework):
         # The key of the creator needs a coin for the finalization later on
         node.sendtoaddress(alice['creator_address'], 10)
         self.mine()
-        for _ in range(MAX_BIDS):
-            # SUSPECTED BUG: the bid counts only when the wallet happens to
-            # put the change last (see rpc_reddid_deposit.py)
-            bid = other.reddidplacebid(alice_id, 12000)
-            tx = other.getrawtransaction(bid['txid'], True)
-            self.relay(other, bid['txid'])
-            self.mine()
-            if tx['vout'][0]['scriptPubKey']['type'] == 'nulldata' and tx['vout'][1]['scriptPubKey'].get('address') == bid['bidder_address']:
-                break
-            for each in (node, other):
-                assert_raises_rpc_error(-8, "Deposit lock not found", each.reddidgetdepositlock, bid['txid'], 1)
-        else:
-            raise AssertionError("no bid had its outputs in the accepted order")
+        bid = other.reddidplacebid(alice_id, 12000)
         other.lockunspent(False, [{"txid": bid['txid'], "vout": 1}])
+        self.relay(other, bid['txid'])
+        for each in (node, other):
+            assert_raises_rpc_error(-8, "Deposit lock not found", each.reddidgetdepositlock, bid['txid'], 1)
+        self.mine()
         lock = node.reddidgetdepositlock(bid['txid'], 1)
         assert_equal(lock['state'], "active")
         assert_equal(lock['bidder'], bid['bidder_address'])

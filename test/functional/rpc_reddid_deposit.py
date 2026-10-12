@@ -24,7 +24,7 @@ as it is, under a comment that starts with SUSPECTED BUG, and the test then
 does by hand what the command should have done so that it can go on.
 """
 
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_UP, Decimal
 import struct
 
 from test_framework.reddid import (
@@ -35,6 +35,7 @@ from test_framework.reddid import (
     expiry_task_idle,
     mine_block,
     run_expiry_task,
+    second_wallet,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -43,10 +44,8 @@ from test_framework.util import (
 )
 
 NO_LOCK = "Deposit lock not found for specified UTXO"
+NO_SENDER = "The wallet has no confirmed coin at a legacy address, which a bid needs as its first input"
 WINDOW = 3
-# Bounds the number of bids that are sent until one has its outputs in the
-# order that the node accepts. One in three has: 60 fail with probability 3e-11.
-MAX_BIDS = 60
 
 
 def record(opcode, auction_id, bid_id):
@@ -68,62 +67,74 @@ class ReddIDDepositTest(BitcoinTestFramework):
     def mine(self):
         return mine_block(self.nodes, self.staker, self.stake_address)
 
+    def next_keys(self, wallet):
+        """The indexes of the next receiving key and the next change key of the wallet, which this call uses up."""
+        paths = [wallet.getaddressinfo(address)['hdkeypath'] for address in (wallet.getnewaddress("", "legacy"), wallet.getrawchangeaddress("legacy"))]
+        return [int(path.split('/')[-1].rstrip("'")) for path in paths]
+
+    def assert_no_key_used(self, wallet, keys):
+        """No key has left the key pool of the wallet since next_keys returned the indexes."""
+        assert_equal(self.next_keys(wallet), [index + 1 for index in keys])
+
     def bid_count(self, auction_id):
         return self.nodes[0].getuseridauctionbids(auction_id)['total_bids']
 
-    def place_bid(self, wallet, auction_id, amount):
-        """Bid with reddidplacebid until a bid is accepted, and return it.
-
-        SUSPECTED BUG: the command writes into the record that the deposit is
-        output 1 and then lets the wallet put the change at a random position.
-        The bid counts only when the change happens to come last. The command
-        cannot know and reports every bid in the same way.
-        """
+    def send_bid(self, wallet, auction_id, amount):
+        """Bid with reddidplacebid and check the transaction. Returns its ID and the address of the bidder."""
         node = self.nodes[0]
         deposit = amount * Decimal("0.15")
-        for _ in range(MAX_BIDS):
-            bids = self.bid_count(auction_id)
-            locks = wallet.reddidlistmydeposits()
-            bid = wallet.reddidplacebid(auction_id, amount)
-            txid = bid.pop('txid')
-            bidder = bid.pop('bidder_address')
-            assert_equal(bid, {
-                "auction_id": auction_id,
-                "bid_amount": amount,
-                "deposit_amount": deposit,
-                "deposit_vout": 1,
-            })
-            assert_equal(wallet.getaddressinfo(bidder)['ismine'], True)
-            tx = node.getrawtransaction(txid, True)
-            assert_equal(len(tx['vout']), 3)
-            deposit_vout = next(out['n'] for out in tx['vout'] if out['scriptPubKey'].get('address') == bidder)
-            assert_equal(tx['vout'][deposit_vout]['value'], deposit)
-            record_vout = next(out['n'] for out in tx['vout'] if out['scriptPubKey']['type'] == 'nulldata')
-            in_order = record_vout == 0 and deposit_vout == 1
+        bid = wallet.reddidplacebid(auction_id, amount)
+        txid = bid.pop('txid')
+        bidder = bid.pop('bidder_address')
+        assert_equal(bid, {
+            "auction_id": auction_id,
+            "bid_amount": amount,
+            "deposit_amount": deposit,
+            "deposit_vout": 1,
+        })
+        assert_equal(wallet.getaddressinfo(bidder)['ismine'], True)
+        assert txid in node.getrawmempool()
+        tx = node.getrawtransaction(txid, True)
+        # The record, the deposit, which the record names by its index, and
+        # then the change
+        assert_equal(len(tx['vout']), 3)
+        assert_equal(tx['vout'][0]['scriptPubKey']['type'], 'nulldata')
+        assert_equal(tx['vout'][1]['scriptPubKey']['address'], bidder)
+        assert_equal(tx['vout'][1]['value'], deposit)
+        # The first input is a confirmed coin of the wallet at a legacy
+        # address: the node reads the sender of the transaction from it, and
+        # ignores a bid with no sender
+        spent = wallet.gettransaction(tx['vin'][0]['txid'], True, True)
+        assert spent['confirmations'] > 0
+        assert spent['decoded']['vout'][tx['vin'][0]['vout']]['scriptPubKey']['type'] in ('pubkey', 'pubkeyhash')
+        # SUSPECTED BUG: the wallet does not know that the deposit is about
+        # to be locked. Keep its coin selection and its staking away from it.
+        wallet.lockunspent(False, [{"txid": txid, "vout": 1}])
+        return txid, bidder
 
-            # In the mempool the bid is not placed and nothing is locked
-            assert txid in node.getrawmempool()
-            assert_equal(self.bid_count(auction_id), bids)
-            assert_raises_rpc_error(-8, NO_LOCK, node.reddidgetdepositlock, txid, deposit_vout)
-            assert_equal(wallet.reddidlistmydeposits(), locks)
+    def place_bid(self, wallet, auction_id, amount):
+        """Bid with reddidplacebid, mine the bid and return the lock on its deposit."""
+        node = self.nodes[0]
+        bids = self.bid_count(auction_id)
+        locks = wallet.reddidlistmydeposits()
+        keys = self.next_keys(wallet)
+        txid, bidder = self.send_bid(wallet, auction_id, amount)
+        # The bid took the next receiving key for the bidder and the next
+        # change key for the change
+        assert_equal(wallet.getaddressinfo(bidder)['hdkeypath'].split('/')[-1], "%d'" % (keys[0] + 1))
+        assert_equal(self.next_keys(wallet), [index + 2 for index in keys])
 
-            self.mine()
-            assert_equal(node.getrawtransaction(txid, True)['confirmations'], 1)
-            if in_order:
-                assert_equal(self.bid_count(auction_id), bids + 1)
-                lock = node.reddidgetdepositlock(txid, 1)
-                assert_equal(lock['lock_height'], node.getblockcount())
-                # The wallet does not know about the lock. Keep its coin
-                # selection and its staking away from the deposit.
-                wallet.lockunspent(False, [{"txid": txid, "vout": 1}])
-                return dict(lock, bidder=bidder)
-            # The transaction is in a block, the deposit is paid to the key of
-            # the bid, and there is no bid and no lock
-            assert_equal(self.bid_count(auction_id), bids)
-            for vout in range(3):
-                assert_raises_rpc_error(-8, NO_LOCK, node.reddidgetdepositlock, txid, vout)
-            assert_equal(wallet.reddidlistmydeposits(), locks)
-        raise AssertionError("no bid had its outputs in the accepted order")
+        # In the mempool the bid is not placed and nothing is locked
+        assert_equal(self.bid_count(auction_id), bids)
+        assert_raises_rpc_error(-8, NO_LOCK, node.reddidgetdepositlock, txid, 1)
+        assert_equal(wallet.reddidlistmydeposits(), locks)
+
+        self.mine()
+        assert_equal(node.getrawtransaction(txid, True)['confirmations'], 1)
+        assert_equal(self.bid_count(auction_id), bids + 1)
+        lock = node.reddidgetdepositlock(txid, 1)
+        assert_equal(lock['lock_height'], node.getblockcount())
+        return dict(lock, bidder=bidder)
 
     def raw_bid(self, wallet, auction_id, amount):
         """Send a bid with a deposit of 15% in a transaction that is made by hand, and return its ID."""
@@ -200,7 +211,32 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "Auction not found", first.reddidplacebid, "00" * 32, 10000)
         assert_raises_rpc_error(-8, "Bid amount 9999.00 is below minimum 10000.00", first.reddidplacebid, dave, 9999)
         assert_raises_rpc_error(-3, "Amount out of range", first.reddidplacebid, dave, -1)
+        # A bid that the command refuses takes no key from the wallet: neither
+        # for the bidder nor for the change
+        keys = self.next_keys(creator)
         assert_raises_rpc_error(-4, "Insufficient funds", creator.reddidplacebid, dave, 10000)
+        assert_raises_rpc_error(-8, "Bid amount 9999.00 is below minimum 10000.00", creator.reddidplacebid, dave, 9999)
+        self.assert_no_key_used(creator, keys)
+        # The node reads the sender of a bid from a confirmed coin at a legacy
+        # address, and ignores a bid without one: the command asks for the coin
+        with second_wallet(node, "segwit") as segwit:
+            assert_raises_rpc_error(-4, NO_SENDER, segwit.reddidplacebid, dave, 10000)
+            legacy = segwit.getnewaddress("", "legacy")
+            first.sendtoaddress(segwit.getnewaddress("", "bech32"), 20000)
+            first.sendtoaddress(legacy, 20000)
+            assert_raises_rpc_error(-4, NO_SENDER, segwit.reddidplacebid, dave, 10000)
+            self.mine()
+            assert_equal(len(segwit.listunspent(1)), 2)
+            keys = self.next_keys(segwit)
+            # With the legacy coin held back, the confirmed coin that is left
+            # is not one that the node reads a sender from
+            segwit.lockunspent(False, [{"txid": coin['txid'], "vout": coin['vout']} for coin in segwit.listunspent() if coin['address'] == legacy])
+            assert_equal(len(segwit.listunspent(1)), 1)
+            assert_raises_rpc_error(-4, NO_SENDER, segwit.reddidplacebid, dave, 10000)
+            self.assert_no_key_used(segwit, keys)
+            # A wallet that cannot sign is told so before anything is built
+            segwit.encryptwallet("passphrase")
+            assert_raises_rpc_error(-13, "Please enter the wallet passphrase with walletpassphrase first", segwit.reddidplacebid, dave, 10000)
 
         self.log.info("A bid is placed, and its deposit locked, when a block connects the transaction")
         low = self.place_bid(first, dave, Decimal("10000"))
@@ -268,6 +304,31 @@ class ReddIDDepositTest(BitcoinTestFramework):
         assert_equal(node.testmempoolaccept([spend_low])[0]['reject-reason'], "reddid-deposit-locked")
         # A record of another kind does not make the spend a settlement
         assert_raises_rpc_error(-26, "reddid-deposit-locked", node.sendrawtransaction, self.spend(first, low['txid'], 1, Decimal("1500"), record(b'X', dave, low['bid_id'])))
+
+        self.log.info("A bid that the mempool refuses is an error of the command")
+        # SUSPECTED BUG: the wallet lists a locked deposit as an ordinary
+        # coin (see above), and chooses it here, where its other coins do not
+        # cover the deposit of a new bid. The mempool refuses the
+        # transaction. The command says so, and keeps nothing: no
+        # transaction in the wallet and no coin held back.
+        second.sendtoaddress(second.getnewaddress("", "legacy"), 100)
+        self.mine()
+        small = [coin for coin in second.listunspent(1) if coin['amount'] == Decimal("100")]
+        assert_equal(len(small), 1)
+        others = [{"txid": coin['txid'], "vout": coin['vout']} for coin in second.listunspent() if coin != small[0]]
+        second.lockunspent(False, others)
+        second.lockunspent(True, [{"txid": high['txid'], "vout": 1}])
+        held = second.listlockunspent()
+        transactions = len(second.listtransactions("*", 1000))
+        mempool = node.getrawmempool()
+        keys = self.next_keys(second)
+        assert_raises_rpc_error(-26, "Transaction was not accepted: reddid-deposit-locked", second.reddidplacebid, dave, Decimal("12600"))
+        self.assert_no_key_used(second, keys)
+        assert_equal(node.getrawmempool(), mempool)
+        assert_equal(len(second.listtransactions("*", 1000)), transactions)
+        assert_equal(second.listlockunspent(), held)
+        second.lockunspent(False, [{"txid": high['txid'], "vout": 1}])
+        second.lockunspent(True, others)
 
         self.log.info("reddidfinalizeauction waits for the end of the auction")
         assert_raises_rpc_error(-8, "Auction not found", first.reddidfinalizeauction, "00" * 32)
@@ -454,18 +515,41 @@ class ReddIDDepositTest(BitcoinTestFramework):
             assert_equal(node.getrawtransaction(ignored['txid'], True)['confirmations'], 1)
             assert_equal(node.getuserauctioninfo(frank)['state'], 1)
 
+        self.log.info("Every bid that the command sends is placed")
+        # Twelve bids on one auction, from two wallets in turn, each 5% above
+        # the one before
+        grace = creator.createuseridauction("grace", "redd", 10000, 3)['auction_id']
+        amount = Decimal("10000")
+        placed = []
+        for turn in range(12):
+            placed.append(self.place_bid((first, second)[turn % 2], grace, amount))
+            highest = amount
+            amount = (amount * Decimal("1.05")).quantize(Decimal("1"), rounding=ROUND_UP)
+        info = node.getuserauctioninfo(grace, True)
+        assert_equal(info['current_bid'], highest)
+        assert_equal(info['current_bidder'], placed[-1]['bidder'])
+        assert_equal(sorted(bid['bid_id'] for bid in info['bids']), sorted(lock['bid_id'] for lock in placed))
+        assert_equal([node.reddidgetdepositlock(lock['txid'], 1)['state'] for lock in placed], ["active"] * 12)
+        # Three bids of one wallet in one block, on three auctions
+        three = [creator.createuseridauction(name, "redd", 10000, 3)['auction_id'] for name in ("heidi", "ivan", "judy")]
+        sent = [self.send_bid(second, auction_id, Decimal("10000")) for auction_id in three]
+        assert_equal(len(set(txid for txid, _ in sent)), 3)
+        self.mine()
+        for auction_id, (txid, bidder) in zip(three, sent):
+            assert_equal(node.getuserauctioninfo(auction_id)['current_bidder'], bidder)
+            assert_equal(node.reddidgetdepositlock(txid, 1)['auction_id'], auction_id)
+
         self.log.info("A deposit bid on a namespace auction is never accepted")
         # SUSPECTED BUG: the command finds the auction, which the namespace
         # manager created, in the database and makes a transaction for it.
         # The auction manager, which reads the record when the block
-        # connects, does not have the auction. The command also takes the
-        # deposit percentage of user ID auctions, 15, where the node would
-        # ask for the 20 of namespace auctions.
+        # connects, does not have the auction. The deposit is the 20% of
+        # namespace auctions.
         namespace_auction = first.createnamespacesauction("other", 50000, 14)['auction_id']
         assert_equal(node.reddidgetauctionconfig("namespace")['deposit_percentage'], 20)
         with node.assert_debug_log(["Auction not found for deposit: " + namespace_auction]):
             bid = first.reddidplacebid(namespace_auction, 50000)
-            assert_equal(bid['deposit_amount'], Decimal("7500"))
+            assert_equal(bid['deposit_amount'], Decimal("10000"))
             self.mine()
         assert_equal(node.getrawtransaction(bid['txid'], True)['confirmations'], 1)
         for vout in range(3):

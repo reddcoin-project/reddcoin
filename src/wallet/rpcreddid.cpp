@@ -66,6 +66,163 @@ static CKeyID GetNewWalletDestination(CWallet* pwallet, std::string& error, Outp
     return keyID;
 }
 
+// The key for the change of a ReddID transaction. The command reserves it and
+// gives its address to the wallet for the change, where the wallet would take
+// a key for itself when it funds the transaction. The key leaves the key pool
+// only when the transaction is committed and pays change to it: a transaction
+// that cannot be funded, or that the mempool refuses, uses up no key.
+class ReddIDChangeKey
+{
+private:
+    ReserveDestination m_reserve;
+    CTxDestination m_destination{CNoDestination()};
+
+    static std::vector<CRecipient> Recipients(const CMutableTransaction& rawTx)
+    {
+        std::vector<CRecipient> recipients;
+        for (const CTxOut& txout : rawTx.vout) {
+            recipients.push_back({txout.scriptPubKey, txout.nValue, false});
+        }
+        return recipients;
+    }
+
+public:
+    ReddIDChangeKey(CWallet& wallet, const CMutableTransaction& rawTx)
+        : m_reserve(&wallet, wallet.TransactionChangeType(wallet.m_default_change_type, Recipients(rawTx)))
+    {
+        // Without a key here, the wallet looks for one if there is change
+        std::string error;
+        if (!m_reserve.GetReservedDestination(m_destination, /* internal */ true, error)) {
+            m_destination = CNoDestination();
+        }
+    }
+
+    const CTxDestination& Destination() const { return m_destination; }
+
+    //! Take the key from the key pool if the committed transaction pays to it
+    void KeepIfUsed(const CTransaction& tx)
+    {
+        if (!IsValidDestination(m_destination)) return;
+        const CScript script = GetScriptForDestination(m_destination);
+        for (const CTxOut& txout : tx.vout) {
+            if (txout.scriptPubKey == script) {
+                m_reserve.KeepDestination();
+                return;
+            }
+        }
+    }
+};
+
+// A coin of the wallet that can name the sender of a ReddID transaction.
+//
+// The node takes the sender of a transaction from the first of its inputs
+// that spends an output of an earlier block which pays to a public key or to
+// the hash of one (AuctionManager::GetTransactionSender), and ignores every
+// record of a transaction that has no such input. A command that builds a
+// transaction therefore puts a coin of that kind first: of the given key if
+// there is one, and of any key otherwise. The coin is confirmed, the wallet
+// can spend it, and no auction holds it as a deposit. The largest one is
+// taken. Returns false if the wallet has none.
+static bool FindSenderCoin(const CWallet& wallet, const AuctionManager& auctionManager, const CKeyID* keyId, COutPoint& coin) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    CCoinControl coinControl;
+    coinControl.m_min_depth = 1;
+    std::vector<COutput> available;
+    wallet.AvailableCoins(available, &coinControl);
+
+    bool found = false;
+    CAmount value = 0;
+    for (const COutput& output : available) {
+        if (!output.fSpendable) continue;
+
+        const CTxOut& txout = output.tx->tx->vout[static_cast<size_t>(output.i)];
+        CTxDestination destination;
+        if (!ExtractDestination(txout.scriptPubKey, destination)) continue;
+        const PKHash* pkHash = std::get_if<PKHash>(&destination);
+        if (!pkHash) continue;
+        if (keyId && CKeyID(uint160(*pkHash)) != *keyId) continue;
+
+        const COutPoint outpoint(output.tx->GetHash(), static_cast<uint32_t>(output.i));
+        DepositLock lock;
+        if (auctionManager.GetDepositLock(outpoint, lock) &&
+            (lock.state == DEPOSIT_LOCKED_ACTIVE || lock.state == DEPOSIT_FORFEITED)) continue;
+
+        if (!found || txout.nValue > value) {
+            found = true;
+            value = txout.nValue;
+            coin = outpoint;
+        }
+    }
+    return found;
+}
+
+// Fund and sign a ReddID transaction. The inputs and outputs that it has stay
+// where they are, in that order: the wallet adds its inputs after them, and
+// the change, if there is any, as the last output. The change goes to a new
+// address of the wallet unless a destination is given for it. Nothing is
+// locked: the transaction is committed at once or not at all.
+static void FundAndSignReddIDTransaction(CWallet& wallet, CMutableTransaction& rawTx, const CTxDestination& changeDestination = CNoDestination())
+{
+    const std::vector<CTxIn> inputs = rawTx.vin;
+    const std::vector<CTxOut> outputs = rawTx.vout;
+
+    CAmount nFeeRet;
+    int nChangePosInOut = static_cast<int>(outputs.size());
+    bilingual_str fundError;
+    CCoinControl coinControl;
+    coinControl.destChange = changeDestination;
+    std::set<int> setSubtractFeeFromOutputs;
+
+    if (!wallet.FundTransaction(rawTx, nFeeRet, nChangePosInOut, fundError,
+                                /*lockUnspents=*/false, setSubtractFeeFromOutputs, coinControl))
+        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Failed to fund transaction: %s", fundError.original));
+
+    // The node reads the records by position
+    bool inOrder = rawTx.vin.size() >= inputs.size() && rawTx.vout.size() >= outputs.size();
+    for (size_t i = 0; inOrder && i < inputs.size(); i++) {
+        inOrder = rawTx.vin[i].prevout == inputs[i].prevout;
+    }
+    for (size_t i = 0; inOrder && i < outputs.size(); i++) {
+        inOrder = rawTx.vout[i] == outputs[i];
+    }
+    if (!inOrder)
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "The wallet changed the order of the transaction");
+
+    LOCK(wallet.cs_wallet);
+    if (!wallet.SignTransaction(rawTx))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to sign transaction");
+}
+
+// Give a signed ReddID transaction to the wallet, which sends it. The mempool
+// is asked first, with a test: a transaction that it would refuse is not kept
+// in the wallet, and the reason is the error of the command. A command
+// reports a transaction only when it is in the mempool.
+static CTransactionRef CommitReddIDTransaction(CWallet& wallet, const NodeContext& node, CMutableTransaction&& rawTx) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    CTransactionRef tx = MakeTransactionRef(std::move(rawTx));
+
+    // A wallet that does not broadcast keeps the transaction for its user to send
+    const bool broadcast = wallet.GetBroadcastTransactions();
+    if (broadcast) {
+        const MempoolAcceptResult result = AcceptToMemoryPool(EnsureChainman(node).ActiveChainstate(), EnsureMemPool(node), tx,
+                                                              /* bypass_limits */ false, /* test_accept */ true);
+        if (result.m_result_type != MempoolAcceptResult::ResultType::VALID)
+            throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("Transaction was not accepted: %s", result.m_state.ToString()));
+    }
+
+    mapValue_t mapValue;
+    wallet.CommitTransaction(tx, std::move(mapValue), {});
+
+    if (broadcast) {
+        LOCK(wallet.cs_wallet);
+        const CWalletTx* wtx = wallet.GetWalletTx(tx->GetHash());
+        if (!wtx || !wtx->InMempool())
+            throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Transaction %s is in the wallet and was not accepted by the mempool", tx->GetHash().GetHex()));
+    }
+
+    return tx;
+}
+
 // The address type argument of a command, or an error if it names none
 static OutputType ParseAddressType(const std::string& address_type)
 {
@@ -2426,6 +2583,8 @@ static RPCHelpMan reddidplacebid()
     if (!auctionManager)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Auction manager not available");
 
+    EnsureWalletIsUnlocked(*pwallet);
+
     uint256 auctionId = ParseHashV(request.params[0], "auction_id");
     CAmount bidAmount = AmountFromValue(request.params[1]);
 
@@ -2446,24 +2605,39 @@ static RPCHelpMan reddidplacebid()
             strprintf("Bid amount %s is below minimum %s",
                       FormatMoney(bidAmount), FormatMoney(minBid)));
 
-    // Calculate deposit
+    // Calculate deposit, with the percentage that the node asks for: a
+    // namespace auction is one with no name
     AuctionConfig config;
-    std::string configId = auction.namespaceId.empty() ? "namespace" : "userid";
+    std::string configId = auction.name.empty() ? "namespace" : "userid";
     if (!auctionManager->GetAuctionConfig(configId, config))
         config = AuctionConfig::UserIDDefaults();
     CAmount depositAmount = PercentOfAmount(bidAmount, config.depositPercentage);
     if (depositAmount <= 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Deposit amount calculated to zero");
 
-    // Get fresh wallet address for bidder
-    std::string error;
-    CKeyID bidderKeyId = GetNewWalletDestination(pwallet, error);
-    if (bidderKeyId.IsNull())
-        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not get new address: %s", error));
-
     // Build transaction
     CMutableTransaction rawTx;
     uint8_t depositVout = 1;
+
+    // vin[0]: the coin from which the node reads a sender. Without one the
+    // node ignores the bid.
+    COutPoint senderCoin;
+    if (!FindSenderCoin(*pwallet, *auctionManager, nullptr, senderCoin))
+        throw JSONRPCError(RPC_WALLET_ERROR, "The wallet has no confirmed coin at a legacy address, which a bid needs as its first input");
+    rawTx.vin.push_back(CTxIn(senderCoin));
+
+    // A fresh key of the wallet for the bidder, at a legacy address. It is
+    // reserved, and leaves the key pool only when the bid has been sent: a
+    // call that fails uses up no key.
+    LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(*pwallet);
+    ReserveDestination bidderReserve(pwallet, OutputType::LEGACY);
+    CTxDestination bidderDest;
+    std::string error;
+    if (!bidderReserve.GetReservedDestination(bidderDest, /* internal */ false, error))
+        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not get new address: %s", error));
+    CKeyID bidderKeyId = GetKeyForDestination(spk_man, bidderDest);
+    if (bidderKeyId.IsNull())
+        throw JSONRPCError(RPC_WALLET_ERROR, "Could not get new address: Failed to get key ID for destination");
 
     // vout[0]: OP_RETURN
     CScript opReturnScript = reddIDManager->CreateBidDepositOpReturn(auctionId, bidAmount, depositVout, bidderKeyId);
@@ -2471,27 +2645,20 @@ static RPCHelpMan reddidplacebid()
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to create OP_RETURN script");
     rawTx.vout.push_back(CTxOut(0, opReturnScript));
 
-    // vout[1]: deposit amount to bidder's own address
+    // vout[1]: deposit amount to bidder's own address. The record names this
+    // output by its index, so the change goes after it.
     CScript depositScript = GetScriptForDestination(PKHash(bidderKeyId));
     rawTx.vout.push_back(CTxOut(depositAmount, depositScript));
 
     // Fund, sign, broadcast
-    CAmount nFeeRet;
-    int nChangePosInOut = -1;
-    bilingual_str fundError;
-    CCoinControl coinControl;
-    std::set<int> setSubtractFeeFromOutputs;
+    ReddIDChangeKey changeKey(*pwallet, rawTx);
+    FundAndSignReddIDTransaction(*pwallet, rawTx, changeKey.Destination());
+    CTransactionRef tx = CommitReddIDTransaction(*pwallet, node, std::move(rawTx));
 
-    if (!pwallet->FundTransaction(rawTx, nFeeRet, nChangePosInOut, fundError,
-                                   /*lockUnspents=*/true, setSubtractFeeFromOutputs, coinControl))
-        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Failed to fund transaction: %s", fundError.original));
-
-    if (!pwallet->SignTransaction(rawTx))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to sign transaction");
-
-    CTransactionRef tx = MakeTransactionRef(std::move(rawTx));
-    mapValue_t mapValue;
-    pwallet->CommitTransaction(tx, std::move(mapValue), {});
+    // The bid is sent: the keys of the bidder and of the change are used
+    changeKey.KeepIfUsed(*tx);
+    bidderReserve.KeepDestination();
+    pwallet->SetAddressBook(bidderDest, "", "receive");
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("txid", tx->GetHash().GetHex());
