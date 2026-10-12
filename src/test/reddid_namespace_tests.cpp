@@ -437,87 +437,90 @@ BOOST_AUTO_TEST_CASE(renew_namespace_rejects_bad_requests)
     BOOST_CHECK(!nsMgr->RenewNamespace("renewbad", MakeKeyID(), 30));
 }
 
-// SUSPECTED BUG (documented, not fixed): RenewNamespace, TransferNamespace and
-// UpdateNamespace write the in-memory map and the database but leave the
-// lookup cache alone, and GetNamespaceInfo answers from that cache first. Once
-// a namespace has been looked up, GetNamespaceInfo keeps returning the record
-// as it was at that first lookup.
-BOOST_AUTO_TEST_CASE(renew_namespace_leaves_stale_cache)
+// RenewNamespace, TransferNamespace and UpdateNamespace write the in-memory
+// map and the database, and GetNamespaceInfo answers from a lookup cache
+// first: each of the three drops the namespace from that cache, so that a
+// namespace that has been looked up before is seen as it is now.
+BOOST_AUTO_TEST_CASE(renew_namespace_is_seen_through_the_cache)
 {
     SetMockTime(TEST_TIME);
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     CKeyID owner = MakeKeyID();
-    CreateTestNamespace("stalens", owner);
+    CreateTestNamespace("cachedns", owner);
 
-    BOOST_CHECK(nsMgr->RenewNamespace("stalens", owner, 30));
+    NamespaceInfo seen;
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedns", seen));
+    BOOST_CHECK_EQUAL(seen.expiration, TEST_TIME + 365 * DAY);
+
+    BOOST_CHECK(nsMgr->RenewNamespace("cachedns", owner, 30));
 
     NamespaceInfo stored;
-    BOOST_REQUIRE(StoredNamespace(nsMgr, "stalens", stored));
+    BOOST_REQUIRE(StoredNamespace(nsMgr, "cachedns", stored));
     BOOST_CHECK_EQUAL(stored.expiration, TEST_TIME + 395 * DAY);
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedns", seen));
+    BOOST_CHECK_EQUAL(seen.expiration, TEST_TIME + 395 * DAY);
 
-    // GetNamespaceInfo still reports the expiration from before the renewal
-    NamespaceInfo cached;
-    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("stalens", cached));
-    BOOST_CHECK_EQUAL(cached.expiration, TEST_TIME + 365 * DAY);
-
-    // RenewNamespace itself starts from the stale record, so a second renewal
-    // overwrites the first instead of adding to it.
-    BOOST_CHECK(nsMgr->RenewNamespace("stalens", owner, 30));
-    BOOST_REQUIRE(StoredNamespace(nsMgr, "stalens", stored));
-    BOOST_CHECK_EQUAL(stored.expiration, TEST_TIME + 395 * DAY);
+    // RenewNamespace itself starts from the record that GetNamespaceInfo
+    // returns: a second renewal adds to the first
+    BOOST_CHECK(nsMgr->RenewNamespace("cachedns", owner, 30));
+    BOOST_REQUIRE(StoredNamespace(nsMgr, "cachedns", stored));
+    BOOST_CHECK_EQUAL(stored.expiration, TEST_TIME + 425 * DAY);
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedns", seen));
+    BOOST_CHECK_EQUAL(seen.expiration, TEST_TIME + 425 * DAY);
     SetMockTime(0);
 }
 
-// SUSPECTED BUG (documented, not fixed): same stale cache as above. After a
-// transfer GetNamespaceInfo still names the previous owner, so the new owner
-// cannot renew, and a renewal by the previous owner is accepted and writes
-// the stale record back, which undoes the transfer.
-BOOST_AUTO_TEST_CASE(transfer_namespace_leaves_stale_cache)
+// After a transfer the new owner is the owner for every caller: the previous
+// owner can no longer renew the namespace or transfer it again.
+BOOST_AUTO_TEST_CASE(transfer_namespace_is_seen_through_the_cache)
 {
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     CKeyID oldOwner = MakeKeyID();
     CKeyID newOwner = MakeKeyID();
-    CreateTestNamespace("stalexfer", oldOwner);
+    CreateTestNamespace("cachedxfer", oldOwner);
 
-    BOOST_CHECK(nsMgr->TransferNamespace("stalexfer", oldOwner, newOwner));
-    BOOST_CHECK(nsMgr->IsOwner("stalexfer", newOwner));
+    NamespaceInfo seen;
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedxfer", seen));
+    BOOST_CHECK(seen.owner == oldOwner);
 
-    NamespaceInfo cached;
-    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("stalexfer", cached));
-    BOOST_CHECK(cached.owner == oldOwner);
+    BOOST_CHECK(nsMgr->TransferNamespace("cachedxfer", oldOwner, newOwner));
+    BOOST_CHECK(nsMgr->IsOwner("cachedxfer", newOwner));
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedxfer", seen));
+    BOOST_CHECK(seen.owner == newOwner);
 
-    BOOST_CHECK(!nsMgr->RenewNamespace("stalexfer", newOwner, 30));
-    BOOST_CHECK(nsMgr->RenewNamespace("stalexfer", oldOwner, 30));
-    BOOST_CHECK(nsMgr->IsOwner("stalexfer", oldOwner));
-    BOOST_CHECK(!nsMgr->IsOwner("stalexfer", newOwner));
+    BOOST_CHECK(!nsMgr->RenewNamespace("cachedxfer", oldOwner, 30));
+    BOOST_CHECK(!nsMgr->TransferNamespace("cachedxfer", oldOwner, MakeKeyID()));
+    BOOST_CHECK(nsMgr->RenewNamespace("cachedxfer", newOwner, 30));
+    BOOST_CHECK(nsMgr->IsOwner("cachedxfer", newOwner));
+    BOOST_CHECK(!nsMgr->IsOwner("cachedxfer", oldOwner));
 }
 
-// SUSPECTED BUG (documented, not fixed): same stale cache as above, seen
-// through UpdateNamespace.
-BOOST_AUTO_TEST_CASE(update_namespace_leaves_stale_cache)
+BOOST_AUTO_TEST_CASE(update_namespace_is_seen_through_the_cache)
 {
     NamespaceManager* nsMgr = reddidManager->GetNamespaceManager();
     CKeyID owner = MakeKeyID();
-    CreateTestNamespace("staleupd", owner);
+    CreateTestNamespace("cachedupd", owner);
 
     NamespaceInfo info;
-    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("staleupd", info));
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedupd", info));
     BOOST_CHECK_EQUAL(info.minLength, 3);
+    BOOST_CHECK(reddidManager->ValidateUserID("abc", "cachedupd"));
 
     NamespaceInfo updated = info;
     updated.minLength = 5;
     BOOST_CHECK(nsMgr->UpdateNamespace(updated));
 
     NamespaceInfo stored;
-    BOOST_REQUIRE(StoredNamespace(nsMgr, "staleupd", stored));
+    BOOST_REQUIRE(StoredNamespace(nsMgr, "cachedupd", stored));
     BOOST_CHECK_EQUAL(stored.minLength, 5);
 
-    NamespaceInfo cached;
-    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("staleupd", cached));
-    BOOST_CHECK_EQUAL(cached.minLength, 3);
+    NamespaceInfo seen;
+    BOOST_REQUIRE(nsMgr->GetNamespaceInfo("cachedupd", seen));
+    BOOST_CHECK_EQUAL(seen.minLength, 5);
 
     // ValidateUserID reads the namespace through GetNamespaceInfo
-    BOOST_CHECK(reddidManager->ValidateUserID("abc", "staleupd"));
+    BOOST_CHECK(!reddidManager->ValidateUserID("abc", "cachedupd"));
+    BOOST_CHECK(reddidManager->ValidateUserID("abcde", "cachedupd"));
 }
 
 // ===================================================================

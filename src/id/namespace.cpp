@@ -343,6 +343,9 @@ bool NamespaceManager::UpdateNamespace(const NamespaceInfo& namespaceInfo) {
         return false;
     }
 
+    // GetNamespaceInfo answers from the lookup cache first
+    InvalidateCache(nsInfo.id);
+
     // Announce update via P2P if available
     if (reddidP2P != nullptr) {
         try {
@@ -409,6 +412,7 @@ bool NamespaceManager::RenewNamespace(const std::string& namespaceId, const CKey
 
     // Update in-memory map
     namespaces[namespaceId] = namespaceInfo;
+    InvalidateCache(namespaceId);
 
     LogPrint(BCLog::REDDID, "Renewed namespace: %s until %s\n",
              namespaceId, FormatISO8601DateTime(namespaceInfo.expiration));
@@ -452,6 +456,7 @@ bool NamespaceManager::TransferNamespace(const std::string& namespaceId, const C
 
     // Update in-memory map
     namespaces[namespaceId] = namespaceInfo;
+    InvalidateCache(namespaceId);
 
     LogPrint(BCLog::REDDID, "Transferred namespace: %s from %s to %s\n",
              namespaceId, from.ToString(), to.ToString());

@@ -618,12 +618,12 @@ BOOST_AUTO_TEST_CASE(nsconreq_reply_can_be_rejected_by_the_handler_of_nsconres)
     BOOST_CHECK(record.configHash == matching.config.configHash);
     BOOST_CHECK(record.configHash != nsMgr->CalculateConfigHash(record));
 
-    // Current behaviour: the reply is built from the lookup cache of the
-    // namespace manager, which a transfer does not invalidate, so a peer that
-    // asks now is still told the old owner.
+    // A peer that asks now is told the new owner, with that hash: the reply
+    // is the record as it is, and not as it was when it was last looked up
     BOOST_CHECK_EQUAL(SendMsg(from, "nsconreq", std::string("fresh")), Outcome::ACCEPTED);
-    const CNamespaceConfig stale = Decode<CNamespaceConfig>(SentMessages(from)[0]);
-    BOOST_CHECK(stale.config.owner == owner);
+    const CNamespaceConfig transferred = Decode<CNamespaceConfig>(SentMessages(from)[0]);
+    BOOST_CHECK(transferred.config.owner == buyer);
+    BOOST_CHECK(transferred.config.configHash == matching.config.configHash);
 }
 
 // ---------------------------------------------------------------------------
