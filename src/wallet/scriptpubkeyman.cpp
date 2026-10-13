@@ -331,6 +331,27 @@ bool LegacyScriptPubKeyMan::TopUpInactiveHDChain(const CKeyID seed_id, int64_t i
 
     CHDChain& chain = it->second;
 
+    // A chain that was put together from the metadata of its keys when the
+    // wallet was loaded has a seed id and nothing to derive from: neither the
+    // seed bytes nor the seed as a key of the wallet. That is what is left of
+    // the chain of a wallet created from a mnemonic once sethdseed, which
+    // used to be accepted on such a wallet, has put another seed in its
+    // place. Deriving would throw, in whatever thread a transaction paying
+    // one of the old keys happened to be handled. The keys the wallet holds
+    // go on working; there will be no more of them.
+    if (chain.vchSeed.empty() && !HaveKey(chain.seed_id)) {
+        // Said once for each seed, with the id getwalletinfo and
+        // getaddressinfo show for it.
+        if (m_inactive_seeds_not_derivable.insert(seed_id).second) {
+            const std::string what{strprintf("cannot derive keys of HD seed %s: the wallet holds neither this seed nor the mnemonic it came from, "
+                                             "as after sethdseed on a wallet created from a mnemonic. The keys of this seed that are in the wallet stay usable. "
+                                             "No further address of it can be derived, so a payment to one beyond them will not be seen: move the funds to a new wallet",
+                                             seed_id.GetHex())};
+            WalletLogPrintf("%s\n", what);
+        }
+        return false;
+    }
+
     // Top up key pool
     int64_t target_size = std::max(gArgs.GetArg("-keypool", DEFAULT_KEYPOOL_SIZE), (int64_t) 1);
 
@@ -376,10 +397,22 @@ void LegacyScriptPubKeyMan::MarkUnusedAddresses(const CScript& script)
         if (it != mapKeyMetadata.end()){
             CKeyMetadata meta = it->second;
             if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
-                bool internal = (meta.key_origin.path[1] & ~BIP32_HARDENED_KEY_LIMIT) != 0;
-                int64_t index = meta.key_origin.path[2] & ~BIP32_HARDENED_KEY_LIMIT;
+                // Which chain the key is on and where: m/0'/chain'/index' for
+                // a plain HD seed, m/44'/coin'/account'/chain/index for a
+                // BIP44 one, where the second and third elements are the coin
+                // type and the account.
+                const std::vector<uint32_t>& path = meta.key_origin.path;
+                bool internal = false;
+                int64_t index = -1;
+                if (path.size() == 3) {
+                    internal = (path[1] & ~BIP32_HARDENED_KEY_LIMIT) != 0;
+                    index = path[2] & ~BIP32_HARDENED_KEY_LIMIT;
+                } else if (path.size() == 5) {
+                    internal = path[3] != 0;
+                    index = path[4];
+                }
 
-                if (!TopUpInactiveHDChain(meta.hd_seed_id, index, internal)) {
+                if (index >= 0 && !TopUpInactiveHDChain(meta.hd_seed_id, index, internal)) {
                     WalletLogPrintf("%s: Adding inactive seed keys failed\n", __func__);
                 }
             }

@@ -316,6 +316,8 @@ private:
     /* the HD chain data model (external chain counters) */
     CHDChain m_hd_chain;
     std::unordered_map<CKeyID, CHDChain, SaltedSipHasher> m_inactive_hd_chains;
+    //! Inactive seeds found to have nothing to derive from, so that it is logged once for each.
+    std::set<CKeyID> m_inactive_seeds_not_derivable GUARDED_BY(cs_KeyStore);
 
     /* HD derive new child key (on internal or external chain) */
     void DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal = false) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
