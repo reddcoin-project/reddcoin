@@ -598,6 +598,13 @@ Wallet
   conflicting with an ordinary spend stays a real conflict and keeps the
   bare message.
 
+- `sethdseed` is refused on a wallet created from a mnemonic (one for which
+  `gethdwalletinfo` shows a `mnemonic`). All keys of such a wallet come from
+  its mnemonic phrase, and setting a seed replaced the phrase with a plain HD
+  seed: the wallet no longer held its phrase, and could not derive any further
+  key of the addresses it had given out. To use another seed, create another
+  wallet. Wallets with a plain HD seed, and blank wallets, are not affected.
+
 GUI
 ---
 
