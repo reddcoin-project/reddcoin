@@ -4468,6 +4468,8 @@ static RPCHelpMan sethdseed()
     return RPCHelpMan{"sethdseed",
                 "\nSet or generate a new HD wallet seed. Non-HD wallets will not be upgraded to being a HD wallet. Wallets that are already\n"
                 "HD will have a new HD seed set so that new keys added to the keypool will be derived from this new seed.\n"
+                "\nA wallet created from a mnemonic (\"hd_type\" bip39 or bip44 in getwalletinfo) is refused: all its keys come\n"
+                "from its mnemonic phrase, and a new seed would discard the phrase. To use another seed, create another wallet.\n"
                 "\nNote that you will need to MAKE A NEW BACKUP of your wallet after setting the HD wallet seed." +
         HELP_REQUIRING_PASSPHRASE,
                 {
@@ -4501,6 +4503,14 @@ static RPCHelpMan sethdseed()
     // Do not do anything to non-HD wallets
     if (!pwallet->CanSupportFeature(FEATURE_HD)) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set an HD seed on a non-HD wallet. Use the upgradewallet RPC in order to upgrade a non-HD wallet to HD");
+    }
+
+    // A wallet created from a mnemonic derives every key from its phrase.
+    // A new seed would take the place of the phrase: the wallet would no
+    // longer be the one its owner wrote down, and could derive no further
+    // key of the addresses it has given out.
+    if (spk_man.IsBip39Enabled() || spk_man.IsBip44Enabled()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet created from a mnemonic: its keys come from the mnemonic phrase, which a new seed would discard. Create a new wallet to use another seed");
     }
 
     EnsureWalletIsUnlocked(*pwallet);

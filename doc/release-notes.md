@@ -270,6 +270,14 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 - Taproot descriptors can be imported into the wallet only after activation has occurred on the network (e.g. mainnet, testnet, signet) in use. See [descriptors.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/descriptors.md) for supported descriptors.
 
+- `sethdseed` is refused on a wallet created from a mnemonic (`hd_type` `bip39`
+  or `bip44` in `getwalletinfo`). All keys of such a wallet come from its
+  mnemonic phrase, and setting a seed replaced the phrase with a plain HD seed:
+  the wallet then reported `bip32`, no longer held its phrase, and could not
+  derive any further key of the addresses it had given out. To use another
+  seed, create another wallet. Wallets with a plain HD seed, and blank
+  wallets, are not affected.
+
 GUI changes
 -----------
 - Time interval lines added to the network data monitor
