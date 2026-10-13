@@ -2950,8 +2950,25 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
 
     LOCK(walletInstance->cs_wallet);
 
-    if (chain && !AttachChain(walletInstance, *chain, error, warnings)) {
-        return nullptr;
+    if (chain) {
+        // AttachChain subscribes the wallet to the notifications of the chain,
+        // and the subscription holds the wallet. When attaching fails, by
+        // returning false or by an exception out of the rescan, the
+        // subscription has to end here: otherwise the wallet is never
+        // released, goes on being told of blocks and transactions although
+        // nothing lists it as loaded, and keeps its file open, so that it
+        // cannot be loaded again.
+        bool attached{false};
+        try {
+            attached = AttachChain(walletInstance, *chain, error, warnings);
+        } catch (...) {
+            walletInstance->m_chain_notifications_handler.reset();
+            throw;
+        }
+        if (!attached) {
+            walletInstance->m_chain_notifications_handler.reset();
+            return nullptr;
+        }
     }
 
     {
