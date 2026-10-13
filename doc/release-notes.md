@@ -605,6 +605,19 @@ Wallet
   key of the addresses it had given out. To use another seed, create another
   wallet. Wallets with a plain HD seed, and blank wallets, are not affected.
 
+- A wallet on which `sethdseed` was run by an earlier version, although it had
+  been created from a mnemonic, can be used again. Such a wallet failed to load
+  with "DeriveNewChildKey: seed not found" once one of its earlier addresses
+  had been paid, a node started with it did not start, and a payment to one of
+  those addresses while it was loaded stopped the node. It now loads, payments
+  to the addresses it holds keys for are credited, and its coins can be spent.
+  What it cannot do: it no longer has its mnemonic phrase, and it cannot derive
+  any further address of that phrase, so a payment to an address of the phrase
+  beyond the ones it already holds is not seen. `debug.log` says so when the
+  wallet first meets one of the old keys. Move the funds to a new wallet. If
+  the wallet failed to load before, run `rescanblockchain` once after loading
+  it: the attempt that failed may have left the block it stopped at unread.
+
 GUI
 ---
 

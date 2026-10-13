@@ -7,15 +7,23 @@
 #include <key_io.h>
 #include <node/context.h>
 #include <outputtype.h>
+#include <policy/policy.h>
+#include <primitives/transaction.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>
 #include <rpc/server.h>
+#include <script/sign.h>
+#include <script/signingprovider.h>
+#include <script/standard.h>
+#include <test/util/logging.h>
 #include <test/util/setup_common.h>
 #include <util/check.h>
 #include <util/strencodings.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validationinterface.h>
+#include <wallet/coincontrol.h>
+#include <wallet/fees.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
@@ -23,6 +31,7 @@
 #include <boost/test/unit_test.hpp>
 #include <univalue.h>
 
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <set>
@@ -100,6 +109,82 @@ struct HDSeedTestingSetup : public TestChain100Setup {
         return spk_man.mapKeyMetadata.at(ToKeyID(std::get<PKHash>(dest))).hdKeypath;
     }
 
+    std::shared_ptr<CWallet> Load(const std::string& name, bilingual_str& error)
+    {
+        DatabaseOptions options;
+        DatabaseStatus status;
+        std::vector<bilingual_str> warnings;
+        options.require_existing = true;
+        return LoadWallet(*m_node.chain, name, /* load_on_start */ std::nullopt, options, status, error, warnings);
+    }
+
+    //! A new address of the wallet, as the script that pays it.
+    CScript NewScript(CWallet& wallet)
+    {
+        CTxDestination dest;
+        std::string error;
+        BOOST_REQUIRE(wallet.GetNewDestination(OutputType::LEGACY, "", dest, error));
+        return GetScriptForDestination(dest);
+    }
+
+    //! Pay a script with a coinbase of the chain, in a new block. Returns the amount.
+    CAmount Pay(const CScript& script)
+    {
+        const CTransaction& from = *m_coinbase_txns.at(m_coinbases_spent++);
+        CMutableTransaction mtx;
+        mtx.vout.push_back({from.vout[0].nValue - DEFAULT_TRANSACTION_MAXFEE, script});
+        mtx.vin.push_back({CTxIn{from.GetHash(), 0}});
+        FillableSigningProvider keystore;
+        keystore.AddKey(coinbaseKey);
+        std::map<COutPoint, Coin> coins;
+        coins[mtx.vin[0].prevout].out = from.vout[0];
+        std::map<int, std::string> input_errors;
+        BOOST_REQUIRE(SignTransaction(mtx, &keystore, coins, SIGHASH_ALL, input_errors));
+        CreateAndProcessBlock({mtx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        SyncWithValidationInterfaceQueue();
+        return mtx.vout[0].nValue;
+    }
+
+    //! What sethdseed did before it refused a wallet created from a mnemonic.
+    CKeyID ReplaceSeed(CWallet& wallet)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        LOCK2(wallet.cs_wallet, spk_man.cs_KeyStore);
+        spk_man.SetHDSeed(spk_man.GenerateNewSeed());
+        BOOST_REQUIRE(spk_man.NewKeyPool());
+        return spk_man.GetHDChain().seed_id;
+    }
+
+    //! The keys of a seed that the wallet holds: how many, and the last of each chain.
+    struct SeedKeys {
+        size_t count{0};
+        int64_t last_external{-1};
+        int64_t last_internal{-1};
+        CKeyID last_external_key;
+    };
+    SeedKeys KeysOf(const CWallet& wallet, const CKeyID& seed_id)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        LOCK(spk_man.cs_KeyStore);
+        SeedKeys keys;
+        for (const auto& [key_id, meta] : spk_man.mapKeyMetadata) {
+            const std::vector<uint32_t>& path = meta.key_origin.path;
+            if (meta.hd_seed_id != seed_id || (path.size() != 3 && path.size() != 5)) continue;
+            ++keys.count;
+            const bool bip44{path.size() == 5};
+            const bool internal{(bip44 ? path[3] : path[1] & ~0x80000000) != 0};
+            const int64_t index{bip44 ? path[4] : path[2] & ~0x80000000};
+            if (internal) {
+                keys.last_internal = std::max(keys.last_internal, index);
+            } else if (index > keys.last_external) {
+                keys.last_external = index;
+                keys.last_external_key = key_id;
+            }
+        }
+        return keys;
+    }
+
+    size_t m_coinbases_spent{0};
     std::unique_ptr<interfaces::WalletClient> m_wallet_client = interfaces::MakeWalletClient(*m_node.chain, *Assert(m_node.args));
 };
 
@@ -194,6 +279,104 @@ BOOST_AUTO_TEST_CASE(accepted_on_a_plain_seed_and_on_a_blank_wallet)
     BOOST_CHECK(blank.IsHDEnabled() && !blank.IsBip39Enabled());
     BOOST_CHECK_EQUAL(NextPath(*wallet), "m/0'/0'/0'");
     Unload(std::move(wallet));
+}
+
+// A wallet created from a mnemonic on which sethdseed was run before it was
+// refused. What is left once it has been closed is the keys it had derived
+// from the phrase, and nothing to derive more of them from. It loads although
+// one of those keys has been paid, it is credited with a payment to one of
+// them while it is loaded, and it can spend both. It does not have its phrase,
+// and it gets no further key of it.
+BOOST_AUTO_TEST_CASE(wallet_that_cannot_derive_old_keys_loads_and_is_paid)
+{
+    for (const int wallet_type : {walletType::bip44Wallet, walletType::bip39Wallet}) {
+        const std::string name{wallet_type == walletType::bip44Wallet ? "replaced_bip44" : "replaced_bip39"};
+        std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
+        const CKeyID old_seed = Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDChain().seed_id;
+        const std::vector<CScript> old{NewScript(*wallet), NewScript(*wallet), NewScript(*wallet)};
+        const CKeyID new_seed = ReplaceSeed(*wallet);
+        const SeedKeys old_keys = KeysOf(*wallet, old_seed);
+        BOOST_CHECK_GT(old_keys.count, 5U);
+        Unload(std::move(wallet));
+
+        // Paid while it is not loaded: the wallet meets the payment as it loads.
+        const CAmount first = Pay(old[2]);
+        bilingual_str error;
+        bool said{false};
+        {
+            DebugLogHelper log("cannot derive keys of HD seed " + old_seed.GetHex(), [&](const std::string* line) {
+                if (line) said = true;
+                return false;
+            });
+            wallet = Load(name, error);
+        }
+        BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        BOOST_CHECK(said);
+        BOOST_CHECK_EQUAL(wallet->GetBalance().m_mine_trusted, first);
+
+        // Paid while it is loaded.
+        const CAmount second = Pay(old[1]);
+        BOOST_CHECK_EQUAL(wallet->GetBalance().m_mine_trusted, first + second);
+
+        // Both coins are spent by one payment.
+        CTransactionRef tx;
+        CAmount fee;
+        int change_position = -1;
+        FeeCalculation fee_calculation;
+        const CAmount amount = first + second / 2;
+        BOOST_REQUIRE_MESSAGE(wallet->CreateTransaction({{GetScriptForRawPubKey(coinbaseKey.GetPubKey()), amount, /* subtract fee */ false}}, tx, fee, change_position, error, CCoinControl{}, fee_calculation), error.original);
+        BOOST_CHECK_EQUAL(tx->vin.size(), 2U);
+        wallet->CommitTransaction(tx, {}, {});
+        CreateAndProcessBlock({CMutableTransaction(*tx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        SyncWithValidationInterfaceQueue();
+        BOOST_CHECK_EQUAL(wallet->GetBalance().m_mine_trusted, first + second - amount - fee);
+
+        // What it cannot do. It has a plain seed, the new one, and no phrase.
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDChain().seed_id == new_seed);
+        BOOST_CHECK(spk_man.GetHDChain().vchMnemonic.empty());
+        BOOST_CHECK(!spk_man.IsBip39Enabled());
+        BOOST_CHECK(Call(*wallet, "gethdwalletinfo").write().find("\"mnemonic\"") == std::string::npos);
+        // Its new addresses are the new seed's.
+        BOOST_CHECK_EQUAL(NextPath(*wallet), "m/0'/0'/0'");
+        // It has the keys of the phrase that it had, and not one more.
+        const SeedKeys now = KeysOf(*wallet, old_seed);
+        BOOST_CHECK_EQUAL(now.count, old_keys.count);
+        BOOST_CHECK_EQUAL(now.last_external, old_keys.last_external);
+        BOOST_CHECK_EQUAL(now.last_internal, old_keys.last_internal);
+
+        Unload(std::move(wallet));
+        wallet = Load(name, error);
+        BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        BOOST_CHECK_EQUAL(wallet->GetBalance().m_mine_trusted, first + second - amount - fee);
+        Unload(std::move(wallet));
+    }
+}
+
+// A seed that was replaced in this session can still be derived from. When
+// one of its keys is used, further keys of the chain that key is on are held
+// ready behind it: for a BIP44 path, m/44'/coin'/account'/chain/index, the
+// chain and the index are the last two elements.
+BOOST_AUTO_TEST_CASE(replaced_seed_is_topped_up_on_the_chain_of_the_key_used)
+{
+    for (const int wallet_type : {walletType::bip44Wallet, walletType::bip39Wallet, walletType::bip32Wallet}) {
+        std::shared_ptr<CWallet> wallet = Create(strprintf("topup_%d", wallet_type), wallet_type);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        const CKeyID old_seed = spk_man.GetHDChain().seed_id;
+        NewScript(*wallet);
+        ReplaceSeed(*wallet);
+        const SeedKeys before = KeysOf(*wallet, old_seed);
+        BOOST_REQUIRE(before.last_external >= 0 && before.last_internal >= 0);
+
+        WITH_LOCK(wallet->cs_wallet, spk_man.MarkUnusedAddresses(GetScriptForDestination(PKHash(before.last_external_key))));
+
+        // -keypool=3 keys behind the one used, on the external chain only.
+        const SeedKeys after = KeysOf(*wallet, old_seed);
+        BOOST_CHECK_EQUAL(after.last_external, before.last_external + 3);
+        BOOST_CHECK_EQUAL(after.last_internal, before.last_internal);
+        BOOST_CHECK_EQUAL(after.count, before.count + 3);
+        Unload(std::move(wallet));
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
