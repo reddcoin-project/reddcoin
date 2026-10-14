@@ -7,11 +7,18 @@
 #include <wallet/bdb.h>
 #include <wallet/db.h>
 
+#include <support/cleanse.h>
 #include <util/strencodings.h>
 #include <util/translation.h>
 
 #include <boost/version.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <mutex>
 #include <stdint.h>
 
 #ifndef WIN32
@@ -195,9 +202,84 @@ void BerkeleyEnvironment::Close()
     UnlockDirectory(strPath, ".walletlock");
 }
 
+namespace BerkeleyAllocator {
+namespace {
+//! Room in front of each block for its size.
+constexpr size_t HEADER_SIZE{alignof(std::max_align_t) > sizeof(size_t) ? alignof(std::max_align_t) : sizeof(size_t)};
+std::once_flag g_install_once;
+std::atomic<bool> g_installed{false};
+
+size_t SizeOf(const void* ptr)
+{
+    size_t size;
+    std::memcpy(&size, static_cast<const unsigned char*>(ptr) - HEADER_SIZE, sizeof(size));
+    return size;
+}
+} // namespace
+
+void (*g_release_observer)(const void* ptr, size_t size){nullptr};
+
+void* Allocate(size_t size)
+{
+    if (size > std::numeric_limits<size_t>::max() - HEADER_SIZE) return nullptr;
+    unsigned char* raw = static_cast<unsigned char*>(std::calloc(1, HEADER_SIZE + size));
+    if (raw == nullptr) return nullptr;
+    std::memcpy(raw, &size, sizeof(size));
+    return raw + HEADER_SIZE;
+}
+
+void Release(void* ptr)
+{
+    if (ptr == nullptr) return;
+    const size_t size{SizeOf(ptr)};
+    memory_cleanse(ptr, size);
+    if (g_release_observer) g_release_observer(ptr, size);
+    std::free(static_cast<unsigned char*>(ptr) - HEADER_SIZE);
+}
+
+void* Reallocate(void* ptr, size_t size)
+{
+    if (ptr == nullptr) return Allocate(size);
+    // Never in place: what a shrinking block gives up has to be cleansed, and
+    // what a growing one gains has to be zero.
+    void* replacement = Allocate(size);
+    if (replacement == nullptr) return nullptr;
+    std::memcpy(replacement, ptr, std::min(size, SizeOf(ptr)));
+    Release(ptr);
+    return replacement;
+}
+
+void Install()
+{
+    std::call_once(g_install_once, [] {
+        const bool installed{db_env_set_func_malloc(Allocate) == 0 &&
+                             db_env_set_func_realloc(Reallocate) == 0 &&
+                             db_env_set_func_free(Release) == 0};
+        // With one or two of the three in place, memory would be released by
+        // a function that did not allocate it.
+        if (!installed) {
+            LogPrintf("BerkeleyAllocator: Berkeley DB did not accept the allocation functions\n");
+            std::abort();
+        }
+        g_installed = true;
+    });
+}
+
+bool IsInstalled()
+{
+    return g_installed;
+}
+} // namespace BerkeleyAllocator
+
 void BerkeleyEnvironment::Reset()
 {
+    // Before the library is used at all: memory it took from one allocator
+    // must not be given back to another.
+    BerkeleyAllocator::Install();
     dbenv.reset(new DbEnv(DB_CXX_NO_EXCEPTIONS));
+    // What the library allocates for its caller to release (the data of a
+    // record that is read) comes from malloc, and SafeDbt cleanses and frees it.
+    dbenv->set_alloc(std::malloc, std::realloc, std::free);
     fDbEnvInit = false;
     fMockDb = false;
 }
