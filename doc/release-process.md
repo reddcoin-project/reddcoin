@@ -178,8 +178,12 @@ Codesigner only: Sign the macOS binary:
     Enter the passphrase for each key when prompted
     Move signature-osx.tar.gz back to the guix-build host
 
+The script signs the app bundle, the standalone binaries and the shared library. It asks for the
+certificate's passphrase once and hands it to signapple on the command line, so run it on a host
+where no one else can list your processes.
+
 The second and third arguments are an App Store Connect API key and its issuer ID, and make the script
-submit the signed bundle to Apple for notarization and add the ticket to the detached signature. See
+submit the signed files to Apple for notarization and add the bundle's ticket to the detached signature. See
 signapple's [notarization notes](https://github.com/achow101/signapple/blob/master/docs/notarization.md)
 for how to create the key. The signing host needs a signapple with the `notarize` command, such as the
 revision pinned in `contrib/guix/manifest.scm`. The host does not have to be a Mac. Given the certificate
