@@ -44,6 +44,10 @@ public:
     //! that fails. ConfirmWalletFlag follows once it is committed.
     virtual bool SetWalletFlagWithDB(WalletBatch&, uint64_t) = 0;
     virtual void ConfirmWalletFlag(uint64_t) = 0;
+    //! The wallet's own lock is held. Asserted where a key manager, holding its
+    //! key store lock, asks the wallet something that takes the wallet's lock:
+    //! called without it, the two locks would be taken in the wrong order.
+    virtual void AssertWalletLockHeld() const = 0;
     //! Whether the wallet is being read only to be shown (the wallet tool's dump and info): nothing may be written.
     virtual bool IsReadOnlyLoad() const = 0;
     virtual bool CanSupportFeature(enum WalletFeature) const = 0;

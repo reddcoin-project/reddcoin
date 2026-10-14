@@ -360,6 +360,7 @@ bool LegacyScriptPubKeyMan::GetReservedDestination(const OutputType type, bool i
 
 bool LegacyScriptPubKeyMan::TopUpInactiveHDChain(const CKeyID seed_id, int64_t index, bool internal)
 {
+    m_storage.AssertWalletLockHeld();
     LOCK(cs_KeyStore);
 
     if (m_storage.IsLocked()) return false;
@@ -649,6 +650,7 @@ void LegacyScriptPubKeyMan::LoadHDSecretsPending()
 
 void LegacyScriptPubKeyMan::DecideHDSecretsState()
 {
+    m_storage.AssertWalletLockHeld();
     LOCK(cs_KeyStore);
     // The records that decide this (flags, chain, secrets, master key) are
     // read in the order of their keys and are not next to each other: it can
@@ -750,6 +752,7 @@ bool LegacyScriptPubKeyMan::WriteHDSecretsEncrypted(const CKeyingMaterial& maste
 
 void LegacyScriptPubKeyMan::UnlockHDSecrets(const CKeyingMaterial& master_key, bool& need_rewrite)
 {
+    m_storage.AssertWalletLockHeld();
     LOCK(cs_KeyStore);
     try {
         if (m_hd_secrets_state == HDSecretsState::UNMIGRATED) {
@@ -1762,6 +1765,7 @@ bool LegacyScriptPubKeyMan::NewKeyPool()
 
 bool LegacyScriptPubKeyMan::TopUp(unsigned int kpSize)
 {
+    m_storage.AssertWalletLockHeld();
     if (!CanGenerateKeys()) {
         return false;
     }
@@ -1860,6 +1864,7 @@ void LegacyScriptPubKeyMan::ReturnDestination(int64_t nIndex, bool fInternal, co
 
 bool LegacyScriptPubKeyMan::GetKeyFromPool(CPubKey& result, const OutputType type, bool internal)
 {
+    m_storage.AssertWalletLockHeld();
     assert(type != OutputType::BECH32M);
     if (!CanGetAddresses(internal)) {
         return false;
