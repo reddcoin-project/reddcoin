@@ -94,6 +94,7 @@ BASE_SCRIPTS = [
     'wallet_hd.py --legacy-wallet',
     'wallet_mixed_key_paths.py --legacy-wallet',
     'wallet_bdb_page_gaps.py --legacy-wallet',
+    'wallet_bdb_rewrite_residue.py --legacy-wallet',
     'wallet_mnemonic_encrypted_storage.py --legacy-wallet',
     'wallet_mnemonic_encrypted_storage.py --legacy-wallet --secret-rpcs',
     'wallet_hd_secrets_migration.py --legacy-wallet',

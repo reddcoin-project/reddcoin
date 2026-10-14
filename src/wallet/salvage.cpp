@@ -122,7 +122,14 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         return false;
     }
 
-    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(env->dbenv.get(), 0);
+    // The new file is written through an environment of its own, whose cache
+    // never held a page of the old file: see BerkeleyScratchEnvironment.
+    BerkeleyScratchEnvironment scratch(env->Directory());
+    if (!scratch.IsOpen()) {
+        error = strprintf(Untranslated("Cannot create database file %s"), filename);
+        return false;
+    }
+    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(scratch.Get(), 0);
     int ret = pdbCopy->open(nullptr,               // Txn pointer
                             filename.c_str(),   // Filename
                             "main",             // Logical db name
@@ -135,7 +142,6 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         return false;
     }
 
-    DbTxn* ptxn = env->TxnBegin();
     CWallet dummyWallet(nullptr, "", CreateDummyWalletDatabase());
     bool kept_hd_secrets{false};
     for (KeyValPair& row : salvagedData)
@@ -160,7 +166,7 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         }
         Dbt datKey(row.first.data(), row.first.size());
         Dbt datValue(row.second.data(), row.second.size());
-        int ret2 = pdbCopy->put(ptxn, &datKey, &datValue, DB_NOOVERWRITE);
+        int ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
         if (ret2 > 0)
             fSuccess = false;
         if (strType == DBKeys::HDSECRETS) kept_hd_secrets = true;
@@ -177,10 +183,9 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         value << uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED};
         Dbt datKey(key.data(), key.size());
         Dbt datValue(value.data(), value.size());
-        if (pdbCopy->put(ptxn, &datKey, &datValue, DB_NOOVERWRITE) > 0) fSuccess = false;
+        if (pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE) > 0) fSuccess = false;
     }
-    ptxn->commit(0);
-    pdbCopy->close(0);
+    if (pdbCopy->close(0) != 0) fSuccess = false;
 
     // The original is still there under another name. If it is the file of an
     // encrypted wallet that has its seed in the chain record, as earlier

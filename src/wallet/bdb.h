@@ -231,6 +231,33 @@ public:
 
 std::string BerkeleyDatabaseVersion();
 
+/** An environment of its own for writing one new database file from the
+ *  records of another: private, with a cache and nothing else.
+ *
+ * Berkeley DB gives a page that is evicted from its cache to the next page it
+ * needs, without clearing more than the head of it. A file written through the
+ * environment that has just read the old file is therefore built in buffers
+ * that held the old file's pages, and the unused parts of the new pages keep
+ * whatever the old ones held: in a rewrite after encryption, the keys in clear.
+ * A cache that has held nothing else gives pages that are zero but for what is
+ * written into them. It keeps no log, so it leaves nothing behind but the file.
+ */
+class BerkeleyScratchEnvironment
+{
+public:
+    explicit BerkeleyScratchEnvironment(const fs::path& directory);
+    ~BerkeleyScratchEnvironment();
+    BerkeleyScratchEnvironment(const BerkeleyScratchEnvironment&) = delete;
+    BerkeleyScratchEnvironment& operator=(const BerkeleyScratchEnvironment&) = delete;
+
+    bool IsOpen() const { return m_open; }
+    DbEnv* Get() { return m_env.get(); }
+
+private:
+    std::unique_ptr<DbEnv> m_env;
+    bool m_open{false};
+};
+
 /** The memory Berkeley DB works in.
  *
  * Berkeley DB takes its page and log buffers from the heap and writes them to
