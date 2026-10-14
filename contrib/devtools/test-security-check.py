@@ -31,6 +31,13 @@ def call_security_check(cc, source, executable, options):
     p = subprocess.run(['./contrib/devtools/security-check.py',executable], stdout=subprocess.PIPE, universal_newlines=True)
     return (p.returncode, p.stdout.rstrip())
 
+def is_arm64_macho(cc, source, executable):
+    '''Whether cc builds arm64 Mach-O, going by the cputype in the header.'''
+    call_security_check(cc, source, executable, [])
+    with open(executable, 'rb') as f:
+        header = f.read(8)
+    return int.from_bytes(header[4:8], 'little') == 0x0100000c # CPU_TYPE_ARM64
+
 class TestSecurityChecks(unittest.TestCase):
     def test_ELF(self):
         source = 'test1.c'
@@ -79,6 +86,20 @@ class TestSecurityChecks(unittest.TestCase):
         executable = 'test1'
         cc = determine_wellknown_cmd('CC', 'clang')
         write_testcode(source)
+
+        if is_arm64_macho(cc, source, executable):
+            # arm64 macOS has no non-PIE executables, no executable stacks and
+            # no endbr64, so only the checks that apply to it are exercised.
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-flat_namespace','-fno-stack-protector']),
+                (1, executable+': failed NOUNDEFS LAZY_BINDINGS Canary'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-flat_namespace','-fstack-protector-all']),
+                (1, executable+': failed NOUNDEFS LAZY_BINDINGS'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-fstack-protector-all']),
+                (1, executable+': failed LAZY_BINDINGS'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-bind_at_load','-fstack-protector-all']),
+                (0, ''))
+            clean_files(source, executable)
+            return
 
         self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fno-stack-protector']),
             (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS Canary CONTROL_FLOW'))
