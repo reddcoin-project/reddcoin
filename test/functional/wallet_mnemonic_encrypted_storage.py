@@ -27,9 +27,10 @@ A wallet encrypted as it is created has its file written by the first run,
 whose memory held the phrase in an RPC reply. A phrase found there outside
 any record is reported and is not a failure of this test. With
 --secret-rpcs the second run also calls the commands that return the
-secrets, and nothing may be found anywhere in any file: that is a separate
-matter from how the wallet stores its secrets, and the option is not part of
-the test suite.
+secrets, and creates a wallet whose phrase it returns, and then nothing may
+be found anywhere in any file: no secret of any wallet, the seed also as the
+commands print it, in the files of any other wallet. That holds only because
+the memory Berkeley DB writes its pages from is cleared.
 
 Two controls show that the search finds what is there and passes what is
 not: an unencrypted mnemonic wallet, in which the secrets are expected in the
@@ -98,6 +99,8 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
         if kind != "bip32":
             options["wallet_type"] = kind
         if mnemonic_passphrase:
+            # One of its own for each wallet, so that finding it elsewhere means something.
+            mnemonic_passphrase = "%s for %s" % (mnemonic_passphrase, name)
             options["mnemonic_passphrase"] = mnemonic_passphrase
         if when == "creation":
             options["passphrase"] = UNLOCK_PHRASE
@@ -200,8 +203,36 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
         for when, database, name, _ in cases + [control_clear, control_plain]:
             self.use(name, when, database)
 
+        if self.options.secret_rpcs:
+            # A new mnemonic wallet whose phrase this process returns, as createwallet does.
+            probe = self.nodes[0]._base_rpc.createwallet(wallet_name="probe", descriptors=False, wallet_type="bip44")
+            self.probe_phrase = probe["mnemonic"].encode()
+
         self.log.info("Stop the node, and search the files")
         self.stop_node(0)
+
+        if self.options.secret_rpcs:
+            # Every secret of every wallet, also in the form the commands print the
+            # seed in, searched for in the files of every other wallet: memory
+            # that held one of them must reach no file but its own wallet's.
+            everything = {}
+            for when, database, name, secrets in cases + [control_clear, control_plain]:
+                for what, secret in secrets.items():
+                    everything["%s of %s" % (what, name)] = (name, secret)
+                everything["seed as hex of %s" % name] = (name, secrets["seed"].hex().encode())
+            everything["phrase returned by createwallet"] = ("probe", self.probe_phrase)
+            stray = []
+            for when, database, name, secrets in cases + [control_clear, control_plain]:
+                directory = self.wallet_dir(name)
+                for root, _, files in os.walk(directory):
+                    for file in files:
+                        if file == ".walletlock":
+                            continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
+                        with open(os.path.join(root, file), "rb") as f:
+                            content = f.read()
+                        stray += [(name, file, what) for what, (owner, secret) in everything.items() if owner != name and secret in content]
+            self.log.info("secrets of one wallet in the files of another: %s" % (stray if stray else "none"))
+            assert_equal(stray, [])
 
         found = self.search(*control_clear[2:])
         self.log.info("unencrypted mnemonic wallet: %s" % found)
