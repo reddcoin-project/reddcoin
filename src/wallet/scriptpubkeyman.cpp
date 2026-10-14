@@ -736,11 +736,16 @@ bool LegacyScriptPubKeyMan::WriteHDSecretsEncrypted(const CKeyingMaterial& maste
         // The batch ends with this block: a rewrite of the file may follow,
         // and it waits for every batch to be gone.
         WalletBatch batch(m_storage.GetDatabase());
-        if (!batch.TxnBegin()) return false;
+        if ((g_wallet_hd_write_fault && g_wallet_hd_write_fault("txnbegin")) || !batch.TxnBegin()) return false;
         if (!m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_SECRETS_ENCRYPTED) ||
             !batch.WriteHDSecrets(encrypted) ||
             !batch.WriteHDChain(WithoutSecrets(chain)) ||
             (pending && !batch.WriteHDSecretsPending())) {
+            batch.TxnAbort();
+            return false;
+        }
+        if (g_wallet_hd_write_fault && g_wallet_hd_write_fault("txncommit")) {
+            // A commit that fails leaves nothing of the transaction behind.
             batch.TxnAbort();
             return false;
         }

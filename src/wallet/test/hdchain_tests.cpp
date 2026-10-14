@@ -563,7 +563,7 @@ BOOST_AUTO_TEST_CASE(failed_move_changes_nothing)
     const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
     MakeUnmigrated("fail", clear);
 
-    for (const std::string& failing : {"flags", "hdsecrets", "hdchain", "hdsecretspending"}) {
+    for (const std::string& failing : {"txnbegin", "flags", "hdsecrets", "hdchain", "hdsecretspending", "txncommit"}) {
         BOOST_TEST_MESSAGE(failing);
         std::shared_ptr<CWallet> wallet = Load("fail", /* expect_warnings */ true);
         LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
@@ -704,6 +704,57 @@ BOOST_AUTO_TEST_CASE(kind_kept_when_flag_cannot_be_written)
     BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
     Addresses(*wallet, 5);
     Unload(std::move(wallet));
+}
+
+// A wallet created with a passphrase gets its seed straight into the
+// encrypted record, in one transaction. When that transaction fails, the
+// creation fails, and nothing of the secrets is in any file it left. (A
+// failing flags write stops the creation earlier, at its first flags write;
+// the flags write inside the transaction is the one failed_move_changes_nothing
+// reaches, through the same function.)
+BOOST_AUTO_TEST_CASE(failed_creation_writes_no_secret)
+{
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+    for (const std::string& failing : {"txnbegin", "flags", "hdsecrets", "hdchain", "txncommit"}) {
+        BOOST_TEST_MESSAGE(failing);
+        const std::string name{"create_fails_" + failing};
+        g_wallet_hd_write_fault = [&](const std::string& what) { return what == failing; };
+        {
+            DatabaseOptions options;
+            options.require_create = true;
+            options.require_format = DatabaseFormat::BERKELEY;
+            options.create_passphrase = WALLET_PASSPHRASE;
+            WalletOptions walletoptions;
+            walletoptions.walletType = walletType::bip44Wallet;
+            walletoptions.ssMnemonic = PHRASE;
+            walletoptions.ssMnemonicPassphrase = PHRASE_PASSPHRASE;
+            DatabaseStatus status;
+            bilingual_str error;
+            std::vector<bilingual_str> warnings;
+            std::shared_ptr<CWallet> wallet;
+            bool failed{false};
+            try {
+                wallet = CreateWallet(*m_node.chain, name, /* load_on_start */ std::nullopt, options, walletoptions, status, error, warnings);
+                failed = !wallet;
+            } catch (const std::runtime_error& e) {
+                BOOST_TEST_MESSAGE(e.what());
+                failed = true;
+            }
+            g_wallet_hd_write_fault = nullptr;
+            BOOST_CHECK_MESSAGE(failed, "the wallet was created although a write failed");
+            if (wallet) Unload(std::move(wallet));
+        }
+        for (const auto& bytes : {secrets.phrase, secrets.phrase_passphrase, secrets.seed}) {
+            for (fs::recursive_directory_iterator it(GetWalletDir() / name), end; it != end; ++it) {
+                if (!fs::is_regular_file(it->path())) continue;
+                if (it->path().filename() == ".walletlock") continue; // empty, and locked while its wallet is loaded: Windows refuses to read it
+                std::ifstream file(it->path().string(), std::ios::binary);
+                const std::vector<unsigned char> content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                BOOST_CHECK_MESSAGE(std::search(content.begin(), content.end(), bytes.begin(), bytes.end()) == content.end(),
+                                    strprintf("a secret is in %s", it->path().string()));
+            }
+        }
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
