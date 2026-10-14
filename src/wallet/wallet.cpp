@@ -720,12 +720,24 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
         // bits of the unencrypted private key in slack space in the database file.
-        GetDatabase().Rewrite();
-
-        // BDB seems to have a bad habit of writing old data into
-        // slack space in .dat files; that is bad if the old data is
-        // unencrypted private keys. So:
-        GetDatabase().ReloadDbEnv();
+        LegacyScriptPubKeyMan* legacy_spk_man = GetLegacyScriptPubKeyMan();
+        if (legacy_spk_man && legacy_spk_man->IsHDSecretsRewritePending()) {
+            // The seed was moved out of the chain record: the rewrite is
+            // owed, its result is checked, and it is retried if it fails.
+            RewriteAfterHDSecretsMoved();
+        } else {
+            try {
+                if (!GetDatabase().Rewrite()) {
+                    WalletLogPrintf("Error: the wallet file could not be rewritten after encryption, and may still hold the private keys as they were\n");
+                }
+                // BDB seems to have a bad habit of writing old data into
+                // slack space in .dat files; that is bad if the old data is
+                // unencrypted private keys. So:
+                GetDatabase().ReloadDbEnv();
+            } catch (const std::exception& e) {
+                WalletLogPrintf("Error: %s while the wallet file was being rewritten after encryption\n", e.what());
+            }
+        }
 
     }
     NotifyStatusChanged(this);

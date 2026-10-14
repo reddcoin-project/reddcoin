@@ -658,4 +658,32 @@ BOOST_AUTO_TEST_CASE(seed_without_phrase_is_encrypted_and_kept)
     }
 }
 
+// encryptwallet moves the secrets too: the rewrite that follows is owed like
+// the one after a move at unlock. Done, the note is gone; failed, it stays and
+// the next unlock finishes it.
+BOOST_AUTO_TEST_CASE(rewrite_owed_after_encryptwallet)
+{
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+    for (const bool rewrite_fails : {false, true}) {
+        const std::string name{strprintf("encrypt_rewrite_%d", rewrite_fails)};
+        std::shared_ptr<CWallet> wallet = Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        if (rewrite_fails) g_wallet_hd_write_fault = [](const std::string& what) { return what == "rewrite"; };
+        BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
+        g_wallet_hd_write_fault = nullptr;
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+        BOOST_CHECK_EQUAL(spk_man.IsHDSecretsRewritePending(), rewrite_fails);
+        BOOST_CHECK_EQUAL(wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING), rewrite_fails);
+        BOOST_CHECK_EQUAL(wallet->GetHDWarnings().size(), rewrite_fails ? 1U : 0U);
+        if (rewrite_fails) {
+            BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+            BOOST_CHECK(!spk_man.IsHDSecretsRewritePending());
+            BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+            BOOST_REQUIRE(wallet->Lock());
+        }
+        CheckNoneInFile(*wallet, secrets);
+        Unload(std::move(wallet));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

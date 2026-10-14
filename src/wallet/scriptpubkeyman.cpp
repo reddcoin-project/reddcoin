@@ -315,7 +315,8 @@ bool LegacyScriptPubKeyMan::Encrypt(const CKeyingMaterial& master_key, WalletBat
         if (!EncryptHDSecrets(master_key, secrets, record) ||
             !m_storage.SetWalletFlagWithDB(*batch, WALLET_FLAG_HD_SECRETS_ENCRYPTED) ||
             !batch->WriteHDSecrets(record) ||
-            !batch->WriteHDChain(chain)) {
+            !batch->WriteHDChain(chain) ||
+            !batch->WriteHDSecretsPending()) {
             encrypted_batch = nullptr;
             return false;
         }
@@ -325,6 +326,9 @@ bool LegacyScriptPubKeyMan::Encrypt(const CKeyingMaterial& master_key, WalletBat
         m_hd_secrets.SetNull();
         m_hd_secrets_record = record;
         m_hd_secrets_state = HDSecretsState::ENCRYPTED;
+        // The old chain record is in the file until it is rewritten: owed,
+        // as after a move at unlock, and retried if the rewrite fails.
+        m_hd_secrets_pending = true;
         m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_SECRETS_ENCRYPTED);
         RefreshHDType();
     }
