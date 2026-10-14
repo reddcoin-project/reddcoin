@@ -130,7 +130,6 @@ public:
     }
 
     void SetSeedFromSeedId();
-    void Debug();
 
     void SetNull()
     {

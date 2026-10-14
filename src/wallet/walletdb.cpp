@@ -78,11 +78,9 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
                 ssMnemonicTmp = CMnemonic::Generate(256);
         }
 
-        // LogPrintf("mnemonic: %s\n", ssMnemonicTmp.c_str());
-
         // NOTE: default mnemonic passphrase is an empty string
         if (!CMnemonic::Check(ssMnemonicTmp)) {
-                throw std::runtime_error(std::string(__func__) + ": invalid mnemonic: `" + std::string(ssMnemonicTmp.c_str()) + "`");
+                throw std::runtime_error(std::string(__func__) + ": invalid mnemonic");
         }
 
         CMnemonic::ToSeed(ssMnemonicTmp, ssMnemonicPassphrase, vchSeed);
@@ -90,52 +88,8 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
         vchMnemonic = SecureVector(ssMnemonicTmp.begin(), ssMnemonicTmp.end());
         vchMnemonicPassphrase = SecureVector(ssMnemonicPassphrase.begin(), ssMnemonicPassphrase.end());
 
-        // Debug();
-
         return true;
 
-}
-
-void CHDChain::Debug()
-{
-        std::cout << "mnemonic: " << std::string(vchMnemonic.begin(), vchMnemonic.end()).c_str() << std::endl;
-        std::cout << "mnemonicpassphrase: " << std::string(vchMnemonicPassphrase.begin(), vchMnemonicPassphrase.end()).c_str() << std::endl;
-        std::cout << "seed: " << HexStr(vchSeed).c_str() << std::endl;
-        std::cout << "isBip44: " << (IsBip44()? "true" : "false") << std::endl;
-
-        CExtKey masterkey;
-
-        masterkey.SetSeed(&vchSeed[0], vchSeed.size());
-
-        std::cout << "bip32 root key: " << EncodeExtKey(masterkey) << std::endl;
-
-        // Derive new account keys
-        CExtKey purposeKey;
-        CExtKey coinTypeKey;
-        CExtKey accountkey;
-        CExtKey chainkey;
-
-        int nAccountIndex = 0;
-        bool internal = false;
-
-        if (IsBip44()) {
-            masterkey.Derive(purposeKey, 44 | 0x80000000);
-            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
-            coinTypeKey.Derive(accountkey, nAccountIndex | 0x80000000);
-            accountkey.Derive(chainkey, (internal ? 1 : 0));
-
-            CExtPubKey accountpubKey = accountkey.Neuter();
-            std::cout << "account extended private key: " << EncodeExtKey(accountkey) << std::endl;
-            std::cout << "account extended public key: " << EncodeExtPubKey(accountpubKey) << std::endl;
-
-        } else {
-            masterkey.Derive(accountkey, 0x80000000);
-            accountkey.Derive(chainkey, 0x80000000);
-        }
-
-        CExtPubKey chainpubkey = chainkey.Neuter();
-        std::cout << "bip32 extended private key: " << EncodeExtKey(chainkey) << std::endl;
-        std::cout << "bip32 extended public key: " << EncodeExtPubKey(chainpubkey) << std::endl;
 }
 
 void CHDChain::SetSeedFromSeedId()

@@ -1300,8 +1300,6 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     const SecureString& seed0 = walletoptions.ssMnemonic;
     const SecureString& pass0 = walletoptions.ssMnemonicPassphrase;
 
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\ntype: %d\n", __func__, seed0.c_str(), pass0.c_str(), walletoptions.walletType);
-
     CHDChain newHdChain;
     newHdChain.SetBip44(walletoptions.walletType == walletType::bip44Wallet);
 

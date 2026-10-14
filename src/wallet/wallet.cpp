@@ -266,11 +266,6 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
 {
     uint64_t wallet_creation_flags = options.create_flags;
     const SecureString& passphrase = options.create_passphrase;
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-    // const int& type = walletoptions.walletType;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\nwaletType=%i\n", __func__, seed.c_str(), pass.c_str(), type);
 
     if (wallet_creation_flags & WALLET_FLAG_DESCRIPTORS) options.require_format = DatabaseFormat::SQLITE;
 
@@ -2741,11 +2736,6 @@ std::unique_ptr<WalletDatabase> MakeWalletDatabase(const std::string& name, cons
 std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::string& name, std::unique_ptr<WalletDatabase> database, uint64_t wallet_creation_flags, const WalletOptions& walletoptions, bilingual_str& error, std::vector<bilingual_str>& warnings)
 {
     const std::string& walletFile = database->Filename();
-
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed.c_str(), pass.c_str());
 
     int64_t nStart = GetTimeMillis();
     // TODO: Can't use std::make_shared because we need a custom deleter but
