@@ -22,7 +22,7 @@ from typing import List
 from .authproxy import JSONRPCException
 from . import coverage
 from .p2p import NetworkThread
-from .test_node import TestNode
+from .test_node import TestNode, TestNodeCLI
 from .util import (
     MAX_NODES,
     PortSeed,
@@ -244,6 +244,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         )
         self.options.bitcoind = os.getenv("REDDCOIND", default=fname_bitcoind)
         self.options.bitcoincli = os.getenv("REDDCOINCLI", default=fname_bitcoincli)
+        # The wallet tool of the build under test: beside the node binary, unless named.
+        self.options.walletbin = os.getenv("REDDCOINWALLET", default=os.path.join(
+            os.path.dirname(os.path.abspath(self.options.bitcoind)), "reddcoin-wallet" + config["environment"]["EXEEXT"]))
 
         os.environ['PATH'] = os.pathsep.join([
             os.path.join(config['environment']['BUILDDIR'], 'src'),
@@ -1090,6 +1093,35 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Skip the running test if BDB has not been compiled."""
         if not self.is_bdb_compiled():
             raise SkipTest("BDB has not been compiled.")
+
+    def wallet_tool_binary(self):
+        """The wallet tool to run against the node under test: beside REDDCOIND, or REDDCOINWALLET.
+        The first time, its version is checked against the node's, so that a test of other
+        binaries does not read their wallets with the tool of this build."""
+        binary = self.options.walletbin
+        if not getattr(self, "_wallet_tool_checked", False):
+            def version(path):
+                binary = TestNodeCLI(path, self.options.tmpdir)("-version")
+                try:
+                    binary.send_cli()
+                except subprocess.CalledProcessError:
+                    pass  # the wallet tool exits with an error after it has printed its version
+                out = binary.stdout
+                first = out.splitlines()[0] if out else ""
+                return first.rsplit(" ", 1)[-1]
+            tool_version, node_version = version(binary), version(self.options.bitcoind)
+            assert tool_version and tool_version == node_version, "wallet tool %s is version %r, the node %s is %r" % (binary, tool_version, self.options.bitcoind, node_version)
+            self.log.debug("wallet tool %s, version %s" % (binary, tool_version))
+            self._wallet_tool_checked = True
+        return binary
+
+    def run_wallet_tool(self, *args, node=0):
+        """Run the wallet tool of the build under test on a node's data directory, the command last.
+        Returns what it wrote to stdout and to stderr; raises if it fails."""
+        *options, command = args
+        tool = TestNodeCLI(self.wallet_tool_binary(), self.nodes[node].datadir)('-chain=%s' % self.chain, *options)
+        stdout = tool.send_cli(command)
+        return str(stdout), tool.stderr
 
     def skip_if_no_wallet_tool(self):
         """Skip the running test if bitcoin-wallet has not been compiled."""
