@@ -89,7 +89,12 @@ class TestSecurityChecks(unittest.TestCase):
     def test_MACHO(self):
         source = 'test1.c'
         executable = 'test1'
-        cc = determine_wellknown_cmd('CC', 'clang')
+        # Build the fixtures for the deployment target the release binaries
+        # use (OSX_MIN_VERSION in depends/hosts/darwin.mk). Left to default,
+        # a native toolchain targets the host's macOS, for which Apple's
+        # linker deprecates -no_pie and defaults to chained fixups instead
+        # of the dyld info the LAZY_BINDINGS check reads.
+        cc = determine_wellknown_cmd('CC', 'clang') + ['-mmacosx-version-min=10.14']
         write_testcode(source)
 
         # An executable stack can only be asked for where the linker still
