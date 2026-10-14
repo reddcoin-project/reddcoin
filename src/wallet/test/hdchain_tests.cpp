@@ -25,6 +25,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <fstream>
 #include <iterator>
 #include <thread>
@@ -64,7 +65,8 @@ struct HDChainTestingSetup : public TestChain100Setup {
         return wallet;
     }
 
-    std::shared_ptr<CWallet> Load(const std::string& name)
+    //! Load a wallet. Most wallets here load without a word; one in a state its owner has to be told about does not.
+    std::shared_ptr<CWallet> Load(const std::string& name, bool expect_warnings = false)
     {
         DatabaseOptions options;
         DatabaseStatus status;
@@ -73,7 +75,7 @@ struct HDChainTestingSetup : public TestChain100Setup {
         options.require_existing = true;
         std::shared_ptr<CWallet> wallet = LoadWallet(*m_node.chain, name, /* load_on_start */ std::nullopt, options, status, error, warnings);
         BOOST_REQUIRE_MESSAGE(wallet, error.original);
-        BOOST_CHECK(warnings.empty());
+        BOOST_CHECK_EQUAL(warnings.empty(), !expect_warnings);
         return wallet;
     }
 
@@ -82,6 +84,74 @@ struct HDChainTestingSetup : public TestChain100Setup {
         SyncWithValidationInterfaceQueue();
         BOOST_CHECK(RemoveWallet(wallet, /* load_on_start */ std::nullopt));
         UnloadWallet(std::move(wallet));
+    }
+
+    //! Change the records of a wallet that is not loaded.
+    void Edit(const std::string& name, const std::function<void(DatabaseBatch&)>& edit)
+    {
+        DatabaseOptions options;
+        DatabaseStatus status;
+        bilingual_str error;
+        options.require_existing = true;
+        std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+        BOOST_REQUIRE_MESSAGE(database, error.original);
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        edit(*batch);
+    }
+
+    //! The chain record of an unencrypted wallet of PHRASE and PHRASE_PASSPHRASE: the secrets in clear.
+    CHDChain ClearChain(const std::string& name)
+    {
+        Unload(Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE));
+        CHDChain chain;
+        Edit(name, [&](DatabaseBatch& batch) { BOOST_REQUIRE(batch.Read(DBKeys::HDCHAIN, chain)); });
+        BOOST_REQUIRE(!chain.vchSeed.empty() && !chain.vchMnemonic.empty());
+        return chain;
+    }
+
+    static void SetFlag(DatabaseBatch& batch, bool set)
+    {
+        uint64_t flags{0};
+        batch.Read(DBKeys::FLAGS, flags);
+        flags = set ? flags | WALLET_FLAG_HD_SECRETS_ENCRYPTED : flags & ~uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED};
+        BOOST_REQUIRE(batch.Write(DBKeys::FLAGS, flags));
+    }
+
+    //! An encrypted wallet as versions before this one left it: the secrets in the chain record, no record of their own, no flag.
+    void MakeUnmigrated(const std::string& name, const CHDChain& clear)
+    {
+        Unload(Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+        Edit(name, [&](DatabaseBatch& batch) {
+            BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, clear));
+            BOOST_REQUIRE(batch.Erase(DBKeys::HDSECRETS));
+            SetFlag(batch, false);
+        });
+    }
+
+    //! A wallet that cannot derive goes on working with what it has, and nothing throws.
+    void CheckWorksWithoutSeed(CWallet& wallet)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNREADABLE);
+        if (wallet.IsCrypted()) BOOST_REQUIRE(wallet.Unlock(WALLET_PASSPHRASE));
+        BOOST_CHECK(spk_man.GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNREADABLE);
+        const size_t keys_before = spk_man.GetKeys().size();
+        // The pool cannot be filled, and what is in it is handed out.
+        BOOST_CHECK(!WITH_LOCK(wallet.cs_wallet, return spk_man.TopUp()));
+        const unsigned int pool = WITH_LOCK(wallet.cs_wallet, return wallet.GetKeyPoolSize());
+        BOOST_CHECK_GT(pool, 0U);
+        std::vector<CScript> scripts;
+        for (unsigned int i = 0; i < pool + 4; ++i) {
+            CTxDestination dest;
+            std::string error;
+            if (wallet.GetNewDestination(OutputType::LEGACY, "", dest, error)) scripts.push_back(GetScriptForDestination(dest));
+        }
+        BOOST_CHECK_GT(scripts.size(), 0U);
+        BOOST_CHECK_LE(scripts.size(), pool);
+        // A payment to a key that was in the pool: a wallet that could derive would top up here.
+        BOOST_CHECK_NO_THROW(WITH_LOCK(wallet.cs_wallet, spk_man.MarkUnusedAddresses(scripts.back())));
+        BOOST_CHECK_EQUAL(spk_man.GetKeys().size(), keys_before);
+        BOOST_CHECK(!wallet.GetHDWarnings().empty());
     }
 
     //! The next addresses of the wallet.
@@ -331,6 +401,261 @@ BOOST_AUTO_TEST_CASE(address_book_change_does_not_block_a_rewrite)
     change.join();
     BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->FindAddressBookEntry(other) == nullptr));
     Unload(std::move(wallet));
+}
+
+using HDState = LegacyScriptPubKeyMan::HDSecretsState;
+
+// Where the secrets are is decided from four things that are read in no
+// particular order: the flag, the record, the chain and the master key. One
+// case for each combination that can be met.
+BOOST_AUTO_TEST_CASE(state_decided_when_loaded)
+{
+    const CHDChain clear = ClearChain("cases_clear");
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+
+    // F: not encrypted. As it always was.
+    std::shared_ptr<CWallet> wallet = Load("cases_clear");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDSecretsState() == HDState::IN_CHAIN);
+    BOOST_CHECK(wallet->GetHDWarnings().empty());
+    Unload(std::move(wallet));
+
+    // I: a seed that is a key of the wallet.
+    Unload(Create("cases_plain", walletType::bip32Wallet, "", WALLET_PASSPHRASE));
+    wallet = Load("cases_plain");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDSecretsState() == HDState::NOT_HELD);
+    BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETS));
+    Unload(std::move(wallet));
+
+    // A: encrypted by this version.
+    Unload(Create("cases_a", walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+    wallet = Load("cases_a");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_CHECK(wallet->GetHDWarnings().empty());
+    Unload(std::move(wallet));
+
+    // B, B2, E: the secrets are in the chain record of an encrypted wallet,
+    // whatever else is there. All are moved at the first unlock.
+    struct Unmigrated { const char* name; bool flag; bool record; };
+    for (const Unmigrated& which : {Unmigrated{"cases_b", false, false}, Unmigrated{"cases_b2", true, false}, Unmigrated{"cases_e", true, true}, Unmigrated{"cases_e2", false, true}}) {
+        BOOST_TEST_MESSAGE(which.name);
+        Unload(Create(which.name, walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+        CHDSecretsRecord old_record;
+        Edit(which.name, [&](DatabaseBatch& batch) {
+            BOOST_REQUIRE(batch.Read(DBKeys::HDSECRETS, old_record));
+            BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, clear));
+            if (!which.record) BOOST_REQUIRE(batch.Erase(DBKeys::HDSECRETS));
+            SetFlag(batch, which.flag);
+        });
+        wallet = Load(which.name, /* expect_warnings */ true);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::UNMIGRATED);
+        BOOST_CHECK(spk_man.IsBip44Enabled());
+        BOOST_CHECK_EQUAL(wallet->GetHDWarnings().size(), 1U);
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+        BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        BOOST_CHECK(spk_man.IsBip44Enabled());
+        BOOST_CHECK(!spk_man.IsHDSecretsRewritePending());
+        BOOST_CHECK(wallet->GetHDWarnings().empty());
+        Addresses(*wallet, 5);
+        BOOST_REQUIRE(wallet->Lock());
+        CheckNoneInFile(*wallet, secrets);
+        CheckNoneInMemory(*wallet);
+        // The record was written anew, with an IV of its own.
+        CHDSecretsRecord new_record;
+        BOOST_REQUIRE(wallet->GetDatabase().MakeBatch()->Read(DBKeys::HDSECRETS, new_record));
+        BOOST_CHECK(new_record.nIV != old_record.nIV);
+        BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+        Unload(std::move(wallet));
+    }
+
+    // D: the record without its flag, as the salvage of an earlier wallet tool leaves it. The flag is put back.
+    Unload(Create("cases_d", walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+    Edit("cases_d", [&](DatabaseBatch& batch) { SetFlag(batch, false); });
+    wallet = Load("cases_d");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->IsBip44Enabled());
+    {
+        uint64_t flags{0};
+        BOOST_REQUIRE(wallet->GetDatabase().MakeBatch()->Read(DBKeys::FLAGS, flags));
+        BOOST_CHECK(flags & WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+    }
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    Addresses(*wallet, 5);
+    Unload(std::move(wallet));
+
+    // C, G: an encrypted wallet whose chain has no seed and that has no readable record of it.
+    struct Unreadable { const char* name; bool flag; int record; }; // record: 0 absent, 1 another version, 2 does not decrypt
+    for (const Unreadable& which : {Unreadable{"cases_c", true, 0}, Unreadable{"cases_c_version", true, 1}, Unreadable{"cases_g", false, 0}}) {
+        BOOST_TEST_MESSAGE(which.name);
+        Unload(Create(which.name, walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+        Edit(which.name, [&](DatabaseBatch& batch) {
+            CHDSecretsRecord record;
+            BOOST_REQUIRE(batch.Read(DBKeys::HDSECRETS, record));
+            if (which.record == 0) BOOST_REQUIRE(batch.Erase(DBKeys::HDSECRETS));
+            if (which.record == 1) {
+                record.nVersion = 2;
+                BOOST_REQUIRE(batch.Write(DBKeys::HDSECRETS, record));
+            }
+            SetFlag(batch, which.flag);
+        });
+        wallet = Load(which.name, /* expect_warnings */ true);
+        CheckWorksWithoutSeed(*wallet);
+        Unload(std::move(wallet));
+    }
+
+    // C, found only when it is unlocked: a record that does not decrypt. The unlock succeeds.
+    Unload(Create("cases_c_unlock", walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+    Edit("cases_c_unlock", [&](DatabaseBatch& batch) {
+        CHDSecretsRecord record;
+        BOOST_REQUIRE(batch.Read(DBKeys::HDSECRETS, record));
+        record.vchCrypted[3] ^= 1;
+        BOOST_REQUIRE(batch.Write(DBKeys::HDSECRETS, record));
+    });
+    wallet = Load("cases_c_unlock");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    CheckWorksWithoutSeed(*wallet);
+    Unload(std::move(wallet));
+
+    // H: the flag on a wallet that is not encrypted and has its secrets in the
+    // chain. They stay there: deriving a key must not write the chain without them.
+    Unload(Create("cases_h", walletType::bip44Wallet, PHRASE_PASSPHRASE));
+    Edit("cases_h", [&](DatabaseBatch& batch) { SetFlag(batch, true); });
+    for (int round = 0; round < 2; ++round) {
+        wallet = Load("cases_h");
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::IN_CHAIN);
+        CHDSecrets held;
+        BOOST_REQUIRE(spk_man.GetHDSecrets(held));
+        BOOST_CHECK(std::vector<unsigned char>(held.vchSeed.begin(), held.vchSeed.end()) == secrets.seed);
+        Addresses(*wallet, 5);
+        Unload(std::move(wallet));
+    }
+
+    // H2 and the unencrypted G: no seed in the chain of a wallet that is not encrypted.
+    for (const bool with_record : {true, false}) {
+        const std::string name{with_record ? "cases_h2" : "cases_g_clear"};
+        Unload(Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE));
+        Edit(name, [&](DatabaseBatch& batch) {
+            CHDChain chain{clear};
+            SecureVector().swap(chain.vchMnemonic);
+            SecureVector().swap(chain.vchMnemonicPassphrase);
+            SecureVector().swap(chain.vchSeed);
+            BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, chain));
+            if (with_record) BOOST_REQUIRE(batch.Write(DBKeys::HDSECRETS, CHDSecretsRecord{}));
+        });
+        wallet = Load(name, /* expect_warnings */ true);
+        CheckWorksWithoutSeed(*wallet);
+        Unload(std::move(wallet));
+    }
+}
+
+// The move of the secrets is one transaction: when any of its writes fails,
+// nothing has changed, in the file or in memory, and the wallet is unlocked as
+// it was. Until the move succeeds the chain record is the only copy of the
+// seed, and a new key must not write it without the seed.
+BOOST_AUTO_TEST_CASE(failed_move_changes_nothing)
+{
+    const CHDChain clear = ClearChain("fail_clear");
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+    MakeUnmigrated("fail", clear);
+
+    for (const std::string& failing : {"flags", "hdsecrets", "hdchain", "hdsecretspending"}) {
+        BOOST_TEST_MESSAGE(failing);
+        std::shared_ptr<CWallet> wallet = Load("fail", /* expect_warnings */ true);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        g_wallet_hd_write_fault = [&](const std::string& what) { return what == failing; };
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        g_wallet_hd_write_fault = nullptr;
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::UNMIGRATED);
+        BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        BOOST_CHECK(spk_man.IsBip44Enabled());
+        BOOST_CHECK(!spk_man.IsHDSecretsRewritePending());
+        BOOST_CHECK(!spk_man.GetHDChain().vchSeed.empty());
+        {
+            std::unique_ptr<DatabaseBatch> batch = wallet->GetDatabase().MakeBatch();
+            BOOST_CHECK(!batch->Exists(DBKeys::HDSECRETS));
+            BOOST_CHECK(!batch->Exists(DBKeys::HDSECRETSPENDING));
+            uint64_t flags{0};
+            batch->Read(DBKeys::FLAGS, flags);
+            BOOST_CHECK(!(flags & WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        }
+        // It is unlocked and derives; the chain record written for the new keys still has the seed.
+        Addresses(*wallet, 5);
+        Unload(std::move(wallet));
+        CHDChain on_disk;
+        Edit("fail", [&](DatabaseBatch& batch) { BOOST_REQUIRE(batch.Read(DBKeys::HDCHAIN, on_disk)); });
+        BOOST_CHECK(std::vector<unsigned char>(on_disk.vchSeed.begin(), on_disk.vchSeed.end()) == secrets.seed);
+        BOOST_CHECK(!on_disk.vchMnemonic.empty());
+    }
+
+    // The rewrite fails: the wallet is moved, the note stays, and it is said. The next unlock finishes it.
+    std::shared_ptr<CWallet> wallet = Load("fail", /* expect_warnings */ true);
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    g_wallet_hd_write_fault = [](const std::string& what) { return what == "rewrite"; };
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    g_wallet_hd_write_fault = nullptr;
+    BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    BOOST_CHECK(spk_man.IsHDSecretsRewritePending());
+    BOOST_CHECK(wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+    BOOST_CHECK_EQUAL(wallet->GetHDWarnings().size(), 1U);
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    BOOST_CHECK(!spk_man.IsHDSecretsRewritePending());
+    BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+    BOOST_CHECK(wallet->GetHDWarnings().empty());
+    BOOST_REQUIRE(wallet->Lock());
+    CheckNoneInFile(*wallet, secrets);
+    Unload(std::move(wallet));
+}
+
+// A chain made from a seed given outright has a seed and no phrase. Unflagged
+// it reads as a wallet with a plain seed, as it always did. Encrypting it
+// keeps its seed, which is then in the encrypted record, and from then on it
+// is of the kind whose seed must not be replaced.
+BOOST_AUTO_TEST_CASE(seed_without_phrase_is_encrypted_and_kept)
+{
+    const CHDChain clear = ClearChain("seedonly_source");
+    for (const size_t seed_size : {size_t{64}, size_t{32}}) {
+        const std::string name{strprintf("seedonly_%d", seed_size)};
+        Unload(Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE));
+        CHDChain chain{clear};
+        SecureVector().swap(chain.vchMnemonic);
+        SecureVector().swap(chain.vchMnemonicPassphrase);
+        chain.vchSeed.resize(seed_size);
+        const SecureVector seed = chain.vchSeed;
+        Edit(name, [&](DatabaseBatch& batch) { BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, chain)); });
+
+        std::shared_ptr<CWallet> wallet = Load(name);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::IN_CHAIN);
+        BOOST_CHECK(spk_man.IsHDEnabled() && !spk_man.IsBip39Enabled());
+        const CKeyID seed_id = spk_man.GetHDChain().seed_id;
+        const std::vector<std::string> before = Addresses(*wallet, 2);
+
+        BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
+        BOOST_CHECK(spk_man.GetHDChain().seed_id == seed_id);
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+        BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        BOOST_CHECK(spk_man.IsBip39Enabled());
+        BOOST_CHECK(spk_man.GetHDChain().vchSeed.empty());
+        Unload(std::move(wallet));
+
+        wallet = Load(name);
+        LegacyScriptPubKeyMan& reloaded = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(reloaded.IsBip39Enabled());
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        CHDSecrets held;
+        BOOST_REQUIRE(reloaded.GetHDSecrets(held));
+        BOOST_CHECK(held.vchSeed == seed);
+        BOOST_CHECK(held.vchMnemonic.empty() && held.vchMnemonicPassphrase.empty());
+        Addresses(*wallet, 6);
+        Unload(std::move(wallet));
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

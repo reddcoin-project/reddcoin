@@ -1162,13 +1162,22 @@ bool WalletBatch::EraseDestData(const std::string &address, const std::string &k
 }
 
 
+std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
+
+static bool HDWriteFault(const std::string& what)
+{
+    return g_wallet_hd_write_fault && g_wallet_hd_write_fault(what);
+}
+
 bool WalletBatch::WriteHDChain(const CHDChain& chain)
 {
+    if (HDWriteFault(DBKeys::HDCHAIN)) return false;
     return WriteIC(DBKeys::HDCHAIN, chain);
 }
 
 bool WalletBatch::WriteHDSecrets(const CHDSecretsRecord& record)
 {
+    if (HDWriteFault(DBKeys::HDSECRETS)) return false;
     return WriteIC(DBKeys::HDSECRETS, record);
 }
 
@@ -1179,6 +1188,7 @@ bool WalletBatch::EraseHDSecrets()
 
 bool WalletBatch::WriteHDSecretsPending()
 {
+    if (HDWriteFault(DBKeys::HDSECRETSPENDING)) return false;
     return WriteIC(DBKeys::HDSECRETSPENDING, uint8_t{1});
 }
 
@@ -1189,6 +1199,7 @@ bool WalletBatch::EraseHDSecretsPending()
 
 bool WalletBatch::WriteWalletFlags(const uint64_t flags)
 {
+    if (HDWriteFault(DBKeys::FLAGS)) return false;
     return WriteIC(DBKeys::FLAGS, flags);
 }
 

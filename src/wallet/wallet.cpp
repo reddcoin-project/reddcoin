@@ -3348,7 +3348,7 @@ bool CWallet::RewriteAfterHDSecretsMoved()
     // This is what encryption does for the private keys.
     WalletLogPrintf("Rewriting the wallet file: the seed of this wallet has been encrypted and the file may still hold the old copy\n");
     try {
-        if (!GetDatabase().Rewrite()) {
+        if ((g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite")) || !GetDatabase().Rewrite()) {
             WalletLogPrintf("Error: the wallet file could not be rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked\n");
             return false;
         }
