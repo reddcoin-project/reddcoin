@@ -130,7 +130,8 @@ static constexpr uint64_t KNOWN_WALLET_FLAGS =
     |   WALLET_FLAG_LAST_HARDENED_XPUB_CACHED
     |   WALLET_FLAG_DISABLE_PRIVATE_KEYS
     |   WALLET_FLAG_DESCRIPTORS
-    |   WALLET_FLAG_EXTERNAL_SIGNER;
+    |   WALLET_FLAG_EXTERNAL_SIGNER
+    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED;
 
 static constexpr uint64_t MUTABLE_WALLET_FLAGS =
         WALLET_FLAG_AVOID_REUSE;
@@ -142,7 +143,8 @@ static const std::map<std::string,WalletFlags> WALLET_FLAG_MAP{
     {"last_hardened_xpub_cached", WALLET_FLAG_LAST_HARDENED_XPUB_CACHED},
     {"disable_private_keys", WALLET_FLAG_DISABLE_PRIVATE_KEYS},
     {"descriptor_wallet", WALLET_FLAG_DESCRIPTORS},
-    {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER}
+    {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER},
+    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED}
 };
 
 extern const std::map<uint64_t,std::string> WALLET_FLAG_CAVEATS;
@@ -343,6 +345,10 @@ private:
 
     //! Unset the blank wallet flag and saves it to disk
     void UnsetBlankWalletFlag(WalletBatch& batch) override;
+    /** Write the flags with this one added, through the batch, and leave the
+     *  flags in memory as they are until ConfirmWalletFlag. */
+    bool SetWalletFlagWithDB(WalletBatch& batch, uint64_t flag) override;
+    void ConfirmWalletFlag(uint64_t flag) override;
 
     /** Interface for accessing chain state. */
     interfaces::Chain* m_chain;

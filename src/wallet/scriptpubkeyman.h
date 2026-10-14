@@ -38,6 +38,11 @@ public:
     virtual WalletDatabase& GetDatabase() const = 0;
     virtual bool IsWalletFlagSet(uint64_t) const = 0;
     virtual void UnsetBlankWalletFlag(WalletBatch&) = 0;
+    //! Write the wallet's flags with this one added, through the batch. The
+    //! flags in memory are not changed: the batch may be part of a transaction
+    //! that fails. ConfirmWalletFlag follows once it is committed.
+    virtual bool SetWalletFlagWithDB(WalletBatch&, uint64_t) = 0;
+    virtual void ConfirmWalletFlag(uint64_t) = 0;
     virtual bool CanSupportFeature(enum WalletFeature) const = 0;
     virtual void SetMinVersion(enum WalletFeature, WalletBatch* = nullptr) = 0;
     virtual const CKeyingMaterial& GetEncryptionKey() const = 0;
