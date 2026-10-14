@@ -330,9 +330,16 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         self.log.info("The wallet tool: salvage keeps the encrypted secrets, and writes their flag")
         salvaged = {name: facts for name, facts in wallets.items() if facts["database"] == "bdb"}
         for name in sorted(salvaged):
+            _, before = self.dump(name)
             stdout, stderr = self.run_wallet_tool('-wallet=' + name, 'salvage')
-            assert_equal((stdout, stderr), ("", ""))
+            assert_equal(stdout, "")
+            # Aggressive salvage reads unused pages as well, and can come upon
+            # an old, partly overwritten copy of a key record; it says so and
+            # skips it. Nothing else may be said, and no key may be missing.
+            for line in stderr.splitlines():
+                assert line.startswith("WARNING: WalletBatch::Recover skipping ckey: "), stderr
             _, records = self.dump(name)
+            assert_equal(sorted(key for key, _ in records if record_type(key) == "ckey"), sorted(key for key, _ in before if record_type(key) == "ckey"))
             # What salvage keeps: keys, the master key, the chain, and the
             # encrypted secrets with the flag that says they are kept so.
             # The dump writes nothing, so the flag is salvage's own.
