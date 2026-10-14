@@ -136,7 +136,8 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
                             DB_BTREE,           // Database type
                             DB_CREATE,          // Flags
                             0);
-    if (ret > 0) {
+    // Berkeley DB returns its own errors as negative numbers: any value but 0 is a failure.
+    if (ret != 0) {
         error = strprintf(Untranslated("Cannot create database file %s"), filename);
         pdbCopy->close(0);
         return false;

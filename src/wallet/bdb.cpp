@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <mutex>
 #include <stdint.h>
@@ -663,6 +664,24 @@ void BerkeleyEnvironment::ReloadDbEnv()
     Open(open_err);
 }
 
+//! The wallet's test hook for writes that fail (walletdb.cpp); declared here to keep bdb.cpp free of walletdb.h.
+extern std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
+
+//! Remove the file a rewrite writes into, if it is there. False when it is there and cannot be removed.
+static bool RemoveRewriteLeftover(const fs::path& path)
+{
+    try {
+        if (fs::exists(path)) {
+            LogPrintf("BerkeleyBatch::Rewrite: Removing %s, left over from an earlier attempt\n", path.string());
+            fs::remove(path);
+        }
+        return true;
+    } catch (const fs::filesystem_error& e) {
+        LogPrintf("BerkeleyBatch::Rewrite: Error removing %s: %s\n", path.string(), fsbridge::get_filesystem_error_message(e));
+        return false;
+    }
+}
+
 bool BerkeleyDatabase::Rewrite(const char* pszSkip)
 {
     while (true) {
@@ -677,6 +696,13 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 bool fSuccess = true;
                 LogPrintf("BerkeleyBatch::Rewrite: Rewriting %s...\n", strFile);
                 std::string strFileRes = strFile + ".rewrite";
+                const fs::path pathRes = env->Directory() / strFileRes;
+                // A file of that name left by an earlier attempt, or put there by
+                // anyone, would be opened and added to, not replaced: its records
+                // would end up in the wallet. The wallet file is here, so it is not
+                // the result of a rewrite that got as far as removing it.
+                if (!RemoveRewriteLeftover(pathRes)) fSuccess = false;
+                bool original_removed{false};
                 { // surround usage of db with extra {}
                     BerkeleyBatch db(*this, true);
                     // The new file is written through an environment of its
@@ -687,13 +713,15 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                     }
                     std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(scratch.Get(), 0);
 
+                    // DB_EXCL: the file must be new. Berkeley DB returns its own
+                    // errors as negative numbers, so any value but 0 is a failure.
                     int ret = fSuccess ? pdbCopy->open(nullptr,               // Txn pointer
                                                        strFileRes.c_str(), // Filename
                                                        "main",             // Logical db name
                                                        DB_BTREE,           // Database type
-                                                       DB_CREATE,          // Flags
+                                                       DB_CREATE | DB_EXCL, // Flags
                                                        0) : 1;
-                    if (ret > 0) {
+                    if (ret != 0) {
                         LogPrintf("BerkeleyBatch::Rewrite: Can't create database file %s\n", strFileRes);
                         fSuccess = false;
                     }
@@ -720,9 +748,17 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                             }
                             Dbt datKey(ssKey.data(), ssKey.size());
                             Dbt datValue(ssValue.data(), ssValue.size());
+                            // A key already in the new file (DB_KEYEXIST, a negative
+                            // value) means it did not start empty: a failure too.
                             int ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
-                            if (ret2 > 0)
+                            // Test hook: the same record twice, as if the file had not started empty.
+                            if (ret2 == 0 && g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite-duplicate")) {
+                                ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
+                            }
+                            if (ret2 != 0) {
+                                LogPrintf("BerkeleyBatch::Rewrite: Error %d writing a record to %s: %s\n", ret2, strFileRes, DbEnv::strerror(ret2));
                                 fSuccess = false;
+                            }
                         }
                         db.CloseCursor();
                     }
@@ -737,14 +773,22 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 }
                 if (fSuccess) {
                     Db dbA(env->dbenv.get(), 0);
-                    if (dbA.remove(strFile.c_str(), nullptr, 0))
+                    if (dbA.remove(strFile.c_str(), nullptr, 0)) {
                         fSuccess = false;
+                    } else {
+                        original_removed = true;
+                    }
                     Db dbB(env->dbenv.get(), 0);
                     if (dbB.rename(strFileRes.c_str(), nullptr, strFile.c_str(), 0))
                         fSuccess = false;
                 }
-                if (!fSuccess)
+                if (!fSuccess) {
                     LogPrintf("BerkeleyBatch::Rewrite: Failed to rewrite database file %s\n", strFileRes);
+                    // The wallet file is as it was: what was written of the new
+                    // one is of no use and must not be taken up by the next try.
+                    // Once the wallet file is removed, the new one is the wallet.
+                    if (!original_removed) RemoveRewriteLeftover(pathRes);
+                }
                 return fSuccess;
             }
         }
