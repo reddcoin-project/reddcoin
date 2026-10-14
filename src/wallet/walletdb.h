@@ -16,6 +16,7 @@
 #include <wallet/bip39.h>
 
 #include <stdint.h>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -204,6 +205,12 @@ public:
         has_key_origin = false;
     }
 };
+
+/** For tests: asked before each write of the wallet flags, the HD chain, the
+ *  encrypted HD secrets and the rewrite marker, and before the rewrite that
+ *  follows a move of the secrets, with "flags", "hdchain", "hdsecrets",
+ *  "hdsecretspending" or "rewrite". The write fails when it answers true. */
+extern std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
 
 /** Access to the wallet database.
  * Opens the database and provides read and write access to it. Each read and write is its own transaction.
