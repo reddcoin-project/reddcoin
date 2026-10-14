@@ -231,6 +231,37 @@ public:
 
 std::string BerkeleyDatabaseVersion();
 
+/** The memory Berkeley DB works in.
+ *
+ * Berkeley DB takes its page and log buffers from the heap and writes them to
+ * disk whole. It clears only the head of a new page, so what the heap held
+ * before, of anything the process had in memory, went into the unused part of
+ * the pages of the wallet file. These functions are given to the library as
+ * its allocator, for every environment of the process: memory is handed out
+ * zeroed and is cleansed when it is given back.
+ *
+ * Each block has a header in front that records its size, since releasing and
+ * resizing are not told it. The header is as large as the strictest alignment,
+ * so that the block behind it is aligned as malloc's would be.
+ */
+namespace BerkeleyAllocator {
+//! Zeroed memory of the given size, or nullptr.
+void* Allocate(size_t size);
+//! A block of the new size with the content of the old, the added part zeroed;
+//! the old block is cleansed and released. On failure nullptr, the old block untouched.
+void* Reallocate(void* ptr, size_t size);
+//! Cleanse the block and release it.
+void Release(void* ptr);
+//! Give the three functions to Berkeley DB. Done once, before the library is
+//! first used; every environment calls it before it creates its handle.
+void Install();
+//! Whether Berkeley DB has been given the functions.
+bool IsInstalled();
+//! For tests: called by Release with the block and its size after it has been
+//! cleansed and before it is released.
+extern void (*g_release_observer)(const void* ptr, size_t size);
+} // namespace BerkeleyAllocator
+
 /** Perform sanity check of runtime BDB version versus linked BDB version.
  */
 bool BerkeleyDatabaseSanityCheck();
