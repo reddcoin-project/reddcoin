@@ -758,6 +758,8 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             // owed, its result is checked, and it is retried if it fails.
             // Done by the unlock above unless it failed there; once is enough.
             if (legacy_spk_man->IsHDSecretsRewritePending()) RewriteAfterHDSecretsMoved();
+            // encryptwallet gives its own answer; those notices are for an unlock.
+            m_hd_secrets_moved_notices.clear();
         } else {
             try {
                 if (!GetDatabase().Rewrite()) {
@@ -3395,11 +3397,33 @@ bool CWallet::RewriteAfterHDSecretsMoved()
         return false;
     }
     spk_man->HDSecretsRewritten();
-    WalletLogPrintf("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted\n");
+    std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
+    CHDSecrets secrets;
     if (spk_man->HasEarlierSeedKeys()) {
-        WalletLogPrintf("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. The phrase (gethdwalletinfo, with the wallet unlocked) restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it\n");
+        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. The phrase (gethdwalletinfo, with the wallet unlocked) restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it."));
+    } else if (spk_man->GetHDSecrets(secrets) && !secrets.vchMnemonic.empty()) {
+        notices.push_back(_("This wallet has a mnemonic phrase. If you never wrote one down (wallets created with version 4.22.6 were given one without showing it), read it now with gethdwalletinfo while the wallet is unlocked, and keep it safe."));
     }
+    for (const bilingual_str& notice : notices) {
+        WalletLogPrintf("%s\n", notice.original);
+    }
+    m_hd_secrets_moved_notices = std::move(notices);
     return true;
+}
+
+std::vector<bilingual_str> CWallet::TakeHDSecretsMovedNotices()
+{
+    LOCK(cs_wallet);
+    std::vector<bilingual_str> notices;
+    notices.swap(m_hd_secrets_moved_notices);
+    return notices;
+}
+
+bool CWallet::HDSecretsRewriteOnUnlock() const
+{
+    LOCK(cs_wallet);
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man && (spk_man->GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNMIGRATED || spk_man->IsHDSecretsRewritePending());
 }
 
 std::set<ScriptPubKeyMan*> CWallet::GetActiveScriptPubKeyMans() const

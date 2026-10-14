@@ -678,6 +678,8 @@ BOOST_AUTO_TEST_CASE(rewrite_owed_after_encryptwallet)
         g_wallet_hd_write_fault = nullptr;
         // Once when it succeeds (at the unlock encryptwallet does), and tried again once when it fails.
         BOOST_CHECK_EQUAL(rewrites, rewrite_fails ? 2 : 1);
+        // encryptwallet gives its own answer: nothing is left for the GUI to show at the next unlock.
+        BOOST_CHECK(wallet->TakeHDSecretsMovedNotices().empty());
         BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
         BOOST_CHECK_EQUAL(spk_man.IsHDSecretsRewritePending(), rewrite_fails);
         BOOST_CHECK_EQUAL(wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING), rewrite_fails);
@@ -773,6 +775,30 @@ BOOST_AUTO_TEST_CASE(failed_creation_writes_no_secret)
             }
         }
     }
+}
+
+// What the GUI asks around an unlock: whether it rewrites the file (said before
+// the call), and what the owner is told after the seed was moved (given once).
+BOOST_AUTO_TEST_CASE(gui_is_told_about_the_move)
+{
+    const CHDChain clear = ClearChain("gui_clear");
+    MakeUnmigrated("gui", clear);
+    std::shared_ptr<CWallet> wallet = Load("gui", /* expect_warnings */ true);
+    BOOST_CHECK(wallet->HDSecretsRewriteOnUnlock());
+    BOOST_CHECK(wallet->TakeHDSecretsMovedNotices().empty());
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    BOOST_CHECK(!wallet->HDSecretsRewriteOnUnlock());
+    const std::vector<bilingual_str> notices = wallet->TakeHDSecretsMovedNotices();
+    // The move, and the wallet's phrase to be written down: it has no keys of an earlier seed.
+    BOOST_REQUIRE_EQUAL(notices.size(), 2U);
+    BOOST_CHECK(notices[0].original.find("now encrypted with the wallet passphrase") != std::string::npos);
+    BOOST_CHECK(notices[1].original.find("This wallet has a mnemonic phrase") != std::string::npos);
+    BOOST_CHECK(wallet->TakeHDSecretsMovedNotices().empty());
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    BOOST_CHECK(wallet->TakeHDSecretsMovedNotices().empty());
+    BOOST_REQUIRE(wallet->Lock());
+    Unload(std::move(wallet));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -26,6 +26,7 @@
 #include <node/ui_interface.h>
 #include <psbt.h>
 #include <util/strencodings.h>
+#include <util/translation.h>
 
 #include <QAction>
 #include <QActionGroup>
@@ -33,10 +34,13 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QFileDialog>
+#include <QMessageBox>
 #include <QHBoxLayout>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
+
+#include <set>
 
 WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     QStackedWidget(parent),
@@ -343,6 +347,31 @@ void WalletView::unlockWallet()
         dlg.setModel(walletModel);
         dlg.exec();
     }
+}
+
+void WalletView::showHDNotices()
+{
+    if (!walletModel) return;
+    // Once per session for each wallet, as the notices say it in the log and on loading anyway.
+    static std::set<std::string> shown;
+    const std::string name = walletModel->wallet().getWalletName();
+    if (shown.count(name)) return;
+    const std::vector<bilingual_str> notices = walletModel->wallet().getHDWarnings();
+    if (notices.empty()) return;
+    shown.insert(name);
+
+    QStringList lines;
+    for (const bilingual_str& notice : notices) lines << QString::fromStdString(notice.translated).toHtmlEscaped();
+    QMessageBox box(QMessageBox::Warning, tr("Wallet %1").arg(walletModel->getDisplayName()), "<qt>" + lines.join("<br><br>") + "</qt>", QMessageBox::NoButton, this);
+    QPushButton* unlock = nullptr;
+    if (walletModel->getEncryptionStatus() == WalletModel::Locked && walletModel->wallet().hdSecretsRewriteOnUnlock()) {
+        unlock = box.addButton(tr("Unlock now"), QMessageBox::AcceptRole);
+        box.addButton(tr("Later"), QMessageBox::RejectRole);
+    } else {
+        box.addButton(QMessageBox::Ok);
+    }
+    box.exec();
+    if (unlock && box.clickedButton() == unlock) unlockWallet();
 }
 
 void WalletView::lockWallet(bool lock_wallet)

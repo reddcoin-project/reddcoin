@@ -68,6 +68,15 @@ public:
     //! Unlock wallet.
     virtual bool unlock(const SecureString& wallet_passphrase) = 0;
 
+    //! Whether the next unlock moves the seed into its encrypted record or finishes a rewrite of the wallet file.
+    virtual bool hdSecretsRewriteOnUnlock() = 0;
+
+    //! What the owner is to be told after the seed was moved and the file rewritten; given once.
+    virtual std::vector<bilingual_str> takeHDSecretsMovedNotices() = 0;
+
+    //! What the owner has to be told about where the seed of the wallet is kept, if anything.
+    virtual std::vector<bilingual_str> getHDWarnings() = 0;
+
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
 
