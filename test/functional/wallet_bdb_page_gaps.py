@@ -100,7 +100,8 @@ class BDBPageGapsTest(BitcoinTestFramework):
                     continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
                 if relative == "." and file in ("debug.log", "peers.dat", "banlist.json", "fee_estimates.dat", "mempool.dat", "settings.json", "anchors.dat", ".lock"):
                     continue
-                with open(os.path.join(root, file), "rb") as f:
+                file_path = os.path.join(root, file)
+                with open(file_path, "rb") as f:
                     content = f.read()
                 searched += 1
                 for what, secret in secrets.items():

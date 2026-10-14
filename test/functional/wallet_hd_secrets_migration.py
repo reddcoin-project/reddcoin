@@ -196,7 +196,8 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             for file in sorted(files):
                 if file == ".walletlock":
                     continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
-                with open(os.path.join(root, file), "rb") as f:
+                file_path = os.path.join(root, file)
+                with open(file_path, "rb") as f:
                     content = f.read()
                 found += [(what, os.path.relpath(os.path.join(root, file), directory)) for what, secret in secrets.items() if secret and secret in content]
         return found
