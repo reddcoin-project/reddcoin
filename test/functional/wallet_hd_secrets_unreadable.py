@@ -176,8 +176,9 @@ class HDSecretsUnreadableTest(BitcoinTestFramework):
         if self.options.unfixed_bindir:
             self.log.info("The unencrypted mnemonic wallet loads on a version without the change")
             self.stop_node(0)
-            self.nodes[0].binary = os.path.join(self.options.unfixed_bindir, "reddcoind")
+            self.nodes[0].args[0] = os.path.join(self.options.unfixed_bindir, "reddcoind")
             self.start_node(0, self.extra_args[0])
+            assert_equal(self.nodes[0].process.args[0], os.path.join(self.options.unfixed_bindir, "reddcoind"))
             assert_equal(node.loadwallet("clear")["warning"], "")
             assert_equal(node.get_wallet_rpc("clear").gethdwalletinfo()["mnemonic"], phrase)
 
