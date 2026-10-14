@@ -20,10 +20,13 @@
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
+#include <wallet/walletutil.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <thread>
 #include <memory>
 #include <string>
@@ -41,9 +44,10 @@ struct HDChainTestingSetup : public TestChain100Setup {
         gArgs.ForceSetArg("-keypool", "3");
     }
 
-    std::shared_ptr<CWallet> Create(const std::string& name, int wallet_type, const SecureString& phrase_passphrase = "", const SecureString& wallet_passphrase = "")
+    std::shared_ptr<CWallet> Create(const std::string& name, int wallet_type, const SecureString& phrase_passphrase = "", const SecureString& wallet_passphrase = "", DatabaseFormat format = DatabaseFormat::BERKELEY)
     {
         DatabaseOptions options;
+        options.require_format = format;
         DatabaseStatus status;
         WalletOptions walletoptions;
         bilingual_str error;
@@ -128,8 +132,33 @@ struct HDChainTestingSetup : public TestChain100Setup {
         return {{PHRASE.begin(), PHRASE.end()}, {phrase_passphrase.begin(), phrase_passphrase.end()}, {seed.begin(), seed.end()}};
     }
 
+    //! The files under the wallet's directory that hold the bytes, as they are on disk now.
+    std::vector<std::string> FilesHolding(const CWallet& wallet, const std::vector<unsigned char>& bytes)
+    {
+        std::vector<std::string> files;
+        const fs::path directory = GetWalletDir() / wallet.GetName();
+        for (fs::recursive_directory_iterator it(directory), end; it != end; ++it) {
+            if (!fs::is_regular_file(it->path())) continue;
+            if (it->path().filename() == ".walletlock") continue; // empty, and locked while its wallet is loaded: Windows refuses to read it
+            std::ifstream file(it->path().string(), std::ios::binary);
+            const std::vector<unsigned char> content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (std::search(content.begin(), content.end(), bytes.begin(), bytes.end()) != content.end()) {
+                files.push_back(fs::relative(it->path(), directory).string());
+            }
+        }
+        return files;
+    }
+
     void CheckNoneInFile(CWallet& wallet, const Secrets& secrets)
     {
+        // Nothing in any file of the wallet's directory, the database's own
+        // log or journal included, while the wallet is loaded. This process
+        // has the secrets in its memory and none of that may be written.
+        for (const auto& [what, bytes] : {std::make_pair("phrase", secrets.phrase), std::make_pair("seed", secrets.seed), std::make_pair("mnemonic passphrase", secrets.phrase_passphrase)}) {
+            if (bytes.empty()) continue;
+            const std::vector<std::string> files = FilesHolding(wallet, bytes);
+            BOOST_CHECK_MESSAGE(files.empty(), strprintf("the %s is in the file %s", what, files.empty() ? "" : files[0]));
+        }
         BOOST_CHECK_MESSAGE(RecordsHolding(wallet, secrets.phrase).empty(), "the phrase is in clear in the file");
         BOOST_CHECK_MESSAGE(RecordsHolding(wallet, secrets.seed).empty(), "the seed is in clear in the file");
         if (!secrets.phrase_passphrase.empty()) {
@@ -183,13 +212,15 @@ BOOST_AUTO_TEST_CASE(unencrypted_mnemonic_wallet_keeps_its_chain_record)
 // or the seed in clear, and holds none of them in memory while it is locked.
 BOOST_AUTO_TEST_CASE(encrypted_mnemonic_wallet_keeps_no_clear_secret)
 {
+    for (const DatabaseFormat format : {DatabaseFormat::BERKELEY, DatabaseFormat::SQLITE}) {
     for (const int wallet_type : {walletType::bip39Wallet, walletType::bip44Wallet}) {
         for (const SecureString& phrase_passphrase : {SecureString{}, PHRASE_PASSPHRASE}) {
             for (const bool at_creation : {true, false}) {
-                const std::string name{strprintf("enc_%d_%d_%d", wallet_type, !phrase_passphrase.empty(), at_creation)};
+                const std::string name{strprintf("enc_%d_%d_%d_%d", wallet_type, !phrase_passphrase.empty(), at_creation, format == DatabaseFormat::SQLITE)};
                 BOOST_TEST_MESSAGE(name);
                 const Secrets secrets = SecretsOf(phrase_passphrase);
-                std::shared_ptr<CWallet> wallet = Create(name, wallet_type, phrase_passphrase, at_creation ? WALLET_PASSPHRASE : SecureString{});
+                std::shared_ptr<CWallet> wallet = Create(name, wallet_type, phrase_passphrase, at_creation ? WALLET_PASSPHRASE : SecureString{}, format);
+                BOOST_CHECK_EQUAL(wallet->GetDatabase().Format(), format == DatabaseFormat::SQLITE ? "sqlite" : "bdb");
                 if (!at_creation) BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
                 BOOST_REQUIRE(wallet->IsCrypted());
                 if (!wallet->IsLocked()) BOOST_REQUIRE(wallet->Lock());
@@ -227,6 +258,7 @@ BOOST_AUTO_TEST_CASE(encrypted_mnemonic_wallet_keeps_no_clear_secret)
             }
         }
     }
+    }
 }
 
 // Encrypting changes where the secrets are kept, not what is derived from
@@ -249,6 +281,31 @@ BOOST_AUTO_TEST_CASE(encrypted_mnemonic_wallet_derives_the_same_keys)
             BOOST_CHECK(Addresses(*wallet, 12) == expected);
             Unload(std::move(wallet));
         }
+    }
+}
+
+// The note that the file still has to be rewritten, left behind when a node
+// stopped between moving the seed and rewriting: the next load rewrites and
+// removes it, with the wallet locked.
+BOOST_AUTO_TEST_CASE(pending_rewrite_is_done_at_load)
+{
+    for (const DatabaseFormat format : {DatabaseFormat::BERKELEY, DatabaseFormat::SQLITE}) {
+        const std::string name{strprintf("pending_%d", format == DatabaseFormat::SQLITE)};
+        std::shared_ptr<CWallet> wallet = Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE, format);
+        BOOST_REQUIRE(WalletBatch(wallet->GetDatabase()).WriteHDSecretsPending());
+        Unload(std::move(wallet));
+
+        wallet = Load(name);
+        BOOST_CHECK(wallet->IsLocked());
+        BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->IsHDSecretsRewritePending());
+        BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+        // The database works after it: something is written and read back.
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        Addresses(*wallet, 5);
+        Unload(std::move(wallet));
+        wallet = Load(name);
+        BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->IsHDSecretsRewritePending());
+        Unload(std::move(wallet));
     }
 }
 

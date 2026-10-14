@@ -2279,6 +2279,13 @@ DBErrors CWallet::LoadWallet()
     if (nLoadWalletRet != DBErrors::LOAD_OK)
         return nLoadWalletRet;
 
+    // The seed was moved into its encrypted record and the file was not
+    // rewritten afterwards: the node stopped in between, or the rewrite
+    // failed. It needs no passphrase, and nothing else has the wallet yet.
+    if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan(); spk_man && spk_man->IsHDSecretsRewritePending()) {
+        RewriteAfterHDSecretsMoved();
+    }
+
     return DBErrors::LOAD_OK;
 }
 
@@ -2376,6 +2383,7 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
 
     return erased;
 }
+
 
 size_t CWallet::KeypoolCountExternalKeys() const
 {
@@ -3338,11 +3346,16 @@ bool CWallet::RewriteAfterHDSecretsMoved()
     // the seed in it, is still in the file until the file is written anew.
     // This is what encryption does for the private keys.
     WalletLogPrintf("Rewriting the wallet file: the seed of this wallet has been encrypted and the file may still hold the old copy\n");
-    if (!GetDatabase().Rewrite()) {
-        WalletLogPrintf("Error: the wallet file could not be rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked\n");
+    try {
+        if (!GetDatabase().Rewrite()) {
+            WalletLogPrintf("Error: the wallet file could not be rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked\n");
+            return false;
+        }
+        GetDatabase().ReloadDbEnv();
+    } catch (const std::exception& e) {
+        WalletLogPrintf("Error: %s while the wallet file was being rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy\n", e.what());
         return false;
     }
-    GetDatabase().ReloadDbEnv();
     if (!WalletBatch(GetDatabase()).EraseHDSecretsPending()) {
         WalletLogPrintf("Error: the wallet file has been rewritten, but the note that it had to be could not be removed\n");
         return false;
