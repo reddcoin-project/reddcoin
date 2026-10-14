@@ -668,9 +668,16 @@ BOOST_AUTO_TEST_CASE(rewrite_owed_after_encryptwallet)
         const std::string name{strprintf("encrypt_rewrite_%d", rewrite_fails)};
         std::shared_ptr<CWallet> wallet = Create(name, walletType::bip44Wallet, PHRASE_PASSPHRASE);
         LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
-        if (rewrite_fails) g_wallet_hd_write_fault = [](const std::string& what) { return what == "rewrite"; };
+        int rewrites{0};
+        g_wallet_hd_write_fault = [&](const std::string& what) {
+            if (what != "rewrite") return false;
+            ++rewrites;
+            return rewrite_fails;
+        };
         BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
         g_wallet_hd_write_fault = nullptr;
+        // Once when it succeeds (at the unlock encryptwallet does), and tried again once when it fails.
+        BOOST_CHECK_EQUAL(rewrites, rewrite_fails ? 2 : 1);
         BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
         BOOST_CHECK_EQUAL(spk_man.IsHDSecretsRewritePending(), rewrite_fails);
         BOOST_CHECK_EQUAL(wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING), rewrite_fails);

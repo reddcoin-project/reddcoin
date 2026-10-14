@@ -702,6 +702,12 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         delete encrypted_batch;
         encrypted_batch = nullptr;
 
+        // A mnemonic wallet's seed has just been moved into its encrypted
+        // record and the rewrite that removes the old chain record is owed:
+        // the unlock that follows does it, as any unlock does.
+        LegacyScriptPubKeyMan* const legacy_spk_man = GetLegacyScriptPubKeyMan();
+        const bool hd_rewrite_owed = legacy_spk_man && legacy_spk_man->IsHDSecretsRewritePending();
+
         Lock();
         Unlock(strWalletPassphrase);
 
@@ -732,11 +738,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
         // bits of the unencrypted private key in slack space in the database file.
-        LegacyScriptPubKeyMan* legacy_spk_man = GetLegacyScriptPubKeyMan();
-        if (legacy_spk_man && legacy_spk_man->IsHDSecretsRewritePending()) {
+        if (hd_rewrite_owed) {
             // The seed was moved out of the chain record: the rewrite is
             // owed, its result is checked, and it is retried if it fails.
-            RewriteAfterHDSecretsMoved();
+            // Done by the unlock above unless it failed there; once is enough.
+            if (legacy_spk_man->IsHDSecretsRewritePending()) RewriteAfterHDSecretsMoved();
         } else {
             try {
                 if (!GetDatabase().Rewrite()) {
