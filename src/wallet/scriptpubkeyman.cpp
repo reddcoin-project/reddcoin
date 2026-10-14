@@ -275,6 +275,16 @@ bool LegacyScriptPubKeyMan::Encrypt(const CKeyingMaterial& master_key, WalletBat
         return false;
     }
 
+    // A chain whose seed is a key of the wallet may hold a copy of that key:
+    // it is put there when an unencrypted wallet is loaded. The key is about
+    // to be encrypted, and the copy must not outlive that, in the active
+    // chain or in one that was replaced. Derivation reads the key itself.
+    const auto drop_seed_copy = [this](CHDChain& chain) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore) {
+        if (!chain.vchSeed.empty() && mapKeys.count(chain.seed_id) > 0) SecureVector().swap(chain.vchSeed);
+    };
+    drop_seed_copy(m_hd_chain);
+    for (auto& chain_pair : m_inactive_hd_chains) drop_seed_copy(chain_pair.second);
+
     KeyMap keys_to_encrypt;
     keys_to_encrypt.swap(mapKeys); // Clear mapKeys so AddCryptedKeyInner will succeed.
     for (const KeyMap::value_type& mKey : keys_to_encrypt)
