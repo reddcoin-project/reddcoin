@@ -17,6 +17,11 @@ record put back as it was before encryption. --fixtures=<directory> runs the
 same checks on wallet files that earlier versions really made; those are
 kept outside the source tree and that run is not part of the test suite.
 
+At the end the wallet tool is shown to write nothing with info and dump,
+and salvage to keep the encrypted secrets with their flag; with
+--unfixed-bindir=<dir> an earlier version is shown to refuse the salvaged
+wallets.
+
 The node is run twice. The first run makes the wallets and learns their
 secrets. The second, which is given no secret and returns none until the
 very end, loads and unlocks them. Every file under each wallet directory is
@@ -41,6 +46,7 @@ UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
 NEW_UNLOCK_PHRASE = "another passphrase for the wallet"
 MNEMONIC_EXTENSION = "a second factor for the mnemonic 0451"
 FLAG_HD_SECRETS_ENCRYPTED = 1 << 49
+PENDING = b"hdsecretspending"
 MAGIC = "BITCOIN_CORE_WALLET_DUMP"
 NOTICE_UNMIGRATED = ("The seed of this wallet, and its mnemonic phrase if it has one, are stored without encryption in the wallet file. "
                      "They will be encrypted the next time the wallet is unlocked. Until then anyone who can read the file can take its funds.")
@@ -63,6 +69,8 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         parser.add_argument("--fixtures", dest="fixtures", default=None,
                             help="Directory of wallet files made by earlier versions, to migrate in place of wallets built by the test")
         parser.add_argument("--fixtureline", dest="fixtureline", default="develop", help="Which set of the fixtures: develop or 4.22.9")
+        parser.add_argument("--unfixed-bindir", dest="unfixed_bindir", default=None,
+                            help="Directory with the reddcoind of a version without this change, to show that it refuses a salvaged wallet")
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -305,8 +313,25 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             wallet.walletlock()
             wallet.unloadwallet()
 
-        self.log.info("The wallet tool: salvage keeps the encrypted secrets, and the wallet gets its flag back")
         self.stop_node(0)
+        self.log.info("The wallet tool: info and dump write nothing, not the missing flag, not an owed rewrite")
+        first = sorted(name for name, facts in wallets.items() if facts["database"] == "bdb")[0]
+        header, records = self.dump(first)
+        built = []
+        for key, value in records:
+            if record_type(key) == "flags":
+                value = (int.from_bytes(bytes.fromhex(value), "little") & ~FLAG_HD_SECRETS_ENCRYPTED).to_bytes(8, "little").hex()
+            built.append((key, value))
+        built.append(((bytes([len(PENDING)]) + PENDING).hex(), "01"))
+        self.create_from("unflagged", header, built, "bdb")
+        _, before = self.dump("unflagged")
+        self.wallet_tool('-wallet=unflagged', 'info')
+        _, after = self.dump("unflagged")
+        assert_equal(after, before)
+        assert PENDING.decode() in [record_type(key) for key, _ in after]
+        assert not any(int.from_bytes(bytes.fromhex(value), "little") & FLAG_HD_SECRETS_ENCRYPTED for key, value in after if record_type(key) == "flags")
+
+        self.log.info("The wallet tool: salvage keeps the encrypted secrets, and writes their flag")
         salvaged = {name: facts for name, facts in wallets.items() if facts["database"] == "bdb"}
         for name in sorted(salvaged):
             binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
@@ -314,15 +339,28 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             stdout, stderr = str(tool.send_cli('salvage')), tool.stderr
             assert_equal((stdout, stderr), ("", ""))
             _, records = self.dump(name)
-            # What salvage keeps: keys, the master key, the chain, and now the
-            # encrypted secrets. It drops the flags; whatever reads the file
-            # next, here the tool making this dump, sees the secrets record
-            # without its flag and puts the flag back.
+            # What salvage keeps: keys, the master key, the chain, and the
+            # encrypted secrets with the flag that says they are kept so.
+            # The dump writes nothing, so the flag is salvage's own.
             types = sorted({record_type(r[0]) for r in records} - {"version"})
             assert_equal(types, ["ckey", "flags", "hdchain", "hdsecrets", "mkey"])
             flags = [int.from_bytes(bytes.fromhex(value), "little") for key, value in records if record_type(key) == "flags"]
             assert_equal(flags, [FLAG_HD_SECRETS_ENCRYPTED])
+        if self.options.unfixed_bindir:
+            self.log.info("A salvaged wallet is refused by a version without the change")
+            self.nodes[0].args[0] = os.path.join(self.options.unfixed_bindir, "reddcoind")
+            self.start_node(0)
+            assert_equal(self.nodes[0].process.args[0], os.path.join(self.options.unfixed_bindir, "reddcoind"))
+            for name in sorted(salvaged):
+                assert_raises_rpc_error(-4, "Wallet corrupted", node.loadwallet, name)
+            self.stop_node(0)
+            assert node.is_node_stopped()
+            self.nodes[0].args[0] = self.options.bitcoind
         self.start_node(0)
+        self.log.info("Loaded by the node, the wallet the tool left alone gets its flag back and is rewritten")
+        node.loadwallet("unflagged")
+        assert_equal(node.get_wallet_rpc("unflagged").getwalletinfo()["hd_secrets_encrypted"], True)
+        node.get_wallet_rpc("unflagged").unloadwallet()
         node._base_rpc = node.rpc
         node.rpc = node.get_wallet_rpc(self.default_wallet_name)
         for name, facts in sorted(salvaged.items()):
