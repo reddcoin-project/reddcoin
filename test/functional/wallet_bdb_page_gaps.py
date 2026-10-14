@@ -9,13 +9,12 @@ the heap of the process had held, so the text of an RPC reply or request
 could be found in the file of a wallet it had nothing to do with.
 
 Secrets that are made up for the test pass through the node's memory: a
-wallet's seed, keys and mnemonic passphrase in the replies of gethdwalletinfo,
-and a long passphrase in a request. Meanwhile other wallets grow. The node is
+wallet's seed, root key and a private key in the replies of gethdwalletinfo
+and dumpprivkey, and a long passphrase in a request. Meanwhile other wallets grow. The node is
 stopped and every file under every wallet directory is searched.
 
-A secret may be in the wallet it belongs to only in the form that wallet
-stores: the mnemonic passphrase of the unencrypted source wallet is in its own
-hdchain record. Anywhere else, and in any other form, it is a leak.
+The secrets are searched for in the form the commands print them, which no
+wallet stores: found anywhere, they are a leak.
 
 --long runs many more rounds and is not part of the test suite.
 """
@@ -26,7 +25,6 @@ from test_framework.authproxy import JSONRPCException
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
-MNEMONIC_EXTENSION = "page-gap marker: a mnemonic passphrase 73e1a0c4b2"
 # Long enough to need a buffer of several pages.
 LONG_UNLOCK_PHRASE = "page-gap marker: a wrong wallet passphrase " + "0f1e2d3c4b5a6978" * 180
 VICTIMS = 4
@@ -38,7 +36,7 @@ class BDBPageGapsTest(BitcoinTestFramework):
         self.extra_args = [["-staking=0", "-keypool=5"]]
 
     def add_options(self, parser):
-        parser.add_argument("--long", dest="long", default=False, action="store_true", help="Run 400 rounds instead of 40")
+        parser.add_argument("--long", dest="long", default=False, action="store_true", help="Run 2000 rounds instead of 400")
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -47,13 +45,17 @@ class BDBPageGapsTest(BitcoinTestFramework):
     def run_test(self):
         node = self.nodes[0]
         base = node._base_rpc
-        base.createwallet(wallet_name="source", descriptors=False, wallet_type="bip44", mnemonic_passphrase=MNEMONIC_EXTENSION)
+        # On this line createwallet cannot make a mnemonic wallet: the source is
+        # a plain HD wallet, and its seed, root key and a private key, as the
+        # commands print them, are the secrets that pass through the replies.
+        base.createwallet(wallet_name="source", descriptors=False)
         source = node.get_wallet_rpc("source")
         info = source.gethdwalletinfo()
+        source_key = source.dumpprivkey(source.getnewaddress("", "legacy"))
         secrets = {
-            "mnemonic passphrase": MNEMONIC_EXTENSION.encode(),
             "seed, as hex": info["hdseed"].encode(),
             "root private key": info["rootprivkey"].encode(),
+            "private key, as WIF": source_key.encode(),
             "long passphrase of a request": LONG_UNLOCK_PHRASE[:200].encode(),
         }
         victims = []
@@ -63,10 +65,12 @@ class BDBPageGapsTest(BitcoinTestFramework):
             victims.append(node.get_wallet_rpc(name))
         victims[0].encryptwallet("the real passphrase of a victim")
 
-        rounds = 400 if self.options.long else 40
+        # On this line the secrets pass through fewer replies than a mnemonic
+        # wallet's would, and 40 rounds do not show the leak of an unfixed build.
+        rounds = 2000 if self.options.long else 400
         self.log.info("%d rounds: secrets in replies and in a request, while other wallets grow" % rounds)
         for round_number in range(rounds):
-            assert_equal(source.gethdwalletinfo()["mnemonicpassphrase"], MNEMONIC_EXTENSION)
+            assert_equal(source.gethdwalletinfo()["hdseed"], info["hdseed"])
             if round_number % 4 == 0:
                 try:
                     victims[0].walletpassphrase(LONG_UNLOCK_PHRASE, 1)
@@ -101,8 +105,7 @@ class BDBPageGapsTest(BitcoinTestFramework):
                 searched += 1
                 for what, secret in secrets.items():
                     times = content.count(secret)
-                    # The source wallet stores its own mnemonic passphrase, unencrypted.
-                    if times and not (what == "mnemonic passphrase" and top == "source" and file == "wallet.dat"):
+                    if times:
                         leaks.append((os.path.join(relative, file), what, times))
         self.log.info("searched %d files" % searched)
         for leak in leaks:
