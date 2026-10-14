@@ -375,8 +375,9 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   - The first unlock after upgrading rewrites the wallet file. On a large
     wallet this can take a while. Do not stop the program during it.
   - A converted wallet cannot be opened by earlier versions, nor read by an
-    earlier `reddcoin-wallet` tool. They report "Wallet corrupted". The wallet
-    is not damaged.
+    earlier `reddcoin-wallet` tool, and neither can what this version's
+    `reddcoin-wallet salvage` recovers from one. They report "Wallet
+    corrupted". The wallet is not damaged.
   - Backups and copies of the wallet file made with earlier versions still
     contain the seed unencrypted. Conversion does not reach them.
     `reddcoin-wallet salvage` leaves a `.bak` copy of the original beside the
@@ -400,9 +401,15 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   replies and requests, of any wallet the node had loaded. A wallet file, and
   the log files beside it, could contain another wallet's seed, private keys
   or mnemonic passphrase, where `gethdwalletinfo`, `dumpprivkey` or similar
-  commands had been used. The memory given to Berkeley DB is now cleared.
+  commands had been used. The memory given to Berkeley DB is now cleared,
+  and when a wallet file is rewritten (by `encryptwallet`, and at the
+  conversion above) the new file is written through memory of its own, so
+  that it keeps nothing of the old file or of other wallets.
   Files written by earlier versions keep what they hold until they are
-  rewritten; old backups and copies keep it for good.
+  rewritten. Until then, using such a file can copy some of it into the log
+  files in the `database` directory beside it. A wallet that was already
+  encrypted is not rewritten by this version, except at the conversion above.
+  Old backups and copies keep what they hold for good.
 
 - When a rewrite of the wallet file and a change to the address book came at
   the same moment, both could wait for each other for ever. Fixed.
