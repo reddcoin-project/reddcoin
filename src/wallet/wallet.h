@@ -18,6 +18,7 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/system.h>
+#include <util/translation.h>
 #include <util/ui_change_type.h>
 #include <validationinterface.h>
 #include <wallet/coinselection.h>
@@ -244,6 +245,8 @@ private:
     /** Rewrite the database file after the seed of the HD chain was moved into
      *  its encrypted record, and remove the note that it had to be. */
     bool RewriteAfterHDSecretsMoved() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! What the owner is told once the seed has been moved and the file rewritten, kept for the GUI to show after the unlock that did it.
+    std::vector<bilingual_str> m_hd_secrets_moved_notices GUARDED_BY(cs_wallet);
 
     std::atomic<bool> fAbortRescan{false};
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver
@@ -926,6 +929,10 @@ public:
     //! the keys of its seed, if anything.
     //! for_load: the form that follows "Wallet <name>: " in the notice given at load.
     std::vector<bilingual_str> GetHDWarnings(bool for_load = false) const;
+    //! What the owner is to be told after the seed was moved and the file rewritten; given once, then forgotten.
+    std::vector<bilingual_str> TakeHDSecretsMovedNotices() EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);
+    //! Whether the next unlock moves the seed into its encrypted record or finishes a rewrite of the file: it takes a while.
+    bool HDSecretsRewriteOnUnlock() const EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);
 
     /* Returns true if BIP39 is enabled */
     bool IsBip39Enabled() const;

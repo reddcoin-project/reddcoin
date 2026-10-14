@@ -112,6 +112,9 @@ public Q_SLOTS:
     void changePassphrase();
     /** Ask for passphrase to unlock wallet temporarily */
     void unlockWallet();
+    /** Tell the owner, once per session, where the seed of this wallet is kept when there is
+        something to say; offer to unlock it when that moves the seed into its encrypted record. */
+    void showHDNotices();
     void lockWallet(bool lock_wallet);
 
     /** Enable/Disable staking */

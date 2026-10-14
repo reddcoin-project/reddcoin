@@ -895,6 +895,8 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
     wallet_view->setPrivacy(isPrivacyModeActivated());
     const QString display_name = walletModel->getDisplayName();
     m_wallet_selector->addItem(display_name, QVariant::fromValue(walletModel));
+    // After the window is up: where the seed of the wallet is kept, when there is something to say.
+    QTimer::singleShot(0, wallet_view, &WalletView::showHDNotices);
 }
 
 void BitcoinGUI::removeWallet(WalletModel* walletModel)

@@ -141,6 +141,9 @@ public:
     bool isCrypted() override { return m_wallet->IsCrypted(); }
     bool lock() override { return m_wallet->Lock(); }
     bool unlock(const SecureString& wallet_passphrase) override { return m_wallet->Unlock(wallet_passphrase); }
+    bool hdSecretsRewriteOnUnlock() override { return m_wallet->HDSecretsRewriteOnUnlock(); }
+    std::vector<bilingual_str> takeHDSecretsMovedNotices() override { return m_wallet->TakeHDSecretsMovedNotices(); }
+    std::vector<bilingual_str> getHDWarnings() override { return m_wallet->GetHDWarnings(); }
     bool isLocked() override { return m_wallet->IsLocked(); }
     bool changeWalletPassphrase(const SecureString& old_wallet_passphrase,
         const SecureString& new_wallet_passphrase) override
