@@ -487,6 +487,17 @@ fi
 dnl Don't allow extended (non-ASCII) symbols in identifiers. This is easier for code review.
 AX_CHECK_COMPILE_FLAG([-fno-extended-identifiers],[[CXXFLAGS="$CXXFLAGS -fno-extended-identifiers"]],,[[$CXXFLAG_WERROR]])
 
+dnl Don't fuse a*b+c into a single fused multiply-add. Consensus code (PoSV coin-age
+dnl weight, Kimoto Gravity Well, the v5 inflation adjustment) uses double arithmetic,
+dnl and contraction is on by default for arm64 (gcc and Apple clang), for other
+dnl FMA-capable targets and for x86_64 with -mfma or -march=native, while baseline
+dnl x86_64 has no FMA. With contraction off the compiler emits the same separately
+dnl rounded multiply and add on every target. Results can still differ by an ULP
+dnl where libm (pow, log) differs between platforms; that was checked exhaustively
+dnl over every input those functions see and does not change the truncated
+dnl integers consensus uses (see src/test/fp_consensus_tests.cpp).
+AX_CHECK_COMPILE_FLAG([-ffp-contract=off],[[CXXFLAGS="$CXXFLAGS -ffp-contract=off"]],,[[$CXXFLAG_WERROR]])
+
 enable_sse42=no
 enable_sse41=no
 enable_avx2=no
