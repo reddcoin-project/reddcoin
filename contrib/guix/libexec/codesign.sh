@@ -86,8 +86,12 @@ mkdir -p "$DISTSRC"
                 x86_64*) ARCH="x86_64" ;;
             esac
 
+            # Each architecture's signatures are kept apart in the
+            # detached-sigs repository, see detached-sig-create.sh
+            SIGDIR="codesignatures/osx/${ARCH}-apple-darwin"
+
             # Apply detached codesignatures to dist/ (in-place)
-            signapple apply dist/Reddcoin-Qt.app codesignatures/osx/dist/Reddcoin-Qt.app
+            signapple apply dist/Reddcoin-Qt.app "${SIGDIR}/dist/Reddcoin-Qt.app"
 
             # Apply detached codesignatures to the standalone binaries and
             # the shared library (in-place)
@@ -95,7 +99,7 @@ mkdir -p "$DISTSRC"
                 | sort \
                 | while read -r bin
             do
-                signapple apply "${bin}" "codesignatures/osx/${bin}.${ARCH}sign"
+                signapple apply "${bin}" "${SIGDIR}/${bin}.${ARCH}sign"
             done
 
             # Make an uncompressed DMG from dist/
