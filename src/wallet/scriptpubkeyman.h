@@ -347,6 +347,7 @@ private:
     //! wallet made from a mnemonic is. See RefreshHDType.
     bool m_seed_held_by_chain GUARDED_BY(cs_KeyStore){false};
     bool m_no_seed_logged GUARDED_BY(cs_KeyStore){false};
+    bool m_earlier_seed_keys GUARDED_BY(cs_KeyStore){false};
 
     //! Whether the record of this chain carries secrets: a chain of the mnemonic version with a seed in it.
     static bool ChainHoldsSecrets(const CHDChain& chain);
@@ -518,6 +519,13 @@ public:
     void LockHDSecrets();
     //! The file has been rewritten since the secrets were moved.
     void HDSecretsRewritten();
+    /** Whether the chain holds its seed itself and the wallet also has keys of
+     *  another seed. A wallet made from a mnemonic has none: this is a wallet
+     *  with a plain seed that an earlier version turned into a mnemonic wallet
+     *  when it was encrypted. Its mnemonic does not restore the earlier keys. */
+    bool HasEarlierSeedKeys() const;
+    //! What the owner of the wallet has to be told about where its seed is, if anything.
+    std::vector<bilingual_str> GetHDSecretsNotices() const;
     //! The chains of seeds that were replaced, by seed id.
     const std::unordered_map<CKeyID, CHDChain, SaltedSipHasher>& GetInactiveHDChains() const { return m_inactive_hd_chains; }
     void AddInactiveHDChain(const CHDChain& chain);

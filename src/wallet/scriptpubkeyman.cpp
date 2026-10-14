@@ -707,6 +707,41 @@ void LegacyScriptPubKeyMan::DecideHDSecretsState()
                         !encrypted ? "the wallet is not encrypted" : "there is no readable record of it");
     }
     RefreshHDType();
+
+    m_earlier_seed_keys = false;
+    if (m_seed_held_by_chain) {
+        for (const auto& [key_id, meta] : mapKeyMetadata) {
+            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
+                m_earlier_seed_keys = true;
+                break;
+            }
+        }
+    }
+}
+
+bool LegacyScriptPubKeyMan::HasEarlierSeedKeys() const
+{
+    LOCK(cs_KeyStore);
+    return m_earlier_seed_keys;
+}
+
+std::vector<bilingual_str> LegacyScriptPubKeyMan::GetHDSecretsNotices() const
+{
+    LOCK(cs_KeyStore);
+    std::vector<bilingual_str> notices;
+    if (m_hd_secrets_state == HDSecretsState::UNMIGRATED) {
+        notices.push_back(_("The seed of this wallet, and its mnemonic phrase if it has one, are stored without encryption in the wallet file. They will be encrypted the next time the wallet is unlocked. Until then anyone who can read the file can take its funds."));
+    }
+    if (m_hd_secrets_pending) {
+        notices.push_back(_("The seed of this wallet is encrypted, but the wallet file could not be rewritten and may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked."));
+    }
+    if (m_hd_secrets_state == HDSecretsState::UNREADABLE) {
+        notices.push_back(_("The seed of this wallet cannot be read. The keys it already holds work, and addresses come from its key pool until that is empty; no new keys can be made. If you have this wallet's mnemonic phrase written down, restore it into a new wallet. If you do not, move the funds to a new wallet while this one still works."));
+    }
+    if (m_earlier_seed_keys) {
+        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+    }
+    return notices;
 }
 
 bool LegacyScriptPubKeyMan::WriteHDSecretsEncrypted(const CKeyingMaterial& master_key, const CHDSecrets& secrets, const CHDChain& chain, bool pending, CHDSecretsRecord& record)

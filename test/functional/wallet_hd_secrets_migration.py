@@ -42,6 +42,8 @@ NEW_UNLOCK_PHRASE = "another passphrase for the wallet"
 MNEMONIC_EXTENSION = "a second factor for the mnemonic 0451"
 FLAG_HD_SECRETS_ENCRYPTED = 1 << 49
 MAGIC = "BITCOIN_CORE_WALLET_DUMP"
+NOTICE_UNMIGRATED = ("The seed of this wallet, and its mnemonic phrase if it has one, are stored without encryption in the wallet file. "
+                     "They will be encrypted the next time the wallet is unlocked. Until then anyone who can read the file can take its funds.")
 # How the wallet is unlocked for the first time.
 ROUTES = ("walletpassphrase", "staking only", "walletpassphrasechange")
 
@@ -213,10 +215,13 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         for number, (name, facts) in enumerate(sorted(wallets.items())):
             route = ROUTES[number % len(ROUTES)]
             self.log.info("%s, first unlocked by: %s" % (name, route))
-            node._base_rpc.loadwallet(name)
+            # Whoever loads it is told, and so is whoever asks about it.
+            loaded = node._base_rpc.loadwallet(name)
+            assert_equal(loaded["warning"], "Wallet %s: %s" % (name, NOTICE_UNMIGRATED))
             wallet = node.get_wallet_rpc(name)
             info = wallet.getwalletinfo()
             assert_equal((info["format"], info["hd_type"], info["unlocked_until"]), (facts["database"], facts["kind"], 0))
+            assert_equal((info["hd_warnings"], info["earlier_seed_keys"]), (NOTICE_UNMIGRATED, False))
             assert "hd_secrets_encrypted" not in self.flags(wallet)
             seed_id = info["hdseedid"]
 
@@ -239,6 +244,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             info = wallet.getwalletinfo()
             assert "hd_secrets_encrypted" in self.flags(wallet)
             assert_equal((info["hd_type"], info["hdseedid"]), (facts["kind"], seed_id))
+            assert "hd_warnings" not in info
             if route == "staking only":
                 # The seed is not given out in this state, and the wallet was moved all the same.
                 assert_raises_rpc_error(-13, "Wallet is unlocked for staking only", wallet.keypoolrefill)
@@ -280,9 +286,10 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         node._base_rpc = node.rpc
         node.rpc = node.get_wallet_rpc(self.default_wallet_name)
         for name, facts in sorted(wallets.items()):
-            node._base_rpc.loadwallet(name)
+            assert_equal(node._base_rpc.loadwallet(name)["warning"], "")
             wallet = node.get_wallet_rpc(name)
             assert "hd_secrets_encrypted" in self.flags(wallet)
+            assert "hd_warnings" not in wallet.getwalletinfo()
             assert_equal(wallet.getwalletinfo()["hd_type"], facts["kind"])
             # Locked: an address from the key pool, and nothing that needs the seed.
             wallet.getnewaddress("", "legacy")

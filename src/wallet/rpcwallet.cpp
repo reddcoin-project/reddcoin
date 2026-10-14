@@ -2237,7 +2237,7 @@ static RPCHelpMan encryptwallet()
     // A wallet created from a mnemonic keeps its seed and its keypool when it
     // is encrypted: its phrase has to go on restoring it.
     if (pwallet->IsBip39Enabled()) {
-        return "wallet encrypted; The wallet was created from a mnemonic and keeps its seed and its keypool: the mnemonic phrase still restores it. You need to make a new backup.";
+        return "wallet encrypted; this wallet keeps its seed and its keypool. Any copy of the wallet file made before now holds the seed unencrypted; destroy such copies. You need to make a new backup.";
     }
 
     return "wallet encrypted; The keypool has been flushed and a new HD seed was generated (if you are using HD). You need to make a new backup.";
@@ -2555,8 +2555,9 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::STR_HEX, "hdseedid", /* optional */ true, "the Hash160 of the HD seed (only present when HD is enabled)"},
                         {RPCResult::Type::STR, "hd_type", "HD wallet type: bip32, bip39, bip44, or none"},
                         {RPCResult::Type::BOOL, "mixed_key_paths", "whether some keys of the wallet's HD seed are on BIP44 paths while its new keys are derived on the ordinary paths: the seed alone does not restore those keys"},
-                        {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about the keys of the wallet's HD seed, when there is something to say"},
+                        {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about where the seed of the wallet is kept and about the keys of its seed, when there is something to say"},
                         {RPCResult::Type::BOOL, "hd_secrets_encrypted", "whether the seed of the HD chain, and the mnemonic it came from, are kept in a record of their own, encrypted with the wallet passphrase"},
+                        {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet is a mnemonic wallet that also has keys of an earlier seed, which its mnemonic does not restore"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2626,6 +2627,7 @@ static RPCHelpMan getwalletinfo()
         obj.pushKV("hd_warnings", Join(hd_warnings, Untranslated("\n")).original);
     }
     obj.pushKV("hd_secrets_encrypted", pwallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    obj.pushKV("earlier_seed_keys", spk_man && spk_man->HasEarlierSeedKeys());
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
         obj.pushKV("keypoolsize_hd_internal",   (int64_t)(pwallet->GetKeyPoolSize() - kpExternalSize));
