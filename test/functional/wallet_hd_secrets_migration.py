@@ -36,7 +36,6 @@ import shutil
 
 from test_framework.messages import hash256
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.test_node import TestNodeCLI
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -80,11 +79,8 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
 
     def wallet_tool(self, *args):
         """Run the wallet tool, the command last: it must succeed and say nothing on stderr."""
-        binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
-        *options, command = args
-        tool = TestNodeCLI(binary, self.nodes[0].datadir)('-chain=%s' % self.chain, *options)
-        tool.send_cli(command)
-        assert_equal(tool.stderr, "")
+        _, stderr = self.run_wallet_tool(*args)
+        assert_equal(stderr, "")
 
     def wallets_root(self):
         chain_dir = os.path.join(self.nodes[0].datadir, self.chain)
@@ -334,9 +330,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         self.log.info("The wallet tool: salvage keeps the encrypted secrets, and writes their flag")
         salvaged = {name: facts for name, facts in wallets.items() if facts["database"] == "bdb"}
         for name in sorted(salvaged):
-            binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
-            tool = TestNodeCLI(binary, node.datadir)('-chain=%s' % self.chain, '-wallet=' + name)
-            stdout, stderr = str(tool.send_cli('salvage')), tool.stderr
+            stdout, stderr = self.run_wallet_tool('-wallet=' + name, 'salvage')
             assert_equal((stdout, stderr), ("", ""))
             _, records = self.dump(name)
             # What salvage keeps: keys, the master key, the chain, and the

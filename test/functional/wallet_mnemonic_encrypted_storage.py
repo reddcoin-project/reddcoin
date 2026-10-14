@@ -41,7 +41,6 @@ seed it had before it was encrypted must not be found.
 import os
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.test_node import TestNodeCLI
 from test_framework.util import assert_equal
 
 UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
@@ -72,11 +71,8 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
 
     def wallet_tool(self, *args):
         """Run the wallet tool, the command last: it must succeed and say nothing on stderr."""
-        binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
-        *options, command = args
-        tool = TestNodeCLI(binary, self.nodes[0].datadir)('-chain=%s' % self.chain, *options)
-        tool.send_cli(command)
-        assert_equal(tool.stderr, "")
+        _, stderr = self.run_wallet_tool(*args)
+        assert_equal(stderr, "")
 
     def wallet_dir(self, name):
         chain_dir = os.path.join(self.nodes[0].datadir, self.chain)
