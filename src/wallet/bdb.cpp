@@ -271,6 +271,25 @@ bool IsInstalled()
 }
 } // namespace BerkeleyAllocator
 
+BerkeleyScratchEnvironment::BerkeleyScratchEnvironment(const fs::path& directory)
+{
+    BerkeleyAllocator::Install();
+    m_env = std::make_unique<DbEnv>(DB_CXX_NO_EXCEPTIONS);
+    m_env->set_alloc(std::malloc, std::realloc, std::free);
+    m_env->set_cachesize(0, 0x100000, 1);
+    const int ret = m_env->open(directory.string().c_str(), DB_CREATE | DB_INIT_MPOOL | DB_PRIVATE | DB_THREAD, S_IRUSR | S_IWUSR);
+    m_open = ret == 0;
+    if (!m_open) {
+        LogPrintf("BerkeleyScratchEnvironment: Error %d opening an environment in %s: %s\n", ret, directory.string(), DbEnv::strerror(ret));
+    }
+}
+
+BerkeleyScratchEnvironment::~BerkeleyScratchEnvironment()
+{
+    // An environment that failed to open is closed as well, to release the handle.
+    m_env->close(0);
+}
+
 void BerkeleyEnvironment::Reset()
 {
     // Before the library is used at all: memory it took from one allocator
@@ -671,14 +690,20 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 std::string strFileRes = strFile + ".rewrite";
                 { // surround usage of db with extra {}
                     BerkeleyBatch db(*this, true);
-                    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(env->dbenv.get(), 0);
+                    // The new file is written through an environment of its
+                    // own, whose cache never held a page of the old one.
+                    BerkeleyScratchEnvironment scratch(env->Directory());
+                    if (!scratch.IsOpen()) {
+                        fSuccess = false;
+                    }
+                    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(scratch.Get(), 0);
 
-                    int ret = pdbCopy->open(nullptr,               // Txn pointer
-                                            strFileRes.c_str(), // Filename
-                                            "main",             // Logical db name
-                                            DB_BTREE,           // Database type
-                                            DB_CREATE,          // Flags
-                                            0);
+                    int ret = fSuccess ? pdbCopy->open(nullptr,               // Txn pointer
+                                                       strFileRes.c_str(), // Filename
+                                                       "main",             // Logical db name
+                                                       DB_BTREE,           // Database type
+                                                       DB_CREATE,          // Flags
+                                                       0) : 1;
                     if (ret > 0) {
                         LogPrintf("BerkeleyBatch::Rewrite: Can't create database file %s\n", strFileRes);
                         fSuccess = false;
