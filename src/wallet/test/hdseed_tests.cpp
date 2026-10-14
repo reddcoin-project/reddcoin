@@ -130,4 +130,35 @@ BOOST_AUTO_TEST_CASE(replaced_seed_is_topped_up_on_the_chain_of_the_key_used)
     }
 }
 
+// A chain whose counters are behind its keys, as after a wallet is put back
+// from an older copy of its chain record, passes over the indexes that are
+// taken. The key it arrives at has the path of its own index, and nothing more.
+BOOST_AUTO_TEST_CASE(key_path_when_indexes_are_taken)
+{
+    for (const int wallet_type : {walletType::bip44Wallet, walletType::bip39Wallet, walletType::bip32Wallet}) {
+        std::shared_ptr<CWallet> wallet = Create(strprintf("taken_%d", wallet_type), wallet_type);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        for (int i = 0; i < 4; ++i) NewScript(*wallet);
+        const SeedKeys before = KeysOf(*wallet, spk_man.GetHDChain().seed_id);
+
+        CHDChain chain = spk_man.GetHDChain();
+        chain.nExternalChainCounter = 0;
+        chain.nInternalChainCounter = 0;
+        spk_man.LoadHDChain(chain);
+        for (int i = 0; i < 6; ++i) NewScript(*wallet);
+
+        const SeedKeys after = KeysOf(*wallet, spk_man.GetHDChain().seed_id);
+        BOOST_CHECK_GT(after.last_external, before.last_external);
+        {
+            LOCK(spk_man.cs_KeyStore);
+            for (const auto& meta_pair : spk_man.mapKeyMetadata) {
+                const CKeyMetadata& meta = meta_pair.second;
+                if (meta.hd_seed_id.IsNull() || meta.hdKeypath == "s") continue;
+                BOOST_CHECK_EQUAL(meta.key_origin.path.size(), wallet_type == walletType::bip44Wallet ? 5U : 3U);
+            }
+        }
+        Unload(std::move(wallet));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

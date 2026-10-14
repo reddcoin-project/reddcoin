@@ -1177,6 +1177,9 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
     uint32_t& nChildIndex = internal ? hd_chain.nInternalChainCounter : hd_chain.nExternalChainCounter;
 
     do {
+        // An index that is already taken is passed over, and the next one
+        // tried: the path is that of the key that is kept, not of every try.
+        metadata.key_origin.path.clear();
         if (hd_chain.IsBip44()) {
             // derive m/purpose'
             // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
