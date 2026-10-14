@@ -2261,7 +2261,7 @@ DBErrors CWallet::LoadWallet()
     // The seed was moved into its encrypted record and the file was not
     // rewritten afterwards: the node stopped in between, or the rewrite
     // failed. It needs no passphrase, and nothing else has the wallet yet.
-    if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan(); spk_man && spk_man->IsHDSecretsRewritePending()) {
+    if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan(); spk_man && spk_man->IsHDSecretsRewritePending() && !m_read_only_load) {
         RewriteAfterHDSecretsMoved();
     }
 

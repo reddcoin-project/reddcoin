@@ -669,7 +669,9 @@ void LegacyScriptPubKeyMan::DecideHDSecretsState()
         }
     } else if (encrypted && record) {
         m_hd_secrets_state = HDSecretsState::ENCRYPTED;
-        if (!flagged) {
+        if (!flagged && m_storage.IsReadOnlyLoad()) {
+            WalletLogPrintf("The seed of this wallet is kept encrypted; the wallet flag that says so is missing and is not written by this command\n");
+        } else if (!flagged) {
             // The record is there and the mark is not: a tool that copies
             // records but not flags leaves a wallet so. Put the mark back, or
             // a version that does not know the record would take the wallet.
