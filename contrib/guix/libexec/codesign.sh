@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 export LC_ALL=C
 set -e -o pipefail
+
+# Environment variables for determinism
+export TAR_OPTIONS="--owner=0 --group=0 --numeric-owner --mtime='@${SOURCE_DATE_EPOCH}' --sort=name"
 export TZ=UTC
 
 # Although Guix _does_ set umask when building its own packages (in our case,
@@ -78,8 +81,22 @@ mkdir -p "$DISTSRC"
             done
             ;;
         *darwin*)
+            case "$HOST" in
+                arm64*) ARCH="arm64" ;;
+                x86_64*) ARCH="x86_64" ;;
+            esac
+
             # Apply detached codesignatures to dist/ (in-place)
             signapple apply dist/Reddcoin-Qt.app codesignatures/osx/dist/Reddcoin-Qt.app
+
+            # Apply detached codesignatures to the standalone binaries and
+            # the shared library (in-place)
+            find "${DISTNAME}" \( -wholename "*/bin/*" -o -wholename "*/lib/*.dylib" \) -type f \
+                | sort \
+                | while read -r bin
+            do
+                signapple apply "${bin}" "codesignatures/osx/${bin}.${ARCH}sign"
+            done
 
             # Make an uncompressed DMG from dist/
             xorrisofs -D -l -V "$(< osx_volname)" -no-pad -r -dir-mode 0755 \
@@ -89,6 +106,13 @@ mkdir -p "$DISTSRC"
 
             # Compress uncompressed.dmg and output to OUTDIR
             ./dmg dmg uncompressed.dmg "${OUTDIR}/${DISTNAME}-osx-signed.dmg"
+
+            # Make a .tar.gz from the signed binaries
+            find "${DISTNAME}" -print0 \
+                | sort --zero-terminated \
+                | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" \
+                || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" && exit 1 )
             ;;
         *)
             exit 1
