@@ -2231,6 +2231,12 @@ static RPCHelpMan encryptwallet()
         throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Error: Failed to encrypt the wallet.");
     }
 
+    // A wallet created from a mnemonic keeps its seed and its keypool when it
+    // is encrypted: its phrase has to go on restoring it.
+    if (pwallet->IsBip39Enabled()) {
+        return "wallet encrypted; The wallet was created from a mnemonic and keeps its seed and its keypool: the mnemonic phrase still restores it. You need to make a new backup.";
+    }
+
     return "wallet encrypted; The keypool has been flushed and a new HD seed was generated (if you are using HD). You need to make a new backup.";
 },
     };
