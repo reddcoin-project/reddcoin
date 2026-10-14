@@ -298,6 +298,42 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             wallet.walletlock()
             wallet.unloadwallet()
 
+        self.log.info("The wallet tool: salvage keeps the encrypted secrets, and the wallet gets its flag back")
+        self.stop_node(0)
+        salvaged = {name: facts for name, facts in wallets.items() if facts["database"] == "bdb"}
+        for name in sorted(salvaged):
+            binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
+            tool = TestNodeCLI(binary, node.datadir)('-chain=%s' % self.chain, '-wallet=' + name)
+            stdout, stderr = str(tool.send_cli('salvage')), tool.stderr
+            assert_equal((stdout, stderr), ("", ""))
+            _, records = self.dump(name)
+            # What salvage keeps: keys, the master key, the chain, and now the
+            # encrypted secrets. It drops the flags; whatever reads the file
+            # next, here the tool making this dump, sees the secrets record
+            # without its flag and puts the flag back.
+            types = sorted({record_type(r[0]) for r in records} - {"version"})
+            assert_equal(types, ["ckey", "flags", "hdchain", "hdsecrets", "mkey"])
+            flags = [int.from_bytes(bytes.fromhex(value), "little") for key, value in records if record_type(key) == "flags"]
+            assert_equal(flags, [FLAG_HD_SECRETS_ENCRYPTED])
+        self.start_node(0)
+        node._base_rpc = node.rpc
+        node.rpc = node.get_wallet_rpc(self.default_wallet_name)
+        for name, facts in sorted(salvaged.items()):
+            node._base_rpc.loadwallet(name)
+            wallet = node.get_wallet_rpc(name)
+            assert_equal((wallet.getwalletinfo()["hd_secrets_encrypted"], wallet.getwalletinfo()["hd_type"]), (True, facts["kind"]))
+            # Refused, here already because salvage keeps no version record and the wallet reads as older than HD.
+            assert_raises_rpc_error(-4, None, wallet.sethdseed)
+            wallet.walletpassphrase(facts["passphrase"], 60)
+            assert_equal(wallet.gethdwalletinfo()["mnemonic"].encode(), facts["secrets"]["mnemonic"])
+            # It derives: the key pool is filled again, with keys of the same seed.
+            wallet.keypoolrefill()
+            derived = wallet.getaddressinfo(wallet.getnewaddress("", "legacy"))
+            assert_equal(derived["hdseedid"], wallet.getwalletinfo()["hdseedid"])
+            assert derived["address"] in facts["addresses"]
+            wallet.walletlock()
+            wallet.unloadwallet()
+
 
 if __name__ == '__main__':
     HDSecretsMigrationTest().main()

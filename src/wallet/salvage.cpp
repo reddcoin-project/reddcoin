@@ -19,7 +19,10 @@ typedef std::pair<std::vector<unsigned char>, std::vector<unsigned char> > KeyVa
 
 static bool KeyFilter(const std::string& type)
 {
-    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN;
+    // The encrypted secrets of an HD chain belong with the chain: when they
+    // are kept in their own record the chain record has no seed in it, and a
+    // wallet salvaged without them could derive no key.
+    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN || type == DBKeys::HDSECRETS;
 }
 
 bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::vector<bilingual_str>& warnings)
@@ -162,6 +165,16 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
     }
     ptxn->commit(0);
     pdbCopy->close(0);
+
+    // The original is still there under another name. If it is the file of an
+    // encrypted wallet that has its seed in the chain record, as earlier
+    // versions left it, that copy holds the seed without encryption.
+    if (LegacyScriptPubKeyMan* spk_man = dummyWallet.GetLegacyScriptPubKeyMan()) {
+        const CHDChain& chain = spk_man->GetHDChain();
+        if (dummyWallet.IsCrypted() && chain.nVersion == CHDChain::VERSION_HD_BIP39 && !chain.vchSeed.empty()) {
+            warnings.push_back(strprintf(Untranslated("WARNING: the original file was kept as %s. It holds the seed of this wallet without encryption, as does the salvaged file until the wallet is next unlocked. Destroy the copy once the salvaged wallet works."), newFilename));
+        }
+    }
 
     return fSuccess;
 }
