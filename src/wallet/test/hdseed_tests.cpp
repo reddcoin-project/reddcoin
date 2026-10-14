@@ -161,4 +161,61 @@ BOOST_AUTO_TEST_CASE(key_path_when_indexes_are_taken)
     }
 }
 
+// Earlier versions lengthened the stored path of a key each time derivation
+// passed over a taken index. A wallet holding such a record loaded with a
+// warning, and the wallet tool would not read it. The path is put right from
+// its text form when the wallet is loaded, and written back.
+BOOST_AUTO_TEST_CASE(overlong_key_path_is_put_right_at_load)
+{
+    for (const int wallet_type : {walletType::bip44Wallet, walletType::bip39Wallet, walletType::bip32Wallet}) {
+        const std::string name{strprintf("longpath_%d", wallet_type)};
+        std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
+        const CScript script = NewScript(*wallet);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        CKeyID key_id;
+        CKeyMetadata meta;
+        {
+            LOCK(spk_man.cs_KeyStore);
+            CTxDestination dest;
+            BOOST_REQUIRE(ExtractDestination(script, dest));
+            key_id = ToKeyID(std::get<PKHash>(dest));
+            meta = spk_man.mapKeyMetadata.at(key_id);
+        }
+        const std::vector<uint32_t> right = meta.key_origin.path;
+        BOOST_REQUIRE(right.size() == 3 || right.size() == 5);
+        CPubKey pubkey;
+        BOOST_REQUIRE(spk_man.GetPubKey(key_id, pubkey));
+        // As three tries would have left it: the paths of the two passed over, then its own.
+        CKeyMetadata long_meta{meta};
+        long_meta.key_origin.path.clear();
+        for (int i = 0; i < 3; ++i) long_meta.key_origin.path.insert(long_meta.key_origin.path.end(), right.begin(), right.end());
+        Unload(std::move(wallet));
+        {
+            DatabaseOptions options;
+            DatabaseStatus status;
+            bilingual_str error;
+            options.require_existing = true;
+            std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+            BOOST_REQUIRE(database);
+            WalletBatch batch(*database);
+            BOOST_REQUIRE(batch.WriteKeyMetadata(long_meta, pubkey, /* overwrite */ true));
+        }
+
+        for (int load = 0; load < 2; ++load) {
+            DatabaseOptions options;
+            DatabaseStatus status;
+            bilingual_str error;
+            std::vector<bilingual_str> warnings;
+            options.require_existing = true;
+            wallet = LoadWallet(*m_node.chain, name, std::nullopt, options, status, error, warnings);
+            BOOST_REQUIRE_MESSAGE(wallet, error.original);
+            const std::string warning{warnings.empty() ? "" : warnings[0].original};
+            BOOST_CHECK_MESSAGE(warnings.empty(), warning);
+            LegacyScriptPubKeyMan& loaded = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            BOOST_CHECK(WITH_LOCK(loaded.cs_KeyStore, return loaded.mapKeyMetadata.at(key_id).key_origin.path) == right);
+            Unload(std::move(wallet));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

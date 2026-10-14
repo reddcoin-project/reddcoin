@@ -908,6 +908,9 @@ public:
     /* Returns true if HD is enabled */
     bool IsHDEnabled() const;
 
+    //! Set by the wallet tool's commands that only show a wallet: loading it writes nothing of its own.
+    bool m_read_only_load{false};
+
     /* Returns true if BIP39 is enabled */
     bool IsBip39Enabled() const;
 

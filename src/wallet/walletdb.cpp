@@ -395,6 +395,8 @@ public:
     std::map<std::pair<uint256, CKeyID>, CKey> m_descriptor_keys;
     std::map<std::pair<uint256, CKeyID>, std::pair<CPubKey, std::vector<unsigned char>>> m_descriptor_crypt_keys;
     std::map<uint160, CHDChain> m_hd_chains;
+    //! Key metadata whose path was put right from its text form while loading, to be written back.
+    std::vector<std::pair<CPubKey, CKeyMetadata>> m_repaired_keymeta;
 
     CWalletScanState() {
     }
@@ -577,6 +579,23 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             CKeyMetadata keyMeta;
             ssValue >> keyMeta;
             wss.nKeyMeta++;
+
+            // Earlier versions lengthened the path of a derived key each time
+            // derivation passed over an index that was taken: the path held
+            // the elements of every try, while its text form was written anew
+            // at each and names the key's own. Such a path is put right from
+            // the text, and written back once the wallet is read.
+            if (keyMeta.has_key_origin && !keyMeta.hd_seed_id.IsNull() &&
+                keyMeta.key_origin.path.size() != 3 && keyMeta.key_origin.path.size() != 5 &&
+                keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m") {
+                std::vector<uint32_t> from_text;
+                if (ParseHDKeypath(keyMeta.hdKeypath, from_text) && (from_text.size() == 3 || from_text.size() == 5) &&
+                    keyMeta.key_origin.path.size() > from_text.size() &&
+                    std::equal(from_text.begin(), from_text.end(), keyMeta.key_origin.path.end() - from_text.size())) {
+                    keyMeta.key_origin.path = from_text;
+                    wss.m_repaired_keymeta.emplace_back(vchPubKey, keyMeta);
+                }
+            }
             pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadKeyMetadata(vchPubKey.GetID(), keyMeta);
 
             // Extract some CHDChain info from this metadata if it has any
@@ -963,6 +982,14 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     for (auto desc_key_pair : wss.m_descriptor_crypt_keys) {
         auto spk_man = pwallet->GetScriptPubKeyMan(desc_key_pair.first.first);
         ((DescriptorScriptPubKeyMan*)spk_man)->AddCryptedKey(desc_key_pair.first.second, desc_key_pair.second.first, desc_key_pair.second.second);
+    }
+
+    if (!wss.m_repaired_keymeta.empty() && result == DBErrors::LOAD_OK && !pwallet->m_read_only_load) {
+        size_t written{0};
+        for (const auto& [pubkey, meta] : wss.m_repaired_keymeta) {
+            if (WriteKeyMetadata(meta, pubkey, /* overwrite */ true)) ++written;
+        }
+        pwallet->WalletLogPrintf("The derivation path of %u keys was longer than the key's own and has been put right from its text form (%u written)\n", wss.m_repaired_keymeta.size(), written);
     }
 
     if (fNoncriticalErrors && result == DBErrors::LOAD_OK)
