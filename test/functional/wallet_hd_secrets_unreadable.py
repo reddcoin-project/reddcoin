@@ -24,7 +24,7 @@ unencrypted mnemonic wallet with the binaries of an earlier version.
 import os
 
 from test_framework.messages import hash256
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.test_node import TestNodeCLI
 from test_framework.util import (
     assert_equal,
@@ -52,9 +52,7 @@ class HDSecretsUnreadableTest(BitcoinTestFramework):
                             help="Directory with the reddcoind and reddcoin-cli of a version without this change")
 
     def skip_test_if_missing_module(self):
-        self.skip_if_no_wallet()
-        self.skip_if_no_wallet_tool()
-        self.skip_if_no_bdb()
+        raise SkipTest("createwallet cannot make a mnemonic wallet on this line; hdchain_tests covers the unreadable seed here")
 
     def wallet_tool(self, *args):
         """Run the wallet tool, the command last: it must succeed and say nothing on stderr."""

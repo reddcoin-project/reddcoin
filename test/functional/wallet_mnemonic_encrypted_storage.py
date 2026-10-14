@@ -40,7 +40,7 @@ seed it had before it was encrypted must not be found.
 
 import os
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.test_node import TestNodeCLI
 from test_framework.util import assert_equal
 
@@ -65,10 +65,7 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
                             help="Also call the commands that return the secrets in the second run, and allow no finding anywhere")
 
     def skip_test_if_missing_module(self):
-        self.skip_if_no_wallet()
-        self.skip_if_no_wallet_tool()
-        self.skip_if_no_bdb()
-        self.skip_if_no_sqlite()
+        raise SkipTest("createwallet cannot make a mnemonic wallet on this line; hdchain_tests covers the storage here")
 
     def wallet_tool(self, *args):
         """Run the wallet tool, the command last: it must succeed and say nothing on stderr."""
