@@ -585,7 +585,10 @@ void LegacyScriptPubKeyMan::RefreshHDType()
     //   chain to look at: there the version of the chain says it.
     // - Any other wallet is what it has always been taken for: it has a
     //   mnemonic or it has not. No wallet changes type by being loaded.
-    if (m_storage.IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED)) {
+    // - A wallet whose secrets are known to be in their record is of that
+    //   kind too when its flag could not be written (case D on a medium that
+    //   cannot be written to).
+    if (m_storage.IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED) || m_hd_secrets_state == HDSecretsState::ENCRYPTED) {
         m_seed_held_by_chain = IsHDEnabled() && m_hd_chain.nVersion == CHDChain::VERSION_HD_BIP39;
     } else {
         m_seed_held_by_chain = IsHDEnabled() && !m_hd_chain.vchMnemonic.empty();

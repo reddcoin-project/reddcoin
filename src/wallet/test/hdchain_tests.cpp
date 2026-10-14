@@ -686,4 +686,24 @@ BOOST_AUTO_TEST_CASE(rewrite_owed_after_encryptwallet)
     }
 }
 
+// The kind of a wallet whose secrets are known to be in their record does not
+// hang on the flag: when the flag cannot be put back at load (case D on a
+// medium that cannot be written), it still reads as a mnemonic wallet, so
+// that nothing replaces its seed.
+BOOST_AUTO_TEST_CASE(kind_kept_when_flag_cannot_be_written)
+{
+    Unload(Create("flag_fails", walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE));
+    Edit("flag_fails", [&](DatabaseBatch& batch) { SetFlag(batch, false); });
+    g_wallet_hd_write_fault = [](const std::string& what) { return what == "flags"; };
+    std::shared_ptr<CWallet> wallet = Load("flag_fails");
+    g_wallet_hd_write_fault = nullptr;
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_CHECK(spk_man.IsBip39Enabled() && spk_man.IsBip44Enabled());
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    Addresses(*wallet, 5);
+    Unload(std::move(wallet));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
