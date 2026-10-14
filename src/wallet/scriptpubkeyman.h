@@ -450,6 +450,8 @@ public:
     //! Load a HD chain model (used by LoadWallet)
     void LoadHDChain(const CHDChain& chain);
     const CHDChain& GetHDChain() const { return m_hd_chain; }
+    //! The chains of seeds that were replaced, by seed id.
+    const std::unordered_map<CKeyID, CHDChain, SaltedSipHasher>& GetInactiveHDChains() const { return m_inactive_hd_chains; }
     void AddInactiveHDChain(const CHDChain& chain);
 
     //! Adds a watch-only address to the store, without saving it to disk (used by LoadWallet)
