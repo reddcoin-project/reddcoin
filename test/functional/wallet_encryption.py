@@ -108,7 +108,7 @@ class WalletEncryptionTest(BitcoinTestFramework):
                 node._base_rpc.createwallet(wallet_name=kind, descriptors=False, wallet_type=kind)
                 wallet = node.get_wallet_rpc(kind)
                 before = wallet.getwalletinfo()
-                assert_equal(wallet.encryptwallet(passphrase), "wallet encrypted; The wallet was created from a mnemonic and keeps its seed and its keypool: the mnemonic phrase still restores it. You need to make a new backup.")
+                assert_equal(wallet.encryptwallet(passphrase), "wallet encrypted; this wallet keeps its seed and its keypool. Any copy of the wallet file made before now holds the seed unencrypted; destroy such copies. You need to make a new backup.")
                 after = wallet.getwalletinfo()
                 assert_equal((after["hdseedid"], after["keypoolsize"], after["hd_type"]), (before["hdseedid"], before["keypoolsize"], kind))
                 wallet.unloadwallet()

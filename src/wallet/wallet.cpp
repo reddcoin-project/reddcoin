@@ -2799,8 +2799,9 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         }
     }
 
-    // What the owner has to be told about the keys of the wallet's seed: in the
-    // log, and to whoever loaded the wallet.
+    // What the owner has to be told about where the seed of the wallet is
+    // kept, and about the keys of its seed: in the log, and to whoever loaded
+    // the wallet.
     for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
         walletInstance->WalletLogPrintf("%s\n", notice.original);
         warnings.push_back(strprintf(Untranslated("Wallet %s: "), name.empty() ? "default wallet" : name) + notice);
@@ -3281,8 +3282,8 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
 
 std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
 {
-    std::vector<bilingual_str> notices;
-    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices() : std::vector<bilingual_str>{};
     if (spk_man && spk_man->HasMixedKeyPaths()) {
         notices.push_back(for_load ?
             _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
@@ -3316,7 +3317,10 @@ bool CWallet::RewriteAfterHDSecretsMoved()
         return false;
     }
     spk_man->HDSecretsRewritten();
-    WalletLogPrintf("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. Any copy of the wallet file made before now still holds the seed unencrypted\n");
+    WalletLogPrintf("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted\n");
+    if (spk_man->HasEarlierSeedKeys()) {
+        WalletLogPrintf("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. The phrase (gethdwalletinfo, with the wallet unlocked) restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it\n");
+    }
     return true;
 }
 

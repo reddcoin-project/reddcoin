@@ -723,7 +723,9 @@ RPCHelpMan gethdwalletinfo()
                         {RPCResult::Type::STR, "accountextendedprivkey", /* optional */ true, "The extended private key at m/44'/coin_type'/account' (bip44 wallets only)"},
                         {RPCResult::Type::STR, "accountextendedpubkey", /* optional */ true, "The extended public key at m/44'/coin_type'/account' (bip44 wallets only)"},
                         {RPCResult::Type::STR, "extendedprivkey", "The bip32 extended private key"},
-                        {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"}
+                        {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"},
+                        {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet is a mnemonic wallet that also has keys of an earlier seed, which its mnemonic does not restore"},
+                        {RPCResult::Type::STR, "warning", /* optional */ true, "said when earlier_seed_keys is true"},
                     }
                 },
                 RPCExamples{
@@ -812,6 +814,11 @@ RPCHelpMan gethdwalletinfo()
 
     result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
     result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
+
+    result.pushKV("earlier_seed_keys", spk_man.HasEarlierSeedKeys());
+    if (spk_man.HasEarlierSeedKeys()) {
+        result.pushKV("warning", "This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys.");
+    }
 
     return result;
 },
