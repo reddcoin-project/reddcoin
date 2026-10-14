@@ -76,7 +76,8 @@ class BDBRewriteResidueTest(BitcoinTestFramework):
                 for file in files:
                     if file == ".walletlock":
                         continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
-                    with open(os.path.join(root, file), "rb") as f:
+                    file_path = os.path.join(root, file)
+                    with open(file_path, "rb") as f:
                         content = f.read()
                     hits = sum(1 for key in keys if key in content)
                     if hits:

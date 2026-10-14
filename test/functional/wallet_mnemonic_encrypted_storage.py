@@ -152,7 +152,8 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
             for file in sorted(files):
                 if file == ".walletlock":
                     continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
-                with open(os.path.join(root, file), "rb") as f:
+                file_path = os.path.join(root, file)
+                with open(file_path, "rb") as f:
                     content = f.read()
                 for what, secret in secrets.items():
                     if content.count(secret):
@@ -224,7 +225,8 @@ class MnemonicEncryptedStorageTest(BitcoinTestFramework):
                     for file in files:
                         if file == ".walletlock":
                             continue  # empty, and locked while its wallet is loaded: Windows refuses to read it
-                        with open(os.path.join(root, file), "rb") as f:
+                        file_path = os.path.join(root, file)
+                        with open(file_path, "rb") as f:
                             content = f.read()
                         stray += [(name, file, what) for what, (owner, secret) in everything.items() if owner != name and secret in content]
             self.log.info("secrets of one wallet in the files of another: %s" % (stray if stray else "none"))
