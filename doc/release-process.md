@@ -170,13 +170,21 @@ Codesigner only: Create Windows/macOS detached signatures:
 - Only one person handles codesigning. Everyone else should skip to the next step.
 - Only once the Windows/macOS builds each have 3 matching signatures may they be signed with their respective release keys.
 
-Codesigner only: Sign the macOS binary:
+Codesigner only: Sign the macOS binaries, once for each architecture, each in a directory of its own:
 
-    transfer reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz to the signing host
-    tar xf reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz
-    ./detached-sig-create.sh /path/to/codesign.p12 /path/to/AuthKey_<key id>.p8 <issuer id>
+    transfer reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz and
+      reddcoin-${VERSION}-arm64-apple-darwin-codesigning.tar.gz to the signing host
+    mkdir x86_64 && tar -C x86_64 -xf reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz
+    mkdir arm64 && tar -C arm64 -xf reddcoin-${VERSION}-arm64-apple-darwin-codesigning.tar.gz
+    (cd x86_64 && ./detached-sig-create.sh /path/to/codesign.p12 /path/to/AuthKey_<key id>.p8 <issuer id>)
+    (cd arm64 && ./detached-sig-create.sh /path/to/codesign.p12 /path/to/AuthKey_<key id>.p8 <issuer id>)
     Enter the passphrase for each key when prompted
-    Move signature-osx.tar.gz back to the guix-build host
+    Move x86_64/signature-osx-x86_64.tar.gz and arm64/signature-osx-arm64.tar.gz back to the guix-build host
+
+Each run names its output and its directory in the detached-sigs repository (`osx/x86_64-apple-darwin/`,
+`osx/arm64-apple-darwin/`) after the architecture of the bundle it signs, so the two never overwrite each
+other. Apple Silicon refuses to run an arm64 binary without a valid signature, so the arm64 build is only
+usable once it has been through this step.
 
 The script signs the app bundle, the standalone binaries and the shared library. It asks for the
 certificate's passphrase once and hands it to signapple on the command line, so run it on a host
@@ -205,7 +213,8 @@ Codesigner only: Commit the detached codesign payloads:
 pushd ./bitcoin-detached-sigs
 # checkout the appropriate branch for this release series
 rm -rf ./*
-tar xf signature-osx.tar.gz
+tar xf signature-osx-x86_64.tar.gz
+tar xf signature-osx-arm64.tar.gz
 tar xf signature-win.tar.gz
 git add -A
 git commit -m "point to ${VERSION}"
@@ -246,6 +255,10 @@ that are deliberately not uploaded:
 - `reddcoin-${VERSION}-codesignatures-${VERSION}.tar.gz`, an intermediate of the
   codesigning step
 - the `*-debug*` archives, which the upload step below excludes on purpose
+- the unsigned macOS binary archives, `reddcoin-${VERSION}-x86_64-apple-darwin-unsigned.tar.gz`
+  and `reddcoin-${VERSION}-arm64-apple-darwin-unsigned.tar.gz`. Their signed
+  counterparts, `-x86_64-apple-darwin.tar.gz` and `-arm64-apple-darwin.tar.gz`, are what users
+  download, and Apple Silicon kills an unsigned arm64 binary at launch
 
 Listing either in the published manifest leaves entries no one can download, so
 `sha256sum -c SHA256SUMS` in the download directory fails on them. Signing
@@ -282,8 +295,8 @@ cd guix-build-${VERSION}/output
 # listed, and guix-attest only concatenates those fragments. That is correct for
 # the guix.sigs attestations, which are meant to cover everything that was
 # built; it is the published manifest that has to be narrowed, here.
-# This exclusion must stay in step with the upload command further down, which
-# skips the same files with -not -name "*debug*".
+# These exclusions must stay in step with the upload command further down, which
+# skips the same files with -not -name.
 #
 # The copies under the old macOS names, see above, are not guix outputs, so they
 # are not in all.SHA256SUMS. Make them next to the files they copy, where the
@@ -292,7 +305,7 @@ OLD_NAMES_DIR=x86_64-apple-darwin-codesigned
 cp "${OLD_NAMES_DIR}/reddcoin-${VERSION}-x86_64-apple-darwin.dmg" "${OLD_NAMES_DIR}/reddcoin-${VERSION}-osx-signed.dmg"
 cp "${OLD_NAMES_DIR}/reddcoin-${VERSION}-x86_64-apple-darwin.tar.gz" "${OLD_NAMES_DIR}/reddcoin-${VERSION}-osx64.tar.gz"
 {
-    grep -v codesignatures all.SHA256SUMS | grep -v -- '-debug'
+    grep -v codesignatures all.SHA256SUMS | grep -v -- '-debug' | grep -v -- '-apple-darwin-unsigned\.tar\.gz$'
     (cd "$OLD_NAMES_DIR" && sha256sum "reddcoin-${VERSION}-osx-signed.dmg" "reddcoin-${VERSION}-osx64.tar.gz")
 } > SHA256SUMS
 
@@ -522,7 +535,9 @@ gpg --export --armor "$SIGNER_KEY" > reddcoin-release-key.asc
        nor put them in the torrent*.
 
        ```sh
-       find guix-build-${VERSION}/output/ -maxdepth 2 -type f -not -name "SHA256SUMS.part" -and -not -name "*debug*" -exec scp {} user@download.reddcoin.com:bin/reddcoin-core-${VERSION} \;
+       find guix-build-${VERSION}/output/ -maxdepth 2 -type f -not -name "SHA256SUMS.part" -and -not -name "*debug*" \
+           -and -not -name "*-apple-darwin-unsigned.tar.gz" \
+           -exec scp {} user@download.reddcoin.com:bin/reddcoin-core-${VERSION} \;
        ```
 
     2. The `SHA256SUMS` file
