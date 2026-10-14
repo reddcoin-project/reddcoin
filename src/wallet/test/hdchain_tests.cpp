@@ -13,6 +13,7 @@
 #include <util/check.h>
 #include <util/strencodings.h>
 #include <util/system.h>
+#include <util/time.h>
 #include <util/translation.h>
 #include <validationinterface.h>
 #include <wallet/db.h>
@@ -23,6 +24,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <thread>
 #include <memory>
 #include <string>
 #include <vector>
@@ -248,6 +250,30 @@ BOOST_AUTO_TEST_CASE(encrypted_mnemonic_wallet_derives_the_same_keys)
             Unload(std::move(wallet));
         }
     }
+}
+
+// A rewrite of the database file holds the wallet lock and waits until no
+// batch is open. An address book change that came at that moment used to open
+// its batch first and then wait for the lock: neither ever finished.
+BOOST_AUTO_TEST_CASE(address_book_change_does_not_block_a_rewrite)
+{
+    std::shared_ptr<CWallet> wallet = Create("rewrite_and_book", walletType::bip32Wallet);
+    CKey key;
+    key.MakeNewKey(true);
+    const CTxDestination other{PKHash(key.GetPubKey())};
+    BOOST_REQUIRE(wallet->SetAddressBook(other, "a label", "send"));
+
+    std::thread change;
+    {
+        LOCK(wallet->cs_wallet);
+        change = std::thread([&] { wallet->DelAddressBook(other); });
+        // Time for the other thread to reach the lock.
+        UninterruptibleSleep(std::chrono::milliseconds{300});
+        BOOST_CHECK(wallet->GetDatabase().Rewrite());
+    }
+    change.join();
+    BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->FindAddressBookEntry(other) == nullptr));
+    Unload(std::move(wallet));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

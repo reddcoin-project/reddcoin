@@ -2335,6 +2335,10 @@ bool CWallet::SetAddressBookWithDB(WalletBatch& batch, const CTxDestination& add
 
 bool CWallet::SetAddressBook(const CTxDestination& address, const std::string& strName, const std::string& strPurpose)
 {
+    // The lock first, then the batch. A rewrite of the database file holds
+    // the lock and waits until no batch is open: a batch opened here before
+    // the lock was taken would wait for the rewrite, which waits for it.
+    LOCK(cs_wallet);
     WalletBatch batch(GetDatabase());
     return SetAddressBookWithDB(batch, address, strName, strPurpose);
 }
@@ -2342,7 +2346,7 @@ bool CWallet::SetAddressBook(const CTxDestination& address, const std::string& s
 bool CWallet::DelAddressBook(const CTxDestination& address)
 {
     bool is_mine;
-    WalletBatch batch(GetDatabase());
+    bool erased;
     {
         LOCK(cs_wallet);
         // If we want to delete receiving addresses, we need to take care that DestData "used" (and possibly newer DestData) gets preserved (and the "deleted" address transformed into a change entry instead of actually being deleted)
@@ -2352,6 +2356,9 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
             WalletLogPrintf("%s called with IsMine address, NOT SUPPORTED. Please report this bug! %s\n", __func__, PACKAGE_BUGREPORT);
             return false;
         }
+        // The batch is opened with the lock held, and is gone before it is
+        // released: see SetAddressBook.
+        WalletBatch batch(GetDatabase());
         // Delete destdata tuples associated with address
         std::string strAddress = EncodeDestination(address);
         for (const std::pair<const std::string, std::string> &item : m_address_book[address].destdata)
@@ -2360,12 +2367,14 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
         }
         m_address_book.erase(address);
         is_mine = IsMine(address) != ISMINE_NO;
+
+        batch.ErasePurpose(strAddress);
+        erased = batch.EraseName(strAddress);
     }
 
     NotifyAddressBookChanged(address, "", is_mine, "", CT_DELETED);
 
-    batch.ErasePurpose(EncodeDestination(address));
-    return batch.EraseName(EncodeDestination(address));
+    return erased;
 }
 
 size_t CWallet::KeypoolCountExternalKeys() const
