@@ -236,6 +236,9 @@ private:
     CKeyingMaterial vMasterKey GUARDED_BY(cs_wallet);
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys = false);
+    /** Rewrite the database file after the seed of the HD chain was moved into
+     *  its encrypted record, and remove the note that it had to be. */
+    bool RewriteAfterHDSecretsMoved() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     std::atomic<bool> fAbortRescan{false};
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver

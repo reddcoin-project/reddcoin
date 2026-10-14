@@ -2556,6 +2556,7 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::STR, "hd_type", "HD wallet type: bip32, bip39, bip44, or none"},
                         {RPCResult::Type::BOOL, "mixed_key_paths", "whether some keys of the wallet's HD seed are on BIP44 paths while its new keys are derived on the ordinary paths: the seed alone does not restore those keys"},
                         {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about the keys of the wallet's HD seed, when there is something to say"},
+                        {RPCResult::Type::BOOL, "hd_secrets_encrypted", "whether the seed of the HD chain, and the mnemonic it came from, are kept in a record of their own, encrypted with the wallet passphrase"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2624,6 +2625,7 @@ static RPCHelpMan getwalletinfo()
     if (const std::vector<bilingual_str> hd_warnings = pwallet->GetHDWarnings(); !hd_warnings.empty()) {
         obj.pushKV("hd_warnings", Join(hd_warnings, Untranslated("\n")).original);
     }
+    obj.pushKV("hd_secrets_encrypted", pwallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
         obj.pushKV("keypoolsize_hd_internal",   (int64_t)(pwallet->GetKeyPoolSize() - kpExternalSize));
@@ -3003,6 +3005,17 @@ static RPCHelpMan createwallet()
         }
     }
 
+    // A new mnemonic is made here, and this copy of it is the one returned.
+    // A wallet created with a passphrase is locked again by the time it comes
+    // back, and holds its mnemonic encrypted: it could not be read from there.
+    // The wallet is not marked as an import for it: nothing was ever paid to
+    // a phrase that did not exist, and an import is scanned from the start.
+    SecureString generated_mnemonic;
+    if (is_bip39_or_bip44 && !mnemonic_provided) {
+        generated_mnemonic = CMnemonic::Generate(walletoptions.bits, walletoptions.language);
+        walletoptions.ssMnemonic = generated_mnemonic;
+    }
+
     bilingual_str error;
     std::optional<bool> load_on_start = request.params[6].isNull() ? std::nullopt : std::optional<bool>(request.params[6].get_bool());
     std::shared_ptr<CWallet> wallet = CreateWallet(*context.chain, request.params[0].get_str(), load_on_start, options, walletoptions, status, error, warnings);
@@ -3028,12 +3041,8 @@ static RPCHelpMan createwallet()
     obj.pushKV("wallet_type", response_type);
 
     // Return mnemonic only for newly generated bip39/bip44 wallets (not imports)
-    if (is_bip39_or_bip44 && !mnemonic_provided && spk_man) {
-        const CHDChain& chain = spk_man->GetHDChain();
-        if (!chain.vchMnemonic.empty()) {
-            std::string mnemonic(chain.vchMnemonic.begin(), chain.vchMnemonic.end());
-            obj.pushKV("mnemonic", mnemonic);
-        }
+    if (!generated_mnemonic.empty()) {
+        obj.pushKV("mnemonic", std::string(generated_mnemonic.begin(), generated_mnemonic.end()));
     }
 
     return obj;

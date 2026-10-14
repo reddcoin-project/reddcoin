@@ -302,6 +302,32 @@ bool LegacyScriptPubKeyMan::Encrypt(const CKeyingMaterial& master_key, WalletBat
             return false;
         }
     }
+
+    // A chain that holds its seed itself carries it, and the mnemonic it came
+    // from, in its record. They are encrypted with everything else: into
+    // their own record, in this same transaction, and the chain is written
+    // without them. The seed is kept: the mnemonic has to go on restoring the
+    // wallet.
+    if (ChainHoldsSecrets(m_hd_chain)) {
+        const CHDSecrets secrets{m_hd_chain.vchMnemonic, m_hd_chain.vchMnemonicPassphrase, m_hd_chain.vchSeed};
+        const CHDChain chain{WithoutSecrets(m_hd_chain)};
+        CHDSecretsRecord record;
+        if (!EncryptHDSecrets(master_key, secrets, record) ||
+            !m_storage.SetWalletFlagWithDB(*batch, WALLET_FLAG_HD_SECRETS_ENCRYPTED) ||
+            !batch->WriteHDSecrets(record) ||
+            !batch->WriteHDChain(chain)) {
+            encrypted_batch = nullptr;
+            return false;
+        }
+        // In memory as on disk. The unlock that follows encryption decrypts
+        // the record; until then nothing holds the secrets in clear.
+        m_hd_chain = chain;
+        m_hd_secrets.SetNull();
+        m_hd_secrets_record = record;
+        m_hd_secrets_state = HDSecretsState::ENCRYPTED;
+        m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+        RefreshHDType();
+    }
     encrypted_batch = nullptr;
     return true;
 }
@@ -349,7 +375,8 @@ bool LegacyScriptPubKeyMan::TopUpInactiveHDChain(const CKeyID seed_id, int64_t i
     // place. Deriving would throw, in whatever thread a transaction paying
     // one of the old keys happened to be handled. The keys the wallet holds
     // go on working; there will be no more of them.
-    if (chain.vchSeed.empty() && !HaveKey(chain.seed_id)) {
+    SecureVector seed;
+    if (!GetHDSeed(chain, seed)) {
         // Said once for each seed, with the id getwalletinfo and
         // getaddressinfo show for it.
         if (m_inactive_seeds_not_derivable.insert(seed_id).second) {
@@ -520,12 +547,250 @@ bool LegacyScriptPubKeyMan::IsHDEnabled() const
 
 bool LegacyScriptPubKeyMan::IsBip39Enabled() const
 {
-    return IsHDEnabled() && m_hd_chain.vchMnemonic.size() > 0;
+    LOCK(cs_KeyStore);
+    return m_seed_held_by_chain;
 }
 
 bool LegacyScriptPubKeyMan::IsBip44Enabled() const
 {
-    return IsBip39Enabled() && m_hd_chain.bBip44;
+    LOCK(cs_KeyStore);
+    return m_seed_held_by_chain && m_hd_chain.bBip44;
+}
+
+bool LegacyScriptPubKeyMan::ChainHoldsSecrets(const CHDChain& chain)
+{
+    return chain.nVersion == CHDChain::VERSION_HD_BIP39 && !chain.seed_id.IsNull() && !chain.vchSeed.empty();
+}
+
+CHDChain LegacyScriptPubKeyMan::WithoutSecrets(const CHDChain& chain)
+{
+    CHDChain result{chain};
+    SecureVector().swap(result.vchMnemonic);
+    SecureVector().swap(result.vchMnemonicPassphrase);
+    SecureVector().swap(result.vchSeed);
+    return result;
+}
+
+void LegacyScriptPubKeyMan::RefreshHDType()
+{
+    // Does the chain hold its seed itself, as the chain of a wallet made from
+    // a mnemonic does? One rule, asked by everything that needs to know:
+    // encryption, which must not replace such a seed, and sethdseed, which
+    // must not either.
+    // - A wallet whose secrets are kept in their own record has none in its
+    //   chain to look at: there the version of the chain says it.
+    // - Any other wallet is what it has always been taken for: it has a
+    //   mnemonic or it has not. No wallet changes type by being loaded.
+    if (m_storage.IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED)) {
+        m_seed_held_by_chain = IsHDEnabled() && m_hd_chain.nVersion == CHDChain::VERSION_HD_BIP39;
+    } else {
+        m_seed_held_by_chain = IsHDEnabled() && !m_hd_chain.vchMnemonic.empty();
+    }
+}
+
+LegacyScriptPubKeyMan::HDSecretsState LegacyScriptPubKeyMan::GetHDSecretsState() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_secrets_state;
+}
+
+bool LegacyScriptPubKeyMan::IsHDSecretsRewritePending() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_secrets_pending;
+}
+
+bool LegacyScriptPubKeyMan::GetHDSeed(const CHDChain& chain, SecureVector& seed) const
+{
+    LOCK(cs_KeyStore);
+    if (&chain == &m_hd_chain) {
+        if (m_hd_secrets_state == HDSecretsState::ENCRYPTED) {
+            // Empty while the wallet is locked.
+            if (m_hd_secrets.IsNull()) return false;
+            seed = m_hd_secrets.vchSeed;
+            return true;
+        }
+        if (m_hd_secrets_state == HDSecretsState::UNREADABLE) return false;
+    }
+    if (!chain.vchSeed.empty()) {
+        seed = chain.vchSeed;
+        return true;
+    }
+    // A seed that is a key of the wallet. Not readable while it is locked.
+    CKey key;
+    if (chain.seed_id.IsNull() || !GetKey(chain.seed_id, key)) return false;
+    seed.assign(key.begin(), key.end());
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::GetHDSecrets(CHDSecrets& secrets) const
+{
+    LOCK(cs_KeyStore);
+    switch (m_hd_secrets_state) {
+    case HDSecretsState::ENCRYPTED:
+        if (m_hd_secrets.IsNull()) return false;
+        secrets = m_hd_secrets;
+        return true;
+    case HDSecretsState::IN_CHAIN:
+    case HDSecretsState::UNMIGRATED:
+        secrets = CHDSecrets{m_hd_chain.vchMnemonic, m_hd_chain.vchMnemonicPassphrase, m_hd_chain.vchSeed};
+        return true;
+    case HDSecretsState::NOT_HELD:
+    case HDSecretsState::UNREADABLE:
+        return false;
+    } // no default case, so the compiler can warn about missing cases
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::CanDeriveFrom(const CHDChain& chain)
+{
+    // A wallet that is not HD makes its keys from nothing.
+    if (chain.seed_id.IsNull()) return true;
+    SecureVector seed;
+    if (GetHDSeed(chain, seed)) return true;
+    if (!m_no_seed_logged) {
+        m_no_seed_logged = true;
+        WalletLogPrintf("cannot derive a key: the seed of the wallet is not available. Addresses come from the key pool until it is empty\n");
+    }
+    return false;
+}
+
+void LegacyScriptPubKeyMan::LoadHDSecrets(const CHDSecretsRecord& record)
+{
+    LOCK(cs_KeyStore);
+    m_hd_secrets_record = record;
+}
+
+void LegacyScriptPubKeyMan::LoadHDSecretsPending()
+{
+    LOCK(cs_KeyStore);
+    m_hd_secrets_pending = true;
+}
+
+void LegacyScriptPubKeyMan::DecideHDSecretsState()
+{
+    LOCK(cs_KeyStore);
+    // The records that decide this (flags, chain, secrets, master key) are
+    // read in the order of their keys and are not next to each other: it can
+    // only be decided when all of them are in.
+    const bool flagged{m_storage.IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED)};
+    const bool encrypted{m_storage.HasEncryptionKeys()};
+    const bool chain3{m_hd_chain.nVersion == CHDChain::VERSION_HD_BIP39 && !m_hd_chain.seed_id.IsNull()};
+    const bool clear{ChainHoldsSecrets(m_hd_chain)};
+    const bool record{m_hd_secrets_record && m_hd_secrets_record->nVersion == CHDSecretsRecord::CURRENT_VERSION};
+
+    if (!chain3) {
+        m_hd_secrets_state = HDSecretsState::NOT_HELD;
+    } else if (clear) {
+        // The copy in the chain is the one to go by, whatever else is there.
+        m_hd_secrets_state = encrypted ? HDSecretsState::UNMIGRATED : HDSecretsState::IN_CHAIN;
+        if (flagged && !encrypted) {
+            WalletLogPrintf("Warning: this wallet is marked as keeping the seed of its HD chain encrypted, but the wallet is not encrypted and the seed is in the chain record\n");
+        }
+    } else if (encrypted && record) {
+        m_hd_secrets_state = HDSecretsState::ENCRYPTED;
+        if (!flagged) {
+            // The record is there and the mark is not: a tool that copies
+            // records but not flags leaves a wallet so. Put the mark back, or
+            // a version that does not know the record would take the wallet.
+            WalletBatch batch(m_storage.GetDatabase());
+            if (m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_SECRETS_ENCRYPTED)) {
+                m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+                WalletLogPrintf("The seed of this wallet is kept encrypted; the wallet flag that says so was missing and has been set\n");
+            } else {
+                WalletLogPrintf("Error: the seed of this wallet is kept encrypted, and the wallet flag that says so could not be written\n");
+            }
+        }
+    } else {
+        m_hd_secrets_state = HDSecretsState::UNREADABLE;
+        WalletLogPrintf("Error: the seed of this wallet cannot be read: the chain record does not hold it and %s. The keys the wallet holds work; no new keys can be made\n",
+                        !encrypted ? "the wallet is not encrypted" : "there is no readable record of it");
+    }
+    RefreshHDType();
+}
+
+bool LegacyScriptPubKeyMan::WriteHDSecretsEncrypted(const CKeyingMaterial& master_key, const CHDSecrets& secrets, const CHDChain& chain, bool pending, CHDSecretsRecord& record)
+{
+    CHDSecretsRecord encrypted;
+    if (!EncryptHDSecrets(master_key, secrets, encrypted)) return false;
+    {
+        // The batch ends with this block: a rewrite of the file may follow,
+        // and it waits for every batch to be gone.
+        WalletBatch batch(m_storage.GetDatabase());
+        if (!batch.TxnBegin()) return false;
+        if (!m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_SECRETS_ENCRYPTED) ||
+            !batch.WriteHDSecrets(encrypted) ||
+            !batch.WriteHDChain(WithoutSecrets(chain)) ||
+            (pending && !batch.WriteHDSecretsPending())) {
+            batch.TxnAbort();
+            return false;
+        }
+        if (!batch.TxnCommit()) return false;
+    }
+    record = std::move(encrypted);
+    return true;
+}
+
+void LegacyScriptPubKeyMan::UnlockHDSecrets(const CKeyingMaterial& master_key, bool& need_rewrite)
+{
+    LOCK(cs_KeyStore);
+    try {
+        if (m_hd_secrets_state == HDSecretsState::UNMIGRATED) {
+            // An encrypted wallet whose secrets are still in the chain record,
+            // as versions before this one left them. This is the first moment
+            // the master key is at hand.
+            const CHDSecrets secrets{m_hd_chain.vchMnemonic, m_hd_chain.vchMnemonicPassphrase, m_hd_chain.vchSeed};
+            CHDSecretsRecord record;
+            if (!WriteHDSecretsEncrypted(master_key, secrets, m_hd_chain, /* pending */ true, record)) {
+                WalletLogPrintf("Error: the seed of this wallet could not be encrypted and is still stored without encryption in the wallet file. It will be tried again at the next unlock\n");
+            } else {
+                m_hd_chain = WithoutSecrets(m_hd_chain);
+                m_hd_secrets = secrets;
+                m_hd_secrets_record = record;
+                m_hd_secrets_state = HDSecretsState::ENCRYPTED;
+                m_hd_secrets_pending = true;
+                m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+                RefreshHDType();
+            }
+        } else if (m_hd_secrets_state == HDSecretsState::ENCRYPTED) {
+            CHDSecrets secrets;
+            if (m_hd_secrets_record && DecryptHDSecrets(master_key, *m_hd_secrets_record, secrets)) {
+                m_hd_secrets = std::move(secrets);
+            } else {
+                m_hd_secrets.SetNull();
+                m_hd_secrets_state = HDSecretsState::UNREADABLE;
+                WalletLogPrintf("Error: the encrypted seed of this wallet cannot be read. The keys the wallet holds work; no new keys can be made\n");
+            }
+        }
+    } catch (const std::exception& e) {
+        // The wallet is unlocked whatever happened here.
+        WalletLogPrintf("Error: %s while reading the seed of the wallet\n", e.what());
+    }
+    need_rewrite = m_hd_secrets_pending;
+}
+
+void LegacyScriptPubKeyMan::LockHDSecrets()
+{
+    LOCK(cs_KeyStore);
+    m_hd_secrets.SetNull();
+}
+
+void LegacyScriptPubKeyMan::HDSecretsRewritten()
+{
+    LOCK(cs_KeyStore);
+    m_hd_secrets_pending = false;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDChain(WalletBatch& batch, const CHDChain& chain)
+{
+    // Once the secrets are in their own record, or are known to be nowhere,
+    // the chain record never carries any, whatever the object holds. For
+    // every other wallet it is written as it is: the chain record is then the
+    // only place the seed is.
+    if (m_hd_secrets_state == HDSecretsState::ENCRYPTED || m_hd_secrets_state == HDSecretsState::UNREADABLE) {
+        return batch.WriteHDChain(WithoutSecrets(chain));
+    }
+    return batch.WriteHDChain(chain);
 }
 
 void LegacyScriptPubKeyMan::DecideMixedKeyPaths()
@@ -594,7 +859,8 @@ bool LegacyScriptPubKeyMan::Upgrade(int prev_version, int new_version, bilingual
         // Upgrade the HDChain
         if (m_hd_chain.nVersion < CHDChain::VERSION_HD_CHAIN_SPLIT) {
             m_hd_chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
-            if (!WalletBatch(m_storage.GetDatabase()).WriteHDChain(m_hd_chain)) {
+            WalletBatch batch(m_storage.GetDatabase());
+            if (!WriteHDChain(batch, m_hd_chain)) {
                 throw std::runtime_error(std::string(__func__) + ": writing chain failed");
             }
         }
@@ -1051,13 +1317,20 @@ void LegacyScriptPubKeyMan::LoadHDChain(const CHDChain& chain)
 {
     LOCK(cs_KeyStore);
     m_hd_chain = chain;
+    RefreshHDType();
 }
 
 void LegacyScriptPubKeyMan::AddHDChain(const CHDChain& chain)
 {
+    WalletBatch batch(m_storage.GetDatabase());
+    AddHDChain(batch, chain);
+}
+
+void LegacyScriptPubKeyMan::AddHDChain(WalletBatch& batch, const CHDChain& chain)
+{
     LOCK(cs_KeyStore);
     // Store the new chain
-    if (!WalletBatch(m_storage.GetDatabase()).WriteHDChain(chain)) {
+    if (!batch.WriteHDChain(chain)) {
         throw std::runtime_error(std::string(__func__) + ": writing chain failed");
     }
     // When there's an old chain, add it as an inactive chain as we are now rotating hd chains
@@ -1066,6 +1339,13 @@ void LegacyScriptPubKeyMan::AddHDChain(const CHDChain& chain)
     }
 
     m_hd_chain = chain;
+    // A chain that is added carries what it has: one whose seed is a key of
+    // the wallet, or one with its secrets in it, in a wallet that is not
+    // encrypted. An encrypted wallet's mnemonic chain is not added this way.
+    m_hd_secrets.SetNull();
+    m_hd_secrets_record.reset();
+    m_hd_secrets_state = ChainHoldsSecrets(chain) ? (m_storage.HasEncryptionKeys() ? HDSecretsState::UNMIGRATED : HDSecretsState::IN_CHAIN) : HDSecretsState::NOT_HELD;
+    RefreshHDType();
 }
 
 void LegacyScriptPubKeyMan::AddInactiveHDChain(const CHDChain& chain)
@@ -1191,7 +1471,6 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewKey(WalletBatch &batch, CHDChain& hd_c
 void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal)
 {
     // for now we use a fixed keypath scheme of m/0'/0'/k
-    CKey seed;                     //seed (256bit)
     CExtKey masterKey;             //hd master key
     CExtKey purposeKey;            //key at m/purpose'
     CExtKey coinTypeKey;           //key at m/purpose'/coin_type'
@@ -1199,15 +1478,11 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
     CExtKey chainChildKey;         //key at m/0'/0' (external) or m/0'/1' (internal)
     CExtKey childKey;              //key at m/0'/0'/<n>'
 
-    if (hd_chain.vchSeed.size() > 0) {
-        masterKey.SetSeed(hd_chain.vchSeed.data(), hd_chain.vchSeed.size());
-    } else {
-        // try to get the seed
-        if (!GetKey(hd_chain.seed_id, seed))
-            throw std::runtime_error(std::string(__func__) + ": seed not found");
-
-        masterKey.SetSeed(seed.begin(), seed.size());
-    }
+    // The callers have asked whether the seed is available. This is the last resort.
+    SecureVector seed_bytes;
+    if (!GetHDSeed(hd_chain, seed_bytes))
+        throw std::runtime_error(std::string(__func__) + ": seed not found");
+    masterKey.SetSeed(seed_bytes.data(), seed_bytes.size());
 
     uint32_t nAccountIndex = 0; // TODO add HDAccounts management
 
@@ -1270,7 +1545,9 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
     std::copy(master_id.begin(), master_id.begin() + 4, metadata.key_origin.fingerprint);
     metadata.has_key_origin = true;
     // update the chain model in the database
-    if (hd_chain.seed_id == m_hd_chain.seed_id && !batch.WriteHDChain(hd_chain))
+    // The active chain is this object. Its seed id says nothing: every chain
+    // made from a mnemonic has the same one.
+    if (&hd_chain == &m_hd_chain && !WriteHDChain(batch, hd_chain))
         throw std::runtime_error(std::string(__func__) + ": writing HD chain model failed");
 }
 
@@ -1358,7 +1635,29 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     LOCK(cs_KeyStore);
 
     newHdChain.nVersion = m_storage.CanSupportFeature(FEATURE_HD_SPLIT) ? CHDChain::VERSION_HD_BIP39 : CHDChain::VERSION_HD_BASE;
-    AddHDChain(newHdChain);
+    if (m_storage.HasEncryptionKeys() && ChainHoldsSecrets(newHdChain)) {
+        // The wallet is already encrypted, as one created with a passphrase
+        // is by now. The secrets go straight into their encrypted record, in
+        // one transaction with the flag and the chain: they are never written
+        // in clear, so there is nothing to erase afterwards.
+        if (m_storage.IsLocked()) throw std::runtime_error(std::string(__func__) + ": the wallet is locked");
+        const CHDSecrets secrets{newHdChain.vchMnemonic, newHdChain.vchMnemonicPassphrase, newHdChain.vchSeed};
+        CHDSecretsRecord record;
+        if (!WriteHDSecretsEncrypted(m_storage.GetEncryptionKey(), secrets, newHdChain, /* pending */ false, record)) {
+            throw std::runtime_error(std::string(__func__) + ": writing the encrypted seed failed");
+        }
+        if (!m_hd_chain.seed_id.IsNull()) {
+            AddInactiveHDChain(m_hd_chain);
+        }
+        m_hd_chain = WithoutSecrets(newHdChain);
+        m_hd_secrets = secrets;
+        m_hd_secrets_record = record;
+        m_hd_secrets_state = HDSecretsState::ENCRYPTED;
+        m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+        RefreshHDType();
+    } else {
+        AddHDChain(newHdChain);
+    }
     NotifyCanGetAddressesChanged();
     WalletBatch batch(m_storage.GetDatabase());
     m_storage.UnsetBlankWalletFlag(batch);
@@ -1463,6 +1762,8 @@ bool LegacyScriptPubKeyMan::TopUp(unsigned int kpSize)
         LOCK(cs_KeyStore);
 
         if (m_storage.IsLocked()) return false;
+        // Nothing to derive from: the pool stays as it is.
+        if (!CanDeriveFrom(m_hd_chain)) return false;
 
         // Top up key pool
         unsigned int nTargetSize;
@@ -1563,6 +1864,7 @@ bool LegacyScriptPubKeyMan::GetKeyFromPool(CPubKey& result, const OutputType typ
         int64_t nIndex;
         if (!ReserveKeyFromKeyPool(nIndex, keypool, internal) && !m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
             if (m_storage.IsLocked()) return false;
+            if (!CanDeriveFrom(m_hd_chain)) return false;
             WalletBatch batch(m_storage.GetDatabase());
             result = GenerateNewKey(batch, m_hd_chain, internal);
             return true;

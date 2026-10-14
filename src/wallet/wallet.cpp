@@ -3274,6 +3274,8 @@ bool CWallet::Lock()
     {
         LOCK(cs_wallet);
         vMasterKey.clear();
+        // The decrypted seed goes with the key that decrypted it.
+        if (auto spk_man = GetLegacyScriptPubKeyMan()) spk_man->LockHDSecrets();
     }
 
     NotifyStatusChanged(this);
@@ -3290,6 +3292,16 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
             }
         }
         vMasterKey = vMasterKeyIn;
+
+        // Every way of unlocking ends here. The seed of a chain that holds it
+        // itself is decrypted now; and if it is still stored in clear in an
+        // encrypted wallet, as versions before this one left it, it is moved
+        // into its encrypted record now, the first time the key is at hand.
+        if (auto spk_man = GetLegacyScriptPubKeyMan()) {
+            bool need_rewrite{false};
+            spk_man->UnlockHDSecrets(vMasterKey, need_rewrite);
+            if (need_rewrite) RewriteAfterHDSecretsMoved();
+        }
     }
     NotifyStatusChanged(this);
     return true;
@@ -3305,6 +3317,30 @@ std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
             _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
     }
     return notices;
+}
+
+bool CWallet::RewriteAfterHDSecretsMoved()
+{
+    AssertLockHeld(cs_wallet);
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man || !spk_man->IsHDSecretsRewritePending()) return true;
+
+    // A record that is overwritten is not erased: the old chain record, with
+    // the seed in it, is still in the file until the file is written anew.
+    // This is what encryption does for the private keys.
+    WalletLogPrintf("Rewriting the wallet file: the seed of this wallet has been encrypted and the file may still hold the old copy\n");
+    if (!GetDatabase().Rewrite()) {
+        WalletLogPrintf("Error: the wallet file could not be rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked\n");
+        return false;
+    }
+    GetDatabase().ReloadDbEnv();
+    if (!WalletBatch(GetDatabase()).EraseHDSecretsPending()) {
+        WalletLogPrintf("Error: the wallet file has been rewritten, but the note that it had to be could not be removed\n");
+        return false;
+    }
+    spk_man->HDSecretsRewritten();
+    WalletLogPrintf("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. Any copy of the wallet file made before now still holds the seed unencrypted\n");
+    return true;
 }
 
 std::set<ScriptPubKeyMan*> CWallet::GetActiveScriptPubKeyMans() const
