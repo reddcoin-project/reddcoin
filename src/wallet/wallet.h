@@ -353,6 +353,7 @@ private:
      *  flags in memory as they are until ConfirmWalletFlag. */
     bool SetWalletFlagWithDB(WalletBatch& batch, uint64_t flag) override;
     void ConfirmWalletFlag(uint64_t flag) override;
+    bool IsReadOnlyLoad() const override { return m_read_only_load; }
 
     /** Interface for accessing chain state. */
     interfaces::Chain* m_chain;

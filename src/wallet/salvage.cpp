@@ -137,6 +137,7 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
 
     DbTxn* ptxn = env->TxnBegin();
     CWallet dummyWallet(nullptr, "", CreateDummyWalletDatabase());
+    bool kept_hd_secrets{false};
     for (KeyValPair& row : salvagedData)
     {
         /* Filter for only private key type KV pairs to be added to the salvaged wallet */
@@ -162,6 +163,21 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         int ret2 = pdbCopy->put(ptxn, &datKey, &datValue, DB_NOOVERWRITE);
         if (ret2 > 0)
             fSuccess = false;
+        if (strType == DBKeys::HDSECRETS) kept_hd_secrets = true;
+    }
+
+    // The encrypted secrets of the chain are kept, and the flags are not: the
+    // flag that says the secrets are in their own record has to be written,
+    // or a version that does not know the record would load the wallet as
+    // one whose chain has no seed.
+    if (kept_hd_secrets) {
+        CDataStream key(SER_DISK, CLIENT_VERSION);
+        CDataStream value(SER_DISK, CLIENT_VERSION);
+        key << DBKeys::FLAGS;
+        value << uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED};
+        Dbt datKey(key.data(), key.size());
+        Dbt datValue(value.data(), value.size());
+        if (pdbCopy->put(ptxn, &datKey, &datValue, DB_NOOVERWRITE) > 0) fSuccess = false;
     }
     ptxn->commit(0);
     pdbCopy->close(0);

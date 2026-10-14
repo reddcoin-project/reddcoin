@@ -44,6 +44,8 @@ public:
     //! that fails. ConfirmWalletFlag follows once it is committed.
     virtual bool SetWalletFlagWithDB(WalletBatch&, uint64_t) = 0;
     virtual void ConfirmWalletFlag(uint64_t) = 0;
+    //! Whether the wallet is being read only to be shown (the wallet tool's dump and info): nothing may be written.
+    virtual bool IsReadOnlyLoad() const = 0;
     virtual bool CanSupportFeature(enum WalletFeature) const = 0;
     virtual void SetMinVersion(enum WalletFeature, WalletBatch* = nullptr) = 0;
     virtual const CKeyingMaterial& GetEncryptionKey() const = 0;
