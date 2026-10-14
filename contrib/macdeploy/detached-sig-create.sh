@@ -13,8 +13,6 @@ BUNDLE="${ROOTDIR}/${BUNDLE_NAME}"
 SIGNAPPLE=signapple
 TEMPDIR=sign.temp
 NOTARIZE_TEMPDIR=notarize.temp
-OUT=signature-osx.tar.gz
-OUTROOT=osx
 
 if [ "$#" -ne 1 ] && [ "$#" -ne 3 ]; then
   echo "usage: $0 <path to key> [<path to app store connect key> <app store connect issuer id>]"
@@ -31,6 +29,16 @@ if ! ${SIGNAPPLE} sign -h | grep -q -- "--hardened-runtime"; then
 fi
 
 ARCH=$(${SIGNAPPLE} info "${BUNDLE}/Contents/MacOS/Reddcoin-Qt" | head -n 1 | cut -d " " -f 1)
+if [ -z "${ARCH}" ]; then
+  echo "Could not read the architecture of ${BUNDLE}"
+  exit 1
+fi
+
+# The x86_64 and arm64 signatures share one detached-sigs repository, and the
+# app bundle signatures would overwrite each other, so each architecture gets
+# its own directory and its own output tarball.
+OUT="signature-osx-${ARCH}.tar.gz"
+OUTROOT="osx/${ARCH}-apple-darwin"
 
 # The standalone binaries and the shared library, as paths relative to here.
 # A symlink to a library is skipped, the library it names is already listed.
