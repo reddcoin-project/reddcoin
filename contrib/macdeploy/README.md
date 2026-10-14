@@ -122,3 +122,22 @@ deterministic. Here's how it works:
   script that is also included there. Detached signatures are available from this [repository](https://github.com/bitcoin-core/bitcoin-detached-sigs).
 - Builders feed the unsigned app + detached signature back into Gitian. It uses the
   pre-built tools to recombine the pieces into a deterministic DMG.
+
+### Apple Silicon
+
+The `arm64-apple-darwin` build is a separate set of archives, not a universal
+binary. Its signatures are created the same way, on the unpacked
+`*-arm64-apple-darwin-codesigning.tar.gz`, and `detached-sig-create.sh` names
+its output (`signature-osx-arm64.tar.gz`, under `osx/arm64-apple-darwin/`)
+after the architecture of the bundle it signs.
+
+macOS on Apple Silicon kills any arm64 binary that has no valid signature. The
+linker usually adds an ad-hoc one, but the cctools port used to cross-compile
+leaves that out, and `install_name_tool` and `strip` would invalidate it in any
+case. The unsigned arm64 outputs therefore do not run as they are. To try one
+on a Mac before it is signed, sign it ad-hoc there:
+
+```bash
+codesign --force --deep --sign - Reddcoin-Qt.app
+codesign --force --sign - bin/reddcoind
+```
