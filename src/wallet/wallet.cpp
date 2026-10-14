@@ -266,11 +266,6 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
 {
     uint64_t wallet_creation_flags = options.create_flags;
     const SecureString& passphrase = options.create_passphrase;
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-    // const int& type = walletoptions.walletType;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\nwaletType=%i\n", __func__, seed.c_str(), pass.c_str(), type);
 
     if (wallet_creation_flags & WALLET_FLAG_DESCRIPTORS) options.require_format = DatabaseFormat::SQLITE;
 
@@ -2775,10 +2770,6 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
 {
     const std::string& walletFile = database->Filename();
 
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed.c_str(), pass.c_str());
     LogPrintf("CWallet::Create: Initial wallet setup - %s\n", WalletOptionsToString(walletoptions));
 
     int64_t nStart = GetTimeMillis();
