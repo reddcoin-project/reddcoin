@@ -8,6 +8,7 @@ import time
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    assert_equal,
     assert_raises_rpc_error,
     assert_greater_than,
     assert_greater_than_or_equal,
@@ -36,7 +37,7 @@ class WalletEncryptionTest(BitcoinTestFramework):
 
         # Encrypt the wallet
         assert_raises_rpc_error(-8, "passphrase can not be empty", self.nodes[0].encryptwallet, '')
-        self.nodes[0].encryptwallet(passphrase)
+        assert_equal(self.nodes[0].encryptwallet(passphrase), "wallet encrypted; The keypool has been flushed and a new HD seed was generated (if you are using HD). You need to make a new backup.")
 
         # Test that the wallet is encrypted
         assert_raises_rpc_error(-13, "Please enter the wallet passphrase with walletpassphrase first", self.nodes[0].signmessage, address, msg)
@@ -96,6 +97,19 @@ class WalletEncryptionTest(BitcoinTestFramework):
         actual_time = self.nodes[0].getwalletinfo()['unlocked_until']
         assert_greater_than_or_equal(actual_time, expected_time)
         assert_greater_than(expected_time_with_buffer, actual_time)
+
+        if not self.options.descriptors:
+            # A wallet created from a mnemonic keeps its seed and its keypool
+            # when it is encrypted, and the answer says so.
+            node = self.nodes[0]
+            for kind in ("bip39", "bip44"):
+                node._base_rpc.createwallet(wallet_name=kind, descriptors=False, wallet_type=kind)
+                wallet = node.get_wallet_rpc(kind)
+                before = wallet.getwalletinfo()
+                assert_equal(wallet.encryptwallet(passphrase), "wallet encrypted; The wallet was created from a mnemonic and keeps its seed and its keypool: the mnemonic phrase still restores it. You need to make a new backup.")
+                after = wallet.getwalletinfo()
+                assert_equal((after["hdseedid"], after["keypoolsize"], after["hd_type"]), (before["hdseedid"], before["keypoolsize"], kind))
+                wallet.unloadwallet()
 
 
 if __name__ == '__main__':
