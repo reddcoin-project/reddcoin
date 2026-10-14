@@ -1566,6 +1566,20 @@ void CWallet::UnsetWalletFlagWithDB(WalletBatch& batch, uint64_t flag)
         throw std::runtime_error(std::string(__func__) + ": writing wallet flags failed");
 }
 
+bool CWallet::SetWalletFlagWithDB(WalletBatch& batch, uint64_t flag)
+{
+    LOCK(cs_wallet);
+    // We should never be writing unknown non-tolerable wallet flags
+    assert(((flag & KNOWN_WALLET_FLAGS) >> 32) == (flag >> 32));
+    return batch.WriteWalletFlags(m_wallet_flags | flag);
+}
+
+void CWallet::ConfirmWalletFlag(uint64_t flag)
+{
+    LOCK(cs_wallet);
+    m_wallet_flags |= flag;
+}
+
 void CWallet::UnsetBlankWalletFlag(WalletBatch& batch)
 {
     UnsetWalletFlagWithDB(batch, WALLET_FLAG_BLANK_WALLET);

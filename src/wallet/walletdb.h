@@ -9,6 +9,7 @@
 
 #include <amount.h>
 #include <script/sign.h>
+#include <wallet/crypter.h>
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
 #include <key.h>
@@ -64,6 +65,8 @@ extern const std::string DEFAULTKEY;
 extern const std::string DESTDATA;
 extern const std::string FLAGS;
 extern const std::string HDCHAIN;
+extern const std::string HDSECRETS;
+extern const std::string HDSECRETSPENDING;
 extern const std::string KEY;
 extern const std::string KEYMETA;
 extern const std::string MASTER_KEY;
@@ -301,6 +304,14 @@ public:
 
     //! write the hdchain model (external chain child index counter)
     bool WriteHDChain(const CHDChain& chain);
+
+    //! The secrets of the wallet's HD chain, encrypted. One record for a wallet.
+    bool WriteHDSecrets(const CHDSecretsRecord& record);
+    bool EraseHDSecrets();
+    //! Marks that secrets were moved out of the chain record and the file has
+    //! not been rewritten since, so an old copy may still lie in it.
+    bool WriteHDSecretsPending();
+    bool EraseHDSecretsPending();
 
     bool WriteWalletFlags(const uint64_t flags);
     //! Begin a new transaction

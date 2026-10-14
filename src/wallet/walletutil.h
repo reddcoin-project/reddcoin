@@ -66,6 +66,17 @@ enum WalletFlags : uint64_t {
 
     //! Indicates that the wallet needs an external signer
     WALLET_FLAG_EXTERNAL_SIGNER = (1ULL << 35),
+
+    //! Reserved for HD accounts. Not a known flag yet: a wallet that carries
+    //! it is refused. Named here so that the number cannot be taken twice.
+    WALLET_FLAG_HD_ACCOUNTS = (1ULL << 48),
+
+    //! The secrets of the wallet's HD chain (its seed, and the mnemonic and
+    //! mnemonic passphrase the seed came from, if any) are not in the chain
+    //! record but in a record of their own, encrypted with the wallet's
+    //! master key. Mandatory: a version that does not know the flag would
+    //! take the chain for one without a seed.
+    WALLET_FLAG_HD_SECRETS_ENCRYPTED = (1ULL << 49),
 };
 
 //! Get the path of the wallet directory.

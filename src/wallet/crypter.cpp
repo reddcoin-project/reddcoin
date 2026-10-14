@@ -6,6 +6,8 @@
 
 #include <crypto/aes.h>
 #include <crypto/sha512.h>
+#include <hash.h>
+#include <random.h>
 #include <util/system.h>
 
 #include <vector>
@@ -135,4 +137,112 @@ bool DecryptKey(const CKeyingMaterial& vMasterKey, const std::vector<unsigned ch
 
     key.Set(vchSecret.begin(), vchSecret.end(), vchPubKey.IsCompressed());
     return key.VerifyPubKey(vchPubKey);
+}
+
+void CHDSecrets::SetNull()
+{
+    // Released, not merely emptied: the allocator cleanses what it releases.
+    SecureVector().swap(vchMnemonic);
+    SecureVector().swap(vchMnemonicPassphrase);
+    SecureVector().swap(vchSeed);
+}
+
+namespace {
+void AppendCompactSize(CKeyingMaterial& out, uint64_t size)
+{
+    if (size < 253) {
+        out.push_back(static_cast<unsigned char>(size));
+    } else if (size <= 0xffff) {
+        out.push_back(253);
+        out.push_back(size & 0xff);
+        out.push_back((size >> 8) & 0xff);
+    } else {
+        out.push_back(254);
+        for (int shift = 0; shift < 32; shift += 8) out.push_back((size >> shift) & 0xff);
+    }
+}
+
+void AppendPart(CKeyingMaterial& out, const SecureVector& part)
+{
+    AppendCompactSize(out, part.size());
+    out.insert(out.end(), part.begin(), part.end());
+}
+
+//! Read a compact size and that many bytes at pos. Only the encodings
+//! AppendCompactSize writes are accepted.
+bool ReadPart(const CKeyingMaterial& in, size_t& pos, SecureVector& part)
+{
+    if (pos >= in.size()) return false;
+    uint64_t size = in[pos++];
+    if (size == 253) {
+        if (in.size() - pos < 2) return false;
+        size = in[pos] | (uint64_t{in[pos + 1]} << 8);
+        pos += 2;
+        if (size < 253) return false;
+    } else if (size == 254) {
+        if (in.size() - pos < 4) return false;
+        size = 0;
+        for (int i = 0; i < 4; ++i) size |= uint64_t{in[pos + i]} << (8 * i);
+        pos += 4;
+        if (size <= 0xffff) return false;
+    } else if (size == 255) {
+        return false;
+    }
+    if (in.size() - pos < size) return false;
+    part.assign(in.begin() + pos, in.begin() + pos + size);
+    pos += size;
+    return true;
+}
+} // namespace
+
+bool EncryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecrets& secrets, const uint256& nIV, CHDSecretsRecord& record)
+{
+    if (secrets.IsNull() || secrets.vchMnemonic.size() > 0xffffffff || secrets.vchMnemonicPassphrase.size() > 0xffffffff || secrets.vchSeed.size() > 0xffffffff) return false;
+
+    CKeyingMaterial plaintext;
+    plaintext.reserve(secrets.vchMnemonic.size() + secrets.vchMnemonicPassphrase.size() + secrets.vchSeed.size() + 15 + uint256::size());
+    AppendPart(plaintext, secrets.vchMnemonic);
+    AppendPart(plaintext, secrets.vchMnemonicPassphrase);
+    AppendPart(plaintext, secrets.vchSeed);
+    const uint256 check = Hash(plaintext);
+    plaintext.insert(plaintext.end(), check.begin(), check.end());
+
+    CHDSecretsRecord result;
+    result.nIV = nIV;
+    if (!EncryptSecret(vMasterKey, plaintext, result.nIV, result.vchCrypted)) return false;
+
+    // Nothing is written that has not been read back.
+    CHDSecrets read_back;
+    if (!DecryptHDSecrets(vMasterKey, result, read_back) || !(read_back == secrets)) return false;
+
+    record = std::move(result);
+    return true;
+}
+
+bool EncryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecrets& secrets, CHDSecretsRecord& record)
+{
+    uint256 iv;
+    GetStrongRandBytes(iv.begin(), iv.size());
+    return EncryptHDSecrets(vMasterKey, secrets, iv, record);
+}
+
+bool DecryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecretsRecord& record, CHDSecrets& secrets)
+{
+    if (record.nVersion != CHDSecretsRecord::CURRENT_VERSION) return false;
+
+    CKeyingMaterial plaintext;
+    if (!DecryptSecret(vMasterKey, record.vchCrypted, record.nIV, plaintext)) return false;
+
+    CHDSecrets result;
+    size_t pos = 0;
+    if (!ReadPart(plaintext, pos, result.vchMnemonic) ||
+        !ReadPart(plaintext, pos, result.vchMnemonicPassphrase) ||
+        !ReadPart(plaintext, pos, result.vchSeed)) return false;
+    if (plaintext.size() - pos != uint256::size()) return false;
+    const uint256 check = Hash(Span<const unsigned char>{plaintext.data(), pos});
+    if (!std::equal(check.begin(), check.end(), plaintext.begin() + pos)) return false;
+    if (result.IsNull()) return false;
+
+    secrets = std::move(result);
+    return true;
 }

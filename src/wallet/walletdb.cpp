@@ -39,6 +39,8 @@ const std::string DEFAULTKEY{"defaultkey"};
 const std::string DESTDATA{"destdata"};
 const std::string FLAGS{"flags"};
 const std::string HDCHAIN{"hdchain"};
+const std::string HDSECRETS{"hdsecrets"};
+const std::string HDSECRETSPENDING{"hdsecretspending"};
 const std::string KEYMETA{"keymeta"};
 const std::string KEY{"key"};
 const std::string MASTER_KEY{"mkey"};
@@ -1155,6 +1157,26 @@ bool WalletBatch::EraseDestData(const std::string &address, const std::string &k
 bool WalletBatch::WriteHDChain(const CHDChain& chain)
 {
     return WriteIC(DBKeys::HDCHAIN, chain);
+}
+
+bool WalletBatch::WriteHDSecrets(const CHDSecretsRecord& record)
+{
+    return WriteIC(DBKeys::HDSECRETS, record);
+}
+
+bool WalletBatch::EraseHDSecrets()
+{
+    return EraseIC(DBKeys::HDSECRETS);
+}
+
+bool WalletBatch::WriteHDSecretsPending()
+{
+    return WriteIC(DBKeys::HDSECRETSPENDING, uint8_t{1});
+}
+
+bool WalletBatch::EraseHDSecretsPending()
+{
+    return EraseIC(DBKeys::HDSECRETSPENDING);
 }
 
 bool WalletBatch::WriteWalletFlags(const uint64_t flags)
