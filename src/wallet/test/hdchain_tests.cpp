@@ -30,6 +30,7 @@
 #include <iterator>
 #include <thread>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -798,6 +799,86 @@ BOOST_AUTO_TEST_CASE(gui_is_told_about_the_move)
     BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
     BOOST_CHECK(wallet->TakeHDSecretsMovedNotices().empty());
     BOOST_REQUIRE(wallet->Lock());
+    Unload(std::move(wallet));
+}
+
+// A rewrite writes the new file under the wallet file's name with ".rewrite"
+// added. A file of that name found there, left by an earlier attempt or put
+// there by anyone, is removed first: it is not opened and added to, which put
+// another wallet's keys into this one.
+BOOST_AUTO_TEST_CASE(rewrite_replaces_a_file_left_in_its_way)
+{
+    std::shared_ptr<CWallet> other = Create("rw_other", walletType::bip32Wallet);
+    const std::set<CKeyID> other_keys = Assert(other->GetLegacyScriptPubKeyMan())->GetKeys();
+    BOOST_REQUIRE(!other_keys.empty());
+    Unload(std::move(other));
+    std::shared_ptr<CWallet> wallet = Create("rw_target", walletType::bip32Wallet);
+    Addresses(*wallet, 3);
+    const fs::path planted = GetWalletDir() / "rw_target" / "wallet.dat.rewrite";
+    fs::copy_file(GetWalletDir() / "rw_other" / "wallet.dat", planted);
+    BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
+    BOOST_CHECK(!fs::exists(planted));
+    Unload(std::move(wallet));
+
+    // The other wallet's keys are not in it. Had they been added, in clear
+    // beside this wallet's encrypted keys, it would not load at all.
+    wallet = Load("rw_target");
+    for (const CKeyID& key : Assert(wallet->GetLegacyScriptPubKeyMan())->GetKeys()) {
+        BOOST_CHECK(!other_keys.count(key));
+    }
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    Addresses(*wallet, 2);
+    BOOST_REQUIRE(wallet->Lock());
+    Unload(std::move(wallet));
+}
+
+// A record that is already in the new file is a failure of the rewrite, not
+// skipped: the old file stays as it was and nothing of the new one is left.
+BOOST_AUTO_TEST_CASE(rewrite_fails_on_a_key_already_written)
+{
+    std::shared_ptr<CWallet> wallet = Create("rw_dup", walletType::bip32Wallet);
+    Addresses(*wallet, 3);
+    const fs::path file = GetWalletDir() / "rw_dup" / "wallet.dat";
+    g_wallet_hd_write_fault = [](const std::string& what) { return what == "rewrite-duplicate"; };
+    BOOST_CHECK(!wallet->GetDatabase().Rewrite());
+    g_wallet_hd_write_fault = nullptr;
+    BOOST_CHECK(fs::exists(file));
+    BOOST_CHECK(!fs::exists(GetWalletDir() / "rw_dup" / "wallet.dat.rewrite"));
+    Addresses(*wallet, 2);
+    BOOST_CHECK(wallet->GetDatabase().Rewrite());
+    Unload(std::move(wallet));
+    Unload(Load("rw_dup"));
+}
+
+// When the new file cannot be made, the old file is untouched, and the rewrite
+// that the move of the seed owes stays owed, noted in the file, and is done at
+// the next unlock.
+BOOST_AUTO_TEST_CASE(rewrite_that_cannot_start_stays_owed)
+{
+    const CHDChain clear = ClearChain("rw_ro_clear");
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+    MakeUnmigrated("rw_ro", clear);
+    std::shared_ptr<CWallet> wallet = Load("rw_ro", /* expect_warnings */ true);
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    const fs::path directory = GetWalletDir() / "rw_ro";
+    // The rewrite is made to fail where it starts. (Taking away the right to
+    // write to the directory does not stop root, nor anyone on Windows.)
+    g_wallet_hd_write_fault = [](const std::string& what) { return what == "rewrite"; };
+    const bool unlocked = wallet->Unlock(WALLET_PASSPHRASE);
+    g_wallet_hd_write_fault = nullptr;
+    BOOST_REQUIRE(unlocked);
+    // Moved, in the old file (which was written in place), and still owed.
+    BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+    BOOST_CHECK(spk_man.IsHDSecretsRewritePending());
+    BOOST_CHECK(wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+    BOOST_CHECK(!fs::exists(directory / "wallet.dat.rewrite"));
+    BOOST_CHECK_EQUAL(wallet->GetHDWarnings().size(), 1U);
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+    BOOST_CHECK(!spk_man.IsHDSecretsRewritePending());
+    BOOST_CHECK(!wallet->GetDatabase().MakeBatch()->Exists(DBKeys::HDSECRETSPENDING));
+    BOOST_REQUIRE(wallet->Lock());
+    CheckNoneInFile(*wallet, secrets);
     Unload(std::move(wallet));
 }
 
