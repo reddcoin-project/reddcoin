@@ -686,6 +686,12 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             CHDChain chain(pwallet);
             ssValue >> chain;
             pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDChain(chain);
+        } else if (strType == DBKeys::HDSECRETS) {
+            CHDSecretsRecord record;
+            ssValue >> record;
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDSecrets(record);
+        } else if (strType == DBKeys::HDSECRETSPENDING) {
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDSecretsPending();
         } else if (strType == DBKeys::OLD_KEY) {
             strErr = "Found unsupported 'wkey' record, try loading with version 0.18";
             return false;
@@ -948,9 +954,11 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         pwallet->WalletLogPrintf("The derivation path of %u keys was longer than the key's own and has been put right from its text form (%u written)\n", wss.m_repaired_keymeta.size(), written);
     }
 
-    // The paths of the keys can be compared with the chain only now that every
-    // record has been read.
+    // Where the seed of the HD chain is kept, and the paths of the keys
+    // compared with the chain, can be told only now that every record has
+    // been read; the second needs the kind the first decides.
     if (LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan()) {
+        legacy_spkm->DecideHDSecretsState();
         legacy_spkm->DecideMixedKeyPaths();
     }
 
