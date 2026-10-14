@@ -279,7 +279,7 @@ thus should be able to compile on most platforms where these exist.")
 (define-public python-asn1crypto
   (package
     (name "python-asn1crypto")
-    (version "1.4.0")
+    (version "1.5.1")
     (source
      (origin
        (method git-fetch)
@@ -289,7 +289,7 @@ thus should be able to compile on most platforms where these exist.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "19abibn6jw20mzi1ln4n9jjvpdka8ygm4m439hplyrdfqbvgm01r"))))
+         "1qsg06qrqnzixmrm65ibg503y2gffd675h1si4jgh92s315w1jrk"))))
     (build-system python-build-system)
     (arguments
      '(#:phases
@@ -305,7 +305,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
     (license license:expat)))
 
 (define-public python-elfesteem
-  (let ((commit "87bbd79ab7e361004c98cc8601d4e5f029fd8bd5"))
+  (let ((commit "2eb1e5384ff7a220fd1afacd4a0170acff54fe56"))
     (package
       (name "python-elfesteem")
       (version (git-version "0.1" "1" commit))
@@ -318,7 +318,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
          (file-name (git-file-name name commit))
          (sha256
           (base32
-           "1nyvjisvyxyxnd0023xjf5846xd03lwawp5pfzr8vrky7wwm5maz"))))
+           "07x6p8clh11z8s1n2kdxrqwqm2almgc5qpkcr9ckb6y5ivjdr5r6"))))
       (build-system python-build-system)
       ;; There are no tests, but attempting to run python setup.py test leads to
       ;; PYTHONPATH problems, just disable the test
@@ -331,7 +331,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
 (define-public python-oscrypto
   (package
     (name "python-oscrypto")
-    (version "1.2.1")
+    (version "1.3.0")
     (source
      (origin
        (method git-fetch)
@@ -341,7 +341,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "1d4d8s4z340qhvb3g5m5v3436y3a71yc26wk4749q64m09kxqc3l"))
+         "1v5wkmzcyiqy39db8j2dvkdrv2nlsc48556h73x4dzjwd6kg4q0a"))
        (patches (search-our-patches "oscrypto-hard-code-openssl.patch"))))
     (build-system python-build-system)
     (native-search-paths
@@ -400,7 +400,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
              #t)))))))
 
 (define-public python-certvalidator
-  (let ((commit "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c"))
+  (let ((commit "a145bf25eb75a9f014b3e7678826132efbba6213"))
     (package
       (name "python-certvalidator")
       (version (git-version "0.1" "1" commit))
@@ -413,7 +413,7 @@ PKCS#8, PKCS#12, PKCS#5, X.509 and TSP.")
          (file-name (git-file-name name commit))
          (sha256
           (base32
-           "18pvxkvpkfkzgvfylv0kx65pmxfcv1hpsg03cip93krfvrrl4c75"))))
+           "1qw2k7xis53179lpqdqyylbcmp76lj7sagp883wmxg5i7chhc96k"))))
       (build-system python-build-system)
       (propagated-inputs
        `(("python-asn1crypto" ,python-asn1crypto)
@@ -548,10 +548,10 @@ and endian independent.")
     (license license:expat)))
 
 (define-public python-signapple
-  (let ((commit "b084cbbf44d5330448ffce0c7d118f75781b64bd"))
+  (let ((commit "85bfcecc33d2773bc09bc318cec0614af2c8e287"))
     (package
       (name "python-signapple")
-      (version (git-version "0.1" "1" commit))
+      (version (git-version "0.2.0" "1" commit))
       (source
        (origin
          (method git-fetch)
@@ -561,19 +561,34 @@ and endian independent.")
          (file-name (git-file-name name commit))
          (sha256
           (base32
-           "0k7inccl2mzac3wq4asbr0kl8s4cghm8982z54kfascqg45shv01"))))
+           "17yqjll8nw83q6dhgqhkl7w502z5vy9sln8m6mlx0f1c10isg8yg"))))
       (build-system python-build-system)
       (propagated-inputs
        `(("python-asn1crypto" ,python-asn1crypto)
          ("python-oscrypto" ,python-oscrypto)
          ("python-certvalidator" ,python-certvalidator)
          ("python-elfesteem" ,python-elfesteem)
-         ("python-requests" ,python-requests-2.25.1)
-         ("python-macholib" ,python-macholib)
          ("libcrypto" ,openssl)))
-      ;; There are no tests, but attempting to run python setup.py test leads to
-      ;; problems, just disable the test
-      (arguments '(#:tests? #f))
+      ;; signapple declares python >= 3.10 and a poetry build, but uses
+      ;; nothing newer than python 3.8, so build it with a plain setup.py.
+      ;; There are no tests.
+      (arguments
+       '(#:tests? #f
+         #:phases
+         (modify-phases %standard-phases
+           (add-after 'unpack 'add-setup-py
+             (lambda _
+               (delete-file "pyproject.toml")
+               (call-with-output-file "setup.py"
+                 (lambda (port)
+                   (display "from setuptools import setup
+setup(name='signapple',
+      version='0.2.0',
+      packages=['signapple'],
+      package_data={'signapple': ['certs/*.cer']},
+      entry_points={'console_scripts': ['signapple = signapple:main']})
+" port)))
+               #t)))))
       (home-page "https://github.com/achow101/signapple")
       (synopsis "Mach-O binary signature tool")
       (description "signapple is a Python tool for creating, verifying, and
