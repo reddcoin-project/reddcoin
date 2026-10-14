@@ -361,6 +361,9 @@ private:
     static CHDChain WithoutSecrets(const CHDChain& chain);
     //! The one rule for the type of the wallet; called whenever the chain or the flag changes.
     void RefreshHDType() EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Whether the wallet has a mnemonic phrase, when that can be known: secrets in the chain, or unlocked.
+    std::optional<bool> KnownToHavePhrase() const EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    bilingual_str EarlierSeedWarning(bool with_advice) const EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
     //! Write the chain record. Once the secrets are kept in their own record, it is written without them whatever the object holds.
     bool WriteHDChain(WalletBatch& batch, const CHDChain& chain) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
     //! Whether a key can be derived from this chain now. Says once why not.
@@ -531,7 +534,11 @@ public:
      *  when it was encrypted. Its mnemonic does not restore the earlier keys. */
     bool HasEarlierSeedKeys() const;
     //! What the owner of the wallet has to be told about where its seed is, if anything.
-    std::vector<bilingual_str> GetHDSecretsNotices() const;
+    //! What the owner has to be told about the seed. for_load: the form that follows "Wallet <name>: "
+    //! in the notice given when the wallet is loaded (the earlier-seed warning there carries the advice).
+    std::vector<bilingual_str> GetHDSecretsNotices(bool for_load) const;
+    //! The earlier-seed warning as the commands give it: W1 (a phrase), W2 (no phrase) or W3 (not known: moved and locked).
+    bilingual_str GetEarlierSeedWarning() const;
     //! The chains of seeds that were replaced, by seed id.
     const std::unordered_map<CKeyID, CHDChain, SaltedSipHasher>& GetInactiveHDChains() const { return m_inactive_hd_chains; }
     void AddInactiveHDChain(const CHDChain& chain);

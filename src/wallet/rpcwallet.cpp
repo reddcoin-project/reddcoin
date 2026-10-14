@@ -2553,7 +2553,7 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::BOOL, "mixed_key_paths", "whether some keys of the wallet's HD seed are on BIP44 paths while its new keys are derived on the ordinary paths: the seed alone does not restore those keys"},
                         {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about where the seed of the wallet is kept and about the keys of its seed, when there is something to say"},
                         {RPCResult::Type::BOOL, "hd_secrets_encrypted", "whether the seed of the HD chain, and the mnemonic it came from, are kept in a record of their own, encrypted with the wallet passphrase"},
-                        {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet is a mnemonic wallet that also has keys of an earlier seed, which its mnemonic does not restore"},
+                        {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet has keys of an earlier seed beside a chain with a seed of its own, which that seed (and its mnemonic, if it has one) does not restore"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",

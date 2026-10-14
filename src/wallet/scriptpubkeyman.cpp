@@ -567,6 +567,63 @@ void LegacyScriptPubKeyMan::RefreshHDType()
     } else {
         m_seed_held_by_chain = IsHDEnabled() && !m_hd_chain.vchMnemonic.empty();
     }
+
+    // Keys of a seed other than the chain's, beside a chain whose record holds
+    // a seed of its own: the wallet was converted by an earlier version when
+    // it was encrypted, and its seed does not restore those keys. That holds
+    // for a chain made from -hdseed too, which has a seed and no phrase and
+    // reads as a plain wallet until its seed is moved. A plain wallet's chain
+    // record holds no seed: its seed is one of its keys. Decided here, with
+    // the kind, so that it holds from the move on, not from the next load.
+    m_earlier_seed_keys = false;
+    if (IsHDEnabled() && (m_seed_held_by_chain || ChainHoldsSecrets(m_hd_chain))) {
+        for (const auto& meta_pair : mapKeyMetadata) {
+            const CKeyMetadata& meta = meta_pair.second;
+            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
+                m_earlier_seed_keys = true;
+                break;
+            }
+        }
+    }
+}
+
+std::optional<bool> LegacyScriptPubKeyMan::KnownToHavePhrase() const
+{
+    AssertLockHeld(cs_KeyStore);
+    // Without the passphrase this is known only while the secrets are in the
+    // chain record. The encrypted record has no field that says it.
+    if (m_hd_secrets_state == HDSecretsState::IN_CHAIN || m_hd_secrets_state == HDSecretsState::UNMIGRATED) {
+        return !m_hd_chain.vchMnemonic.empty();
+    }
+    if (m_hd_secrets_state == HDSecretsState::ENCRYPTED && !m_hd_secrets.IsNull()) {
+        return !m_hd_secrets.vchMnemonic.empty();
+    }
+    return std::nullopt;
+}
+
+bilingual_str LegacyScriptPubKeyMan::EarlierSeedWarning(bool with_advice) const
+{
+    AssertLockHeld(cs_KeyStore);
+    const std::optional<bool> phrase = KnownToHavePhrase();
+    if (phrase.has_value() && *phrase) {
+        return with_advice ?
+            _("this wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+            _("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys.");
+    }
+    if (phrase.has_value()) {
+        return with_advice ?
+            _("the HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+            _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed does not restore the addresses created before that. Only the wallet file holds all of its keys.");
+    }
+    return with_advice ?
+        _("the HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+        _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses created before that. Only the wallet file holds all of its keys.");
+}
+
+bilingual_str LegacyScriptPubKeyMan::GetEarlierSeedWarning() const
+{
+    LOCK(cs_KeyStore);
+    return EarlierSeedWarning(/* with_advice */ false);
 }
 
 LegacyScriptPubKeyMan::HDSecretsState LegacyScriptPubKeyMan::GetHDSecretsState() const
@@ -691,16 +748,6 @@ void LegacyScriptPubKeyMan::DecideHDSecretsState()
                         !encrypted ? "the wallet is not encrypted" : "there is no readable record of it");
     }
     RefreshHDType();
-
-    m_earlier_seed_keys = false;
-    if (m_seed_held_by_chain) {
-        for (const auto& [key_id, meta] : mapKeyMetadata) {
-            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
-                m_earlier_seed_keys = true;
-                break;
-            }
-        }
-    }
 }
 
 bool LegacyScriptPubKeyMan::HasEarlierSeedKeys() const
@@ -709,7 +756,7 @@ bool LegacyScriptPubKeyMan::HasEarlierSeedKeys() const
     return m_earlier_seed_keys;
 }
 
-std::vector<bilingual_str> LegacyScriptPubKeyMan::GetHDSecretsNotices() const
+std::vector<bilingual_str> LegacyScriptPubKeyMan::GetHDSecretsNotices(bool for_load) const
 {
     LOCK(cs_KeyStore);
     std::vector<bilingual_str> notices;
@@ -723,7 +770,8 @@ std::vector<bilingual_str> LegacyScriptPubKeyMan::GetHDSecretsNotices() const
         notices.push_back(_("The seed of this wallet cannot be read. The keys it already holds work, and addresses come from its key pool until that is empty; no new keys can be made. If you have this wallet's mnemonic phrase written down, restore it into a new wallet. If you do not, move the funds to a new wallet while this one still works."));
     }
     if (m_earlier_seed_keys) {
-        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+        // At load it follows "Wallet <name>: ", with the advice; elsewhere it stands alone.
+        notices.push_back(EarlierSeedWarning(/* with_advice */ for_load));
     }
     return notices;
 }

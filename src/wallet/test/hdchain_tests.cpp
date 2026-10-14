@@ -882,4 +882,84 @@ BOOST_AUTO_TEST_CASE(rewrite_that_cannot_start_stays_owed)
     Unload(std::move(wallet));
 }
 
+// A wallet that an earlier version converted at encryption has keys of its
+// former seed beside a chain that holds a seed of its own; its owner is told
+// that only the file holds them all. Which text depends on whether it has a
+// phrase: W1 with one, W2 without (a chain made from -hdseed), and W3 when
+// that cannot be known (moved and locked: the phrase is in the encrypted
+// record). It holds from the move on, not from the next load.
+BOOST_AUTO_TEST_CASE(earlier_seed_warning_says_what_is_known)
+{
+    const std::string W1{"Its mnemonic phrase does not restore"};
+    const std::string W2{"This wallet has no mnemonic phrase. Its seed does not restore"};
+    const std::string W3{"Neither its seed nor its mnemonic phrase, if it has one, restores"};
+    const CHDChain clear = ClearChain("es_clear");
+    for (const bool with_phrase : {true, false}) {
+        const std::string name{strprintf("es_%d", with_phrase)};
+        BOOST_TEST_MESSAGE(name);
+        // A plain wallet with keys, encrypted; then given the chain an earlier
+        // version gave it at encryption, with the secrets in clear in it.
+        std::shared_ptr<CWallet> wallet = Create(name, walletType::bip32Wallet);
+        Addresses(*wallet, 3);
+        BOOST_REQUIRE(wallet->EncryptWallet(WALLET_PASSPHRASE));
+        Unload(std::move(wallet));
+        CHDChain chain{clear};
+        if (!with_phrase) {
+            SecureVector().swap(chain.vchMnemonic);
+            SecureVector().swap(chain.vchMnemonicPassphrase);
+        }
+        Edit(name, [&](DatabaseBatch& batch) { BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, chain)); });
+
+        const std::string& known = with_phrase ? W1 : W2;
+        const auto says = [](const std::vector<bilingual_str>& notices, const std::string& text) {
+            return std::any_of(notices.begin(), notices.end(), [&](const bilingual_str& n) { return n.original.find(text) != std::string::npos; });
+        };
+        wallet = Load(name, /* expect_warnings */ true);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::UNMIGRATED);
+        BOOST_CHECK_EQUAL(spk_man.IsBip39Enabled(), with_phrase);
+        BOOST_CHECK(spk_man.HasEarlierSeedKeys());
+        BOOST_CHECK(says(wallet->GetHDWarnings(), known));
+        // At load: after "Wallet <name>: ", from a small letter, with the advice.
+        const std::vector<bilingual_str> at_load = wallet->GetHDWarnings(/* for_load */ true);
+        BOOST_CHECK(says(at_load, with_phrase ? "this wallet was converted" : "the HD seed of this wallet was replaced"));
+        BOOST_CHECK(says(at_load, "keep a backup of the file, or create a new wallet and move the funds to it."));
+
+        // The unlock moves the seed: from then on it is of the mnemonic kind, and still told.
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        BOOST_CHECK(spk_man.GetHDSecretsState() == HDState::ENCRYPTED);
+        BOOST_CHECK(spk_man.IsBip39Enabled());
+        BOOST_CHECK(spk_man.HasEarlierSeedKeys());
+        BOOST_CHECK(says(wallet->GetHDWarnings(), known));
+        BOOST_CHECK(spk_man.GetEarlierSeedWarning().original.find(known) != std::string::npos);
+        const std::vector<bilingual_str> moved = wallet->TakeHDSecretsMovedNotices();
+        BOOST_CHECK(says(moved, with_phrase ? "you may never have been shown its phrase" : "This wallet has no mnemonic phrase. Its seed restores only"));
+        BOOST_CHECK(!says(moved, "This wallet has a mnemonic phrase. If you never wrote one down"));
+        if (!with_phrase) {
+            for (const auto& notices : {wallet->GetHDWarnings(), wallet->GetHDWarnings(true), moved}) {
+                BOOST_CHECK(!says(notices, "mnemonic phrase does not restore") && !says(notices, "its phrase"));
+            }
+        }
+        // Locked, it cannot be known whether there is a phrase.
+        BOOST_REQUIRE(wallet->Lock());
+        BOOST_CHECK(says(wallet->GetHDWarnings(), W3));
+        Unload(std::move(wallet));
+
+        wallet = Load(name, /* expect_warnings */ true);
+        BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->HasEarlierSeedKeys());
+        BOOST_CHECK(says(wallet->GetHDWarnings(), W3));
+        BOOST_CHECK(says(wallet->GetHDWarnings(true), "the HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither"));
+        BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
+        BOOST_CHECK(says(wallet->GetHDWarnings(), known));
+        BOOST_REQUIRE(wallet->Lock());
+        Unload(std::move(wallet));
+    }
+
+    // A wallet made from a mnemonic, without keys of another seed: none of it.
+    std::shared_ptr<CWallet> wallet = Create("es_none", walletType::bip44Wallet, PHRASE_PASSPHRASE, WALLET_PASSPHRASE);
+    BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->HasEarlierSeedKeys());
+    BOOST_CHECK(wallet->GetHDWarnings().empty());
+    Unload(std::move(wallet));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
