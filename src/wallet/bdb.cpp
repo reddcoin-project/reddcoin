@@ -275,7 +275,10 @@ BerkeleyScratchEnvironment::BerkeleyScratchEnvironment(const fs::path& directory
 {
     BerkeleyAllocator::Install();
     m_env = std::make_unique<DbEnv>(DB_CXX_NO_EXCEPTIONS);
-    m_env->set_alloc(std::malloc, std::realloc, std::free);
+    if (m_env->set_alloc(std::malloc, std::realloc, std::free) != 0) {
+        LogPrintf("BerkeleyScratchEnvironment: Berkeley DB did not accept the allocation functions for returned data\n");
+        std::abort();
+    }
     m_env->set_cachesize(0, 0x100000, 1);
     const int ret = m_env->open(directory.string().c_str(), DB_CREATE | DB_INIT_MPOOL | DB_PRIVATE | DB_THREAD, S_IRUSR | S_IWUSR);
     m_open = ret == 0;
@@ -298,7 +301,11 @@ void BerkeleyEnvironment::Reset()
     dbenv.reset(new DbEnv(DB_CXX_NO_EXCEPTIONS));
     // What the library allocates for its caller to release (the data of a
     // record that is read) comes from malloc, and SafeDbt cleanses and frees it.
-    dbenv->set_alloc(std::malloc, std::realloc, std::free);
+    // Without this, SafeDbt would free memory the library took from Allocate.
+    if (dbenv->set_alloc(std::malloc, std::realloc, std::free) != 0) {
+        LogPrintf("BerkeleyEnvironment: Berkeley DB did not accept the allocation functions for returned data\n");
+        std::abort();
+    }
     fDbEnvInit = false;
     fMockDb = false;
 }
