@@ -3363,7 +3363,7 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
 std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
 {
     LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
-    std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices() : std::vector<bilingual_str>{};
+    std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices(for_load) : std::vector<bilingual_str>{};
     if (spk_man && spk_man->HasMixedKeyPaths()) {
         notices.push_back(for_load ?
             _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
@@ -3399,9 +3399,12 @@ bool CWallet::RewriteAfterHDSecretsMoved()
     spk_man->HDSecretsRewritten();
     std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
     CHDSecrets secrets;
-    if (spk_man->HasEarlierSeedKeys()) {
+    const bool secrets_known{spk_man->GetHDSecrets(secrets)};
+    if (spk_man->HasEarlierSeedKeys() && secrets_known && secrets.vchMnemonic.empty()) {
+        notices.push_back(_("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it."));
+    } else if (spk_man->HasEarlierSeedKeys()) {
         notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. The phrase (gethdwalletinfo, with the wallet unlocked) restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it."));
-    } else if (spk_man->GetHDSecrets(secrets) && !secrets.vchMnemonic.empty()) {
+    } else if (secrets_known && !secrets.vchMnemonic.empty()) {
         notices.push_back(_("This wallet has a mnemonic phrase. If you never wrote one down (wallets created with version 4.22.6 were given one without showing it), read it now with gethdwalletinfo while the wallet is unlocked, and keep it safe."));
     }
     for (const bilingual_str& notice : notices) {
