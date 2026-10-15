@@ -13,6 +13,22 @@ from typing import List, Optional
 import lief
 import pixie
 
+# LIEF compatibility. guix pins LIEF 0.11.5, while CI hosts install whatever
+# pip resolves, so these checks have to read the same answer from both.
+# - 0.14 moved the PE DLL characteristics enum under OptionalHeader, and 0.15
+#   moved the Mach-O header flags enum under Header.
+# - From 0.13, get_content_from_virtual_address returns a memoryview, not a list.
+# - has_relocations is False on PE in 0.14.x and has_nx is False on Mach-O in
+#   0.15.x/0.16.x, so the properties the checks rely on are read directly.
+try:
+    PE_DLL_CHARACTERISTICS = lief.PE.OptionalHeader.DLL_CHARACTERISTICS
+except AttributeError:
+    PE_DLL_CHARACTERISTICS = lief.PE.DLL_CHARACTERISTICS  # type: ignore[attr-defined,misc]
+try:
+    MACHO_HEADER_FLAGS = lief.MachO.Header.FLAGS
+except AttributeError:
+    MACHO_HEADER_FLAGS = lief.MachO.HEADER_FLAGS  # type: ignore[attr-defined,misc]
+
 def check_ELF_PIE(executable) -> bool:
     '''
     Check for position independent executable (PIE), allowing for address space randomization.
@@ -137,26 +153,33 @@ def check_ELF_separate_code(executable):
 def check_PE_DYNAMIC_BASE(executable) -> bool:
     '''PIE: DllCharacteristics bit 0x40 signifies dynamicbase (ASLR)'''
     binary = lief.parse(executable)
-    return lief.PE.DLL_CHARACTERISTICS.DYNAMIC_BASE in binary.optional_header.dll_characteristics_lists
+    return PE_DLL_CHARACTERISTICS.DYNAMIC_BASE in binary.optional_header.dll_characteristics_lists
 
 # Must support high-entropy 64-bit address space layout randomization
 # in addition to DYNAMIC_BASE to have secure ASLR.
 def check_PE_HIGH_ENTROPY_VA(executable) -> bool:
     '''PIE: DllCharacteristics bit 0x20 signifies high-entropy ASLR'''
     binary = lief.parse(executable)
-    return lief.PE.DLL_CHARACTERISTICS.HIGH_ENTROPY_VA in binary.optional_header.dll_characteristics_lists
+    return PE_DLL_CHARACTERISTICS.HIGH_ENTROPY_VA in binary.optional_header.dll_characteristics_lists
 
 def check_PE_RELOC_SECTION(executable) -> bool:
     '''Check for a reloc section. This is required for functional ASLR.'''
     binary = lief.parse(executable)
-    return binary.has_relocations
+    return len(binary.relocations) > 0
 
 def check_MACHO_NOUNDEFS(executable) -> bool:
     '''
     Check for no undefined references.
     '''
     binary = lief.parse(executable)
-    return binary.header.has(lief.MachO.HEADER_FLAGS.NOUNDEFS)
+    return binary.header.has(MACHO_HEADER_FLAGS.NOUNDEFS)
+
+def check_MACHO_NX(executable) -> bool:
+    '''
+    Check for no stack execution
+    '''
+    binary = lief.parse(executable)
+    return not binary.header.has(MACHO_HEADER_FLAGS.ALLOW_STACK_EXECUTION)
 
 def check_MACHO_LAZY_BINDINGS(executable) -> bool:
     '''
@@ -196,7 +219,7 @@ def check_control_flow(executable) -> bool:
 
     content = binary.get_content_from_virtual_address(binary.entrypoint, 4, lief.Binary.VA_TYPES.AUTO)
 
-    if content == [243, 15, 30, 250]: # endbr64
+    if list(content) == [243, 15, 30, 250]: # endbr64
         return True
     return False
 
@@ -219,7 +242,7 @@ CHECKS = {
 'MACHO': [
     ('PIE', check_PIE),
     ('NOUNDEFS', check_MACHO_NOUNDEFS),
-    ('NX', check_NX),
+    ('NX', check_MACHO_NX),
     ('LAZY_BINDINGS', check_MACHO_LAZY_BINDINGS),
     ('Canary', check_MACHO_Canary),
     ('CONTROL_FLOW', check_control_flow),
