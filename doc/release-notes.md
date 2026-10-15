@@ -291,6 +291,23 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   the wallet failed to load before, run `rescanblockchain` once after loading
   it: the attempt that failed may have left the block it stopped at unread.
 
+- **Wallets created with a passphrase by v4.22.7 to v4.22.9.3 have keys on two
+  kinds of path.** A wallet created with a passphrase (`createwallet` with
+  `passphrase`) by the official Linux builds of those versions derived all of
+  its keys on BIP44 paths (`m/44'/coin'/0'/chain/index`), although it is an
+  ordinary HD wallet. Later versions derive its new keys on the ordinary paths
+  (`m/0'/chain'/index'`). All keys stay in the wallet and all funds stay
+  spendable. **But the wallet's HD seed, restored into a new wallet, gives back
+  only the keys on the ordinary paths.** For such a wallet the wallet file is
+  the only complete backup: back it up, or create a new wallet and move the
+  funds to it.
+  This version says so when it loads such a wallet, and `getwalletinfo` shows
+  `mixed_key_paths`. To check on an earlier version: `getaddressinfo` of the
+  first address the wallet gave out shows an `hdkeypath` beginning with
+  `m/44'`, in a wallet that was not created from a mnemonic phrase.
+  The Windows and macOS builds of those versions contain the same defect in the
+  source. We have not tested them.
+
 GUI changes
 -----------
 - Time interval lines added to the network data monitor

@@ -911,6 +911,10 @@ public:
     //! Set by the wallet tool's commands that only show a wallet: loading it writes nothing of its own.
     bool m_read_only_load{false};
 
+    //! What the owner has to be told about the keys of the wallet's HD seed, if anything.
+    //! for_load: the form that follows "Wallet <name>: " in the notice given at load.
+    std::vector<bilingual_str> GetHDWarnings(bool for_load = false) const;
+
     /* Returns true if BIP39 is enabled */
     bool IsBip39Enabled() const;
 
