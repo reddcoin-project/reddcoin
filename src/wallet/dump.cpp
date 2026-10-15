@@ -269,6 +269,10 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
 
         batch.reset();
 
+        // The records were written into a new file by this version: it holds
+        // nothing else, so it needs no rewrite when it is first loaded.
+        if (ret) wallet->MarkRewritten();
+
         dump_file.close();
     }
     wallet.reset(); // The pointer deleter will close the wallet for us.

@@ -962,4 +962,107 @@ BOOST_AUTO_TEST_CASE(earlier_seed_warning_says_what_is_known)
     Unload(std::move(wallet));
 }
 
+// Every Berkeley DB wallet is rewritten once, at its first load by this
+// version, and marked so; a file this version makes is marked from the start.
+// A rewrite that fails leaves the wallet as it was, unmarked and said so, and
+// the next load tries again. SQLite wallets are left alone.
+BOOST_AUTO_TEST_CASE(berkeley_wallet_rewritten_once_at_load)
+{
+    const auto marked = [&](const std::string& name) {
+        bool has{false};
+        Edit(name, [&](DatabaseBatch& batch) { has = batch.Exists(DBKeys::REWRITTEN); });
+        return has;
+    };
+    int rewrites{0};
+    bool fail{false};
+    g_wallet_hd_write_fault = [&](const std::string& what) {
+        if (what != "rewrite-file") return false;
+        ++rewrites;
+        return fail;
+    };
+
+    Unload(Create("once", walletType::bip32Wallet));
+    BOOST_CHECK(marked("once"));
+    BOOST_CHECK_EQUAL(rewrites, 0);
+    // As an earlier version left it: no marker.
+    Edit("once", [&](DatabaseBatch& batch) { BOOST_REQUIRE(batch.Erase(DBKeys::REWRITTEN)); });
+
+    // Fails: loads all the same, unmarked, and says so.
+    fail = true;
+    {
+        DatabaseOptions options;
+        DatabaseStatus status;
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        options.require_existing = true;
+        std::shared_ptr<CWallet> wallet = LoadWallet(*m_node.chain, "once", std::nullopt, options, status, error, warnings);
+        BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        BOOST_CHECK_EQUAL(rewrites, 1);
+        BOOST_REQUIRE_EQUAL(warnings.size(), 1U);
+        BOOST_CHECK(warnings[0].original.find("could not be rewritten") != std::string::npos);
+        Addresses(*wallet, 2);
+        Unload(std::move(wallet));
+    }
+    BOOST_CHECK(!marked("once"));
+
+    // The next load does it, and says so once.
+    fail = false;
+    {
+        DatabaseOptions options;
+        DatabaseStatus status;
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        options.require_existing = true;
+        std::shared_ptr<CWallet> wallet = LoadWallet(*m_node.chain, "once", std::nullopt, options, status, error, warnings);
+        BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        BOOST_CHECK_EQUAL(rewrites, 2);
+        BOOST_REQUIRE_EQUAL(warnings.size(), 1U);
+        BOOST_CHECK(warnings[0].original.find("has been rewritten") != std::string::npos);
+        Unload(std::move(wallet));
+    }
+    BOOST_CHECK(marked("once"));
+    // And not again.
+    Unload(Load("once"));
+    BOOST_CHECK_EQUAL(rewrites, 2);
+
+    // A SQLite wallet: never rewritten, never marked.
+    Unload(Create("once_sqlite", walletType::bip32Wallet, "", "", DatabaseFormat::SQLITE));
+    Unload(Load("once_sqlite"));
+    BOOST_CHECK_EQUAL(rewrites, 2);
+    BOOST_CHECK(!marked("once_sqlite"));
+    g_wallet_hd_write_fault = nullptr;
+}
+
+// A wallet that had a mnemonic chain and was then given a plain seed with
+// sethdseed by an earlier version is a plain wallet now, and no move of its
+// seed reaches it; the old phrase may still be in the file, where the old
+// chain record was. The rewrite at its first load removes it.
+BOOST_AUTO_TEST_CASE(old_phrase_of_a_reseeded_wallet_gone_after_first_load)
+{
+    const Secrets secrets = SecretsOf(PHRASE_PASSPHRASE);
+    Unload(Create("reseeded", walletType::bip44Wallet, PHRASE_PASSPHRASE));
+    // What sethdseed left: the chain record of a plain seed in place of the
+    // mnemonic one (the seed id stands for the new seed), and no marker.
+    Edit("reseeded", [&](DatabaseBatch& batch) {
+        CHDChain plain;
+        plain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
+        plain.seed_id = CKeyID(uint160(ParseHex("5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a")));
+        BOOST_REQUIRE(batch.Write(DBKeys::HDCHAIN, plain));
+        BOOST_REQUIRE(batch.Erase(DBKeys::REWRITTEN));
+    });
+    bool before{false};
+    for (fs::recursive_directory_iterator it(GetWalletDir() / "reseeded"), end; it != end; ++it) {
+        if (!fs::is_regular_file(it->path())) continue;
+        if (it->path().filename() == ".walletlock") continue; // empty, and locked while its wallet is loaded: Windows refuses to read it
+        std::ifstream file(it->path().string(), std::ios::binary);
+        const std::vector<unsigned char> content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        before |= std::search(content.begin(), content.end(), secrets.phrase.begin(), secrets.phrase.end()) != content.end();
+    }
+    BOOST_REQUIRE_MESSAGE(before, "the old phrase is not in the file to begin with");
+    std::shared_ptr<CWallet> wallet = Load("reseeded", /* expect_warnings */ true);
+    BOOST_CHECK(FilesHolding(*wallet, secrets.phrase).empty());
+    BOOST_CHECK(FilesHolding(*wallet, secrets.seed).empty());
+    Unload(std::move(wallet));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

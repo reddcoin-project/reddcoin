@@ -762,13 +762,15 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             m_hd_secrets_moved_notices.clear();
         } else {
             try {
-                if (!GetDatabase().Rewrite()) {
+                const bool rewritten{GetDatabase().Rewrite()};
+                if (!rewritten) {
                     WalletLogPrintf("Error: the wallet file could not be rewritten after encryption, and may still hold the private keys as they were\n");
                 }
                 // BDB seems to have a bad habit of writing old data into
                 // slack space in .dat files; that is bad if the old data is
                 // unencrypted private keys. So:
                 GetDatabase().ReloadDbEnv();
+                if (rewritten) MarkRewritten();
             } catch (const std::exception& e) {
                 WalletLogPrintf("Error: %s while the wallet file was being rewritten after encryption\n", e.what());
             }
@@ -2934,6 +2936,14 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         }
     }
 
+    if (fFirstRun) {
+        // A file this version has just made holds nothing of earlier versions.
+        LOCK(walletInstance->cs_wallet);
+        walletInstance->MarkRewritten();
+    } else {
+        walletInstance->RewriteOnceIfOwed(chain, warnings);
+    }
+
     if (!gArgs.GetArg("-addresstype", "").empty()) {
         if (!ParseOutputType(gArgs.GetArg("-addresstype", ""), walletInstance->m_default_address_type)) {
             error = strprintf(_("Unknown address type '%s'"), gArgs.GetArg("-addresstype", ""));
@@ -3372,6 +3382,58 @@ std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
     return notices;
 }
 
+void CWallet::MarkRewritten()
+{
+    AssertLockHeld(cs_wallet);
+    // Only a Berkeley DB file can hold what earlier versions left in it.
+    if (GetDatabase().Format() != "bdb") return;
+    if (!WalletBatch(GetDatabase()).WriteRewritten()) {
+        WalletLogPrintf("Error: the wallet file has been rewritten, but the record that says so could not be written; it will be rewritten again at the next load\n");
+    }
+}
+
+bool CWallet::RewriteWalletFile()
+{
+    AssertLockHeld(cs_wallet);
+    try {
+        if ((g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite-file")) || !GetDatabase().Rewrite()) return false;
+        GetDatabase().ReloadDbEnv();
+    } catch (const std::exception& e) {
+        WalletLogPrintf("Error: %s while the wallet file was being rewritten\n", e.what());
+        return false;
+    }
+    MarkRewritten();
+    return true;
+}
+
+void CWallet::RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_str>& warnings)
+{
+    // Every Berkeley DB wallet written by an earlier version may hold, in the
+    // unused parts of its pages, memory of the process that wrote it, and an
+    // encrypted wallet some of its own keys from before it was encrypted. A
+    // rewrite through memory of its own leaves none of that. It is done once,
+    // at the first load by this version, and a record says it was done. It
+    // needs no passphrase, and nothing else has the wallet yet.
+    LOCK(cs_wallet);
+    if (GetDatabase().Format() != "bdb" || m_read_only_load) return;
+    if (WalletBatch(GetDatabase()).HasRewritten()) return;
+    const std::string name{GetName().empty() ? "default wallet" : GetName()};
+    const bilingual_str doing{strprintf(_("Rewriting wallet file %s to remove data left by earlier versions. This is done once. Do not close the program."), name)};
+    WalletLogPrintf("%s\n", doing.original);
+    if (chain) chain->initMessage(doing.translated);
+    const int64_t start{GetTimeMillis()};
+    if (!RewriteWalletFile()) {
+        const bilingual_str failed{strprintf(_("Wallet file %s could not be rewritten to remove data left by earlier versions. It will be tried again when the wallet is next loaded."), name)};
+        WalletLogPrintf("Error: %s\n", failed.original);
+        warnings.push_back(failed);
+        return;
+    }
+    WalletLogPrintf("Wallet file rewritten in %d ms\n", GetTimeMillis() - start);
+    const bilingual_str done{strprintf(_("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a small number of unencrypted keys. Make a new backup and destroy old ones."), name)};
+    WalletLogPrintf("%s\n", done.original);
+    warnings.push_back(done);
+}
+
 bool CWallet::RewriteAfterHDSecretsMoved()
 {
     AssertLockHeld(cs_wallet);
@@ -3396,6 +3458,7 @@ bool CWallet::RewriteAfterHDSecretsMoved()
         WalletLogPrintf("Error: the wallet file has been rewritten, but the note that it had to be could not be removed\n");
         return false;
     }
+    MarkRewritten();
     spk_man->HDSecretsRewritten();
     std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
     CHDSecrets secrets;

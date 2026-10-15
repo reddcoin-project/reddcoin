@@ -925,6 +925,13 @@ public:
     //! Set by the wallet tool's commands that only show a wallet: loading it writes nothing of its own.
     bool m_read_only_load{false};
 
+    //! Write the record that says the file has been rewritten by this version (Berkeley DB only).
+    void MarkRewritten() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Rewrite the wallet file through memory of its own, and mark it so. False if it could not be.
+    bool RewriteWalletFile() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! At load: rewrite a Berkeley DB file once, if no rewrite by this version has marked it.
+    void RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_str>& warnings) LOCKS_EXCLUDED(cs_wallet);
+
     //! What the owner has to be told about where the seed of the wallet is kept, and about
     //! the keys of its seed, if anything.
     //! for_load: the form that follows "Wallet <name>: " in the notice given at load.

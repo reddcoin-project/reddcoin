@@ -30,6 +30,8 @@ static void WalletCreate(CWallet* wallet_instance, uint64_t wallet_creation_flag
 
     wallet_instance->SetMinVersion(FEATURE_HD_SPLIT);
     wallet_instance->AddWalletFlags(wallet_creation_flags);
+    // A file this version has just made holds nothing of earlier versions.
+    wallet_instance->MarkRewritten();
 
     if (!wallet_instance->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
         auto spk_man = wallet_instance->GetOrCreateLegacyScriptPubKeyMan();
