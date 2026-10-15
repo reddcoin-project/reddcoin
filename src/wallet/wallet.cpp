@@ -2778,6 +2778,13 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         }
     }
 
+    // What the owner has to be told about the keys of the wallet's seed: in the
+    // log, and to whoever loaded the wallet.
+    for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
+        walletInstance->WalletLogPrintf("%s\n", notice.original);
+        warnings.push_back(strprintf(Untranslated("Wallet %s: "), name.empty() ? "default wallet" : name) + notice);
+    }
+
     // This wallet is in its first run if there are no ScriptPubKeyMans and it isn't blank or no privkeys
     const bool fFirstRun = walletInstance->m_spk_managers.empty() &&
                      !walletInstance->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) &&
@@ -3237,6 +3244,18 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
     }
     NotifyStatusChanged(this);
     return true;
+}
+
+std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
+{
+    std::vector<bilingual_str> notices;
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man && spk_man->HasMixedKeyPaths()) {
+        notices.push_back(for_load ?
+            _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+            _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+    }
+    return notices;
 }
 
 std::set<ScriptPubKeyMan*> CWallet::GetActiveScriptPubKeyMans() const

@@ -2544,6 +2544,8 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::NUM_TIME, "unlocked_until", /* optional */ true, "the " + UNIX_EPOCH_TIME + " until which the wallet is unlocked for transfers, or 0 if the wallet is locked (only present for passphrase-encrypted wallets)"},
                         {RPCResult::Type::STR_AMOUNT, "paytxfee", "the transaction fee configuration, set in " + CURRENCY_UNIT + "/kvB"},
                         {RPCResult::Type::STR_HEX, "hdseedid", /* optional */ true, "the Hash160 of the HD seed (only present when HD is enabled)"},
+                        {RPCResult::Type::BOOL, "mixed_key_paths", "whether some keys of the wallet's HD seed are on BIP44 paths while its new keys are derived on the ordinary paths: the seed alone does not restore those keys"},
+                        {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about the keys of the wallet's HD seed, when there is something to say"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2592,6 +2594,11 @@ static RPCHelpMan getwalletinfo()
         if (!seed_id.IsNull()) {
             obj.pushKV("hdseedid", seed_id.GetHex());
         }
+    }
+
+    obj.pushKV("mixed_key_paths", spk_man && spk_man->HasMixedKeyPaths());
+    if (const std::vector<bilingual_str> hd_warnings = pwallet->GetHDWarnings(); !hd_warnings.empty()) {
+        obj.pushKV("hd_warnings", Join(hd_warnings, Untranslated("\n")).original);
     }
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {

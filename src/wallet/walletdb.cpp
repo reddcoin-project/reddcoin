@@ -992,6 +992,12 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         pwallet->WalletLogPrintf("The derivation path of %u keys was longer than the key's own and has been put right from its text form (%u written)\n", wss.m_repaired_keymeta.size(), written);
     }
 
+    // The paths of the keys can be compared with the chain only now that every
+    // record has been read.
+    if (LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan()) {
+        legacy_spkm->DecideMixedKeyPaths();
+    }
+
     if (fNoncriticalErrors && result == DBErrors::LOAD_OK)
         result = DBErrors::NONCRITICAL_ERROR;
 

@@ -491,6 +491,33 @@ bool LegacyScriptPubKeyMan::IsBip44Enabled() const
     return IsBip39Enabled() && m_hd_chain.bBip44;
 }
 
+void LegacyScriptPubKeyMan::DecideMixedKeyPaths()
+{
+    LOCK(cs_KeyStore);
+    // Versions 4.22.7 to 4.22.9.3 could give a wallet created with a passphrase
+    // all its first keys on BIP44 paths (m/44'/coin'/0'/chain/index), from its
+    // plain seed: the chain they made did not set its BIP44 switch, and the
+    // version 2 record it is stored in has no field for that switch. Later
+    // versions derive its new keys on the ordinary paths. The seed alone then
+    // restores only those. Only a chain that is not made from a mnemonic, and
+    // whose record cannot hold the switch, derives so.
+    m_mixed_key_paths = false;
+    if (!IsHDEnabled() || IsBip39Enabled() || m_hd_chain.nVersion >= CHDChain::VERSION_HD_BIP39) return;
+    for (const auto& meta_pair : mapKeyMetadata) {
+        const CKeyMetadata& meta = meta_pair.second;
+        if (meta.has_key_origin && meta.hd_seed_id == m_hd_chain.seed_id && meta.key_origin.path.size() == 5) {
+            m_mixed_key_paths = true;
+            break;
+        }
+    }
+}
+
+bool LegacyScriptPubKeyMan::HasMixedKeyPaths() const
+{
+    LOCK(cs_KeyStore);
+    return m_mixed_key_paths;
+}
+
 bool LegacyScriptPubKeyMan::CanGetAddresses(bool internal) const
 {
     LOCK(cs_KeyStore);

@@ -315,6 +315,8 @@ private:
 
     /* the HD chain data model (external chain counters) */
     CHDChain m_hd_chain;
+    //! Keys of the active seed on BIP44 paths in a wallet whose chain derives on the ordinary ones.
+    bool m_mixed_key_paths GUARDED_BY(cs_KeyStore){false};
     std::unordered_map<CKeyID, CHDChain, SaltedSipHasher> m_inactive_hd_chains;
     //! Inactive seeds found to have nothing to derive from, so that it is logged once for each.
     std::set<CKeyID> m_inactive_seeds_not_derivable GUARDED_BY(cs_KeyStore);
@@ -386,6 +388,11 @@ public:
     bool IsBip39Enabled() const override;
 
     bool IsBip44Enabled() const override;
+
+    //! Decide, once the records are read, whether the wallet has keys of its active seed on
+    //! BIP44 paths while its chain derives new keys on the ordinary paths.
+    void DecideMixedKeyPaths();
+    bool HasMixedKeyPaths() const;
 
     bool SetupGeneration(const WalletOptions& walletoptions, bool force = false) override;
 
