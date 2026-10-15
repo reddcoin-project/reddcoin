@@ -480,6 +480,11 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
 
 void CWallet::chainStateFlushed(const CBlockLocator& loc)
 {
+    // The lock first, then the batch, as for every other write. An SQLite
+    // wallet has one connection: a batch opened from here while encryptwallet
+    // holds a transaction on it ended that transaction when it closed, and
+    // the encryption then failed to commit and stopped the program.
+    LOCK(cs_wallet);
     WalletBatch batch(GetDatabase());
     batch.WriteBestBlock(loc);
 }

@@ -294,6 +294,7 @@ BASE_SCRIPTS = [
     'p2p_leak.py',
     'wallet_encryption.py --legacy-wallet',
     'wallet_encryption.py --descriptors',
+    'wallet_encrypt_while_flushing.py --descriptors',
     'feature_dersig.py',
     'feature_cltv.py',
     'rpc_uptime.py',
