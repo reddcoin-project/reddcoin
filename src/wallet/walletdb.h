@@ -68,6 +68,8 @@ extern const std::string FLAGS;
 extern const std::string HDCHAIN;
 extern const std::string HDSECRETS;
 extern const std::string HDSECRETSPENDING;
+//! Says that the file has been written anew by a version that leaves nothing of the memory of the process in it.
+extern const std::string REWRITTEN;
 extern const std::string KEY;
 extern const std::string KEYMETA;
 extern const std::string MASTER_KEY;
@@ -319,6 +321,9 @@ public:
     //! not been rewritten since, so an old copy may still lie in it.
     bool WriteHDSecretsPending();
     bool EraseHDSecretsPending();
+    //! The marker that the file has been rewritten once by this version: an ordinary record that earlier versions skip.
+    bool WriteRewritten();
+    bool HasRewritten();
 
     bool WriteWalletFlags(const uint64_t flags);
     //! Begin a new transaction

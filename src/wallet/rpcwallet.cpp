@@ -2178,6 +2178,43 @@ static RPCHelpMan walletlock()
 }
 
 
+static RPCHelpMan rewritewallet()
+{
+    return RPCHelpMan{"rewritewallet",
+                "\nWrite the wallet file anew. Applies to wallets in the Berkeley DB format.\n"
+                "Each such wallet is rewritten once when it is first loaded by this version; this does it again, for\n"
+                "example when that failed. The rewritten file keeps every record and nothing else that earlier versions\n"
+                "may have left in it. The wallet need not be unlocked. It is not usable while this runs.\n",
+                {},
+                RPCResult{RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::BOOL, "rewritten", "whether the file was rewritten"},
+                    }
+                },
+                RPCExamples{
+                    HelpExampleCli("rewritewallet", "")
+            + HelpExampleRpc("rewritewallet", "")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    if (pwallet->GetDatabase().Format() != "bdb") {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error: only a wallet in the Berkeley DB format needs this.");
+    }
+    LOCK(pwallet->cs_wallet);
+    if (!pwallet->RewriteWalletFile()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error: the wallet file could not be rewritten. It is as it was; see the log.");
+    }
+    pwallet->WalletLogPrintf("Wallet file rewritten on request\n");
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("rewritten", true);
+    return obj;
+},
+    };
+}
+
 static RPCHelpMan encryptwallet()
 {
     return RPCHelpMan{"encryptwallet",
@@ -4784,6 +4821,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &dumpprivkey,                    },
     { "wallet",             &dumpwallet,                     },
     { "wallet",             &encryptwallet,                  },
+    { "wallet",             &rewritewallet,                  },
     { "wallet",             &getaddressesbylabel,            },
     { "wallet",             &getaddressinfo,                 },
     { "wallet",             &getbalance,                     },

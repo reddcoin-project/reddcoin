@@ -704,11 +704,19 @@ Wallet
   and when a wallet file is rewritten (by `encryptwallet`, and at the
   conversion above) the new file is written through memory of its own, so
   that it keeps nothing of the old file or of other wallets.
-  Files written by earlier versions keep what they hold until they are
-  rewritten. Until then, using such a file can copy some of it into the log
-  files in the `database` directory beside it. A wallet that was already
-  encrypted is not rewritten by this version, except at the conversion above.
-  Old backups and copies keep what they hold for good.
+  In an encrypted wallet this could include a small number of the wallet's own
+  private keys from before it was encrypted, which the passphrase does not
+  protect.
+  **The first time this version opens a Berkeley DB wallet it rewrites the
+  file once**, which removes what earlier versions left, in the file and in
+  the log files beside it. It says so at start-up and once afterwards. On a
+  large wallet this takes a while; do not stop the program during it. If it
+  cannot be done (for example on a full disk), the wallet is used as before
+  and the next start tries again. `rewritewallet` does it again on request.
+  The rewritten file can still be opened by earlier versions. Wallets in the
+  SQLite format are not changed.
+  Copies and backups made with earlier versions are not changed and may
+  contain such leftovers: make a new backup and destroy the old ones.
 
 - When a rewrite of the wallet file and a change to the address book came at
   the same moment, both could wait for each other for ever. Fixed.

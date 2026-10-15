@@ -50,6 +50,9 @@ MAGIC = "BITCOIN_CORE_WALLET_DUMP"
 NOTICE_UNMIGRATED = ("The seed of this wallet, and its mnemonic phrase if it has one, are stored without encryption in the wallet file. "
                      "They will be encrypted the next time the wallet is unlocked. Until then anyone who can read the file can take its funds.")
 # How the wallet is unlocked for the first time.
+# Said once, at the first load of a Berkeley DB wallet file written by an earlier version.
+REWRITTEN = ("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a "
+             "small number of unencrypted keys. Make a new backup and destroy old ones.")
 ROUTES = ("walletpassphrase", "staking only", "walletpassphrasechange")
 
 
@@ -230,7 +233,10 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             self.log.info("%s, first unlocked by: %s" % (name, route))
             # Whoever loads it is told, and so is whoever asks about it.
             loaded = node._base_rpc.loadwallet(name)
-            assert_equal(loaded["warning"], "Wallet %s: %s" % (name, NOTICE_UNMIGRATED))
+            expected = "Wallet %s: %s" % (name, NOTICE_UNMIGRATED)
+            if self.options.fixtures and facts["database"] == "bdb":
+                expected += "\n" + REWRITTEN % name
+            assert_equal(loaded["warning"], expected)
             wallet = node.get_wallet_rpc(name)
             info = wallet.getwalletinfo()
             assert_equal((info["format"], self.hd_type(wallet, facts), info["unlocked_until"]), (facts["database"], facts["kind"], 0))
