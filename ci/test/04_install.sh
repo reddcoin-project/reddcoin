@@ -23,8 +23,10 @@ if [ "$CI_OS_NAME" == "macos" ]; then
   export PATH="${BASE_SCRATCH_DIR}/venv/bin:${PATH}"
   PIP_USER_FLAG=""
   # The retry wrapper needs GNU getopt and macOS ships the BSD one. Export
-  # Homebrew's for every retry in this run, not only the first.
-  export IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt"
+  # Homebrew's for every retry in this run, not only the first. Homebrew's
+  # prefix is /usr/local on Intel and /opt/homebrew on Apple Silicon.
+  IN_GETOPT_BIN="$(brew --prefix gnu-getopt)/bin/getopt"
+  export IN_GETOPT_BIN
   ${CI_RETRY_EXE} pip3 install $PIP_PACKAGES
 fi
 
