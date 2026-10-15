@@ -308,6 +308,15 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   The Windows and macOS builds of those versions contain the same defect in the
   source. We have not tested them.
 
+- A wallet whose HD chain record was older than its keys (one restored from
+  an earlier copy) recorded over-long derivation paths for new keys, and from
+  then on loaded with a warning that data might be missing, and the
+  `reddcoin-wallet` tool refused to show or dump it. Fixed, and a wallet that
+  already holds such paths has them put right when it is loaded.
+
+- Encrypting a wallet in SQLite format (a descriptor wallet) while the node
+  was writing its chain state to disk could stop the node. Fixed.
+
 GUI changes
 -----------
 - Time interval lines added to the network data monitor
