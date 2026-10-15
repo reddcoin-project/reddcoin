@@ -501,6 +501,17 @@ dnl over every input those functions see and does not change the truncated
 dnl integers consensus uses (see src/test/fp_consensus_tests.cpp).
 AX_CHECK_COMPILE_FLAG([-ffp-contract=off],[[CXXFLAGS="$CXXFLAGS -ffp-contract=off"]],,[[$CXXFLAG_WERROR]])
 
+dnl 32-bit x86 defaults to x87 floating point, which keeps intermediate results in
+dnl 80-bit extended precision. Consensus truncates doubles to integers, so a value
+dnl just below a whole number can truncate one lower than on every other target:
+dnl GetProofOfStakeReward(366, 0, 0.7) is 3507258 under x87 and 3507259 elsewhere.
+dnl Use SSE2 for floating point there, so doubles are rounded as on 64-bit targets.
+case $host_cpu in
+  i?86)
+    AX_CHECK_COMPILE_FLAG([-msse2 -mfpmath=sse],[[CXXFLAGS="$CXXFLAGS -msse2 -mfpmath=sse"]],,[[$CXXFLAG_WERROR]])
+    ;;
+esac
+
 enable_sse42=no
 enable_sse41=no
 enable_avx2=no
