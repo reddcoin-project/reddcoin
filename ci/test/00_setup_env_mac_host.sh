@@ -14,9 +14,4 @@ export CI_OS_NAME="macos"
 export NO_DEPENDS=1
 export OSX_SDK=""
 export CCACHE_SIZE=300M
-# The binary security and symbol checks need a LIEF whose API
-# contrib/devtools/security-check.py is written against, and no such version
-# has a wheel for the Python this runner ships, so they cannot run here yet.
-# The release path is unaffected: guix pins LIEF and runs both checks there.
-# Re-enable once RED-144 has made the scripts version-tolerant.
-export RUN_SECURITY_TESTS="false"
+export RUN_SECURITY_TESTS="true"
