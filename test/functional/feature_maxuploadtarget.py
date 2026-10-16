@@ -98,6 +98,12 @@ class MaxUploadTest(BitcoinTestFramework):
         # Use the node's actual upload target state for the buffer calculation,
         # since PoS time advancement during generate() causes time_left_in_cycle
         # to differ slightly from the theoretical 86400 seconds.
+        # Moving mocktime forward two days expired the old cycle, and the node
+        # only starts a new one when it next sends something. Until then
+        # time_left_in_cycle reads 0, which gives a buffer of 0 and a
+        # success_count far above what the node will serve. Have the node send
+        # a pong first so the new cycle has started before reading it.
+        p2p_conns[0].sync_with_ping()
         upload_target = self.nodes[0].getnettotals()['uploadtarget']
         time_left = upload_target['time_left_in_cycle']
         daily_buffer = (time_left // 600) * 4000000
