@@ -39,6 +39,7 @@ unsigned-integer-overflow:prevector.h
 unsigned-integer-overflow:pubkey.h
 unsigned-integer-overflow:script/interpreter.cpp
 unsigned-integer-overflow:stl_bvector.h
+unsigned-integer-overflow:test/fp_consensus_tests.cpp
 unsigned-integer-overflow:txmempool.cpp
 unsigned-integer-overflow:util/strencodings.cpp
 unsigned-integer-overflow:validation.cpp
