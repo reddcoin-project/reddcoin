@@ -103,6 +103,12 @@ class TestNode():
             "-debugexclude=leveldb",
             "-uacomment=testnode%d" % i,
         ]
+        # 4.22.9 regtest has CSV, SegWit and Taproot NEVER_ACTIVE, to match
+        # mainnet. develop's regtest signals all three from genesis, and these
+        # tests assume that schedule, so restore it. These come before
+        # extra_args, so a test that sets its own -vbparams still wins.
+        for deployment in ("csv", "segwit", "taproot"):
+            self.args.append("-vbparams=%s:0:9223372036854775807:0" % deployment)
         if use_valgrind:
             default_suppressions_file = os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
