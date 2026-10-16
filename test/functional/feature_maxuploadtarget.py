@@ -81,7 +81,11 @@ class MaxUploadTest(BitcoinTestFramework):
         self.nodes[0].setmocktime(two_days_ago)
         self.nodes[0].mocktime = two_days_ago  # sync Python attribute
 
-        # Mine one more block, so that the prior block looks old
+        # Mine one more block, so that the prior block looks old.
+        # ReddCoin: staking the last block spent one of the wallet's coins as
+        # its coinstake input, and it may be one still in the cache, so list
+        # the unspent coins again rather than reuse the old list.
+        self.utxo_cache.clear()
         mine_large_block(self.nodes[0], self.utxo_cache)
 
         # We'll be requesting this new block too
