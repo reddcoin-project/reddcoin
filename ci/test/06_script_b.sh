@@ -34,7 +34,12 @@ if [ "$RUN_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
 fi
 
 if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
-  DOCKER_EXEC LD_LIBRARY_PATH=$DEPENDS_DIR/$HOST/lib ${TEST_RUNNER_ENV} test/functional/test_runner.py --ci $TEST_RUNNER_JOBS --tmpdirprefix "${BASE_SCRATCH_DIR}/test_runner/" --ansi --combinedlogslen=4000 --timeout-factor=${TEST_RUNNER_TIMEOUT_FACTOR} ${TEST_RUNNER_EXTRA} --quiet --failfast
+  if [ -n "$DANGER_RUN_CI_ON_HOST" ]; then
+    # Keep test_runner.py's process-group kill on --failfast away from the
+    # GitHub runner. See new_session.py.
+    TEST_RUNNER_SESSION="${BASE_ROOT_DIR}/ci/test/new_session.py"
+  fi
+  DOCKER_EXEC LD_LIBRARY_PATH=$DEPENDS_DIR/$HOST/lib ${TEST_RUNNER_ENV} ${TEST_RUNNER_SESSION} test/functional/test_runner.py --ci $TEST_RUNNER_JOBS --tmpdirprefix "${BASE_SCRATCH_DIR}/test_runner/" --ansi --combinedlogslen=4000 --timeout-factor=${TEST_RUNNER_TIMEOUT_FACTOR} ${TEST_RUNNER_EXTRA} --quiet --failfast
 fi
 
 if [ "$RUN_SECURITY_TESTS" = "true" ]; then
