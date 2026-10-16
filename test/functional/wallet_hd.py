@@ -19,11 +19,30 @@ class WalletHDTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [[], ['-keypool=0']]
+        # For descriptor wallets, use bech32 as default address type
+        # Node0 doesn't need it since it uses legacy wallet
+        # Node1 needs it for proper BIP84 paths
+        use_descriptors = self.options.descriptors if hasattr(self, 'options') else False
+        descriptor_args = ['-addresstype=bech32'] if use_descriptors else []
+        self.extra_args = [[], ['-keypool=0'] + descriptor_args]
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+
+    def import_deterministic_coinbase_privkeys(self):
+        # Node0 always uses legacy wallet so it can stake
+        # Create legacy wallet for node0 and import coinbase key
+        self.nodes[0].createwallet(wallet_name=self.default_wallet_name,
+                                   descriptors=False,
+                                   load_on_startup=True)
+        self.nodes[0].importprivkey(privkey=self.nodes[0].get_deterministic_priv_key().key, label='coinbase')
+
+        # Create wallet for node1 with the test's descriptor setting
+        # Node1 should only have coins explicitly sent to it
+        self.nodes[1].createwallet(wallet_name=self.default_wallet_name,
+                                   descriptors=self.options.descriptors,
+                                   load_on_startup=True)
 
     def run_test(self):
         # Make sure we use hd, keep masterkeyid
@@ -38,10 +57,12 @@ class WalletHDTest(BitcoinTestFramework):
         else:
             assert_equal(change_addrV["hdkeypath"], "m/0'/1'/0'")  #first internal child key
 
-        # Import a non-HD private key in the HD wallet
-        non_hd_add = 'bcrt1qmevj8zfx0wdvp05cqwkmr6mxkfx60yezwjksmt'
+        # Import a non-HD private key in the HD wallet (legacy wallets only)
+        # Reddcoin regtest bech32 address for this private key
+        non_hd_add = 'rcrt1qmevj8zfx0wdvp05cqwkmr6mxkfx60yezkmf48f'
         non_hd_key = 'cS9umN9w6cDMuRVYdbkfE4c7YUFLJRoXMfhQ569uY4odiQbVN8Rt'
-        self.nodes[1].importprivkey(non_hd_key)
+        if not self.options.descriptors:
+            self.nodes[1].importprivkey(non_hd_key)
 
         # This should be enough to keep the master key and the non-HD key
         self.nodes[1].backupwallet(os.path.join(self.nodes[1].datadir, "hd.bak"))
@@ -49,6 +70,7 @@ class WalletHDTest(BitcoinTestFramework):
 
         # Derive some HD addresses and remember the last
         # Also send funds to each add
+        # Node0 has legacy wallet so it can stake
         self.nodes[0].generate(COINBASE_MATURITY + 1)
         hd_add = None
         NUM_HD_ADDS = 10
@@ -62,8 +84,9 @@ class WalletHDTest(BitcoinTestFramework):
             assert_equal(hd_info["hdmasterfingerprint"], hd_fingerprint)
             self.nodes[0].sendtoaddress(hd_add, 1)
             self.nodes[0].generate(1)
-        self.nodes[0].sendtoaddress(non_hd_add, 1)
-        self.nodes[0].generate(1)
+        if not self.options.descriptors:
+            self.nodes[0].sendtoaddress(non_hd_add, 1)
+            self.nodes[0].generate(1)
 
         # create an internal key (again)
         change_addr = self.nodes[1].getrawchangeaddress()
@@ -74,7 +97,8 @@ class WalletHDTest(BitcoinTestFramework):
             assert_equal(change_addrV["hdkeypath"], "m/0'/1'/1'")  #second internal child key
 
         self.sync_all()
-        assert_equal(self.nodes[1].getbalance(), NUM_HD_ADDS + 1)
+        expected_balance = NUM_HD_ADDS + (1 if not self.options.descriptors else 0)
+        assert_equal(self.nodes[1].getbalance(), expected_balance)
 
         self.log.info("Restore backup ...")
         self.stop_node(1)
@@ -104,7 +128,7 @@ class WalletHDTest(BitcoinTestFramework):
 
         # Needs rescan
         self.restart_node(1, extra_args=self.extra_args[1] + ['-rescan'])
-        assert_equal(self.nodes[1].getbalance(), NUM_HD_ADDS + 1)
+        assert_equal(self.nodes[1].getbalance(), expected_balance)
 
         # Try a RPC based rescan
         self.stop_node(1)
@@ -118,14 +142,14 @@ class WalletHDTest(BitcoinTestFramework):
         self.connect_nodes(0, 1)
         self.sync_all()
         # Wallet automatically scans blocks older than key on startup
-        assert_equal(self.nodes[1].getbalance(), NUM_HD_ADDS + 1)
+        assert_equal(self.nodes[1].getbalance(), expected_balance)
         out = self.nodes[1].rescanblockchain(0, 1)
         assert_equal(out['start_height'], 0)
         assert_equal(out['stop_height'], 1)
         out = self.nodes[1].rescanblockchain()
         assert_equal(out['start_height'], 0)
         assert_equal(out['stop_height'], self.nodes[1].getblockcount())
-        assert_equal(self.nodes[1].getbalance(), NUM_HD_ADDS + 1)
+        assert_equal(self.nodes[1].getbalance(), expected_balance)
 
         # send a tx and make sure its using the internal chain for the changeoutput
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 1)

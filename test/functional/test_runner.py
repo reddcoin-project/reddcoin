@@ -80,7 +80,11 @@ TEST_FRAMEWORK_MODULES = [
 EXTENDED_SCRIPTS = [
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
-    'feature_pruning.py',
+    # ReddCoin: prune mode is rejected at startup ("Prune mode is incompatible
+    # with Reddcoin and -txindex", init.cpp), because txindex is always on
+    # (DEFAULT_TXINDEX = true). feature_pruning.py can never pass; it is listed
+    # in NON_SCRIPTS instead of here.
+    # 'feature_pruning.py',
     'feature_dbcrash.py',
 ]
 
@@ -128,10 +132,12 @@ BASE_SCRIPTS = [
     'wallet_address_types.py --legacy-wallet',
     'wallet_address_types.py --descriptors',
     'feature_bip68_sequence.py',
+    'feature_segwit_nonupgraded_sync.py',
     'p2p_feefilter.py',
     'feature_reindex.py',
     'feature_abortnode.py',
     # vv Tests less than 30s vv
+    'feature_segwit_service_bit.py',
     'wallet_keypool_topup.py --legacy-wallet',
     'wallet_keypool_topup.py --descriptors',
     'feature_fee_estimation.py',
@@ -141,6 +147,7 @@ BASE_SCRIPTS = [
     'feature_bind_extra.py',
     'mempool_resurrect.py',
     'wallet_txn_doublespend.py --mineblock',
+    'feature_pos_coinage_source.py',
     'tool_wallet.py --legacy-wallet',
     'tool_wallet.py --descriptors',
     'wallet_txn_clone.py',
@@ -162,6 +169,7 @@ BASE_SCRIPTS = [
     'wallet_watchonly.py --legacy-wallet',
     'wallet_watchonly.py --usecli --legacy-wallet',
     'wallet_reorgsrestore.py',
+    'wallet_reorg_stale_coinstake.py',
     'interface_http.py',
     'interface_rpc.py',
     'rpc_psbt.py --legacy-wallet',
@@ -204,8 +212,14 @@ BASE_SCRIPTS = [
     'example_test.py',
     'wallet_txn_doublespend.py --legacy-wallet',
     'wallet_txn_doublespend.py --descriptors',
-    'feature_backwards_compatibility.py --legacy-wallet',
-    'feature_backwards_compatibility.py --descriptors',
+    # Group-A wallet-evolution tests are deferred: the v4.22.9.3 previous release is
+    # already at FEATURE_LATEST (169900), identical to the current wallet version,
+    # so there is no upgrade/cross-version delta to test yet. Re-enable and adapt them
+    # to use that release (4220903) once FEATURE_LATEST is bumped past 169900 (then
+    # it becomes a genuine old wallet). Until then they only fail (they request
+    # nonexistent Bitcoin Core v0.1x binaries).
+    # 'feature_backwards_compatibility.py --legacy-wallet',
+    # 'feature_backwards_compatibility.py --descriptors',
     'wallet_txn_clone.py --mineblock',
     'feature_notifications.py',
     'rpc_getblockfilter.py',
@@ -235,13 +249,38 @@ BASE_SCRIPTS = [
     'wallet_import_rescan.py --legacy-wallet',
     'wallet_import_with_label.py --legacy-wallet',
     'wallet_importdescriptors.py --descriptors',
-    'wallet_upgradewallet.py --legacy-wallet',
+    # Deferred group-A wallet-evolution test (see note above); no cross-version
+    # delta until FEATURE_LATEST is bumped past v4.22.9.3's 169900.
+    # 'wallet_upgradewallet.py --legacy-wallet',
     'rpc_bind.py --ipv4',
     'rpc_bind.py --ipv6',
     'rpc_bind.py --nonloopback',
     'mining_basic.py',
+    'feature_pos_basic.py',
     'feature_pos_coinstake_fees.py',
-    'feature_signet.py',
+    'feature_pos_sync.py',
+    'feature_pos_tx_version_floor.py',
+    # Compatibility tests against the previous release (require
+    # releases/v4.22.9.3/bin/). That is v4.22.9 plus the commits that let it run
+    # regtest, which the released v4.22.9 cannot; the fourth version component
+    # is what distinguishes the two.
+    'feature_compat_p2p_sync.py',
+    'feature_compat_pos_blocks.py',
+    'feature_pos_coinstake_fees.py --previous_release',
+    'feature_compat_tx_versions.py',
+    'feature_compat_staking_interop.py',
+    'feature_compat_softfork_signaling.py',
+    'wallet_descriptor_staking.py',
+    'wallet_descriptor_staking_witness.py',
+    'feature_descriptor_legacy_staking.py',
+    # RPCs that the --coverage gate reported as untested.
+    'rpc_staking.py',
+    'wallet_staking_thread.py',
+    'wallet_interest.py',
+    'rpc_inflation.py',
+    'rpc_checkupdates.py',
+    'wallet_abortrescan.py',
+    # 'feature_signet.py',  # TODO: signet chain type not yet supported in ReddCoin
     'wallet_bumpfee.py --legacy-wallet',
     'wallet_bumpfee.py --descriptors',
     'wallet_implicitsegwit.py --legacy-wallet',
@@ -305,7 +344,7 @@ BASE_SCRIPTS = [
     'feature_help.py',
     'feature_shutdown.py',
     'p2p_ibd_txrelay.py',
-    'feature_blockfilterindex_prune.py'
+    # 'feature_blockfilterindex_prune.py' # Prune mode is incompatible with blockfilterindex.
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]
@@ -317,8 +356,35 @@ NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
     "combine_logs.py",
     "create_cache.py",
+    "create_rpc_psbt_data.py",  # ReddCoin: generates PSBT fixtures, not a test
     "test_runner.py",
+    # ReddCoin: test scripts intentionally not run yet. They are kept in the tree
+    # (and commented out in the script lists above), so list them here to satisfy
+    # the --ci check_script_list gate instead of leaving them orphaned. Move each
+    # back into the lists above when it is re-enabled.
+    "feature_backwards_compatibility.py",  # Group A: deferred until FEATURE_LATEST > v4.22.9
+    "wallet_upgradewallet.py",             # Group A: deferred until FEATURE_LATEST > v4.22.9
+    "feature_signet.py",                   # signet chain type not yet supported in ReddCoin
+    "feature_blockfilterindex_prune.py",   # prune mode incompatible with blockfilterindex
+    "feature_pruning.py",                  # prune mode rejected in ReddCoin (txindex is always on)
 ]
+
+# RPCs the --coverage gate must not count against us, because no test in this
+# tree can exercise them. This is not a list of RPCs we have not got round to;
+# each entry is paired with the reason it is unreachable, and belongs here only
+# for as long as that reason holds.
+#
+# Keep it in step with NON_SCRIPTS above: both entries below are uncoverable
+# precisely because the test that would cover them is listed there, so a test
+# coming back is the signal to remove the matching line here.
+EXPECTED_UNCOVERED_RPCS = {
+    # feature_pruning.py cannot pass while DEFAULT_TXINDEX is true, since prune
+    # mode is rejected at startup. Nothing else calls this.
+    'pruneblockchain',
+    # wallet_upgradewallet.py is deferred until FEATURE_LATEST moves past
+    # v4.22.9's 169900, as there is no upgrade delta to test before then.
+    'upgradewallet',
+}
 
 def main():
     # Parse arguments and pass through unrecognised args
@@ -366,7 +432,7 @@ def main():
     logging.basicConfig(format='%(message)s', level=logging_level)
 
     # Create base test directory
-    tmpdir = "%s/test_runner_₿_🏃_%s" % (args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    tmpdir = "%s/test_runner_Ɍ_🏃_%s" % (args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     os.makedirs(tmpdir)
 
@@ -786,7 +852,10 @@ class RPCCoverage():
             with open(filename, 'r', encoding="utf8") as coverage_file:
                 covered_cmds.update([line.strip() for line in coverage_file.readlines()])
 
-        return all_cmds - covered_cmds
+        # covered_cmds is what the tests reached; EXPECTED_UNCOVERED_RPCS is what
+        # they cannot reach at all. Subtracting the latter separately keeps the
+        # two claims apart, so an exemption is never mistaken for coverage.
+        return all_cmds - covered_cmds - EXPECTED_UNCOVERED_RPCS
 
 
 if __name__ == '__main__':

@@ -39,6 +39,7 @@ class MaxUploadTest(BitcoinTestFramework):
             "-maxuploadtarget=800",
             "-acceptnonstdtxn=1",
             "-peertimeout=9999",  # bump because mocktime might cause a disconnect otherwise
+            "-staking=0",  # prevent background staking from consuming UTXOs
         ]]
         self.supports_cli = False
 
@@ -54,6 +55,7 @@ class MaxUploadTest(BitcoinTestFramework):
         # time counters can't be reset backward after initialization
         old_time = int(time.time() - 2*60*60*24*7)
         self.nodes[0].setmocktime(old_time)
+        self.nodes[0].mocktime = old_time  # sync Python attribute so generate() advances from here
 
         # Generate some old blocks
         self.nodes[0].generate(130)
@@ -75,7 +77,9 @@ class MaxUploadTest(BitcoinTestFramework):
         big_old_block = int(big_old_block, 16)
 
         # Advance to two days ago
-        self.nodes[0].setmocktime(int(time.time()) - 2*60*60*24)
+        two_days_ago = int(time.time()) - 2*60*60*24
+        self.nodes[0].setmocktime(two_days_ago)
+        self.nodes[0].mocktime = two_days_ago  # sync Python attribute
 
         # Mine one more block, so that the prior block looks old
         mine_large_block(self.nodes[0], self.utxo_cache)
@@ -91,12 +95,15 @@ class MaxUploadTest(BitcoinTestFramework):
         getdata_request.inv.append(CInv(MSG_BLOCK, big_old_block))
 
         max_bytes_per_day = 800*1024*1024
-        daily_buffer = 144 * 4000000
+        # Use the node's actual upload target state for the buffer calculation,
+        # since PoS time advancement during generate() causes time_left_in_cycle
+        # to differ slightly from the theoretical 86400 seconds.
+        upload_target = self.nodes[0].getnettotals()['uploadtarget']
+        time_left = upload_target['time_left_in_cycle']
+        daily_buffer = (time_left // 600) * 4000000
         max_bytes_available = max_bytes_per_day - daily_buffer
         success_count = max_bytes_available // old_block_size
 
-        # 576MB will be reserved for relaying new blocks, so expect this to
-        # succeed for ~235 tries.
         for i in range(success_count):
             p2p_conns[0].send_and_ping(getdata_request)
             assert_equal(p2p_conns[0].block_receive_map[big_old_block], i+1)
@@ -132,7 +139,9 @@ class MaxUploadTest(BitcoinTestFramework):
 
         # If we advance the time by 24 hours, then the counters should reset,
         # and p2p_conns[2] should be able to retrieve the old block.
-        self.nodes[0].setmocktime(int(time.time()))
+        current_time = int(time.time())
+        self.nodes[0].setmocktime(current_time)
+        self.nodes[0].mocktime = current_time  # sync Python attribute
         p2p_conns[2].sync_with_ping()
         p2p_conns[2].send_and_ping(getdata_request)
         assert_equal(p2p_conns[2].block_receive_map[big_old_block], 1)

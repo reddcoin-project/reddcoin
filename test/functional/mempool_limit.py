@@ -11,7 +11,7 @@ from test_framework.util import assert_equal, assert_greater_than, assert_raises
 
 class MempoolLimitTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.setup_clean_chain = True
+        self.setup_clean_chain = False
         self.num_nodes = 1
         self.extra_args = [[
             "-acceptnonstdtxn=1",
@@ -28,8 +28,8 @@ class MempoolLimitTest(BitcoinTestFramework):
         relayfee = self.nodes[0].getnetworkinfo()['relayfee']
 
         self.log.info('Check that mempoolminfee is minrelytxfee')
-        assert_equal(self.nodes[0].getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
-        assert_equal(self.nodes[0].getmempoolinfo()['mempoolminfee'], Decimal('0.00001000'))
+        assert_equal(self.nodes[0].getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
+        assert_equal(self.nodes[0].getmempoolinfo()['mempoolminfee'], Decimal('0.00100000'))
 
         txids = []
         utxos = create_confirmed_utxos(relayfee, self.nodes[0], 91)
@@ -57,8 +57,8 @@ class MempoolLimitTest(BitcoinTestFramework):
         assert txdata['confirmations'] ==  0  #confirmation should still be 0
 
         self.log.info('Check that mempoolminfee is larger than minrelytxfee')
-        assert_equal(self.nodes[0].getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
-        assert_greater_than(self.nodes[0].getmempoolinfo()['mempoolminfee'], Decimal('0.00001000'))
+        assert_equal(self.nodes[0].getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
+        assert_greater_than(self.nodes[0].getmempoolinfo()['mempoolminfee'], Decimal('0.00100000'))
 
         self.log.info('Create a mempool tx that will not pass mempoolminfee')
         us0 = utxos.pop()

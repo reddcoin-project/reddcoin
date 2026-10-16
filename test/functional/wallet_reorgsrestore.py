@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2019-2020 The Bitcoin Core developers
+# Copyright (c) 2024 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -56,8 +57,8 @@ class ReorgsRestoreTest(BitcoinTestFramework):
         outputs_2 = {}
 
         # Create a conflicted tx broadcast on node0 chain and conflicting tx broadcast on node1 chain. Both spend from txid_conflict_from
-        outputs_1[self.nodes[0].getnewaddress()] = Decimal("9.99998")
-        outputs_2[self.nodes[0].getnewaddress()] = Decimal("9.99998")
+        outputs_1[self.nodes[0].getnewaddress()] = Decimal("9.999")
+        outputs_2[self.nodes[0].getnewaddress()] = Decimal("9.999")
         conflicted = self.nodes[0].signrawtransactionwithwallet(self.nodes[0].createrawtransaction(inputs, outputs_1))
         conflicting = self.nodes[0].signrawtransactionwithwallet(self.nodes[0].createrawtransaction(inputs, outputs_2))
 

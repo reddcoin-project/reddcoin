@@ -4,14 +4,24 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
 Test BIP 37
+
+ReddCoin adaptation: Uses create_block with getblocktemplate for PoS compatibility
+instead of generatetoaddress which relies on PoW mining.
 """
 
+from test_framework.address import key_to_p2pkh
+from test_framework.blocktools import (
+    create_block,
+    sign_block,
+    NORMAL_GBT_REQUEST_PARAMS,
+)
 from test_framework.messages import (
     CInv,
     MAX_BLOOM_FILTER_SIZE,
     MAX_BLOOM_HASH_FUNCS,
     MSG_BLOCK,
     MSG_FILTERED_BLOCK,
+    msg_block,
     msg_filteradd,
     msg_filterclear,
     msg_filterload,
@@ -28,6 +38,7 @@ from test_framework.p2p import (
 )
 from test_framework.script import MAX_SCRIPT_ELEMENT_SIZE
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import advance_time_for_pos
 
 
 class P2PBloomFilter(P2PInterface):
@@ -88,6 +99,7 @@ class P2PBloomFilter(P2PInterface):
 class FilterTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.setup_clean_chain = False  # Use cache with mature PoS coins
         self.extra_args = [[
             '-peerbloomfilters',
             '-whitelist=noban@127.0.0.1',  # immediate tx relay
@@ -95,6 +107,80 @@ class FilterTest(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+
+    def build_block_on_tip(self, node):
+        """Build a PoS block on the current tip using getblocktemplate.
+
+        Args:
+            node: The node to build the block for
+
+        Note: getblocktemplate automatically includes mempool transactions.
+        """
+        # Advance time to ensure staking can succeed
+        advance_time_for_pos(node, seconds=60)
+
+        # Retry logic for intermittent staking failures
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                block = create_block(tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS))
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < max_attempts - 1:
+                    advance_time_for_pos(node, seconds=120)
+                    continue
+                raise
+
+        # Note: Don't add witness commitment - SegWit is not active on regtest
+        block.hashMerkleRoot = block.calc_merkle_root()
+        block.rehash()
+        block.solve()
+
+        # Sign the PoS block with the coinstake's private key
+        coinstake = block.vtx[1]
+        coinstake_hex = coinstake.serialize().hex()
+        decoded_tx = node.decoderawtransaction(coinstake_hex)
+
+        signing_key = None
+        try:
+            script_pubkey = decoded_tx['vout'][1]['scriptPubKey']
+            # Try 'address' first (newer format), then 'addresses' (older format)
+            coinstake_address = script_pubkey.get('address')
+            if not coinstake_address:
+                addresses = script_pubkey.get('addresses', [])
+                if addresses:
+                    coinstake_address = addresses[0]
+
+            # If no address found but it's a P2PK script, extract pubkey and compute P2PKH address
+            if not coinstake_address and script_pubkey.get('type') == 'pubkey':
+                # P2PK script format: <pubkey_len><pubkey><OP_CHECKSIG>
+                # asm shows: <pubkey> OP_CHECKSIG
+                asm = script_pubkey.get('asm', '')
+                parts = asm.split()
+                if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                    pubkey_hex = parts[0]
+                    # Convert pubkey to P2PKH address (regtest uses main=False)
+                    coinstake_address = key_to_p2pkh(pubkey_hex, main=False)
+
+            if coinstake_address:
+                signing_key = node.dumpprivkey(coinstake_address)
+        except Exception as e:
+            self.log.debug(f"Could not get signing key: {e}")
+
+        if not signing_key:
+            # Log the scriptPubKey for debugging
+            self.log.debug(f"No signing key found for coinstake vout[1], using deterministic key")
+            self.log.debug(f"scriptPubKey: {decoded_tx['vout'][1]['scriptPubKey']}")
+            signing_key = node.get_deterministic_priv_key().key
+
+        sign_block(block, signing_key)
+        return block
+
+    def submit_block(self, node, block, peer):
+        """Submit a block via P2P and wait for it to be accepted."""
+        peer.send_and_ping(msg_block(block))
+        assert int(node.getbestblockhash(), 16) == block.sha256
+        return block.hash
 
     def test_size_limits(self, filter_peer):
         self.log.info('Check that too large filter is rejected')
@@ -149,7 +235,9 @@ class FilterTest(BitcoinTestFramework):
         assert not filter_peer.tx_received
 
         # Clear the mempool so that this transaction does not impact subsequent tests
-        self.nodes[0].generate(1)
+        # ReddCoin PoS: Use create_block instead of generate
+        block = self.build_block_on_tip(self.nodes[0])
+        self.submit_block(self.nodes[0], block, filter_peer)
 
     def test_filter(self, filter_peer):
         # Set the bloomfilter using filterload
@@ -159,14 +247,22 @@ class FilterTest(BitcoinTestFramework):
         filter_address = self.nodes[0].decodescript(filter_peer.watch_script_pubkey)['address']
 
         self.log.info('Check that we receive merkleblock and tx if the filter matches a tx in a block')
-        block_hash = self.nodes[0].generatetoaddress(1, filter_address)[0]
-        txid = self.nodes[0].getblock(block_hash)['tx'][0]
+        # ReddCoin PoS: Create a tx to the filter address, then include it in a block
+        # This replaces generatetoaddress(1, filter_address) which doesn't work with PoS
+        # Note: The tx is sent to mempool first, and getblocktemplate will include it automatically
+        filter_txid = self.nodes[0].sendtoaddress(filter_address, 10)
+        # Build block - getblocktemplate will include the mempool tx automatically
+        block = self.build_block_on_tip(self.nodes[0])
+        block_hash = self.submit_block(self.nodes[0], block, filter_peer)
+        # The matching tx is the one we added (filter_txid), not the coinbase
         filter_peer.wait_for_merkleblock(block_hash)
-        filter_peer.wait_for_tx(txid)
+        filter_peer.wait_for_tx(filter_txid)
 
         self.log.info('Check that we only receive a merkleblock if the filter does not match a tx in a block')
         filter_peer.tx_received = False
-        block_hash = self.nodes[0].generatetoaddress(1, self.nodes[0].getnewaddress())[0]
+        # ReddCoin PoS: Build a block without any tx to filter_address
+        block = self.build_block_on_tip(self.nodes[0])
+        block_hash = self.submit_block(self.nodes[0], block, filter_peer)
         filter_peer.wait_for_merkleblock(block_hash)
         assert not filter_peer.tx_received
 
@@ -194,7 +290,9 @@ class FilterTest(BitcoinTestFramework):
         filter_peer.merkleblock_received = False
         filter_peer.tx_received = False
         with self.nodes[0].assert_debug_log(expected_msgs=['received getdata']):
-            block_hash = self.nodes[0].generatetoaddress(1, self.nodes[0].getnewaddress())[0]
+            # ReddCoin PoS: Build a block using create_block
+            block = self.build_block_on_tip(self.nodes[0])
+            block_hash = self.submit_block(self.nodes[0], block, filter_peer)
             filter_peer.wait_for_inv([CInv(MSG_BLOCK, int(block_hash, 16))])
             filter_peer.sync_with_ping()
             assert not filter_peer.merkleblock_received

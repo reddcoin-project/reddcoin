@@ -167,7 +167,7 @@ def compute_taproot_address(pubkey, scripts):
     tap = taproot_construct(pubkey, scripts)
     assert tap.scriptPubKey[0] == 0x51
     assert tap.scriptPubKey[1] == 0x20
-    return encode_segwit_address("bcrt", 1, tap.scriptPubKey[2:])
+    return encode_segwit_address("rcrt", 1, tap.scriptPubKey[2:])
 
 class WalletTaprootTest(BitcoinTestFramework):
     """Test generation and spending of P2TR address outputs."""
@@ -175,18 +175,54 @@ class WalletTaprootTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.setup_clean_chain = True
-        self.extra_args = [['-keypool=100'], ['-keypool=100'], ["-vbparams=taproot:1:1"]]
+        self.extra_args = [
+            ['-keypool=100', '-addresstype=bech32', '-fallbackfee=0.002',
+             '-vbparams=segwit:-1:0', '-vbparams=taproot:-1:0'],
+            ['-keypool=100', '-addresstype=bech32', '-fallbackfee=0.002',
+             '-vbparams=segwit:-1:0', '-vbparams=taproot:-1:0'],
+            ["-addresstype=bech32", "-vbparams=segwit:-1:0", "-vbparams=taproot:1:1"],
+        ]
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
         self.skip_if_no_sqlite()
+        self.skip_if_no_bdb()
 
     def setup_network(self):
         self.setup_nodes()
 
     def init_wallet(self, i):
         pass
+
+    def gen_blocks(self, nblocks):
+        """Generate blocks via the staking wallet with PoS time advancement and retry."""
+        POS_BLOCK_SPACING = 60
+        POS_RETRY_SPACING = 600
+        MAX_RETRIES = 20
+        node = self.nodes[0]
+        blocks = []
+        for _ in range(nblocks):
+            try:
+                block_time = node.getblockheader(node.getbestblockhash())['time']
+                new_time = max(node.mocktime, block_time) + POS_BLOCK_SPACING
+                node.setmocktime(new_time)
+                node.mocktime = new_time
+            except Exception as e:
+                self.log.debug("PoS mocktime advance failed: %s" % e)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    block = self.staking.generatetoaddress(1, self.staking.getnewaddress())
+                    blocks.extend(block)
+                    break
+                except Exception as e:
+                    if "no valid coinstake found" in str(e) and attempt < MAX_RETRIES - 1:
+                        new_time = node.mocktime + POS_RETRY_SPACING
+                        node.setmocktime(new_time)
+                        node.mocktime = new_time
+                    else:
+                        raise
+        return blocks
 
     @staticmethod
     def rand_keys(n):
@@ -270,13 +306,13 @@ class WalletTaprootTest(BitcoinTestFramework):
                 addr_r = self.make_addr(treefn, keys_pay, i)
                 assert_equal(addr_g, addr_r)
             boring_balance = int(self.boring.getbalance() * 100000000)
-            to_amnt = random.randrange(1000000, boring_balance)
+            to_amnt = random.randrange(1000000, max(1000001, boring_balance // 10))
             self.boring.sendtoaddress(address=addr_g, amount=Decimal(to_amnt) / 100000000, subtractfeefromamount=True)
-            self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+            self.gen_blocks(1)
             test_balance = int(self.rpc_online.getbalance() * 100000000)
             ret_amnt = random.randrange(100000, test_balance)
             res = self.rpc_online.sendtoaddress(address=self.boring.getnewaddress(), amount=Decimal(ret_amnt) / 100000000, subtractfeefromamount=True)
-            self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+            self.gen_blocks(1)
             assert(self.rpc_online.gettransaction(res)["confirmations"] > 0)
 
     def do_test_psbt(self, comment, pattern, privmap, treefn, keys_pay, keys_change):
@@ -301,9 +337,9 @@ class WalletTaprootTest(BitcoinTestFramework):
                 addr_r = self.make_addr(treefn, keys_pay, i)
                 assert_equal(addr_g, addr_r)
             boring_balance = int(self.boring.getbalance() * 100000000)
-            to_amnt = random.randrange(1000000, boring_balance)
+            to_amnt = random.randrange(1000000, max(1000001, boring_balance // 10))
             self.boring.sendtoaddress(address=addr_g, amount=Decimal(to_amnt) / 100000000, subtractfeefromamount=True)
-            self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+            self.gen_blocks(1)
             test_balance = int(self.psbt_online.getbalance() * 100000000)
             ret_amnt = random.randrange(100000, test_balance)
             psbt = self.psbt_online.walletcreatefundedpsbt([], [{self.boring.getnewaddress(): Decimal(ret_amnt) / 100000000}], None, {"subtractFeeFromOutputs":[0]})['psbt']
@@ -311,7 +347,7 @@ class WalletTaprootTest(BitcoinTestFramework):
             assert(res['complete'])
             rawtx = self.nodes[0].finalizepsbt(res['psbt'])['hex']
             txid = self.nodes[0].sendrawtransaction(rawtx)
-            self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+            self.gen_blocks(1)
             assert(self.psbt_online.gettransaction(txid)['confirmations'] > 0)
 
     def do_test(self, comment, pattern, privmap, treefn, nkeys):
@@ -322,6 +358,13 @@ class WalletTaprootTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Creating wallets...")
+        # Staking wallet: receives PoW coinbase rewards, used exclusively for block generation.
+        # Kept separate so test sends from boring don't deplete staking UTXOs.
+        # Legacy wallet for staking — coinstake outputs are P2PK which descriptor
+        # wallets don't track, so a legacy wallet is needed to recycle staked coins.
+        self.nodes[0].createwallet(wallet_name="staking", descriptors=False)
+        self.staking = self.nodes[0].get_wallet_rpc("staking")
+
         self.nodes[0].createwallet(wallet_name="privs_tr_enabled", descriptors=True, blank=True)
         self.privs_tr_enabled = self.nodes[0].get_wallet_rpc("privs_tr_enabled")
         self.nodes[2].createwallet(wallet_name="privs_tr_disabled", descriptors=True, blank=True)
@@ -342,8 +385,11 @@ class WalletTaprootTest(BitcoinTestFramework):
         self.psbt_offline = self.nodes[1].get_wallet_rpc("psbt_offline")
 
         self.log.info("Mining blocks...")
-        gen_addr = self.boring.getnewaddress()
-        self.nodes[0].generatetoaddress(101, gen_addr)
+        # Mine 101 blocks via staking wallet (89 PoW + 12 PoS)
+        self.gen_blocks(101)
+        # Fund boring wallet from staking wallet
+        self.staking.sendtoaddress(self.boring.getnewaddress(), 100000)
+        self.gen_blocks(1)
 
         self.do_test(
             "tr(XPRV)",
@@ -412,7 +458,7 @@ class WalletTaprootTest(BitcoinTestFramework):
         self.log.info("Sending everything back...")
 
         txid = self.rpc_online.sendtoaddress(address=self.boring.getnewaddress(), amount=self.rpc_online.getbalance(), subtractfeefromamount=True)
-        self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+        self.gen_blocks(1)
         assert(self.rpc_online.gettransaction(txid)["confirmations"] > 0)
 
         psbt = self.psbt_online.walletcreatefundedpsbt([], [{self.boring.getnewaddress(): self.psbt_online.getbalance()}], None, {"subtractFeeFromOutputs": [0]})['psbt']
@@ -420,7 +466,7 @@ class WalletTaprootTest(BitcoinTestFramework):
         assert(res['complete'])
         rawtx = self.nodes[0].finalizepsbt(res['psbt'])['hex']
         txid = self.nodes[0].sendrawtransaction(rawtx)
-        self.nodes[0].generatetoaddress(1, self.boring.getnewaddress())
+        self.gen_blocks(1)
         assert(self.psbt_online.gettransaction(txid)['confirmations'] > 0)
 
 if __name__ == '__main__':

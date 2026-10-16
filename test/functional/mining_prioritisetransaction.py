@@ -4,15 +4,13 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the prioritisetransaction mining RPC."""
 
-import time
-
 from test_framework.messages import COIN, MAX_BLOCK_BASE_SIZE
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, assert_raises_rpc_error, create_confirmed_utxos, create_lots_of_big_transactions, gen_return_txouts
+from test_framework.util import advance_time_for_pos, assert_equal, assert_raises_rpc_error, create_confirmed_utxos, create_lots_of_big_transactions, gen_return_txouts
 
 class PrioritiseTransactionTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.setup_clean_chain = True
+        self.setup_clean_chain = False
         self.num_nodes = 2
         self.extra_args = [[
             "-printpriority=1",
@@ -47,7 +45,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         self.txouts = gen_return_txouts()
         self.relayfee = self.nodes[0].getnetworkinfo()['relayfee']
 
-        utxo_count = 90
+        utxo_count = 60
         utxos = create_confirmed_utxos(self.relayfee, self.nodes[0], utxo_count)
         base_fee = self.relayfee*100 # our transactions are smaller than 100kb
         txids = []
@@ -144,11 +142,13 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
 
         # Test that calling prioritisetransaction is sufficient to trigger
         # getblocktemplate to (eventually) return a new block.
-        mock_time = int(time.time())
-        self.nodes[0].setmocktime(mock_time)
+        advance_time_for_pos(self.nodes[0], seconds=120)
+        mock_time = self.nodes[0].mocktime
         template = self.nodes[0].getblocktemplate({'rules': ['segwit']})
         self.nodes[0].prioritisetransaction(txid=tx_id, fee_delta=-int(self.relayfee*COIN))
-        self.nodes[0].setmocktime(mock_time+10)
+        mock_time += 120
+        self.nodes[0].setmocktime(mock_time)
+        self.nodes[0].mocktime = mock_time
         new_template = self.nodes[0].getblocktemplate({'rules': ['segwit']})
 
         assert template != new_template

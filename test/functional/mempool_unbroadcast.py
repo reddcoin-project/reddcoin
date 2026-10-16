@@ -65,10 +65,17 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
         assert wallet_tx_hsh not in mempool
 
         # ensure that unbroadcast txs are persisted to mempool.dat
-        self.restart_node(0)
+        # Preserve mocktime across restart so LoadMempool doesn't expire txns
+        # (cache uses mocktime ~2022, real time is much later)
+        mock_time = node.mocktime
+        self.restart_node(0, extra_args=["-mocktime={}".format(mock_time)])
 
         self.log.info("Reconnect nodes & check if they are sent to node 1")
         self.connect_nodes(0, 1)
+
+        # Advance mocktime so SendMessages can trigger inv sending.
+        # With frozen -mocktime, GetTime() < nNextInvSend forever.
+        node.setmocktime(mock_time + MAX_INITIAL_BROADCAST_DELAY + 60)
 
         # fast forward into the future & ensure that the second node has the txns
         node.mockscheduler(MAX_INITIAL_BROADCAST_DELAY)

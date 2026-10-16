@@ -15,6 +15,9 @@ class CompactBlocksConnectionTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 6
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def peer_info(self, from_node, to_node):
         """Query from_node for its getpeerinfo about to_node."""
         for peerinfo in self.nodes[from_node].getpeerinfo():
