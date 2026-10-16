@@ -6,6 +6,7 @@
 import os
 
 from test_framework.address import ADDRESS_BCRT1_UNSPENDABLE
+from test_framework.authproxy import JSONRPCException
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -121,6 +122,7 @@ class NotificationsTest(BitcoinTestFramework):
             # triggered by node 1
             self.log.info("test -walletnotify with conflicting transactions")
             self.nodes[0].rescanblockchain()
+            first_setup_height = self.nodes[1].getblockcount() + 1
             # ReddCoin: Generate blocks to get mature coins for sendtoaddress.
             # COINBASE_MATURITY=60. Node 1 has coinbase UTXOs from initial blocks.
             self.nodes[1].generate(60)
@@ -133,7 +135,10 @@ class NotificationsTest(BitcoinTestFramework):
             self.sync_mocktime()
             self.sync_blocks()
 
-            # Clear walletnotify dir — the block generation above created extra notifications
+            # Clear walletnotify dir: the block generation above created
+            # extra notifications. Node 1 writes them asynchronously, so wait
+            # for the last of them first, or one can land after the clear.
+            self.wait_for_block_notifications(first_setup_height)
             for f in os.listdir(self.walletnotify_dir):
                 os.remove(os.path.join(self.walletnotify_dir, f))
 
@@ -187,6 +192,32 @@ class NotificationsTest(BitcoinTestFramework):
             assert_equal(self.nodes[1].gettransaction(bump2)["confirmations"], 1)
 
         # TODO: add test for `-alertnotify` large fork notifications
+
+    def wait_for_block_notifications(self, first_height):
+        """Wait until every node 1 wallet transaction in the blocks from
+        first_height to the tip has a notification file naming that block."""
+        node = self.nodes[1]
+        wallet = node.get_wallet_rpc(self.wallet)
+        expected = {}
+        for height in range(first_height, node.getblockcount() + 1):
+            block = node.getblock(node.getblockhash(height))
+            for txid in block['tx']:
+                try:
+                    wallet.gettransaction(txid)
+                except JSONRPCException:
+                    continue
+                expected[notify_outputname(self.wallet, txid)] = '{}_{}'.format(height, block['hash'])
+
+        def written():
+            for name, text in expected.items():
+                try:
+                    with open(os.path.join(self.walletnotify_dir, name), 'rt', encoding='utf-8') as f:
+                        if f.read().rstrip() != text:
+                            return False
+                except FileNotFoundError:
+                    return False
+            return True
+        self.wait_until(written, timeout=30)
 
     def expect_wallet_notify(self, tx_details):
         self.wait_until(lambda: len(os.listdir(self.walletnotify_dir)) >= len(tx_details), timeout=30)
