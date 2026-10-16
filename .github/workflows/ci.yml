@@ -258,6 +258,54 @@ jobs:
         if: always()
         uses: ./.github/actions/save-caches
 
+  # macOS native on Apple Silicon. The same build and tests as macos-native,
+  # on an arm64 image, so every PR is built and tested natively on arm64
+  # against Apple's own libm. Pinned to macos-15 rather than macos-latest, so
+  # the image does not change under the job the way the macos-13 retirement
+  # did. See RED-166.
+  macos-native-arm64:
+    name: 'macOS 15 native arm64, gui'
+    if: github.event_name != 'schedule'
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      FILE_ENV: './ci/test/00_setup_env_mac_native_arm64.sh'
+      DANGER_RUN_CI_ON_HOST: '1'
+      CI_USE_APT_INSTALL: 'no'
+      PACKAGE_MANAGER_INSTALL: 'echo'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies via Homebrew
+        # No berkeley-db@4: Homebrew disabled it on 2025-08-24 and the arm64
+        # image's Homebrew no longer has it. It is built in the next step.
+        run: >
+          brew install boost libevent qt@5 miniupnpc libnatpmp
+          ccache zeromq qrencode sqlite libtool automake pkg-config gnu-getopt
+      - name: Build Berkeley DB 4.8
+        # Into db4/ at the root of the checkout, where the env file points
+        # configure. Current Apple clang rejects BDB 4.8's implicit function
+        # declarations, as depends allows for in packages/bdb.mk.
+        run: ./contrib/install_db4.sh "$GITHUB_WORKSPACE" CFLAGS=-Wno-error=implicit-function-declaration
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: CI script
+        run: ./ci/test_run_all.sh
+      - name: Upload unit test logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-test-logs-macos-native-arm64
+          path: ci/scratch/build/*/src/**/*.cpp.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save caches
+        if: always()
+        uses: ./.github/actions/save-caches
+
   # Fuzzer (Cirrus only_if default-branch). Kept as its own job, gated to
   # develop, because running the fuzz build/run on every PR is too expensive on
   # free GitHub-hosted runners (upstream runs it in-matrix on Cirrus runners).
