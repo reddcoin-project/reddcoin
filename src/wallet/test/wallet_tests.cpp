@@ -1042,13 +1042,13 @@ BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain
     const CTransactionRef confirmed = MakeTransactionRef(confirmed_tx);
     wallet->AddToWallet(confirmed, {CWalletTx::Status::CONFIRMED, tip->nHeight, tip->GetBlockHash(), /* index */ 1});
 
-    // The collection records the wallet's view of the chain, its trusted
-    // balance and the coins it may spend, in the order the search runs.
+    // The collection records the wallet's view of the chain, the coins it
+    // may spend, in the order the search runs, and their total value.
     StakeCandidates candidates;
     BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
     BOOST_CHECK(candidates.collected);
     BOOST_CHECK(candidates.hashLastBlock == tip->GetBlockHash());
-    BOOST_CHECK_EQUAL(candidates.nBalance, 3 * COIN);
+    BOOST_CHECK_EQUAL(candidates.nAvailable, 3 * COIN);
     BOOST_CHECK_EQUAL(candidates.nReserveBalance, 0);
     std::set<COutPoint> collected;
     for (const CInputCoin& coin : candidates.coins) collected.insert(coin.outpoint);
@@ -1063,6 +1063,17 @@ BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain
     BOOST_CHECK(candidates.coins.empty());
     BOOST_CHECK_EQUAL(candidates.nReserveBalance, 4 * COIN);
     gArgs.ForceSetArg("-reservebalance", "0");
+    BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
+    BOOST_CHECK_EQUAL(candidates.coins.size(), 2U);
+
+    // A locked coin is left out and the rest still stake. The trusted balance
+    // counts the locked coin, so selecting toward it found nothing at all.
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(COutPoint(confirmed->GetHash(), 1)));
+    BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
+    BOOST_CHECK_EQUAL(candidates.nAvailable, 1 * COIN);
+    BOOST_CHECK_EQUAL(candidates.coins.size(), 1U);
+    BOOST_CHECK(candidates.coins.begin()->outpoint == COutPoint(confirmed->GetHash(), 0));
+    WITH_LOCK(wallet->cs_wallet, wallet->UnlockCoin(COutPoint(confirmed->GetHash(), 1)));
     BOOST_CHECK(CollectStakeCandidates(wallet.get(), candidates));
     BOOST_CHECK_EQUAL(candidates.coins.size(), 2U);
 

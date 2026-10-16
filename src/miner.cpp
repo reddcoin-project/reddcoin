@@ -167,7 +167,10 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
 
     // reddcoin: if coinstake available add coinstake tx
-    static int64_t nLastCoinStakeSearchTime = GetAdjustedTime();  // only initialized at startup
+    // Subtract 61s so the first call has a non-zero search interval.
+    // Without this, nSearchTime == nLastCoinStakeSearchTime on first call,
+    // causing CreateCoinStake to skip all coins (search loop count = 0).
+    static int64_t nLastCoinStakeSearchTime = GetAdjustedTime() - 61;
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
@@ -601,8 +604,9 @@ void PoSMiner(CWallet* pwallet, ChainstateManager* chainman, CConnman* connman, 
     LogPrintf("Staker thread [%d]: Set proof-of-stake timeout: %ums for %u UTXOs\n", thread_id, pos_timio, candidates.coins.size());
 
     // How far the previous search reached, per thread. This used to be a
-    // static shared by every caller of CreateNewBlock.
-    int64_t nLastCoinStakeSearchTime = GetAdjustedTime();
+    // static shared by every caller of CreateNewBlock. It starts 61s back so
+    // the first pass has a non-zero search interval.
+    int64_t nLastCoinStakeSearchTime = GetAdjustedTime() - 61;
 
     std::string strMintMessage = _("Info: Staking suspended due to locked wallet.").translated;
     std::string strMintSyncMessage = _("Info: Staking suspended while synchronizing wallet.").translated;
