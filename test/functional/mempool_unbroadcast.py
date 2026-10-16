@@ -38,13 +38,19 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
 
         self.log.info("Generate transactions that only node 0 knows about")
 
+        # The sendrawtransaction txn below spends us0. Lock it while the
+        # wallet picks the inputs of its own txn, or coin selection can spend
+        # it first and the raw txn conflicts (txn-mempool-conflict).
+        us0 = utxos.pop()
+        inputs = [{"txid": us0["txid"], "vout": us0["vout"]}]
+        node.lockunspent(False, inputs)
+
         # generate a wallet txn
         addr = node.getnewaddress()
         wallet_tx_hsh = node.sendtoaddress(addr, 0.0001)
+        node.lockunspent(True, inputs)
 
         # generate a txn using sendrawtransaction
-        us0 = utxos.pop()
-        inputs = [{"txid": us0["txid"], "vout": us0["vout"]}]
         outputs = {addr: 0.0001}
         tx = node.createrawtransaction(inputs, outputs)
         node.settxfee(min_relay_fee)
