@@ -17,7 +17,9 @@ import sys
 pid = os.fork()
 if pid == 0:
     os.setsid()
-    os.execvp(sys.argv[1], sys.argv[1:])
+    # Running the command given on our own command line is the whole point
+    # of this wrapper. Its only caller is 06_script_b.sh.
+    os.execvp(sys.argv[1], sys.argv[1:])  # nosec B606 # nosemgrep
 _, status = os.waitpid(pid, 0)
 if os.WIFEXITED(status):
     sys.exit(os.WEXITSTATUS(status))
