@@ -23,15 +23,15 @@ def is_abandoned(node, txid):
 class OrphanedBlockRewardTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = False
-        self.num_nodes = 2
+        self.num_nodes = 3
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def import_deterministic_coinbase_privkeys(self):
-        # Both nodes need cache staking keys for block generation
-        self.init_wallet(0)
-        self.init_wallet(1)
+        # Every node needs cache staking keys for block generation
+        for i in range(self.num_nodes):
+            self.init_wallet(i)
 
     def run_test(self):
         # Node 1 has cache balance for staking.
@@ -51,7 +51,11 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
 
         # Let the block reward mature and send coins including both
         # the existing balance and the block reward.
-        self.nodes[0].generate(61)
+        #
+        # Node 2 stakes these blocks, so that none of node 0's coins is spent
+        # in them: node 0 stakes the longer chain below from the fork point,
+        # and node 1 cannot check a kernel on a coin its own chain has spent.
+        self.nodes[2].generate(61)
         self.sync_all()
         post_mature_balance = self.nodes[1].getbalance()
         block_reward = post_mature_balance - pre_stake_balance
@@ -59,15 +63,42 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
         assert block_reward > 0, "Node 1 should have earned a staking reward"
 
         # Send more than the pre-staking balance, proving the block reward is counted.
-        txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), pre_stake_balance + 1)
+        txid = self.nodes[1].send(outputs=[{self.nodes[0].getnewaddress(): pre_stake_balance + 1}])["txid"]
 
         # Orphan the block reward and make sure that the original coins
         # from the wallet can still be spent.
+        #
+        # Node 1 leaves blk through an ordinary reorg onto a longer chain, the
+        # way a node does on the network. That disconnects every block back to
+        # the fork before the mempool is updated once, so the spend above is
+        # still in the mempool when the coinstake's block goes, and leaves only
+        # after that disconnect has reached the wallet. The wallet must not
+        # abandon the coinstake, and this spend with it, until it does.
+        #
+        # Node 0 builds the longer chain while disconnected, and node 1 is given
+        # it by submitblock rather than P2P: node 0 has invalidated blk, and
+        # would punish node 1 for headers building on it.
+        # Node 2 stays on the old chain, out of the way.
+        self.disconnect_nodes(0, 1)
+        self.disconnect_nodes(1, 2)
         self.nodes[0].invalidateblock(blk)
-        self.nodes[1].invalidateblock(blk)
-        self.nodes[0].generate(63)
+        # Node 1 checks the fork's kernels while the fork is still a side chain,
+        # against coins it already knows, so node 0 must not stake a coin the
+        # fork itself created. Lock each new coinstake's outputs; the staker
+        # leaves locked coins alone.
+        fork = []
+        for _ in range(63):
+            fork += self.nodes[0].generate(1)
+            stake_txid = self.nodes[0].getblock(fork[-1])["tx"][1]
+            coinstake = self.nodes[0].decoderawtransaction(self.nodes[0].gettransaction(stake_txid)["hex"])
+            self.nodes[0].lockunspent(False, [{"txid": stake_txid, "vout": out["n"]}
+                                              for out in coinstake["vout"] if out["value"] > 0])
         self.nodes[1].setmocktime(self.nodes[0].mocktime)
-        self.sync_all()
+        for block_hash in fork:
+            self.nodes[1].submitblock(self.nodes[0].getblock(block_hash, 0))
+        assert_equal(self.nodes[1].getbestblockhash(), fork[-1])
+        self.connect_nodes(0, 1)
+        self.sync_all(self.nodes[0:2])
 
         # A coinstake orphaned by a disconnect is abandoned by the wallet as the
         # disconnect arrives, in blockDisconnected(). Until it is, IsSpent still
