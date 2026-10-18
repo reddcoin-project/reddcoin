@@ -315,6 +315,18 @@ private:
     /** Mark a transaction's inputs dirty, thus forcing the outputs to be recomputed */
     void MarkInputsDirty(const CTransactionRef& tx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
+    /** Orphaned coinstakes whose abandonment waits for a spend of theirs to
+     *  leave the mempool. See blockDisconnected(). */
+    std::set<uint256> m_pending_orphaned_coinstakes GUARDED_BY(cs_wallet);
+
+    /** Whether a wallet transaction spending hashTx, directly or through
+     *  further spends, is marked as in the mempool. */
+    bool HasDescendantInMempool(const uint256& hashTx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    /** Abandon the pending orphaned coinstakes no spend holds back any more,
+     *  and forget those that are abandoned or confirmed again. */
+    void AbandonPendingOrphanedCoinstakes() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
     void SyncMetaData(std::pair<TxSpends::iterator, TxSpends::iterator>) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /* Used by TransactionAddedToMemorypool/BlockConnected/Disconnected/ScanForWalletTransactions.
