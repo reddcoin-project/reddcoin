@@ -18,6 +18,7 @@
 #include <validation.h>
 #include <validationinterface.h>
 
+#include <map>
 #include <thread>
 
 namespace validation_block_tests {
@@ -27,6 +28,11 @@ struct MinerTestingSetup : public RegTestingSetup {
     std::shared_ptr<const CBlock> BadBlock(const uint256& prev_hash);
     std::shared_ptr<CBlock> FinalizeBlock(std::shared_ptr<CBlock> pblock);
     void BuildChain(const uint256& root, int height, const unsigned int invalid_rate, const unsigned int branch_rate, const unsigned int max_size, std::vector<std::shared_ptr<const CBlock>>& blocks);
+    int Height(const uint256& hash) const;
+
+    // Reddcoin: heights of the blocks built here, which may not be in the
+    // block index yet when their children are built.
+    std::map<uint256, int> m_block_heights;
 };
 } // namespace validation_block_tests
 
@@ -59,6 +65,12 @@ struct TestSubscriber final : public CValidationInterface {
     }
 };
 
+int MinerTestingSetup::Height(const uint256& hash) const
+{
+    if (hash == Params().GenesisBlock().GetHash()) return 0;
+    return m_block_heights.at(hash);
+}
+
 std::shared_ptr<CBlock> MinerTestingSetup::Block(const uint256& prev_hash)
 {
     static int i = 0;
@@ -78,7 +90,12 @@ std::shared_ptr<CBlock> MinerTestingSetup::Block(const uint256& prev_hash)
     txCoinbase.nTime = 0;
     txCoinbase.vout.resize(2);
     txCoinbase.vout[1].scriptPubKey = P2WSH_OP_TRUE;
-    txCoinbase.vout[1].nValue = txCoinbase.vout[0].nValue;
+    // Reddcoin: the template pays the subsidy for the height after the active
+    // tip, which is not this block's height when the chain is built before any
+    // of it is processed. Blocks 1-10 pay the 545M premine and later blocks
+    // 300k, so a block at height 11 or above would pay too much and fail
+    // ConnectBlock with bad-cb-amount. Pay the subsidy for the real height.
+    txCoinbase.vout[1].nValue = GetBlockSubsidy(Height(prev_hash) + 1, Params().GetConsensus());
     txCoinbase.vout[0].nValue = 0;
     txCoinbase.vin[0].scriptWitness.SetNull();
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
@@ -97,6 +114,7 @@ std::shared_ptr<CBlock> MinerTestingSetup::FinalizeBlock(std::shared_ptr<CBlock>
         ++(pblock->nNonce);
     }
 
+    m_block_heights[pblock->GetHash()] = Height(pblock->hashPrevBlock) + 1;
     return pblock;
 }
 
