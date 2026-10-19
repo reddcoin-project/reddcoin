@@ -1327,6 +1327,8 @@ void CWallet::transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRe
         // https://github.com/bitcoin-core/bitcoin-devwiki/wiki/Wallet-Transaction-Conflict-Tracking
         SyncTransaction(tx, {CWalletTx::Status::UNCONFIRMED, /* block height */ 0, /* block hash */ {}, /* index */ 0});
     }
+    // This may have been the last spend holding an orphaned coinstake back.
+    AbandonPendingOrphanedCoinstakes();
 }
 
 void CWallet::blockConnected(const CBlock& block, int height)
@@ -1367,6 +1369,12 @@ void CWallet::blockDisconnected(const CBlock& block, int height)
     // it replaces the full mapWallet sweep that used to run before every block
     // template. If a deeper reorg later remines the coinstake, AddToWallet
     // overwrites the abandoned status when the confirmation arrives.
+    //
+    // A spend of the coinstake may still be marked as in the mempool. Validation
+    // removes it only after queuing this disconnect, once it fails to put the
+    // coinstake back, so the removal reaches us later. AbandonTransaction asserts
+    // that no descendant is in the mempool, so such a coinstake waits until the
+    // removal arrives, and transactionRemovedFromMempool() abandons it then.
     std::vector<uint256> orphaned;
     for (const CTransactionRef& ptx : block.vtx) {
         if (!ptx->IsCoinStake()) continue;
@@ -1374,6 +1382,12 @@ void CWallet::blockDisconnected(const CBlock& block, int height)
         if (it == mapWallet.end()) continue;
         const CWalletTx& wtx = it->second;
         if (wtx.GetDepthInMainChain() != 0 || wtx.isAbandoned()) continue;
+        if (HasDescendantInMempool(ptx->GetHash())) {
+            LogPrint(BCLog::STAKE, "Deferring abandon of coinstake wtx %s orphaned by disconnect of block %s until its spends leave the mempool\n",
+                     ptx->GetHash().ToString(), block.GetHash().ToString());
+            m_pending_orphaned_coinstakes.insert(ptx->GetHash());
+            continue;
+        }
         orphaned.push_back(ptx->GetHash());
     }
     if (!orphaned.empty()) {
@@ -1877,6 +1891,57 @@ void CWallet::ReacceptWalletTransactions()
         CWalletTx& wtx = *(item.second);
         std::string unused_err_string;
         wtx.SubmitMemoryPoolAndRelay(unused_err_string, false);
+    }
+}
+
+bool CWallet::HasDescendantInMempool(const uint256& hashTx) const
+{
+    AssertLockHeld(cs_wallet);
+
+    std::set<uint256> todo{hashTx};
+    std::set<uint256> done;
+    while (!todo.empty()) {
+        const uint256 now = *todo.begin();
+        todo.erase(todo.begin());
+        done.insert(now);
+        for (auto iter = mapTxSpends.lower_bound(COutPoint(now, 0)); iter != mapTxSpends.end() && iter->first.hash == now; ++iter) {
+            if (done.count(iter->second)) continue;
+            auto it = mapWallet.find(iter->second);
+            if (it != mapWallet.end() && it->second.InMempool()) return true;
+            todo.insert(iter->second);
+        }
+    }
+    return false;
+}
+
+void CWallet::AbandonPendingOrphanedCoinstakes()
+{
+    AssertLockHeld(cs_wallet);
+    if (m_pending_orphaned_coinstakes.empty()) return;
+
+    std::vector<uint256> ready;
+    for (auto pending = m_pending_orphaned_coinstakes.begin(); pending != m_pending_orphaned_coinstakes.end();) {
+        auto it = mapWallet.find(*pending);
+        if (it == mapWallet.end() || it->second.GetDepthInMainChain() != 0 || it->second.isAbandoned()) {
+            // Gone, confirmed again by a deeper reorg, or abandoned by hand.
+            pending = m_pending_orphaned_coinstakes.erase(pending);
+            continue;
+        }
+        if (HasDescendantInMempool(*pending)) {
+            ++pending;
+            continue;
+        }
+        ready.push_back(*pending);
+        pending = m_pending_orphaned_coinstakes.erase(pending);
+    }
+    if (ready.empty()) return;
+
+    WalletBatch batch(GetDatabase());
+    for (const uint256& wtxid : ready) {
+        LogPrint(BCLog::STAKE, "Abandoning coinstake wtx %s now its spends have left the mempool\n", wtxid.ToString());
+        if (!AbandonTransaction(batch, wtxid)) {
+            LogPrint(BCLog::STAKE, "Failed to abandon coinstake tx %s\n", wtxid.ToString());
+        }
     }
 }
 
