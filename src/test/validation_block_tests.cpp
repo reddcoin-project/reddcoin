@@ -12,14 +12,18 @@
 #include <pow.h>
 #include <random.h>
 #include <script/standard.h>
+#include <sync.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
 
 #include <map>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace validation_block_tests {
 struct MinerTestingSetup : public RegTestingSetup {
@@ -196,6 +200,11 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     // create a bunch of threads that repeatedly process a block generated above at random
     // this will create parallelism and randomness inside validation - the ValidationInterface
     // will subscribe to events generated during block validation and assert on ordering invariance
+    // Reddcoin: Boost.Test assertions are not thread-safe, and the subscriber
+    // already makes them on the scheduler thread. The workers collect their
+    // failures here instead, and the main thread reports them at the end.
+    Mutex failures_mutex;
+    std::vector<std::string> failures;
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([&]() {
@@ -241,9 +250,11 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
                     {
                         LOCK(cs_main);
                         auto* pindex = m_node.chainman->m_blockman.LookupBlockIndex(block->GetHash());
-                        BOOST_CHECK_MESSAGE(pindex && !(pindex->nStatus & BLOCK_FAILED_MASK),
-                                            "block " << block->GetHash().ToString() << " unexpectedly failed, nStatus="
-                                                     << (pindex ? pindex->nStatus : 0u));
+                        if (!pindex || (pindex->nStatus & BLOCK_FAILED_MASK)) {
+                            LOCK(failures_mutex);
+                            failures.push_back(strprintf("block %s unexpectedly failed, nStatus=%u",
+                                                         block->GetHash().ToString(), pindex ? pindex->nStatus : 0u));
+                        }
                     }
                 }
             }
@@ -256,6 +267,14 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     SyncWithValidationInterfaceQueue();
 
     UnregisterSharedValidationInterface(sub);
+
+    // Reddcoin: the scheduler thread is idle now, so it is safe to report.
+    {
+        LOCK(failures_mutex);
+        for (const std::string& failure : failures) {
+            BOOST_ERROR(failure);
+        }
+    }
 
     LOCK(cs_main);
     BOOST_CHECK_EQUAL(sub->m_expected_tip, m_node.chainman->ActiveChain().Tip()->GetBlockHash());
