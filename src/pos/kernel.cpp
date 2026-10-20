@@ -16,6 +16,7 @@
 #include <script/interpreter.h>
 #include <streams.h>
 #include <timedata.h>
+#include <undo.h>
 #include <validation.h>
 
 /* PoSV: Coin-aging function
@@ -434,6 +435,80 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, CBlockIndex* pindexPre
     return true;
 }
 
+// Find the source of the coin a kernel stakes, on the chain pindexPrev is on.
+//
+// The txindex and the UTXO set describe the active chain, which is
+// pindexPrev's chain up to the point where the two fork. That covers a coin
+// created at or below the fork point and still unspent on the active chain,
+// or, with the txindex, spent there since. Otherwise the coin was created in
+// one of pindexPrev's blocks above the fork point, which neither knows of, so
+// those blocks are searched; or it was created at or below the fork point and
+// spent on the active chain above it, so the undo data of those blocks is.
+//
+// Whether the coin is still unspent on pindexPrev's chain is left to
+// ConnectBlock, as it is for the txindex lookup.
+static bool GetKernelSource(CChainState* active_chainstate, const CBlockIndex* pindexPrev, const COutPoint& prevout, unsigned int nTimeTx, StakeKernelSource& source)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    LOCK(cs_main);
+    const CBlockIndex* pindexFork = active_chainstate->m_chain.FindFork(pindexPrev);
+    if (!pindexFork) return false;
+
+    // Tries txindex first, falls back to the UTXO set
+    CTransactionRef txPrev;
+    CBlockHeader blockHeader;
+    unsigned int nTxOffset = 0;
+    if (GetTransaction(active_chainstate, prevout, txPrev, blockHeader, nTxOffset)) {
+        const CBlockIndex* pindexFrom = active_chainstate->m_blockman.LookupBlockIndex(blockHeader.GetHash());
+        if (pindexFrom && pindexFork->GetAncestor(pindexFrom->nHeight) == pindexFrom) {
+            if (prevout.n >= txPrev->vout.size()) return false;
+            source = {blockHeader.GetHash(), blockHeader.nTime, txPrev->nTime, txPrev->vout[prevout.n].nValue};
+            return true;
+        }
+    }
+
+    for (const CBlockIndex* pindex = pindexPrev; pindex != pindexFork; pindex = pindex->pprev) {
+        // A coin this young could not be staked, so its block need not be read.
+        // A block not received yet cannot be searched; the lookup above is
+        // then all there is, as it was for every block before side chains
+        // were searched.
+        if (pindex->GetBlockTime() + params.nStakeMinAge > nTimeTx || !(pindex->nStatus & BLOCK_HAVE_DATA)) continue;
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex, params)) {
+            return error("%s: failed to read block %s at height %d", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight);
+        }
+        for (const auto& tx : block.vtx) {
+            if (tx->GetHash() != prevout.hash) continue;
+            if (prevout.n >= tx->vout.size()) return false;
+            source = {pindex->GetBlockHash(), pindex->nTime, tx->nTime, tx->vout[prevout.n].nValue};
+            return true;
+        }
+    }
+
+    // Spent on the active chain above the fork point: the spending block's undo
+    // data holds the coin.
+    for (const CBlockIndex* pindex = active_chainstate->m_chain.Tip(); pindex != pindexFork; pindex = pindex->pprev) {
+        CBlock block;
+        CBlockUndo blockundo;
+        if (!ReadBlockFromDisk(block, pindex, params) || !UndoReadFromDisk(blockundo, pindex) ||
+            blockundo.vtxundo.size() + 1 != block.vtx.size()) {
+            return error("%s: failed to read block %s at height %d", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight);
+        }
+        for (size_t i = 1; i < block.vtx.size(); ++i) {
+            const auto& vin = block.vtx[i]->vin;
+            for (size_t j = 0; j < vin.size(); ++j) {
+                if (vin[j].prevout != prevout) continue;
+                const Coin& coin = blockundo.vtxundo[i - 1].vprevout[j];
+                if (coin.nHeight > pindexFork->nHeight) return false;
+                const CBlockIndex* pindexFrom = pindexFork->GetAncestor(coin.nHeight);
+                source = {pindexFrom->GetBlockHash(), pindexFrom->nTime, coin.nTime, coin.out.nValue};
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Check kernel hash target and coinstake signature
 bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CTransactionRef& tx, unsigned int nBits, uint256& hashProofOfStake)
 {
@@ -443,18 +518,18 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx->vin[0];
 
-    CTransactionRef txPrev;
-    CBlockHeader blockHeader;
-    unsigned int nTxOffset = 0;
+    if (!pindexPrev) {
+        pindexPrev = active_chainstate->m_chain.Tip();
+    }
 
-    // Get stake transaction - tries txindex first, falls back to UTXO lookup
-    if (!GetTransaction(active_chainstate, txin.prevout, txPrev, blockHeader, nTxOffset)) {
+    StakeKernelSource source;
+    if (!GetKernelSource(active_chainstate, pindexPrev, txin.prevout, tx->nTime, source)) {
         return error("%s() : failed to get stake transaction for %s", __func__, txin.prevout.hash.ToString());
     }
 
     // Calculate stakehash - pass pindexPrev for correct stake modifier calculation
     // Note: nTxPrevOffset parameter is the OUTPUT INDEX, not the file offset!
-    if (!CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, blockHeader, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
+    if (!CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, source, txin.prevout.n, txin.prevout, tx->nTime, hashProofOfStake)) {
         return error("%s() : in CheckStakeKernelHash()", __func__);
     }
 
