@@ -4,7 +4,9 @@
 
 This guide describes how to build bitcoind, command-line utilities, and GUI on macOS
 
-**Note:** The following is for Intel Macs only!
+**Note:** The Homebrew steps below were written for Intel Macs. On an Apple Silicon
+(M1 and later) Mac read [Apple Silicon (arm64)](#apple-silicon-arm64) first: most
+steps still apply, but there are a few differences.
 
 ## Dependencies
 
@@ -286,6 +288,113 @@ You can also create a  `.dmg` containing the `.app` bundle by running the follow
 ``` bash
 make deploy
 ```
+
+## Apple Silicon (arm64)
+
+Reddcoin Core builds as a native arm64 binary on Apple Silicon. Nothing in the
+code is x86 only: the scrypt proof-of-work hash always uses the portable C
+implementation (the old SSE2 variant is not compiled on any platform), and the
+x86 SHA256 assembly is only built for x86 targets. The build passes
+`-ffp-contract=off` so the floating point used by PoSV and difficulty
+retargeting compiles to the same operations as on x86_64. The math library
+(`pow`, `log`) may still differ in the last bit between platforms; the integer
+results consensus uses were checked to be unaffected.
+
+The points below were checked against the build system. Items marked
+*(untested on hardware)* have not yet been tried on an Apple Silicon Mac.
+
+### Homebrew paths
+
+Homebrew installs to `/opt/homebrew` on Apple Silicon instead of `/usr/local`.
+`configure` asks `brew --prefix` where the keg-only packages it knows about live
+(it queries `berkeley-db4`, `qt5` and `openssl`, Homebrew's names for
+`berkeley-db@4`, `qt@5` and `openssl@3`), and the Boost check also searches
+`/opt/homebrew`. Other libraries are found through `pkg-config`.
+Make sure the arm64 Homebrew is first in your `PATH`; a second, Rosetta copy in
+`/usr/local` will hand x86_64 libraries to an arm64 link and fail.
+
+### Option 1: build the dependencies with depends *(untested on hardware)*
+
+This builds every dependency from source at the versions used for releases and
+does not need Homebrew libraries at all (Homebrew is still handy for `automake`,
+`libtool` and `pkg-config`):
+
+``` bash
+make -C depends HOST=arm64-apple-darwin -j"$(sysctl -n hw.ncpu)"
+./autogen.sh
+CONFIG_SITE=$PWD/depends/arm64-apple-darwin/share/config.site ./configure
+make -j"$(sysctl -n hw.ncpu)"
+```
+
+`depends/arm64-apple-darwin` is named after the `HOST` value you pass. On a Mac
+the depends system uses the Xcode toolchain from `xcrun` and builds for the
+machine you are on. Use the same `HOST` spelling in the `CONFIG_SITE` path.
+
+Notes:
+
+- This native depends build has not yet been run on an Apple Silicon Mac.
+  The steps follow what the depends build system does on a macOS builder, but
+  expect to report problems.
+- Berkeley DB 4.8 is old C code with implicit function declarations, which
+  current Apple clang rejects as errors. The depends recipe already passes
+  `-Wno-error=implicit-function-declaration`, so no action is needed here.
+- Qt in depends is 5.12.11, older than Apple Silicon. Building it natively
+  against a current macOS SDK is *(untested on hardware)*. If it fails, build
+  the dependencies without Qt (`make -C depends HOST=arm64-apple-darwin NO_QT=1`)
+  for a headless `reddcoind`, or use Homebrew `qt@5` as in option 2.
+
+### Option 2: Homebrew dependencies
+
+Follow the Homebrew steps earlier in this guide, with these differences:
+
+- **Boost**: current Homebrew Boost (1.89 and later) no longer ships a
+  `boost_system` library. Reddcoin Core does not link one (Boost.System has been
+  header-only since 1.69), so the current Homebrew `boost` works as is.
+- **Berkeley DB 4.8**: `brew install berkeley-db@4` installs a prebuilt arm64
+  bottle and `configure` finds it. If you build BDB yourself with
+  `contrib/install_db4.sh` instead, current Apple clang stops on implicit
+  function declarations in the BDB sources. Extra arguments are passed through
+  to BDB's `configure`, so pass the same flag depends uses:
+
+  ``` bash
+  ./contrib/install_db4.sh "$(pwd)" CFLAGS="-Wno-error=implicit-function-declaration"
+  ```
+
+  Then run `./configure` with the `BDB_LIBS` and `BDB_CFLAGS` values the script
+  prints. If you only need descriptor wallets, skip BDB and configure
+  `--without-bdb`.
+- **Qt**: `qt@5` from Homebrew is a native arm64 build.
+
+### Linker problems with Xcode 15 and later *(untested on hardware)*
+
+Xcode 15 replaced Apple's linker. If the final link of `reddcoind` or
+`reddcoin-qt` stops with an assertion or crash inside `ld`, rather than an
+ordinary undefined symbol error, try the previous linker:
+
+``` bash
+./configure LDFLAGS="-Wl,-ld_classic" ...
+```
+
+Apple has marked `-ld_classic` as deprecated, so treat this as a workaround to
+report, not a fix.
+
+### Code signing before running
+
+Every arm64 executable on macOS must carry a code signature, even an ad-hoc
+one, or the kernel kills it at launch (`Killed: 9` in the terminal). The linker
+signs what it produces, so `src/reddcoind` and `src/qt/reddcoin-qt` run straight
+from `make`. Any tool that edits a binary afterwards breaks that signature;
+this includes `install_name_tool`, which `make deploy` uses on every library
+in the app bundle and which does not re-sign. Sign again with an ad-hoc
+identity before running:
+
+``` bash
+codesign --force --deep -s - Reddcoin-Qt.app
+codesign --force -s - src/reddcoind   # only if you modified it after linking
+```
+
+This is for local use only. Release binaries are signed and notarized
+separately.
 
 ## Running Bitcoin Core
 
