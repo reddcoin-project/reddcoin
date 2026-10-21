@@ -411,6 +411,56 @@ bool CheckStakeKernelHash(CChainState* active_chainstate, const CBlockIndex* pin
     return true;
 }
 
+// Find the transaction holding the coin a kernel stakes, and the header of
+// its block, on the chain pindexPrev is on.
+//
+// The txindex describes the active chain, which is pindexPrev's chain up to
+// the point where the two fork. That covers a coin created at or below the
+// fork point. Otherwise the coin was created in one of pindexPrev's blocks
+// above the fork point, which the txindex does not know of, so those blocks
+// are searched.
+//
+// Whether the coin is still unspent on pindexPrev's chain is left to
+// ConnectBlock, as it is for the txindex lookup.
+static bool GetKernelSource(CChainState* active_chainstate, const CBlockIndex* pindexPrev, const COutPoint& prevout, unsigned int nTimeTx, CTransactionRef& txPrev, CBlockHeader& header) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    const Consensus::Params& params = Params().GetConsensus();
+    const CBlockIndex* pindexFork = active_chainstate->m_chain.FindFork(pindexPrev);
+    if (!pindexFork) return false;
+
+    uint256 blockHash;
+    txPrev = GetTransaction(prevout.hash, blockHash);
+    if (txPrev) {
+        const CBlockIndex* pindexFrom = active_chainstate->m_blockman.LookupBlockIndex(blockHash);
+        if (pindexFrom && pindexFork->GetAncestor(pindexFrom->nHeight) == pindexFrom) {
+            if (prevout.n >= txPrev->vout.size()) return false;
+            header = pindexFrom->GetBlockHeader();
+            return true;
+        }
+    }
+
+    for (const CBlockIndex* pindex = pindexPrev; pindex != pindexFork; pindex = pindex->pprev) {
+        // A coin this young could not be staked, so its block need not be read.
+        // A block not received yet cannot be searched; the lookup above is
+        // then all there is, as it was for every block before side chains
+        // were searched.
+        if (pindex->GetBlockTime() + params.nStakeMinAge > nTimeTx || !(pindex->nStatus & BLOCK_HAVE_DATA)) continue;
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex, params)) {
+            return error("%s: failed to read block %s at height %d", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight);
+        }
+        for (const auto& tx : block.vtx) {
+            if (tx->GetHash() != prevout.hash) continue;
+            if (prevout.n >= tx->vout.size()) return false;
+            txPrev = tx;
+            header = pindex->GetBlockHeader();
+            return true;
+        }
+    }
+    return false;
+}
+
 // Check kernel hash target and coinstake signature
 bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, const CTransactionRef& tx, unsigned int nBits, uint256& hashProofOfStake)
 {
@@ -420,22 +470,15 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx->vin[0];
 
+    LOCK(cs_main);
     if (!pindexPrev) {
-        LOCK(cs_main);
         pindexPrev = active_chainstate->m_chain.Tip();
     }
 
-    uint256 blockHash;
-    CTransactionRef txPrev = GetTransaction(txin.prevout.hash, blockHash);
-    if (!txPrev)
+    CTransactionRef txPrev;
+    CBlockHeader header;
+    if (!GetKernelSource(active_chainstate, pindexPrev, txin.prevout, tx->nTime, txPrev, header))
         return error("%s() : tx %s not found", __func__, txin.prevout.hash.ToString());
-
-    LOCK(cs_main);
-    const CBlockIndex* pindex = active_chainstate->m_blockman.LookupBlockIndex(blockHash);
-    if (!pindex)
-          return error("%s() : block %s not found in index", __func__, blockHash.ToString());
-
-    CBlockHeader header = pindex->GetBlockHeader();
 
     // Calculate stakehash
     if (!CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
