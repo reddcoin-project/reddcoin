@@ -3726,7 +3726,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     // above still rebuilds the modifier chain. fReindex/fImporting are never set
     // during normal network sync, so peer-block validation is unaffected.
     if (!(block.IsProofOfStake() && (fReindex || fImporting))) {
-        if (!VerifyHashTarget(this, pindex, block, hash)) {
+        if (!VerifyHashTarget(this, pindex->pprev, block, hash)) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos", "proof of stake is incorrect");
         }
     }
