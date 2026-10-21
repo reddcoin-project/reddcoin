@@ -3666,7 +3666,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
 
     // PoSV: calculate proofhash value
-    if (!VerifyHashTarget(this, pindex, block, hash)) {
+    if (!VerifyHashTarget(this, pindex->pprev, block, hash)) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos", "proof of stake is incorrect");
     }
     pindex->hashProofOfStake = hash;

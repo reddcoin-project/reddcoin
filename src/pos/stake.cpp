@@ -210,7 +210,7 @@ bool SearchStakeKernel(const CWallet* pwallet, CChainState* chainstate, const St
                 // what lets the search run while the node validates blocks
                 // and the GUI reads the chain.
                 LOCK(cs_main);
-                foundStake = CheckStakeKernelHash(chainstate, nBits, header, pcoin.outpoint.n, tx, pcoin.outpoint, nTimeTx - n, hashProofOfStake);
+                foundStake = CheckStakeKernelHash(chainstate, chainstate->m_chain.Tip(), nBits, header, pcoin.outpoint.n, tx, pcoin.outpoint, nTimeTx - n, hashProofOfStake);
             }
             if (foundStake)
             {
@@ -287,7 +287,7 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
     }
     {
         uint256 hashProofOfStake;
-        if (!CheckStakeKernelHash(chainstate, nBits, kernel.header, kernel.outpoint.n, kernel.txPrev, kernel.outpoint, kernel.nTime, hashProofOfStake)) {
+        if (!CheckStakeKernelHash(chainstate, chainstate->m_chain.Tip(), nBits, kernel.header, kernel.outpoint.n, kernel.txPrev, kernel.outpoint, kernel.nTime, hashProofOfStake)) {
             LogPrintf("CreateCoinStake : kernel %s no longer meets the target at the current tip\n", kernel.outpoint.ToString());
             return false;
         }
