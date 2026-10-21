@@ -32,6 +32,31 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "consensus/tx_verify -> validation -> consensus/tx_verify"
     "pos/kernel -> validation -> pos/kernel"
     "qt/mintingtablemodel -> qt/walletmodel -> qt/mintingtablemodel"
+    # Introduced with ReddID. id/reddid.h holds both the record types that the
+    # component managers use and the ReddIDManager that owns those managers.
+    "id/auction -> id/reddid -> id/auction"
+    "id/namespace -> id/reddid -> id/namespace"
+    "id/profile -> id/reddid -> id/profile"
+    "id/reddid -> id/reddid_db -> id/reddid"
+    # NodeContext owns the ReddIDManager, which takes the chainstate manager
+    # and the scheduler from the NodeContext it is constructed with.
+    "id/reddid -> node/context -> id/reddid"
+    # Validation applies and undoes ReddID records at the chain tip and asks
+    # the auction manager about deposit locks when a transaction enters the
+    # mempool; the ReddID managers read the chain and the UTXO set.
+    "id/auction -> validation -> id/auction"
+    "id/reddid -> validation -> id/reddid"
+    "id/reddid -> validation -> id/transaction_handler -> id/reddid"
+    # The ReddID P2P manager reads and changes the state of the component
+    # managers, which announce through it, and ReddIDManager owns it.
+    "id/auction -> id/reddid_p2p -> id/auction"
+    "id/namespace -> id/reddid_p2p -> id/namespace"
+    "id/profile -> id/reddid_p2p -> id/profile"
+    "id/reddid -> id/reddid_p2p -> id/reddid"
+    # PeerManager reaches the ReddIDManager through the NodeContext, which
+    # owns the PeerManager.
+    "net_processing -> node/context -> net_processing"
+    "net_processing -> node/context -> staker -> net_processing"
 )
 
 EXIT_CODE=0

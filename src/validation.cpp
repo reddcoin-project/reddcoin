@@ -19,6 +19,9 @@
 #include <deploymentstatus.h>
 #include <flatfile.h>
 #include <hash.h>
+#include <id/auction.h>
+#include <id/reddid.h>
+#include <id/transaction_handler.h>
 #include <index/blockfilterindex.h>
 #include <logging.h>
 #include <logging/timer.h>
@@ -690,6 +693,15 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
             }
             // Otherwise assume this might be an orphan tx for which we just haven't seen parents yet
             return state.Invalid(TxValidationResult::TX_MISSING_INPUTS, "bad-txns-inputs-missingorspent");
+        }
+    }
+
+    // Check ReddID deposit locks (policy-only enforcement)
+    if (m_active_chainstate.GetReddIDManager()) {
+        AuctionManager* auctionMgr = m_active_chainstate.GetReddIDManager()->GetAuctionManager();
+        if (auctionMgr && !auctionMgr->CheckDepositLocks(tx)) {
+            return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY,
+                "reddid-deposit-locked", "spends protocol-locked deposit UTXO");
         }
     }
 
@@ -2428,6 +2440,19 @@ bool CChainState::DisconnectTip(BlockValidationState& state, DisconnectedBlockTr
         bool flushed = view.Flush();
         assert(flushed);
     }
+    // Undo the ReddID operations of the block. This is done here and not in
+    // DisconnectBlock, which is also called to verify the database, and with
+    // cs_main held, so that the blocks of a reorganization are undone before
+    // the blocks that replace them are applied.
+    if (m_reddid) {
+        try {
+            m_reddid->UndoBlock(block, pindexDelete->nHeight);
+        } catch (const std::exception& e) {
+            LogPrint(BCLog::REDDID, "Warning: ReddID UndoBlock failed for block %s: %s\n",
+                     pindexDelete->GetBlockHash().ToString(), e.what());
+            // Continue - ReddID operations are not consensus critical for block validation
+        }
+    }
     LogPrint(BCLog::BENCH, "- Disconnect block: %.2fms\n", (GetTimeMicros() - nStart) * MILLI);
     // Write the chain state to disk, if necessary.
     if (!FlushStateToDisk(state, FlushStateMode::IF_NEEDED)) {
@@ -2543,6 +2568,23 @@ bool CChainState::ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         assert(nBlocksTotal > 0);
         LogPrint(BCLog::BENCH, "  - Connect total: %.2fms [%.2fs (%.2fms/blk)]\n", (nTime3 - nTime2) * MILLI, nTimeConnectTotal * MICRO, nTimeConnectTotal * MILLI / nBlocksTotal);
+        // Process the ReddID operations of the block. This is done here and
+        // not in ConnectBlock, so that only a block that has passed
+        // validation and becomes the tip is applied, and before the view is
+        // flushed, while the outputs that the block spends are still in
+        // CoinsTip(), where the sender of a transaction is looked up.
+        if (m_reddid) {
+            for (const CTransactionRef& ptx : blockConnecting.vtx) {
+                const CTransaction& tx = *ptx;
+                try {
+                    ProcessReddIDTransaction(tx, pindexNew->nHeight, m_reddid);
+                } catch (const std::exception& e) {
+                    LogPrint(BCLog::REDDID, "Warning: ProcessReddIDTransaction failed for tx %s: %s\n",
+                             tx.GetHash().ToString(), e.what());
+                    // Continue processing - ReddID operations are not consensus critical for block validation
+                }
+            }
+        }
         bool flushed = view.Flush();
         assert(flushed);
     }

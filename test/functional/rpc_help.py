@@ -82,8 +82,10 @@ class HelpRpcTest(BitcoinTestFramework):
 
         for argname, convert in converts_by_argname.items():
             if all(convert) != any(convert):
-                # Only allow dummy to fail consistency check
-                assert argname == 'dummy', ('WARNING: conversion mismatch for argument named %s (%s)' % (argname, list(zip(all_methods_by_argname[argname], converts_by_argname[argname]))))
+                # Only allow dummy to fail consistency check, and connection_type:
+                # a string for addconnection, a number for the ReddID commands
+                # createuserconnection, updateuserconnection and getuserconnections
+                assert argname in ('dummy', 'connection_type'), ('WARNING: conversion mismatch for argument named %s (%s)' % (argname, list(zip(all_methods_by_argname[argname], converts_by_argname[argname]))))
 
     def test_categories(self):
         node = self.nodes[0]
@@ -100,7 +102,7 @@ class HelpRpcTest(BitcoinTestFramework):
         # command titles
         titles = [line[3:-3] for line in node.help().splitlines() if line.startswith('==')]
 
-        components = ['Blockchain', 'Control', 'Generating', 'Mining', 'Network', 'Rawtransactions', 'Util']
+        components = ['Blockchain', 'Control', 'Generating', 'Mining', 'Network', 'Rawtransactions', 'Reddid', 'Util']
 
         if self.is_wallet_compiled():
             components.append('Wallet')

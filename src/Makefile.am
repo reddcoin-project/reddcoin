@@ -153,6 +153,14 @@ BITCOIN_CORE_H = \
   httprpc.h \
   httpserver.h \
   i2p.h \
+  id/amounts.h \
+  id/auction.h \
+  id/namespace.h \
+  id/profile.h \
+  id/reddid.h \
+  id/reddid_db.h \
+  id/reddid_p2p.h \
+  id/transaction_handler.h \
   index/base.h \
   index/blockfilterindex.h \
   index/coinstatsindex.h \
@@ -356,6 +364,13 @@ libbitcoin_server_a_SOURCES = \
   httprpc.cpp \
   httpserver.cpp \
   i2p.cpp \
+  id/auction.cpp \
+  id/namespace.cpp \
+  id/profile.cpp \
+  id/reddid.cpp \
+  id/reddid_db.cpp \
+  id/reddid_p2p.cpp \
+  id/transaction_handler.cpp \
   index/base.cpp \
   index/blockfilterindex.cpp \
   index/coinstatsindex.cpp \
@@ -393,6 +408,7 @@ libbitcoin_server_a_SOURCES = \
   rpc/misc.cpp \
   rpc/net.cpp \
   rpc/rawtransaction.cpp \
+  rpc/reddid.cpp \
   rpc/server.cpp \
   script/sigcache.cpp \
   shutdown.cpp \
@@ -411,6 +427,7 @@ libbitcoin_server_a_SOURCES = \
 
 if ENABLE_WALLET
 libbitcoin_server_a_SOURCES += wallet/init.cpp
+libbitcoin_server_a_SOURCES += wallet/rpcreddid.cpp
 endif
 if !ENABLE_WALLET
 libbitcoin_server_a_SOURCES += dummywallet.cpp

@@ -11,6 +11,8 @@
 #include <node/context.h>
 #include <node/ui_interface.h>
 #include <outputtype.h>
+#include <rpc/register.h>
+#include <rpc/server.h>
 #include <univalue.h>
 #include <util/check.h>
 #include <util/moneystr.h>
@@ -152,4 +154,9 @@ void WalletInit::Construct(NodeContext& node) const
     // registers it in a --disable-wallet build, where this file is not compiled
     // and DummyWalletInit::Construct() runs instead.
     node.staking_support = &GetWalletStakingSupport();
+
+    // The ReddID commands that use a wallet. They are node commands, which
+    // reach the ReddID manager through the NodeContext, so they are added to
+    // the table of the node and not to the commands of the wallet client.
+    RegisterReddIDWalletRPCCommands(tableRPC);
 }
