@@ -258,7 +258,12 @@ bool ComputeNextStakeModifier(CChainState* active_chainstate, const CBlockIndex*
 
 // The stake modifier used to hash for a stake kernel is chosen as the stake
 // modifier about a selection interval later than the coin generating the kernel
-static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* pindexPrev, uint256 hashBlockFrom, uint64_t& nStakeModifier, int& nStakeModifierHeight, int64_t& nStakeModifierTime, bool fPrintProofOfStake)
+//
+// pindexPrev is the block the kernel's block builds on. The modifier is taken
+// from that chain: the blocks after the coin's block are pindexPrev's
+// ancestors, which is not the active chain when the kernel's block is on a
+// side chain.
+static bool GetKernelStakeModifier(CChainState* active_chainstate, const CBlockIndex* pindexPrev, uint256 hashBlockFrom, uint64_t& nStakeModifier, int& nStakeModifierHeight, int64_t& nStakeModifierTime, bool fPrintProofOfStake)
 {
     const Consensus::Params& params = Params().GetConsensus();
     nStakeModifier = 0;
@@ -271,48 +276,48 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
     nStakeModifierTime = pindexFrom->GetBlockTime();
     int64_t nStakeModifierSelectionInterval = GetStakeModifierSelectionInterval();
 
-    // Check the cache first
-    uint64_t nCachedModifier;
-    cachedModifier entry { nStakeModifierTime, nStakeModifierHeight };
-    if (cacheCheck(entry, nCachedModifier)) {
-        nStakeModifier = nCachedModifier;
+    if (pindexPrev->GetAncestor(pindexFrom->nHeight) != pindexFrom) {
+        // The coin's block is not on the chain being built on, so the coin is
+        // not either. A staking wallet reaches this after a reorg, while it
+        // still holds coins confirmed on the branch that was just disowned.
+        return error("GetKernelStakeModifier() : block %s at height %d is not an ancestor of block %s at height %d",
+                     hashBlockFrom.ToString(), pindexFrom->nHeight, pindexPrev->GetBlockHash().ToString(), pindexPrev->nHeight);
+    }
+
+    // Check the cache first. An entry was found on some chain, and holds for
+    // this one only if the block it was taken from is an ancestor here too.
+    CachedStakeModifier cached;
+    if (cacheCheck(hashBlockFrom, cached) && cached.nHeight <= pindexPrev->nHeight &&
+        pindexPrev->GetAncestor(cached.nHeight)->GetBlockHash() == cached.hashBlock) {
+        nStakeModifier = cached.nStakeModifier;
+        nStakeModifierHeight = cached.nHeight;
+        nStakeModifierTime = cached.nTime;
         LogPrint(BCLog::POS, "%s: cachedModifier cache hit!\n", __func__);
         return true;
     }
 
-    // we need to iterate index forward but we cannot depend on chainActive.Next()
-    // because there is no guarantee that we are checking blocks in active chain.
-    // So, we construct a temporary chain that we will iterate over.
-    // pindexFrom - this block contains coins that are used to generate PoS
-    // pindexPrev - this is a block that is previous to PoS block that we are checking, you can think of it as tip of our chain
-    std::vector<CBlockIndex*> tmpChain;
-    int32_t nDepth = pindexPrev->nHeight - (pindexFrom->nHeight - 1); // -1 is used to also include pindexFrom
-    tmpChain.reserve(nDepth);
-    CBlockIndex* it = pindexPrev;
-    for (int i = 1; i <= nDepth && !active_chainstate->m_chain.Contains(it); i++) {
-        tmpChain.push_back(it);
-        it = it->pprev;
-    }
-    std::reverse(tmpChain.begin(), tmpChain.end());
+    // On the active chain, step forward with m_chain.Next(); otherwise along
+    // pindexPrev's ancestors.
+    const bool fActive = active_chainstate->m_chain.Contains(pindexPrev);
     const CBlockIndex* pindex = pindexFrom;
 
     // loop to find the stake modifier later by a selection interval
     while (nStakeModifierTime < pindexFrom->GetBlockTime() + nStakeModifierSelectionInterval) {
-        if (!active_chainstate->m_chain.Next(pindex)) { // reached best block; may happen if node is behind on block chain or receive out of order
+        if (pindex == pindexPrev) { // reached best block; may happen if node is behind on block chain or receive out of order
             if (pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()) {
                 return error("%s(): reached best block %s at height %d from block at height %d.", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight, pindexFrom->nHeight);
             } else {
                 return false;
             }
         }
-        pindex = active_chainstate->m_chain.Next(pindex);
+        pindex = fActive ? active_chainstate->m_chain.Next(pindex) : pindexPrev->GetAncestor(pindex->nHeight + 1);
         if (pindex->GeneratedStakeModifier()) {
             nStakeModifierHeight = pindex->nHeight;
             nStakeModifierTime = pindex->GetBlockTime();
         }
     }
     nStakeModifier = pindex->nStakeModifier;
-    cacheAdd(entry, nStakeModifier);
+    cacheAdd(hashBlockFrom, {nStakeModifier, pindex->GetBlockHash(), pindex->nHeight, pindex->GetBlockTime()});
     return true;
 }
 
@@ -337,12 +342,13 @@ static bool GetKernelStakeModifier(CChainState* active_chainstate, CBlockIndex* 
 //   quantities so as to generate blocks faster, degrading the system back into
 //   a proof-of-work situation.
 //
-bool CheckStakeKernelHash(CChainState* active_chainstate, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
+// pindexPrev is the block the kernel's block builds on: the validator's
+// parent block, or the tip the staker builds on.
+bool CheckStakeKernelHash(CChainState* active_chainstate, const CBlockIndex* pindexPrev, unsigned int nBits, const CBlockHeader& blockFrom, unsigned int nTxPrevOffset, const CTransactionRef& txPrev, const COutPoint& prevout, unsigned int nTimeTx, uint256& hashProofOfStake, bool fPrintProofOfStake)
 {
     const Consensus::Params& params = Params().GetConsensus();
     unsigned int nTimeBlockFrom = blockFrom.nTime;
     unsigned int nTimeTxPrev = txPrev->nTime;
-    CBlockIndex* pindexPrev = active_chainstate->m_chain.Tip()->pprev;
 
     // deal with missing timestamps in PoW blocks
     if (!nTimeTxPrev)
@@ -414,6 +420,11 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx->vin[0];
 
+    if (!pindexPrev) {
+        LOCK(cs_main);
+        pindexPrev = active_chainstate->m_chain.Tip();
+    }
+
     uint256 blockHash;
     CTransactionRef txPrev = GetTransaction(txin.prevout.hash, blockHash);
     if (!txPrev)
@@ -427,7 +438,7 @@ bool CheckProofOfStake(CChainState* active_chainstate, CBlockIndex* pindexPrev, 
     CBlockHeader header = pindex->GetBlockHeader();
 
     // Calculate stakehash
-    if (!CheckStakeKernelHash(active_chainstate, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
+    if (!CheckStakeKernelHash(active_chainstate, pindexPrev, nBits, header, txin.prevout.n, txPrev, txin.prevout, tx->nTime, hashProofOfStake)) {
         return error("%s() : in CheckStakeKernelHash()", __func__);
     }
 

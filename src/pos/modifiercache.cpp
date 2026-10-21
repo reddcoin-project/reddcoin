@@ -5,7 +5,7 @@
 #include <pos/modifiercache.h>
 
 unsigned int cacheHit, cacheMiss;
-std::map<cachedModifier, uint64_t> cachedModifiers;
+std::map<uint256, CachedStakeModifier> cachedModifiers;
 
 void cacheInit()
 {
@@ -14,9 +14,9 @@ void cacheInit()
     cachedModifiers.clear();
 }
 
-void cacheAdd(cachedModifier entry, uint64_t& nStakeModifier)
+void cacheAdd(const uint256& hashBlockFrom, const CachedStakeModifier& entry)
 {
-    cachedModifiers[entry] = nStakeModifier;
+    cachedModifiers[hashBlockFrom] = entry;
 }
 
 void cacheDebug()
@@ -32,17 +32,18 @@ void cacheMaintain()
         DEFAULT_FLUSH_MODIFIER_CACHE) cacheInit();
 }
 
-bool cacheCheck(cachedModifier entry, uint64_t& nStakeModifier)
+bool cacheCheck(const uint256& hashBlockFrom, CachedStakeModifier& entry)
 {
     cacheDebug();
     cacheMaintain();
 
-    if (!cachedModifiers.count(entry)) {
+    const auto it = cachedModifiers.find(hashBlockFrom);
+    if (it == cachedModifiers.end()) {
         cacheMiss++;
         return false;
     }
 
-    nStakeModifier = cachedModifiers[entry];
+    entry = it->second;
     cacheHit++;
     return true;
 }
