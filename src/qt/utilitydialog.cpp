@@ -346,7 +346,7 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
 
             addDownloadControls(remoteversion, artifact);
 
-            if (info.value("platform").toString() == "osx64") {
+            if (info.value("platform").toString() == "x86_64-apple-darwin") {
                 // Only an x86_64 macOS build is published, and it runs on Apple
                 // Silicon under Rosetta. Say which one it is rather than let an
                 // arm64 user assume it is native.
