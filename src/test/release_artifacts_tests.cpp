@@ -50,6 +50,20 @@ BOOST_AUTO_TEST_CASE(macos_offers_the_signed_dmg_to_the_gui)
     BOOST_CHECK_EQUAL(a.daemon, "reddcoin-4.22.9.4-x86_64-apple-darwin.tar.gz");
 }
 
+BOOST_AUTO_TEST_CASE(arm64_macos_is_offered_the_arm64_build)
+{
+    // guix builds it as arm64-apple-darwin and names the files after that, but
+    // configure records config.sub's aarch64-apple-darwin. Both must name the
+    // files contrib/guix/libexec/codesign.sh writes for that host:
+    // ${DISTNAME}-${HOST}.dmg and ${DISTNAME}-${HOST}.tar.gz.
+    for (const char* host : {"aarch64-apple-darwin", "arm64-apple-darwin"}) {
+        const ReleaseArtifacts a{Resolve(host)};
+        BOOST_CHECK_EQUAL(a.platform, "arm64-apple-darwin");
+        BOOST_CHECK_EQUAL(a.gui, "reddcoin-4.22.9.4-arm64-apple-darwin.dmg");
+        BOOST_CHECK_EQUAL(a.daemon, "reddcoin-4.22.9.4-arm64-apple-darwin.tar.gz");
+    }
+}
+
 BOOST_AUTO_TEST_CASE(macos_ignores_the_darwin_version)
 {
     // Releases were built for x86_64-apple-darwin18 before the darwin version
@@ -88,6 +102,7 @@ BOOST_AUTO_TEST_CASE(every_published_host_resolves)
         {"powerpc64le-linux-gnu", "reddcoin-4.22.9.4-powerpc64le-linux-gnu.tar.gz"},
         {"x86_64-w64-mingw32", "reddcoin-4.22.9.4-win64.zip"},
         {"x86_64-apple-darwin", "reddcoin-4.22.9.4-x86_64-apple-darwin.tar.gz"},
+        {"arm64-apple-darwin", "reddcoin-4.22.9.4-arm64-apple-darwin.tar.gz"},
     };
 
     for (const auto& c : cases) {

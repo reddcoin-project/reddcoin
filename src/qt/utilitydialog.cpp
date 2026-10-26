@@ -348,9 +348,9 @@ void HelpMessageDialog::showUpdateInfo(const QVariantMap& info)
             addDownloadControls(remoteversion, artifact);
 
             if (info.value("platform").toString() == "x86_64-apple-darwin") {
-                // Only an x86_64 macOS build is published, and it runs on Apple
-                // Silicon under Rosetta. Say which one it is rather than let an
-                // arm64 user assume it is native.
+                // An x86_64 build is offered the x86_64 build again, even when
+                // it runs on Apple Silicon under Rosetta. Say which one it is
+                // rather than let an arm64 user assume it is native.
                 text += "<br><br>This is the Intel build. It runs on Apple Silicon under Rosetta.";
             }
         }
