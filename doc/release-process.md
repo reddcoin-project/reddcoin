@@ -172,8 +172,8 @@ Codesigner only: Create Windows/macOS detached signatures:
 
 Codesigner only: Sign the macOS binary:
 
-    transfer bitcoin-osx-unsigned.tar.gz to macOS for signing
-    tar xf bitcoin-osx-unsigned.tar.gz
+    transfer reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz to the signing host
+    tar xf reddcoin-${VERSION}-x86_64-apple-darwin-codesigning.tar.gz
     ./detached-sig-create.sh /path/to/codesign.p12 /path/to/AuthKey_<key id>.p8 <issuer id>
     Enter the passphrase for each key when prompted
     Move signature-osx.tar.gz back to the guix-build host
