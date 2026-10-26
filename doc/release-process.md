@@ -258,6 +258,16 @@ without macOS codesigning, so its `all.SHA256SUMS` happened to match what was
 published; 4.22.9.4's did not. Derive the manifest every time rather than
 assuming.
 
+**Publish the signed x86_64 macOS files under their old names too.** Releases
+up to 4.22.9.5 were built for `x86_64-apple-darwin18`, and their assisted
+upgrade asks for `reddcoin-${VERSION}-osx-signed.dmg` and
+`reddcoin-${VERSION}-osx64.tar.gz`. guix now names these files
+`reddcoin-${VERSION}-x86_64-apple-darwin.dmg` and
+`reddcoin-${VERSION}-x86_64-apple-darwin.tar.gz`. Without a copy under the old
+name, such a node is told the file is not there and offers only the release
+directory, and its downloader cannot find the file in `SHA256SUMS` to verify it.
+Keep publishing the copies until few nodes run those releases.
+
 Build the manifest and sign it in one place:
 
 ```bash
@@ -274,7 +284,17 @@ cd guix-build-${VERSION}/output
 # built; it is the published manifest that has to be narrowed, here.
 # This exclusion must stay in step with the upload command further down, which
 # skips the same files with -not -name "*debug*".
-grep -v codesignatures all.SHA256SUMS | grep -v -- '-debug' > SHA256SUMS
+#
+# The copies under the old macOS names, see above, are not guix outputs, so they
+# are not in all.SHA256SUMS. Make them next to the files they copy, where the
+# upload command picks them up, and list them here.
+OLD_NAMES_DIR=x86_64-apple-darwin-codesigned
+cp "${OLD_NAMES_DIR}/reddcoin-${VERSION}-x86_64-apple-darwin.dmg" "${OLD_NAMES_DIR}/reddcoin-${VERSION}-osx-signed.dmg"
+cp "${OLD_NAMES_DIR}/reddcoin-${VERSION}-x86_64-apple-darwin.tar.gz" "${OLD_NAMES_DIR}/reddcoin-${VERSION}-osx64.tar.gz"
+{
+    grep -v codesignatures all.SHA256SUMS | grep -v -- '-debug'
+    (cd "$OLD_NAMES_DIR" && sha256sum "reddcoin-${VERSION}-osx-signed.dmg" "reddcoin-${VERSION}-osx64.tar.gz")
+} > SHA256SUMS
 
 gpg --detach-sign --armor --digest-algo sha256 \
     --local-user "$SIGNER_KEY" \
