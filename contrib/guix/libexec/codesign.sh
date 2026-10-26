@@ -111,8 +111,8 @@ mkdir -p "$DISTSRC"
             find "${DISTNAME}" -print0 \
                 | sort --zero-terminated \
                 | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
-                | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" \
-                || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" && exit 1 )
+                | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin/osx64}.tar.gz" \
+                || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin/osx64}.tar.gz" && exit 1 )
             ;;
         *)
             exit 1
