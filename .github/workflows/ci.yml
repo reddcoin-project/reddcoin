@@ -214,7 +214,7 @@ jobs:
           releases: ${{ matrix.releases || 'false' }}
 
   # macOS 11 native [gui] (Cirrus osx_instance). Free on public repos. Runs
-  # natively (DANGER_RUN_CI_ON_HOST=1); HOST is x86_64-apple-darwin18, so it
+  # natively (DANGER_RUN_CI_ON_HOST=1); HOST is x86_64-apple-darwin, so it
   # needs an Intel image. macos-13 was the last Intel default image and GitHub
   # has retired it, so a job asking for it is never assigned a runner; the
   # Intel images that remain carry an explicit -intel suffix.

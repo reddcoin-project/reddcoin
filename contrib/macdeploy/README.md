@@ -20,7 +20,7 @@ An Apple ID is needed to download this.
 The `sha256sum` of the archive should be `28d352f8c14a43d9b8a082ac6338dc173cb153f964c6e8fb6ba389e5be528bd0`.
 
 This is the first SDK (macOS 11.0) that can target Apple Silicon, so both the
-`x86_64-apple-darwin18` and the `arm64-apple-darwin` builds use it.
+`x86_64-apple-darwin` and the `arm64-apple-darwin` builds use it.
 
 After Xcode version 7.x, Apple started shipping the `Xcode.app` in a `.xip`
 archive. This makes the SDK less-trivial to extract on non-macOS machines. One
