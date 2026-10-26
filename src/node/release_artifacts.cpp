@@ -83,11 +83,17 @@ bool node::GetReleaseArtifacts(const std::string& host_triplet, const std::strin
         // Only an x86_64 build is published. An arm64 Mac runs it under Rosetta
         // and needs no special case here: HOST_TRIPLET is fixed at build time,
         // so a Mac running this binary is by definition running the x86_64 one
-        // and already reports x86_64-apple-darwin18. Naming it as the Intel
-        // build is the presentation layer's job.
-        out.platform = "osx64";
-        out.gui = prefix + "osx-signed.dmg";
-        out.daemon = prefix + "osx64.tar.gz";
+        // and reports an x86_64 darwin triplet. Naming it as the Intel build is
+        // the presentation layer's job.
+        //
+        // The files are named after the guix host, which carries no darwin
+        // version, so a build configured with one, as x86_64-apple-darwin18
+        // releases were, names the same files. Those releases look for the
+        // older osx-signed.dmg and osx64.tar.gz, which the release process
+        // keeps publishing for them.
+        out.platform = "x86_64-apple-darwin";
+        out.gui = prefix + out.platform + ".dmg";
+        out.daemon = prefix + out.platform + ".tar.gz";
         return true;
     }
 

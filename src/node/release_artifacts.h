@@ -17,7 +17,8 @@ namespace node {
  */
 struct ReleaseArtifacts {
     //! Short platform name as it appears in artifact filenames: "win64",
-    //! "osx64", or the normalised host triplet on everything else.
+    //! "x86_64-apple-darwin", or the normalised host triplet on everything
+    //! else.
     std::string platform;
 
     //! The file a reddcoin-qt user should install. An installer on Windows, a
