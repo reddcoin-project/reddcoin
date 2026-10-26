@@ -470,7 +470,7 @@ start over.
 [b17e]: http://bootstrappable.org/
 [r12e/source-date-epoch]: https://reproducible-builds.org/docs/source-date-epoch/
 
-[guix/install.sh]: https://git.savannah.gnu.org/cgit/guix.git/plain/etc/guix-install.sh
+[guix/install.sh]: https://codeberg.org/guix/guix/raw/branch/master/etc/guix-install.sh
 [guix/bin-install]: https://www.gnu.org/software/guix/manual/en/html_node/Binary-Installation.html
 [guix/env-setup]: https://www.gnu.org/software/guix/manual/en/html_node/Build-Environment-Setup.html
 [guix/substitutes]: https://www.gnu.org/software/guix/manual/en/html_node/Substitutes.html

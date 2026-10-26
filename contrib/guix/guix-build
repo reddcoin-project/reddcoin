@@ -236,9 +236,18 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -c log.showSignature=false log --f
 
 # Execute "$@" in a pinned, possibly older version of Guix, for reproducibility
 # across time.
+#
+# The pinned Guix is fetched from Codeberg, where the Guix project moved its
+# repositories in 2025. Savannah was kept only as a mirror, and Guix 1.3 updates
+# the channel on every run even when the commit is already cached, so a Savannah
+# outage, or its malformed redirect to the host https.git.savannah.gnu.org that
+# libgit2 rejects, stopped the build before it started.
+#
+# GUIX_TIME_MACHINE_URL overrides where the pinned Guix is fetched from. The
+# pinned commit must exist in whatever repository it names.
 time-machine() {
     # shellcheck disable=SC2086
-    guix time-machine --url=https://git.savannah.gnu.org/git/guix.git \
+    guix time-machine --url="${GUIX_TIME_MACHINE_URL:-https://codeberg.org/guix/guix.git}" \
                       --commit=aa34d4d28dfe25ba47d5800d05000fb7221788c0 \
                       --cores="$JOBS" \
                       --keep-failed \
