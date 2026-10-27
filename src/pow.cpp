@@ -113,6 +113,12 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 {
     const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
 
+    // Reddcoin: regtest keeps difficulty fixed so PoW/PoS blocks remain trivially
+    // mineable at any chain height (KimotoGravityWell would otherwise ratchet
+    // difficulty up as blocks are mined faster than the target spacing).
+    if (params.fPowNoRetargeting)
+        return pindexLast->nBits;
+
     if (params.fPowAllowMinDifficultyBlocks && pindexLast->nHeight < params.nLastPowHeight)
         return bnPowLimit.GetCompact();
 
