@@ -86,8 +86,12 @@ mkdir -p "$DISTSRC"
                 x86_64*) ARCH="x86_64" ;;
             esac
 
+            # Each architecture's signatures are kept apart in the
+            # detached-sigs repository, see detached-sig-create.sh
+            SIGDIR="codesignatures/osx/${ARCH}-apple-darwin"
+
             # Apply detached codesignatures to dist/ (in-place)
-            signapple apply dist/Reddcoin-Qt.app codesignatures/osx/dist/Reddcoin-Qt.app
+            signapple apply dist/Reddcoin-Qt.app "${SIGDIR}/dist/Reddcoin-Qt.app"
 
             # Apply detached codesignatures to the standalone binaries and
             # the shared library (in-place)
@@ -95,7 +99,7 @@ mkdir -p "$DISTSRC"
                 | sort \
                 | while read -r bin
             do
-                signapple apply "${bin}" "codesignatures/osx/${bin}.${ARCH}sign"
+                signapple apply "${bin}" "${SIGDIR}/${bin}.${ARCH}sign"
             done
 
             # Make an uncompressed DMG from dist/
@@ -105,14 +109,14 @@ mkdir -p "$DISTSRC"
                       -- -volume_date all_file_dates ="$SOURCE_DATE_EPOCH"
 
             # Compress uncompressed.dmg and output to OUTDIR
-            ./dmg dmg uncompressed.dmg "${OUTDIR}/${DISTNAME}-osx-signed.dmg"
+            ./dmg dmg uncompressed.dmg "${OUTDIR}/${DISTNAME}-${HOST}.dmg"
 
             # Make a .tar.gz from the signed binaries
             find "${DISTNAME}" -print0 \
                 | sort --zero-terminated \
                 | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
-                | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" \
-                || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-apple-darwin18/osx64}.tar.gz" && exit 1 )
+                | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" \
+                || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" && exit 1 )
             ;;
         *)
             exit 1

@@ -246,17 +246,31 @@ CHECKS = {
     ('LAZY_BINDINGS', check_MACHO_LAZY_BINDINGS),
     ('Canary', check_MACHO_Canary),
     ('CONTROL_FLOW', check_control_flow),
+],
+# arm64 macOS executables are always PIE and the kernel never makes their
+# stack executable, so there is nothing to check for either, and
+# CONTROL_FLOW looks for the x86 endbr64 instruction.
+'MACHO_ARM64': [
+    ('NOUNDEFS', check_MACHO_NOUNDEFS),
+    ('LAZY_BINDINGS', check_MACHO_LAZY_BINDINGS),
+    ('Canary', check_MACHO_Canary),
 ]
 }
 
+# Mach-O cputype of an arm64 binary, read from the header rather than through
+# LIEF, whose architecture enums are not stable across versions.
+CPU_TYPE_ARM64 = 0x0100000c
+
 def identify_executable(executable) -> Optional[str]:
     with open(filename, 'rb') as f:
-        magic = f.read(4)
+        magic = f.read(8)
     if magic.startswith(b'MZ'):
         return 'PE'
     elif magic.startswith(b'\x7fELF'):
         return 'ELF'
     elif magic.startswith(b'\xcf\xfa'):
+        if int.from_bytes(magic[4:8], 'little') == CPU_TYPE_ARM64:
+            return 'MACHO_ARM64'
         return 'MACHO'
     return None
 

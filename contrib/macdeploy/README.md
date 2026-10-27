@@ -13,10 +13,14 @@ When complete, it will have produced `Bitcoin-Core.dmg`.
 ### Step 1: Obtaining `Xcode.app`
 
 Our current macOS SDK
-(`Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz`) can be
+(`Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz`) can be
 extracted from
-[Xcode_12.1.xip](https://download.developer.apple.com/Developer_Tools/Xcode_12.1/Xcode_12.1.xip).
+[Xcode_12.2.xip](https://download.developer.apple.com/Developer_Tools/Xcode_12.2/Xcode_12.2.xip).
 An Apple ID is needed to download this.
+The `sha256sum` of the archive should be `28d352f8c14a43d9b8a082ac6338dc173cb153f964c6e8fb6ba389e5be528bd0`.
+
+This is the first SDK (macOS 11.0) that can target Apple Silicon, so both the
+`x86_64-apple-darwin` and the `arm64-apple-darwin` builds use it.
 
 After Xcode version 7.x, Apple started shipping the `Xcode.app` in a `.xip`
 archive. This makes the SDK less-trivial to extract on non-macOS machines. One
@@ -27,25 +31,25 @@ approach (tested on Debian Buster) is outlined below:
 apt install cpio
 git clone https://github.com/bitcoin-core/apple-sdk-tools.git
 
-# Unpack Xcode_12.1.xip and place the resulting Xcode.app in your current
+# Unpack Xcode_12.2.xip and place the resulting Xcode.app in your current
 # working directory
-python3 apple-sdk-tools/extract_xcode.py -f Xcode_12.1.xip | cpio -d -i
+python3 apple-sdk-tools/extract_xcode.py -f Xcode_12.2.xip | cpio -d -i
 ```
 
 On macOS the process is more straightforward:
 
 ```bash
-xip -x Xcode_12.1.xip
+xip -x Xcode_12.2.xip
 ```
 
-### Step 2: Generating `Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz` from `Xcode.app`
+### Step 2: Generating `Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz` from `Xcode.app`
 
-To generate `Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz`, run
+To generate `Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz`, run
 the script [`gen-sdk`](./gen-sdk) with the path to `Xcode.app` (extracted in the
 previous stage) as the first argument.
 
 ```bash
-# Generate a Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz from
+# Generate a Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz from
 # the supplied Xcode.app
 ./contrib/macdeploy/gen-sdk '/path/to/Xcode.app'
 ```
@@ -118,3 +122,22 @@ deterministic. Here's how it works:
   script that is also included there. Detached signatures are available from this [repository](https://github.com/bitcoin-core/bitcoin-detached-sigs).
 - Builders feed the unsigned app + detached signature back into Gitian. It uses the
   pre-built tools to recombine the pieces into a deterministic DMG.
+
+### Apple Silicon
+
+The `arm64-apple-darwin` build is a separate set of archives, not a universal
+binary. Its signatures are created the same way, on the unpacked
+`*-arm64-apple-darwin-codesigning.tar.gz`, and `detached-sig-create.sh` names
+its output (`signature-osx-arm64.tar.gz`, under `osx/arm64-apple-darwin/`)
+after the architecture of the bundle it signs.
+
+macOS on Apple Silicon kills any arm64 binary that has no valid signature. The
+linker usually adds an ad-hoc one, but the cctools port used to cross-compile
+leaves that out, and `install_name_tool` and `strip` would invalidate it in any
+case. The unsigned arm64 outputs therefore do not run as they are. To try one
+on a Mac before it is signed, sign it ad-hoc there:
+
+```bash
+codesign --force --deep --sign - Reddcoin-Qt.app
+codesign --force --sign - bin/reddcoind
+```
