@@ -80,14 +80,23 @@ bool node::GetReleaseArtifacts(const std::string& host_triplet, const std::strin
     }
 
     if (HostIs(host_triplet, "darwin")) {
-        // Only an x86_64 build is published. An arm64 Mac runs it under Rosetta
-        // and needs no special case here: HOST_TRIPLET is fixed at build time,
-        // so a Mac running this binary is by definition running the x86_64 one
-        // and already reports x86_64-apple-darwin18. Naming it as the Intel
-        // build is the presentation layer's job.
-        out.platform = "osx64";
-        out.gui = prefix + "osx-signed.dmg";
-        out.daemon = prefix + "osx64.tar.gz";
+        // An x86_64 and an arm64 build are published. HOST_TRIPLET is fixed at
+        // build time, so each build offers its own kind: an x86_64 build
+        // running under Rosetta on an arm64 Mac is offered the x86_64 one again.
+        // Naming that one as the Intel build is the presentation layer's job.
+        //
+        // The files are named after the guix host, which carries no darwin
+        // version, so a build configured with one, as x86_64-apple-darwin18
+        // releases were, names the same files. Those releases look for the
+        // older osx-signed.dmg and osx64.tar.gz, which the release process
+        // keeps publishing for them.
+        //
+        // guix is invoked as arm64-apple-darwin, and the artifacts are named
+        // after that, but config.sub records it as aarch64-apple-darwin.
+        const std::string arch{SplitTriplet(host_triplet).front()};
+        out.platform = (arch == "aarch64" || arch == "arm64") ? "arm64-apple-darwin" : "x86_64-apple-darwin";
+        out.gui = prefix + out.platform + ".dmg";
+        out.daemon = prefix + out.platform + ".tar.gz";
         return true;
     }
 

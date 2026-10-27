@@ -43,6 +43,13 @@ def linker_supports(cc, source, executable, flag):
         return False
     return True
 
+def is_arm64_macho(cc, source, executable):
+    '''Whether cc builds arm64 Mach-O, going by the cputype in the header.'''
+    call_security_check(cc, source, executable, [])
+    with open(executable, 'rb') as f:
+        header = f.read(8)
+    return int.from_bytes(header[4:8], 'little') == 0x0100000c # CPU_TYPE_ARM64
+
 class TestSecurityChecks(unittest.TestCase):
     def test_ELF(self):
         source = 'test1.c'
@@ -96,6 +103,20 @@ class TestSecurityChecks(unittest.TestCase):
         # of the dyld info the LAZY_BINDINGS check reads.
         cc = determine_wellknown_cmd('CC', 'clang') + ['-mmacosx-version-min=10.14']
         write_testcode(source)
+
+        if is_arm64_macho(cc, source, executable):
+            # arm64 macOS has no non-PIE executables, no executable stacks and
+            # no endbr64, so only the checks that apply to it are exercised.
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-flat_namespace','-fno-stack-protector']),
+                (1, executable+': failed NOUNDEFS LAZY_BINDINGS Canary'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-flat_namespace','-fstack-protector-all']),
+                (1, executable+': failed NOUNDEFS LAZY_BINDINGS'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-fstack-protector-all']),
+                (1, executable+': failed LAZY_BINDINGS'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-bind_at_load','-fstack-protector-all']),
+                (0, ''))
+            clean_files(source, executable)
+            return
 
         # An executable stack can only be asked for where the linker still
         # takes the flag; the NX check itself is exercised on every real

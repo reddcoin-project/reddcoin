@@ -11,7 +11,7 @@ export LC_ALL=C.UTF-8
 # as 00_setup_env_mac_host.sh except where arm64 differs.
 export HOST=arm64-apple-darwin
 export CONTAINER_NAME=ci_macos_native_arm64
-export PIP_PACKAGES="zmq"
+export PIP_PACKAGES="zmq lief"
 export GOAL="install"
 # Homebrew lives in /opt/homebrew on arm64, which the compiler does not search
 # by default (/usr/local, Homebrew's Intel prefix, it does). Headers and
@@ -32,7 +32,4 @@ export CCACHE_SIZE=300M
 # the CI script, most likely from memory pressure, so run fewer jobs at once.
 export MAKEJOBS="-j3"
 export TEST_RUNNER_JOBS="-j2"
-# security-check.py runs the x86_64 Mach-O checks on every Mach-O binary, and
-# PIE, NX and CONTROL_FLOW (endbr64) do not apply to arm64. Turn this on once
-# the arm64 check list from RED-152 is in.
-export RUN_SECURITY_TESTS="false"
+export RUN_SECURITY_TESTS="true"
