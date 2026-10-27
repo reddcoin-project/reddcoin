@@ -42,9 +42,9 @@ struct StakeWeightSummary {
  *  search has always run in. */
 struct StakeCandidates {
     std::set<CInputCoin> coins;
-    //! Trusted balance and reserve at collection; a coinstake may not spend
-    //! more than their difference.
-    CAmount nBalance{0};
+    //! Value of the coins and the reserve at collection; a coinstake may not
+    //! spend more than their difference.
+    CAmount nAvailable{0};
     CAmount nReserveBalance{0};
     //! The wallet's last processed block when collected. The staking thread
     //! collects again when this moves.

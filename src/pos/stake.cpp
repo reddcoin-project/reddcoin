@@ -18,23 +18,23 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
 {
       // Choose coins to use
       LOCK(pwallet->cs_wallet);
-      CAmount nBalance = pwallet->GetBalance().m_mine_trusted;
       CAmount nReserveBalance = 0;
       if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), nReserveBalance))
           return error("CreateCoinStake : invalid reserve balance amount");
-      if (nBalance <= nReserveBalance)
-          return false;
 
-      std::vector<CTransactionRef> vwtxPrev;
+      // Count every spendable coin, as the staking thread searches every
+      // spendable coin, rather than select toward the trusted balance, which
+      // counts locked coins and so could not be reached while one was locked.
       std::set<CInputCoin> setCoins;
-
-      CAmount nValueIn = 0;
-
+      CAmount nAvailable = 0;
       std::vector<COutput> vAvailableCoins;
       CCoinControl temp;
-      CoinSelectionParams coin_selection_params;
       pwallet->AvailableCoins(vAvailableCoins, &temp);
-      if (!pwallet->SelectCoins(vAvailableCoins, nBalance - nReserveBalance, setCoins, nValueIn, temp, coin_selection_params))
+      for (const COutput& coin : vAvailableCoins) {
+          setCoins.insert(coin.GetInputCoin());
+          nAvailable += coin.GetInputCoin().txout.nValue;
+      }
+      if (nAvailable <= nReserveBalance)
           return false;
       if (setCoins.empty())
           return false;
@@ -128,19 +128,22 @@ bool CollectStakeCandidates(const CWallet* pwallet, StakeCandidates& candidates)
 
     LOCK(pwallet->cs_wallet);
     candidates.hashLastBlock = pwallet->GetLastBlockHash();
-    candidates.nBalance = pwallet->GetBalance().m_mine_trusted;
     if (gArgs.IsArgSet("-reservebalance") && !ParseMoney(gArgs.GetArg("-reservebalance", ""), candidates.nReserveBalance))
         return error("CreateCoinStake : invalid reserve balance amount");
     candidates.collected = true;
-    if (candidates.nBalance <= candidates.nReserveBalance)
-        return false;
 
     std::vector<COutput> vAvailableCoins;
     CCoinControl temp;
-    CoinSelectionParams coin_selection_params;
-    CAmount nValueIn = 0;
     pwallet->AvailableCoins(vAvailableCoins, &temp);
-    if (!pwallet->SelectCoins(vAvailableCoins, candidates.nBalance - candidates.nReserveBalance, candidates.coins, nValueIn, temp, coin_selection_params)) {
+    // For staking, use all available coins directly. Selecting toward the
+    // trusted balance failed whenever a coin was locked, as the balance
+    // counts locked coins and AvailableCoins leaves them out, and staking
+    // only needs any single UTXO with sufficient age to find a valid kernel.
+    for (const COutput& coin : vAvailableCoins) {
+        candidates.coins.insert(coin.GetInputCoin());
+        candidates.nAvailable += coin.GetInputCoin().txout.nValue;
+    }
+    if (candidates.nAvailable <= candidates.nReserveBalance) {
         candidates.coins.clear();
         return false;
     }
@@ -314,7 +317,7 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
         txNew.vout.push_back(CTxOut(0, kernel.scriptPubKeyOut)); // Split stake
     LogPrintf("CreateCoinStake : added kernel type=%s\n", GetTxnOutputType(kernel.type));
 
-    if (nCredit == 0 || nCredit > candidates.nBalance - candidates.nReserveBalance)
+    if (nCredit == 0 || nCredit > candidates.nAvailable - candidates.nReserveBalance)
         return false;
     for (const CInputCoin& pcoin : candidates.coins)
     {
@@ -341,7 +344,7 @@ bool BuildCoinStake(const CWallet* pwallet, CChainState* chainstate, unsigned in
             if (nCredit > nCombineThreshold)
                 break;
             // Stop adding inputs if reached reserve limit
-            if (nCredit + pcoin.txout.nValue > candidates.nBalance - candidates.nReserveBalance)
+            if (nCredit + pcoin.txout.nValue > candidates.nAvailable - candidates.nReserveBalance)
                 break;
             // Do not add additional significant input
             if (pcoin.txout.nValue > nCombineThreshold)
