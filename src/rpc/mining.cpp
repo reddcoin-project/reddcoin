@@ -288,7 +288,10 @@ static RPCHelpMan generatetodescriptor()
     const CTxMemPool& mempool = EnsureMemPool(node);
     ChainstateManager& chainman = EnsureChainman(node);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    // As generatetoaddress: PoS heights need the requested wallet.
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet.get());
 },
     };
 }
@@ -488,20 +491,13 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    // ReddCoin: after nLastPowHeight generateBlocks needs a wallet to source the
-    // coinstake. Fetch it without throwing (GetWalletForJSONRPCRequest throws when
-    // none is loaded, which is fine for PoW heights). Use the single loaded wallet.
-    CWallet* pwallet = nullptr;
-    std::shared_ptr<CWallet> wallet;
-    if (HasWallets()) {
-        std::vector<std::shared_ptr<CWallet>> wallets = GetWallets();
-        if (wallets.size() == 1) {
-            wallet = wallets[0];
-            pwallet = wallet.get();
-        }
-    }
+    // ReddCoin: after nLastPowHeight generateBlocks stakes from a wallet. Use
+    // the one the request names (-rpcwallet), else the single loaded one;
+    // this throws when there is none, or several and none named, rather than
+    // fall through to a PoW block the chain would reject as pow-ended.
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, pwallet);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, wallet.get());
 },
     };
 }
