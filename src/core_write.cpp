@@ -265,7 +265,11 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, bool include_add
 
     if (calculate_fee) {
         const CAmount fee = amt_total_in - amt_total_out;
-        CHECK_NONFATAL(MoneyRange(fee));
+        // For coinstake transactions, the fee can be negative due to staking rewards
+        // Only validate positive fees with MoneyRange
+        if (fee >= 0) {
+            CHECK_NONFATAL(MoneyRange(fee));
+        }
         entry.pushKV("fee", ValueFromAmount(fee));
     }
 
