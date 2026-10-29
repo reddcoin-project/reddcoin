@@ -23,10 +23,10 @@ beyond the keys it holds.
 """
 
 import os
-import subprocess
 
 from test_framework.messages import hash256
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_node import TestNodeCLI
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -56,10 +56,10 @@ class HDSeedNotDerivableTest(BitcoinTestFramework):
         self.skip_if_no_bdb()
 
     def wallet_tool(self, *args):
+        """Run reddcoin-wallet on node 0's data directory, the command last; it raises if the tool fails."""
         binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
-        result = subprocess.run([binary, '-datadir={}'.format(self.nodes[0].datadir), '-chain=%s' % self.chain] + list(args),
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        assert_equal((result.returncode, result.stderr), (0, ""))
+        *options, command = args
+        TestNodeCLI(binary, self.nodes[0].datadir)('-chain=%s' % self.chain, *options).send_cli(command)
 
     def dump(self, name):
         """The records of a wallet that is not loaded, as the wallet tool dumps them."""
