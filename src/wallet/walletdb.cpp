@@ -647,7 +647,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                             return false;
                         }
                         internal = path[3] == (1 | 0x00000000);
-                        index = path[4] & ~0x00000000;
+                        index = path[4];
                     }
                 }
 
