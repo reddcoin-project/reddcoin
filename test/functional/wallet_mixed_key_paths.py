@@ -25,17 +25,18 @@ a wallet made from a mnemonic, whose keys are all on BIP44 paths.
 
 import json
 import os
+import shutil
 import struct
-import subprocess
 
 from test_framework.authproxy import JSONRPCException
 from test_framework.messages import hash256
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_node import TestNodeCLI
 from test_framework.util import (
     assert_equal,
 )
 
-PASSPHRASE = "the passphrase the wallet is encrypted with"
+UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
 NOTICE = ("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the "
           "wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: "
           "keep a backup of the file, or create a new wallet and move the funds to it.")
@@ -95,10 +96,10 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         self.skip_if_no_bdb()
 
     def wallet_tool(self, *args):
+        """Run reddcoin-wallet on node 0's data directory, the command last; it raises if the tool fails."""
         binary = self.config["environment"]["BUILDDIR"] + '/src/reddcoin-wallet' + self.config["environment"]["EXEEXT"]
-        result = subprocess.run([binary, '-datadir={}'.format(self.nodes[0].datadir), '-chain=%s' % self.chain] + list(args),
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        assert_equal((result.returncode, result.stderr), (0, ""))
+        *options, command = args
+        TestNodeCLI(binary, self.nodes[0].datadir)('-chain=%s' % self.chain, *options).send_cli(command)
 
     def wallets_root(self):
         chain_dir = os.path.join(self.nodes[0].datadir, self.chain)
@@ -107,7 +108,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
     def make_mixed(self, name):
         """A wallet created with a passphrase, whose first four receiving keys get BIP44 paths."""
         node = self.nodes[0]
-        node.createwallet(wallet_name=name + "_source", descriptors=False, passphrase=PASSPHRASE)
+        node.createwallet(wallet_name=name + "_source", descriptors=False, passphrase=UNLOCK_PHRASE)
         source = node.get_wallet_rpc(name + "_source")
         addresses = [source.getnewaddress("", "legacy") for _ in range(4)]
         paths = {a: source.getaddressinfo(a)["hdkeypath"] for a in addresses}
@@ -186,7 +187,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
                 with open(os.path.join(directory, "facts.json"), encoding="utf8") as f:
                     facts = json.load(f)["wallets"]["wallet-created-with-passphrase"]
                 name = "release_" + version.replace(".", "_")
-                subprocess.run(["cp", "-r", os.path.join(directory, "wallet-created-with-passphrase"), os.path.join(self.wallets_root(), name)], check=True)
+                shutil.copytree(os.path.join(directory, "wallet-created-with-passphrase"), os.path.join(self.wallets_root(), name))
                 wallet = self.check_mixed(name, facts["wallet_passphrase"])
                 wallet.walletpassphrase(facts["wallet_passphrase"], 60)
                 dump = os.path.join(self.options.tmpdir, name + ".txt")
@@ -199,7 +200,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
             return
 
         held = self.make_mixed("mixed")
-        wallet = self.check_mixed("mixed", PASSPHRASE, held)
+        wallet = self.check_mixed("mixed", UNLOCK_PHRASE, held)
 
         self.log.info("A payment to one of the earlier keys is the wallet's, and the wallet signs for it")
         txid = node.sendtoaddress(held[0], 10)
@@ -207,7 +208,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         coin = [u for u in wallet.listunspent(0) if u["txid"] == txid]
         assert_equal([(c["address"], c["amount"]) for c in coin], [(held[0], 10)])
         raw = wallet.createrawtransaction([{"txid": txid, "vout": coin[0]["vout"]}], {node.getnewaddress(): 9.99})
-        wallet.walletpassphrase(PASSPHRASE, 60)
+        wallet.walletpassphrase(UNLOCK_PHRASE, 60)
         assert_equal(wallet.signrawtransactionwithwallet(raw)["complete"], True)
         wallet.walletlock()
 
@@ -217,7 +218,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         assert_equal(node.get_wallet_rpc("mixed").getwalletinfo()["mixed_key_paths"], True)
 
         self.log.info("Other wallets are not reported")
-        node.createwallet(wallet_name="plain", descriptors=False, passphrase=PASSPHRASE)
+        node.createwallet(wallet_name="plain", descriptors=False, passphrase=UNLOCK_PHRASE)
         others = ["plain"]
         # createwallet makes a mnemonic wallet only where it has the parameter for it.
         try:
