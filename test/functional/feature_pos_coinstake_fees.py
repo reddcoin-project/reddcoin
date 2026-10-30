@@ -18,7 +18,8 @@ sized off that reference (~3x the current subsidy). Each fee block then asserts:
      negative here since fee > subsidy): fees were not destroyed,
   b) the exact accounting identity coinstake_mint == supply_delta + fees,
      computed directly from the transaction (independent of the moneysupply RPC),
-  c) the dev fund received ~8% of the fees (dev output rose by ~0.08 * fee).
+  c) the dev fund received 8% of the change in reward from the reference
+     block: the fees plus the drift in subsidy between the two blocks.
 Single- and multi-transaction fee blocks exercise nFees aggregation.
 
 With --previous_release a v4.22.9 node joins as a sync-only follower and must
@@ -182,12 +183,15 @@ class PosCoinstakeFeesTest(BitcoinTestFramework):
         # b) Exact accounting identity: coinstake mint == supply_delta + fees.
         assert abs(mint - (delta + total_fee)) <= Decimal("0.001"), (
             f"[{label}] coinstake mint {mint} != supply_delta+fee {delta + total_fee}")
-        # c) Dev fund received ~8% of the fees (bracket absorbs subsidy drift
-        #    between the reference and fee block).
-        expected = total_fee * DEV_SHARE
-        assert expected / 2 <= dev_bump <= expected * Decimal("1.5"), (
-            f"[{label}] dev fund share of fees {dev_bump} outside "
-            f"[{expected / 2}, {expected * Decimal('1.5')}] (fee={total_fee})")
+        # c) Dev fund received 8% of the fees. The two blocks are staked from
+        #    different kernels, so their coin-age subsidies differ too, and the
+        #    dev fund takes 8% of that difference as well: compare against 8% of
+        #    the whole change in reward (fees plus subsidy drift), which is exact
+        #    up to the satoshi rounding of the two splits.
+        expected = (total_fee + delta - ref_delta) * DEV_SHARE
+        assert abs(dev_bump - expected) <= 2 * SATOSHI, (
+            f"[{label}] dev fund share {dev_bump} != 8% of fees plus subsidy drift {expected} "
+            f"(fee={total_fee}, subsidy {ref_delta} -> {delta})")
 
     # ------------------------------------------------------------------
     # Test bodies
