@@ -210,6 +210,13 @@ Tools and Utilities
 Wallet
 ------
 
+- The `-hdseed`, `-mnemonic` and `-mnemonicpassphrase` options are no longer
+  offered in `-help`. None of them has had any effect on this version: a new
+  mnemonic wallet gets its seed from its own phrase, and a phrase to restore
+  from is given to `createwallet` (`mnemonic`, `mnemonic_passphrase`). A node
+  that still has one of them set starts as before and warns that the option
+  is ignored: remove it from the command line or `reddcoin.conf`.
+
 - Support for generating `bip39` (mnemonic) based wallets.
     - select from [12,15,18,21,24] words for [128,160,192,224,256] bits entropy
     - checking for correctness of mnemonic sentence words

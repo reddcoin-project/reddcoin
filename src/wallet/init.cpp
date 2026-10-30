@@ -24,6 +24,13 @@
 #include <wallet/wallet.h>
 #include <walletinitinterface.h>
 
+#include <string>
+#include <vector>
+
+//! Options that once gave a new mnemonic wallet its seed or phrase. None of
+//! them has been read for some time; they were still offered in -help.
+static const std::vector<std::string> IGNORED_SEED_OPTIONS{"-hdseed", "-mnemonic", "-mnemonicpassphrase"};
+
 class WalletInit : public WalletInitInterface
 {
 public:
@@ -60,9 +67,6 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
         CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MAXFEE)), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-mintxfee=<amt>", strprintf("Fee rates (in %s/kvB) smaller than this are considered zero fee for transaction creation (default: %s)",
                                                             CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MINFEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
-    argsman.AddArg("-hdseed=<seed>", "HD Seed.", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
-    argsman.AddArg("-mnemonic=<mnemonic>", "HD Seed.", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
-    argsman.AddArg("-mnemonicpassphrase=<passphrase>", "HD Seed.", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-paytxfee=<amt>", strprintf("Fee rate (in %s/kvB) to add to transactions you send (default: %s)",
                                                             CURRENCY_UNIT, FormatMoney(CFeeRate{DEFAULT_PAY_TX_FEE}.GetFeePerK())), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-rescan", "Rescan the block chain for missing wallet transactions on startup", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
@@ -102,6 +106,9 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
     argsman.AddArg("-walletrejectlongchains", strprintf("Wallet will not create transactions that violate mempool chain limits (default: %u)", DEFAULT_WALLET_REJECT_LONG_CHAINS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::WALLET_DEBUG_TEST);
 
     argsman.AddHiddenArgs({"-zapwallettxes"});
+    // No longer read: still accepted, so that a node with one of them in its
+    // configuration starts, and warned about in ParameterInteraction.
+    argsman.AddHiddenArgs(IGNORED_SEED_OPTIONS);
 }
 
 bool WalletInit::ParameterInteraction() const
@@ -129,6 +136,12 @@ bool WalletInit::ParameterInteraction() const
 
     if (gArgs.IsArgSet("-zapwallettxes")) {
         return InitError(Untranslated("-zapwallettxes has been removed. If you are attempting to remove a stuck transaction from your wallet, please use abandontransaction instead."));
+    }
+
+    for (const std::string& option : IGNORED_SEED_OPTIONS) {
+        if (gArgs.IsArgSet(option)) {
+            InitWarning(strprintf(_("%s is no longer used and is ignored. A new wallet gets its seed from its own mnemonic phrase."), option));
+        }
     }
 
     if (gArgs.GetBoolArg("-sysperms", false))
