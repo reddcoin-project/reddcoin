@@ -41,13 +41,21 @@ def filter_output_indices_by_value(vouts, value):
 
 class RESTTest (BitcoinTestFramework):
     def set_test_params(self):
-        self.setup_clean_chain = True
         self.num_nodes = 2
         self.extra_args = [["-rest"], []]
         self.supports_cli = False
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+
+    def import_deterministic_coinbase_privkeys(self):
+        # Only import staking keys for node 0
+        self.init_wallet(0)
+        # Create clean wallet for node 1 (no cache coinbase keys)
+        # so node 1 starts with zero balance
+        self.nodes[1].createwallet(wallet_name=self.default_wallet_name,
+                                   descriptors=self.options.descriptors,
+                                   load_on_startup=True)
 
     def test_rest_request(self, uri, http_method='GET', req_type=ReqType.JSON, body='', status=200, ret_type=RetType.JSON):
         rest_uri = '/rest' + uri
@@ -77,17 +85,16 @@ class RESTTest (BitcoinTestFramework):
 
     def run_test(self):
         self.url = urllib.parse.urlparse(self.nodes[0].url)
-        self.log.info("Mine blocks and send Bitcoin to node 1")
+        self.log.info("Mine blocks and send coins to node 1")
 
-        # Random address so node1's balance doesn't increase
-        not_related_address = "2MxqoHEdNQTyYeX1mHcbrrpzgojbosTpCvJ"
+        # Use an address from node 0 as a sink (not in node 1's wallet)
+        not_related_address = self.nodes[0].getnewaddress()
 
         self.nodes[0].generate(1)
         self.sync_all()
-        self.nodes[1].generatetoaddress(100, not_related_address)
-        self.sync_all()
 
-        assert_equal(self.nodes[0].getbalance(), 50)
+        # Verify node 0 has sufficient balance from cache
+        assert_greater_than(self.nodes[0].getbalance(), 50)
 
         txid = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 0.1)
         self.sync_all()
@@ -109,7 +116,7 @@ class RESTTest (BitcoinTestFramework):
 
         self.log.info("Query an unspent TXO using the /getutxos URI")
 
-        self.nodes[1].generatetoaddress(1, not_related_address)
+        self.nodes[0].generate(1)
         self.sync_all()
         bb_hash = self.nodes[0].getbestblockhash()
 
@@ -156,7 +163,7 @@ class RESTTest (BitcoinTestFramework):
         response_hash = output.read(32)[::-1].hex()
 
         assert_equal(bb_hash, response_hash)  # check if getutxo's chaintip during calculation was fine
-        assert_equal(chain_height, 102)  # chain height must be 102
+        assert_equal(chain_height, self.nodes[0].getblockcount())  # chain height must match
 
         self.log.info("Test the /getutxos URI with and without /checkmempool")
         # Create a transaction, check that it's found with /checkmempool, but
@@ -276,19 +283,31 @@ class RESTTest (BitcoinTestFramework):
             assert_equal(json_obj[0][key], rpc_block_json[key])
 
         # See if we can get 5 headers in one response
-        self.nodes[1].generate(5)
+        self.nodes[0].generate(5)
         self.sync_all()
         json_obj = self.test_rest_request("/headers/5/{}".format(bb_hash))
         assert_equal(len(json_obj), 5)  # now we should have 5 header objects
 
         self.log.info("Test tx inclusion in the /mempool and /block URIs")
 
-        # Make 3 tx and mine them on node 1
+        # Lock all UTXOs except the largest so the 3 sends below chain together
+        # (each spend uses change from the previous, creating spentby/depends)
+        utxos = self.nodes[0].listunspent()
+        utxos.sort(key=lambda u: u['amount'], reverse=True)
+        utxos_to_lock = [{"txid": u["txid"], "vout": u["vout"]} for u in utxos[1:]]
+        if utxos_to_lock:
+            self.nodes[0].lockunspent(False, utxos_to_lock)
+
+        # Make 3 tx and mine them on node 0
         txs = []
         txs.append(self.nodes[0].sendtoaddress(not_related_address, 11))
         txs.append(self.nodes[0].sendtoaddress(not_related_address, 11))
         txs.append(self.nodes[0].sendtoaddress(not_related_address, 11))
         self.sync_all()
+
+        # Unlock UTXOs for subsequent staking
+        if utxos_to_lock:
+            self.nodes[0].lockunspent(True, utxos_to_lock)
 
         # Check that there are exactly 3 transactions in the TX memory pool before generating the block
         json_obj = self.test_rest_request("/mempool/info")
@@ -304,14 +323,15 @@ class RESTTest (BitcoinTestFramework):
             assert_equal(json_obj[tx]['depends'], txs[i - 1:i])
 
         # Now mine the transactions
-        newblockhash = self.nodes[1].generate(1)
+        newblockhash = self.nodes[0].generate(1)
         self.sync_all()
 
         # Check if the 3 tx show up in the new block
         json_obj = self.test_rest_request("/block/{}".format(newblockhash[0]))
         non_coinbase_txs = {tx['txid'] for tx in json_obj['tx']
                             if 'coinbase' not in tx['vin'][0]}
-        assert_equal(non_coinbase_txs, set(txs))
+        # In PoS, non_coinbase_txs includes the coinstake tx as well
+        assert set(txs).issubset(non_coinbase_txs)
 
         # Check the same but without tx details
         json_obj = self.test_rest_request("/block/notxdetails/{}".format(newblockhash[0]))

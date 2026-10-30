@@ -5,7 +5,6 @@
 """Test the listsinceblock RPC."""
 
 from test_framework.address import key_to_p2wpkh
-from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.key import ECKey
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.messages import BIP125_SEQUENCE_NUMBER
@@ -21,16 +20,25 @@ from decimal import Decimal
 class ListSinceBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
-        self.setup_clean_chain = True
+        self.setup_clean_chain = False
+
+    def import_deterministic_coinbase_privkeys(self):
+        # Nodes 1, 2: need cache staking keys for block generation on split networks
+        self.init_wallet(1)
+        self.init_wallet(2)
+        # Nodes 0, 3: clean wallets without cache coinbase keys
+        # so listsinceblock/listtransactions assertions aren't polluted
+        for i in [0, 3]:
+            self.nodes[i].createwallet(wallet_name=self.default_wallet_name,
+                                       descriptors=self.options.descriptors,
+                                       load_on_startup=True)
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def run_test(self):
-        # All nodes are in IBD from genesis, so they'll need the miner (node2) to be an outbound connection, or have
-        # only one connection. (See fPreferredDownload in net_processing)
-        self.connect_nodes(1, 2)
-        self.nodes[2].generate(COINBASE_MATURITY + 1)
+        # Cache starts at height 199. Generate 233 more for SegWit activation at 432.
+        self.nodes[2].generate(233)
         self.sync_all()
 
         self.test_no_blockhash()
@@ -202,7 +210,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
         self.split_network()
 
         # send from nodes[1] using utxo to nodes[0]
-        change = '%.8f' % (float(utxo['amount']) - 1.0003)
+        change = '%.8f' % (float(utxo['amount']) - 1.001)
         recipient_dict = {
             self.nodes[0].getnewaddress(): 1,
             self.nodes[1].getnewaddress(): change,
@@ -278,7 +286,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
         # create and sign a transaction
         utxos = self.nodes[2].listunspent()
         utxo = utxos[0]
-        change = '%.8f' % (float(utxo['amount']) - 1.0003)
+        change = '%.8f' % (float(utxo['amount']) - 1.001)
         recipient_dict = {
             self.nodes[0].getnewaddress(): 1,
             self.nodes[2].getnewaddress(): change,
@@ -293,11 +301,17 @@ class ListSinceBlockTest(BitcoinTestFramework):
 
         signedtx = signedtxres['hex']
 
+        # Lock the UTXO on nodes[2] so coinstake doesn't consume it during generate
+        self.nodes[2].lockunspent(False, [utxo_dicts[0]])
+
         # send from nodes[1]; this will end up in aa1
         txid1 = self.nodes[1].sendrawtransaction(signedtx)
 
         # generate bb1-bb2 on right side
         self.nodes[2].generate(2)
+
+        # Unlock the UTXO so sendrawtransaction can broadcast it
+        self.nodes[2].lockunspent(True, [utxo_dicts[0]])
 
         # send from nodes[2]; this will end up in bb3
         txid2 = self.nodes[2].sendrawtransaction(signedtx)
@@ -344,8 +358,8 @@ class ListSinceBlockTest(BitcoinTestFramework):
         tx_input = dict(
             sequence=BIP125_SEQUENCE_NUMBER, **next(u for u in spending_node.listunspent()))
         rawtx = spending_node.createrawtransaction(
-            [tx_input], {dest_address: tx_input["amount"] - Decimal("0.00051000"),
-                         spending_node.getrawchangeaddress(): Decimal("0.00050000")})
+            [tx_input], {dest_address: tx_input["amount"] - Decimal("0.051"),
+                         spending_node.getrawchangeaddress(): Decimal("0.05")})
         signedtx = spending_node.signrawtransactionwithwallet(rawtx)
         orig_tx_id = spending_node.sendrawtransaction(signedtx["hex"])
         original_tx = spending_node.gettransaction(orig_tx_id)

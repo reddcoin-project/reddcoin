@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2015-2020 The Bitcoin Core developers
-# Copyright (c) 2015-2024 The Reddcoin Core developers
+# Copyright (c) 2015-2021 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Functionality to build scripts, as well as signature hash functions.
@@ -664,7 +664,10 @@ def LegacySignatureHash(script, txTo, inIdx, hashtype):
         txtmp.vin = []
         txtmp.vin.append(tmp)
 
-    s = txtmp.serialize_without_witness()
+    # ReddCoin: Use serialize_for_legacy_sighash() which excludes nTime.
+    # Legacy signature hash does NOT include nTime, matching the C++
+    # CTransactionSignatureSerializer::Serialize() implementation.
+    s = txtmp.serialize_for_legacy_sighash()
     s += struct.pack(b"<I", hashtype)
 
     hash = hash256(s)

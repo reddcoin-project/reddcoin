@@ -10,7 +10,8 @@ from test_framework.messages import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-    hex_str_to_bytes
+    advance_time_for_pos,
+    hex_str_to_bytes,
 )
 
 
@@ -27,6 +28,9 @@ class AddressesDeprecationTest(BitcoinTestFramework):
 
     def test_addresses_deprecation(self):
         node = self.nodes[0]
+
+        advance_time_for_pos(self.nodes, seconds=600)
+
         coin = node.listunspent().pop()
 
         inputs = [{'txid': coin['txid'], 'vout': coin['vout']}]
@@ -41,15 +45,23 @@ class AddressesDeprecationTest(BitcoinTestFramework):
         txid = node.sendrawtransaction(hexstring=tx_signed, maxfeerate=0)
 
         self.log.info("Test RPCResult scriptPubKey no longer returns the fields addresses or reqSigs by default")
-        hash = node.generateblock(output=node.getnewaddress(), transactions=[txid])['hash']
+        # Use generate() instead of generateblock() — generateblock is PoW-only
+        # and fails with "pow-ended" past nLastPowHeight. The tx is already in
+        # the mempool so it will be included in the next PoS block.
+        hash = node.generate(1)[0]
         # Ensure both nodes have the newly generated block on disk.
         self.sync_blocks()
-        script_pub_key = node.getblock(blockhash=hash, verbose=2)['tx'][-1]['vout'][0]['scriptPubKey']
+        # Find our tx by txid (PoS blocks have coinbase + coinstake before user txs)
+        block = node.getblock(blockhash=hash, verbose=2)
+        our_tx = [t for t in block['tx'] if t['txid'] == txid][0]
+        script_pub_key = our_tx['vout'][0]['scriptPubKey']
         assert 'addresses' not in script_pub_key and 'reqSigs' not in script_pub_key
 
         self.log.info("Test RPCResult scriptPubKey returns the addresses field with -deprecatedrpc=addresses")
-        script_pub_key = self.nodes[1].getblock(blockhash=hash, verbose=2)['tx'][-1]['vout'][0]['scriptPubKey']
-        assert_equal(script_pub_key['addresses'], ['mvKDK6D54HU8wQumJBLHY95eq5iHFqXSBz', 'mv3rHCQSwKp2BLSuMHD8uCS32LW5xiNAA5', 'mirrsyhAQYzo5CwVhcaYJKwUJu1WJRCRJe'])
+        block = self.nodes[1].getblock(blockhash=hash, verbose=2)
+        our_tx = [t for t in block['tx'] if t['txid'] == txid][0]
+        script_pub_key = our_tx['vout'][0]['scriptPubKey']
+        assert_equal(script_pub_key['addresses'], ['rM2r9HVEsGZmwBSiZnznsX5JkdYf1Gas9i', 'rLmV7PgckJufB6yrctseEaRgwtLTsExM6e', 'r9aViAyLDY6S4yUSyEF3dhw8ESqt7cSZwA'])
         assert_equal(script_pub_key['reqSigs'], 2)
 
 

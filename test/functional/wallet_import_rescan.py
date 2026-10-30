@@ -118,16 +118,18 @@ class Variant(collections.namedtuple("Variant", "call data address_type rescan p
 
 
 # List of Variants for each way a key or address could be imported.
-IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, AddressType, Rescan, (False, True))]
+# ReddCoin requires -txindex=1 for PoS, which is incompatible with pruning,
+# so prune variants are excluded.
+IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, AddressType, Rescan, (False,))]
 
-# List of nodes to import keys to. Half the nodes will have pruning disabled,
-# half will have it enabled. Different nodes will be used for imports that are
-# expected to cause rescans, and imports that are not expected to cause
-# rescans, in order to prevent rescans during later imports picking up
+# List of nodes to import keys to. Different nodes will be used for imports
+# that are expected to cause rescans, and imports that are not expected to
+# cause rescans, in order to prevent rescans during later imports picking up
 # transactions associated with earlier imports. This makes it easier to keep
 # track of expected balances and transactions.
+# ReddCoin: pruning nodes removed (txindex required for PoS).
 ImportNode = collections.namedtuple("ImportNode", "prune rescan")
-IMPORT_NODES = [ImportNode(*fields) for fields in itertools.product((False, True), repeat=2)]
+IMPORT_NODES = [ImportNode(*fields) for fields in itertools.product((False,), (False, True))]
 
 # Rescans start at the earliest block up to 2 hours before the key timestamp.
 TIMESTAMP_WINDOW = 2 * 60 * 60

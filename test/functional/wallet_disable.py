@@ -5,6 +5,7 @@
 """Test a node with the -disablewallet option.
 
 - Test that validateaddress RPC works when running with -disablewallet
+- Test that generatetoaddress fails without a wallet (ReddCoin PoS requires wallet)
 - Test that it is not possible to mine to an invalid address.
 """
 
@@ -21,15 +22,19 @@ class DisableWalletTest (BitcoinTestFramework):
     def run_test (self):
         # Make sure wallet is really disabled
         assert_raises_rpc_error(-32601, 'Method not found', self.nodes[0].getwalletinfo)
-        x = self.nodes[0].validateaddress('3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
-        assert x['isvalid'] == False
+
+        # ReddCoin regtest uses PUBKEY_ADDRESS=122 (prefix 'r') and SCRIPT_ADDRESS=5 (prefix '3')
+        # Bitcoin testnet address (prefix 'm', version 111) is invalid on ReddCoin regtest
         x = self.nodes[0].validateaddress('mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ')
+        assert x['isvalid'] == False
+        # ReddCoin regtest P2SH address (prefix '3', version 5) is valid
+        x = self.nodes[0].validateaddress('3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
         assert x['isvalid'] == True
 
-        # Checking mining to an address without a wallet. Generating to a valid address should succeed
-        # but generating to an invalid address will fail.
-        self.nodes[0].generatetoaddress(1, 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ')
-        assert_raises_rpc_error(-5, "Invalid address", self.nodes[0].generatetoaddress, 1, '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
+        # ReddCoin's generatetoaddress requires a wallet for PoS staking,
+        # so both valid and invalid addresses fail when wallet is disabled.
+        assert_raises_rpc_error(-18, "No wallet is loaded", self.nodes[0].generatetoaddress, 1, '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
+        assert_raises_rpc_error(-5, "Invalid address", self.nodes[0].generatetoaddress, 1, 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ')
 
 if __name__ == '__main__':
     DisableWalletTest ().main ()
