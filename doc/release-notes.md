@@ -571,6 +571,18 @@ RPC
 Wallet
 ------
 
+- The `-hdseed`, `-mnemonic` and `-mnemonicpassphrase` options are no longer
+  read, and no longer appear in `-help`. `-hdseed` replaced the seed of the
+  next Bip39 or Bip44 wallet created with the hex it was given. The value was
+  not checked, and the wallet was left with no mnemonic phrase, while the
+  wizard still showed one that does not restore it. The other two options
+  were read and never used. A new mnemonic wallet now always gets its seed
+  from its own phrase. A node that still has one of these options set
+  starts as before and warns that the option is ignored: remove it from the
+  command line or `reddcoin.conf`. Wallets created earlier with `-hdseed` are
+  not changed. They have no mnemonic phrase, so back up the wallet file
+  itself.
+
 - `AbandonTransaction` gains an overload taking a `WalletBatch`, so a sweep
   costs one database transaction rather than one per transaction abandoned.
   `ReacceptWalletTransactions` uses it.

@@ -1241,37 +1241,11 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
 
     CHDChain newHdChain;
     newHdChain.SetBip44(walletoptions.walletType == walletType::bip44Wallet);
-    std::string strSeed = gArgs.GetArg("-hdseed", "not hex");
 
-
-    if(IsHex(strSeed)) { // that means gArgs.IsArgSet("-hdseed") == true
-		std::vector<unsigned char> vchSeed = ParseHex(strSeed);
-
-		SecureVector svchSeed(vchSeed.begin(), vchSeed.end());
-		CPubKey seed(vchSeed.begin(), vchSeed.end());
-
-		newHdChain.vchSeed = svchSeed;
-		newHdChain.seed_id = seed.GetID();
-		// TODO OMARI how to verify the seed
-
-		AddHDChain(newHdChain);
-
-		return seed;
-	}
-
-    if (gArgs.IsArgSet("-hdseed") && !IsHex(strSeed))
-       LogPrintf("%s: -- Incorrect seed, generating random one instead\n", __func__);
-
-    // NOTE: empty mnemonic means "generate a new one for me"
-    std::string strMnemonic = gArgs.GetArg("-mnemonic", "");
-    // NOTE: default mnemonic passphrase is an empty string
-    std::string strMnemonicPassphrase = gArgs.GetArg("-mnemonicpassphrase", "");
-
-    SecureString vchMnemonic(strMnemonic.begin(), strMnemonic.end());
-    SecureString vchMnemonicPassphrase(strMnemonicPassphrase.begin(), strMnemonicPassphrase.end());
-
+    // The seed always comes from the wallet's own mnemonic (an empty one is
+    // generated). -hdseed, -mnemonic and -mnemonicpassphrase are not read: see
+    // WalletInit::ParameterInteraction.
     SecureVector& vchSeed = newHdChain.vchSeed;
-//if (!newHdChain.SetMnemonic(vchMnemonic, vchMnemonicPassphrase, vchSeed))
     if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed))
 	    throw std::runtime_error(std::string(__func__) + ": SetMnemonic failed");
 
