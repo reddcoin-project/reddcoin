@@ -14,11 +14,14 @@
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <hash.h>
+#include <id/reddid.h>
+#include <id/reddid_p2p.h>
 #include <index/blockfilterindex.h>
 #include <merkleblock.h>
 #include <netbase.h>
 #include <netmessagemaker.h>
 #include <node/blockstorage.h>
+#include <node/context.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <primitives/block.h>
@@ -280,7 +283,7 @@ class PeerManagerImpl final : public PeerManager
 public:
     PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, CAddrMan& addrman,
                     BanMan* banman, CScheduler& scheduler, ChainstateManager& chainman,
-                    CTxMemPool& pool, bool ignore_incoming_txs);
+                    CTxMemPool& pool, bool ignore_incoming_txs, NodeContext& node);
 
     /** Overridden from CValidationInterface. */
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected) override;
@@ -425,6 +428,11 @@ private:
 
     /** Whether this node is running in blocks only mode */
     const bool m_ignore_incoming_txs;
+
+    /** The context of the node, through which the ReddID manager is reached.
+     *  The manager is created after this object, and only when ReddID is
+     *  enabled: m_node->reddid is null otherwise. */
+    NodeContext* m_node{nullptr};
 
     /** Whether we've completed initial sync yet, for determining when to turn
       * on extra block-relay-only peers. */
@@ -1159,6 +1167,9 @@ void PeerManagerImpl::InitializeNode(CNode *pnode)
     if (!pnode->IsInboundConn()) {
         PushNodeVersion(*pnode, GetTime());
     }
+    if (m_node && m_node->reddid && m_node->reddid->GetP2PManager()) {
+        m_node->reddid->GetP2PManager()->OnNodeConnected(pnode);
+    }
 }
 
 void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
@@ -1235,6 +1246,9 @@ void PeerManagerImpl::FinalizeNode(const CNode& node)
         // call Connected() for feeler connections since they don't have
         // fSuccessfullyConnected set.
         m_addrman.Connected(node.addr);
+    }
+    if (m_node && m_node->reddid && m_node->reddid->GetP2PManager()) {
+        m_node->reddid->GetP2PManager()->OnNodeDisconnected(nodeid);
     }
     LogPrint(BCLog::NET, "Cleared nodestate for peer=%d\n", nodeid);
 }
@@ -1411,14 +1425,14 @@ bool PeerManagerImpl::BlockRequestAllowed(const CBlockIndex* pindex)
 
 std::unique_ptr<PeerManager> PeerManager::make(const CChainParams& chainparams, CConnman& connman, CAddrMan& addrman,
                                                BanMan* banman, CScheduler& scheduler, ChainstateManager& chainman,
-                                               CTxMemPool& pool, bool ignore_incoming_txs)
+                                               CTxMemPool& pool, bool ignore_incoming_txs, NodeContext& node)
 {
-    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, scheduler, chainman, pool, ignore_incoming_txs);
+    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, scheduler, chainman, pool, ignore_incoming_txs, node);
 }
 
 PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, CAddrMan& addrman,
                                  BanMan* banman, CScheduler& scheduler, ChainstateManager& chainman,
-                                 CTxMemPool& pool, bool ignore_incoming_txs)
+                                 CTxMemPool& pool, bool ignore_incoming_txs, NodeContext& node)
     : m_chainparams(chainparams),
       m_connman(connman),
       m_addrman(addrman),
@@ -1426,7 +1440,8 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_chainman(chainman),
       m_mempool(pool),
       m_stale_tip_check_time(0),
-      m_ignore_incoming_txs(ignore_incoming_txs)
+      m_ignore_incoming_txs(ignore_incoming_txs),
+      m_node(&node)
 {
     // Initialize global variables that cannot be constructed at startup.
     recentRejects.reset(new CRollingBloomFilter(120000, 0.000001));
@@ -4170,6 +4185,29 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                     m_txrequest.ReceivedResponse(pfrom.GetId(), inv.hash);
                 }
             }
+        }
+        return;
+    }
+
+    // Check for ReddID messages
+    if (msg_type.substr(0, 2) == "ns" || msg_type.substr(0, 3) == "uid" || msg_type.substr(0, 3) == "rid") {
+        // Access the ReddID manager through node context stored in PeerManagerImpl
+        if (m_node && m_node->reddid && m_node->reddid->GetP2PManager()) {
+            try {
+                // Call the ReddID P2P manager's ProcessMessage function
+                m_node->reddid->GetP2PManager()->ProcessMessage(
+                    pfrom,
+                    msg_type,
+                    vRecv,
+                    count_microseconds(time_received));
+            } catch (const std::exception& e) {
+                LogPrint(BCLog::NET, "Error processing ReddID message %s: %s\n",
+                         SanitizeString(msg_type), e.what());
+                Misbehaving(pfrom.GetId(), 10, strprintf("invalid reddid message %s", SanitizeString(msg_type)));
+            }
+        } else {
+            LogPrint(BCLog::NET, "ReddID P2P manager not available for message %s from peer=%d\n",
+                     SanitizeString(msg_type), pfrom.GetId());
         }
         return;
     }
