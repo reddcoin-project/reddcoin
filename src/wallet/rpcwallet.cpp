@@ -2548,6 +2548,8 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::STR_AMOUNT, "paytxfee", "the transaction fee configuration, set in " + CURRENCY_UNIT + "/kvB"},
                         {RPCResult::Type::STR_HEX, "hdseedid", /* optional */ true, "the Hash160 of the HD seed (only present when HD is enabled)"},
                         {RPCResult::Type::STR, "hd_type", "HD wallet type: bip32, bip39, bip44, or none"},
+                        {RPCResult::Type::BOOL, "mixed_key_paths", "whether some keys of the wallet's HD seed are on BIP44 paths while its new keys are derived on the ordinary paths: the seed alone does not restore those keys"},
+                        {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about the keys of the wallet's HD seed, when there is something to say"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2611,6 +2613,10 @@ static RPCHelpMan getwalletinfo()
         }
     } else {
         obj.pushKV("hd_type", "none");
+    }
+    obj.pushKV("mixed_key_paths", spk_man && spk_man->HasMixedKeyPaths());
+    if (const std::vector<bilingual_str> hd_warnings = pwallet->GetHDWarnings(); !hd_warnings.empty()) {
+        obj.pushKV("hd_warnings", Join(hd_warnings, Untranslated("\n")).original);
     }
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
@@ -4468,6 +4474,8 @@ static RPCHelpMan sethdseed()
     return RPCHelpMan{"sethdseed",
                 "\nSet or generate a new HD wallet seed. Non-HD wallets will not be upgraded to being a HD wallet. Wallets that are already\n"
                 "HD will have a new HD seed set so that new keys added to the keypool will be derived from this new seed.\n"
+                "\nA wallet created from a mnemonic (\"hd_type\" bip39 or bip44 in getwalletinfo) is refused: all its keys come\n"
+                "from its mnemonic phrase, and a new seed would discard the phrase. To use another seed, create another wallet.\n"
                 "\nNote that you will need to MAKE A NEW BACKUP of your wallet after setting the HD wallet seed." +
         HELP_REQUIRING_PASSPHRASE,
                 {
@@ -4501,6 +4509,14 @@ static RPCHelpMan sethdseed()
     // Do not do anything to non-HD wallets
     if (!pwallet->CanSupportFeature(FEATURE_HD)) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set an HD seed on a non-HD wallet. Use the upgradewallet RPC in order to upgrade a non-HD wallet to HD");
+    }
+
+    // A wallet created from a mnemonic derives every key from its phrase.
+    // A new seed would take the place of the phrase: the wallet would no
+    // longer be the one its owner wrote down, and could derive no further
+    // key of the addresses it has given out.
+    if (spk_man.IsBip39Enabled() || spk_man.IsBip44Enabled()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet created from a mnemonic: its keys come from the mnemonic phrase, which a new seed would discard. Create a new wallet to use another seed");
     }
 
     EnsureWalletIsUnlocked(*pwallet);

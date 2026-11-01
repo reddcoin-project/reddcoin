@@ -480,6 +480,11 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
 
 void CWallet::chainStateFlushed(const CBlockLocator& loc)
 {
+    // The lock first, then the batch, as for every other write. An SQLite
+    // wallet has one connection: a batch opened from here while encryptwallet
+    // holds a transaction on it ended that transaction when it closed, and
+    // the encryption then failed to commit and stopped the program.
+    LOCK(cs_wallet);
     WalletBatch batch(GetDatabase());
     batch.WriteBestBlock(loc);
 }
@@ -2807,6 +2812,13 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         }
     }
 
+    // What the owner has to be told about the keys of the wallet's seed: in the
+    // log, and to whoever loaded the wallet.
+    for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
+        walletInstance->WalletLogPrintf("%s\n", notice.original);
+        warnings.push_back(strprintf(Untranslated("Wallet %s: "), name.empty() ? "default wallet" : name) + notice);
+    }
+
     // This wallet is in its first run if there are no ScriptPubKeyMans and it isn't blank or no privkeys
     const bool fFirstRun = walletInstance->m_spk_managers.empty() &&
                      !walletInstance->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) &&
@@ -2989,8 +3001,25 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
 
     LOCK(walletInstance->cs_wallet);
 
-    if (chain && !AttachChain(walletInstance, *chain, error, warnings)) {
-        return nullptr;
+    if (chain) {
+        // AttachChain subscribes the wallet to the notifications of the chain,
+        // and the subscription holds the wallet. When attaching fails, by
+        // returning false or by an exception out of the rescan, the
+        // subscription has to end here: otherwise the wallet is never
+        // released, goes on being told of blocks and transactions although
+        // nothing lists it as loaded, and keeps its file open, so that it
+        // cannot be loaded again.
+        bool attached{false};
+        try {
+            attached = AttachChain(walletInstance, *chain, error, warnings);
+        } catch (...) {
+            walletInstance->m_chain_notifications_handler.reset();
+            throw;
+        }
+        if (!attached) {
+            walletInstance->m_chain_notifications_handler.reset();
+            return nullptr;
+        }
     }
 
     {
@@ -3259,6 +3288,18 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
     }
     NotifyStatusChanged(this);
     return true;
+}
+
+std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
+{
+    std::vector<bilingual_str> notices;
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man && spk_man->HasMixedKeyPaths()) {
+        notices.push_back(for_load ?
+            _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+            _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+    }
+    return notices;
 }
 
 std::set<ScriptPubKeyMan*> CWallet::GetActiveScriptPubKeyMans() const

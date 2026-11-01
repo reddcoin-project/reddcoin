@@ -277,6 +277,53 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 - Taproot descriptors can be imported into the wallet only after activation has occurred on the network (e.g. mainnet, testnet, signet) in use. See [descriptors.md](https://github.com/reddcoin-project/reddcoin-0.22/blob/22.x/doc/descriptors.md) for supported descriptors.
 
+- `sethdseed` is refused on a wallet created from a mnemonic (`hd_type` `bip39`
+  or `bip44` in `getwalletinfo`). All keys of such a wallet come from its
+  mnemonic phrase, and setting a seed replaced the phrase with a plain HD seed:
+  the wallet then reported `bip32`, no longer held its phrase, and could not
+  derive any further key of the addresses it had given out. To use another
+  seed, create another wallet. Wallets with a plain HD seed, and blank
+  wallets, are not affected.
+
+- A wallet on which `sethdseed` was run by an earlier version, although it had
+  been created from a mnemonic, can be used again. Such a wallet failed to load
+  with "DeriveNewChildKey: seed not found" once one of its earlier addresses
+  had been paid, a node started with it did not start, and a payment to one of
+  those addresses while it was loaded stopped the node. It now loads, payments
+  to the addresses it holds keys for are credited, and its coins can be spent.
+  What it cannot do: it no longer has its mnemonic phrase, and it cannot derive
+  any further address of that phrase, so a payment to an address of the phrase
+  beyond the ones it already holds is not seen. `debug.log` says so when the
+  wallet first meets one of the old keys. Move the funds to a new wallet. If
+  the wallet failed to load before, run `rescanblockchain` once after loading
+  it: the attempt that failed may have left the block it stopped at unread.
+
+- **Wallets created with a passphrase by v4.22.7 to v4.22.9.3 have keys on two
+  kinds of path.** A wallet created with a passphrase (`createwallet` with
+  `passphrase`) by the official Linux builds of those versions derived all of
+  its keys on BIP44 paths (`m/44'/coin'/0'/chain/index`), although it is an
+  ordinary HD wallet. Later versions derive its new keys on the ordinary paths
+  (`m/0'/chain'/index'`). All keys stay in the wallet and all funds stay
+  spendable. **But the wallet's HD seed, restored into a new wallet, gives back
+  only the keys on the ordinary paths.** For such a wallet the wallet file is
+  the only complete backup: back it up, or create a new wallet and move the
+  funds to it.
+  This version says so when it loads such a wallet, and `getwalletinfo` shows
+  `mixed_key_paths`. To check on an earlier version: `getaddressinfo` of the
+  first address the wallet gave out shows an `hdkeypath` beginning with
+  `m/44'`, in a wallet that was not created from a mnemonic phrase.
+  The Windows and macOS builds of those versions contain the same defect in the
+  source. We have not tested them.
+
+- A wallet whose HD chain record was older than its keys (one restored from
+  an earlier copy) recorded over-long derivation paths for new keys, and from
+  then on loaded with a warning that data might be missing, and the
+  `reddcoin-wallet` tool refused to show or dump it. Fixed, and a wallet that
+  already holds such paths has them put right when it is loaded.
+
+- Encrypting a wallet in SQLite format (a descriptor wallet) while the node
+  was writing its chain state to disk could stop the node. Fixed.
+
 GUI changes
 -----------
 - Time interval lines added to the network data monitor
