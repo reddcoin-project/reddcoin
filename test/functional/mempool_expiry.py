@@ -29,6 +29,9 @@ class MempoolExpiryTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def test_transaction_expiry(self, timeout):
         """Tests that a transaction expires after the expiry timeout and its
         children are removed as well."""
@@ -97,6 +100,14 @@ class MempoolExpiryTest(BitcoinTestFramework):
         assert_equal(half_expiry_time, node.getmempoolentry(independent_txid)['time'])
 
     def run_test(self):
+        # ReddCoin: Pre-generate all PoW blocks (up to nLastPowHeight=89) so
+        # that both test runs have enough mature coins for PoS staking.
+        # CreateCoinStake combines multiple small inputs (300K RDD each, up to
+        # nCombineThreshold=2M RDD), consuming ~7 coins per PoS block. Without
+        # this reserve, the second run exhausts coins before coinstake outputs
+        # from earlier PoS blocks have time to mature (60 confirmations).
+        self.nodes[0].generate(89)
+
         self.log.info('Test default mempool expiry timeout of %d hours.' %
                       DEFAULT_MEMPOOL_EXPIRY)
         self.test_transaction_expiry(DEFAULT_MEMPOOL_EXPIRY)

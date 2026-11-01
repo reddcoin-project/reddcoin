@@ -15,10 +15,13 @@ Therefore, this test is limited to the remaining protection criteria.
 
 import time
 
+from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import (
+    add_witness_commitment,
     COINBASE_MATURITY,
     create_block,
-    create_coinbase,
+    NORMAL_GBT_REQUEST_PARAMS,
+    sign_block,
 )
 from test_framework.messages import (
     msg_pong,
@@ -27,7 +30,7 @@ from test_framework.messages import (
 )
 from test_framework.p2p import P2PDataStore, P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, advance_time_for_pos
 
 
 class SlowP2PDataStore(P2PDataStore):
@@ -49,22 +52,91 @@ class P2PEvict(BitcoinTestFramework):
         # 4 by netgroup, 4 that sent us blocks, 4 that sent us transactions and 8 via lowest ping time
         self.extra_args = [['-maxconnections=32']]
 
+    def build_block_on_tip(self, node, segwit=False, txlist=None):
+        """Build a block on the current tip with optional transactions.
+
+        Args:
+            node: The node to build the block for
+            segwit: If True, add witness commitment
+            txlist: Optional list of transactions to include in the block
+        """
+        # ReddCoin PoS: Add retry logic for intermittent staking failures
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                block = create_block(tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=txlist)
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < max_attempts - 1:
+                    # Advance time and try again
+                    advance_time_for_pos(self.nodes, seconds=120)
+                    continue
+                raise
+        if segwit:
+            add_witness_commitment(block)
+        block.hashMerkleRoot = block.calc_merkle_root()
+        block.rehash()
+        block.solve()
+
+        # ReddCoin: Sign PoS blocks (blocks with coinstake in vtx[1])
+        # PoW blocks (vtx only has coinbase) don't need signing
+        if len(block.vtx) >= 2:
+            # Extract the correct signing key from the coinstake
+            # getblocktemplate creates a coinstake using one of the wallet's keys
+            coinstake = block.vtx[1]
+            coinstake_hex = coinstake.serialize().hex()
+            decoded_tx = node.decoderawtransaction(coinstake_hex)
+
+            signing_key = None
+            try:
+                script_pubkey = decoded_tx['vout'][1]['scriptPubKey']
+                addr = script_pubkey.get('address')
+                if not addr:
+                    addresses = script_pubkey.get('addresses', [])
+                    if addresses:
+                        addr = addresses[0]
+                if not addr and script_pubkey.get('type') == 'pubkey':
+                    # A coinstake output is P2PK, and decoderawtransaction reports no
+                    # address for it, so derive the P2PKH address from the pubkey.
+                    asm = script_pubkey.get('asm', '')
+                    parts = asm.split()
+                    if len(parts) >= 1 and parts[0] != 'OP_CHECKSIG':
+                        addr = key_to_p2pkh(parts[0], main=False)
+                if addr:
+                    signing_key = node.dumpprivkey(addr)
+            except Exception as e:
+                self.log.debug("coinstake key lookup failed: %s" % e)
+            if not signing_key:
+                # Only correct when the coinstake happens to be staked by the
+                # deterministic key; the block is rejected bad-blk-sign otherwise.
+                self.log.warning("coinstake key not found, falling back to the deterministic key")
+                signing_key = node.get_deterministic_priv_key().key
+
+            sign_block(block, signing_key)
+        return block
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def run_test(self):
         protected_peers = set()  # peers that we expect to be protected from eviction
         current_peer = -1
         node = self.nodes[0]
-        node.generatetoaddress(COINBASE_MATURITY + 1, node.get_deterministic_priv_key().address)
+        advance_time_for_pos(self.nodes[0], seconds=0)
+        self.generate(COINBASE_MATURITY + 1)
 
         self.log.info("Create 4 peers and protect them from eviction by sending us a block")
         for _ in range(4):
+            # ReddCoin PoS: Use build_block_on_tip for proper PoS block creation with signing.
+            # Built before the peer connects, not after. It cannot be lifted out of the loop,
+            # since each block comes from a template on the current tip and the tip only moves
+            # when the previous one is accepted, but building it first keeps its RPCs, which
+            # now include a dumpprivkey for the coinstake key, out of the window in which this
+            # peer's ping is being timed.
+            block = self.build_block_on_tip(node)
             block_peer = node.add_p2p_connection(SlowP2PDataStore())
             current_peer += 1
             block_peer.sync_with_ping()
-            best_block = node.getbestblockhash()
-            tip = int(best_block, 16)
-            best_block_time = node.getblock(best_block)['time']
-            block = create_block(tip, create_coinbase(node.getblockcount() + 1), best_block_time + 1)
-            block.solve()
             block_peer.send_blocks_and_test([block], node, success=True)
             protected_peers.add(current_peer)
 
@@ -102,6 +174,17 @@ class P2PEvict(BitcoinTestFramework):
             current_peer += 1
             self.wait_until(lambda: "ping" in fastpeer.last_message, timeout=10)
 
+        # Wait until the node has timed a ping for every peer. Waiting on the ping
+        # being sent, as above, does not mean the pong is back and counted, and a
+        # peer the node has not yet timed reports no minping at all.
+        #
+        # This is the only sample any peer will get. The node re-pings on
+        # "now > m_ping_start + PING_INTERVAL" (net_processing.cpp:4500) with now
+        # taken from GetTime(), so once it has recorded m_ping_start under a frozen
+        # mocktime that condition can never come true again. One ping per peer,
+        # measured as 0, and no revision to wait for. See RED-63.
+        self.wait_until(lambda: all('minping' in peer for peer in node.getpeerinfo()), timeout=60)
+
         # Make sure by asking the node what the actual min pings are
         peerinfo = node.getpeerinfo()
         pings = {}
@@ -109,10 +192,31 @@ class P2PEvict(BitcoinTestFramework):
             pings[i] = peerinfo[i]['minping'] if 'minping' in peerinfo[i] else 1000000
         sorted_pings = sorted(pings.items(), key=lambda x: x[1])
 
-        # Usually the 8 fast peers are protected. In rare case of unreliable pings,
-        # one of the slower peers might have a faster min ping though.
-        for i in range(8):
-            protected_peers.add(sorted_pings[i][0])
+        # The node protects the 8 lowest-minping peers. Unlike the two protections
+        # above, which are earned by work only those peers do and so are known
+        # here, this one has to be inferred from the pings, and it is the only
+        # place this test can be wrong about a node that behaved correctly.
+        #
+        # It is currently not inferable at all. The node times a ping with
+        # GetTime(), at both ends (net_processing.cpp:4511 and net.cpp:628), and
+        # that honours mocktime, which this test freezes so it can build PoS
+        # blocks. The SlowP2P classes sleep in real time, which the frozen clock
+        # cannot see, so every peer reports a minping of 0 and the ordering below
+        # is meaningless. The node is ranking 21 equal values too, and neither
+        # side's choice of 8 has anything to do with the other's.
+        #
+        # So claim this protection only where the ordering is unambiguous: a peer
+        # has to beat the 9th by a clear margin. Today nothing does, and the
+        # assertion falls back to the protections the test actually knows. If
+        # ping timing is ever made to work under mocktime, the fast peers will
+        # clear the margin on their own and the check tightens again with no
+        # change here. See RED-63.
+        PING_MARGIN = 0.05
+        assert len(sorted_pings) > 8
+        ninth_ping = sorted_pings[8][1]
+        ping_protected = [peer for peer, ping in sorted_pings[:8] if ping < ninth_ping - PING_MARGIN]
+        protected_peers.update(ping_protected)
+        self.log.debug("{} of the 8 fastest peers had an unambiguous min ping".format(len(ping_protected)))
 
         self.log.info("Create peer that triggers the eviction mechanism")
         node.add_p2p_connection(SlowP2PInterface())

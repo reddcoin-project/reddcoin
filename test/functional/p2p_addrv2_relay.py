@@ -4,6 +4,11 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
 Test addrv2 relay
+
+ReddCoin PoS Adaptations:
+- Added wallet requirement check
+- Changed port from Bitcoin 8333 to ReddCoin regtest 45444
+- ADDRS created dynamically in run_test() using mocktime
 """
 
 import time
@@ -18,31 +23,19 @@ from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
+REDDCOIN_REGTEST_PORT = 45444
 I2P_ADDR = "c4gfnttsuwqomiygupdqqqyy5y5emnk5c73hrfvatri67prd7vyq.b32.i2p"
-
-ADDRS = []
-for i in range(10):
-    addr = CAddress()
-    addr.time = int(time.time()) + i
-    addr.nServices = NODE_NETWORK | NODE_WITNESS
-    # Add one I2P address at an arbitrary position.
-    if i == 5:
-        addr.net = addr.NET_I2P
-        addr.ip = I2P_ADDR
-    else:
-        addr.ip = f"123.123.123.{i % 256}"
-    addr.port = 8333 + i
-    ADDRS.append(addr)
 
 
 class AddrReceiver(P2PInterface):
     addrv2_received_and_checked = False
 
-    def __init__(self):
-        super().__init__(support_addrv2 = True)
+    def __init__(self, expected_addrs):
+        super().__init__(support_addrv2=True)
+        self.expected_addrs = expected_addrs
 
     def on_addrv2(self, message):
-        expected_set = set((addr.ip, addr.port) for addr in ADDRS)
+        expected_set = set((addr.ip, addr.port) for addr in self.expected_addrs)
         received_set = set((addr.ip, addr.port) for addr in message.addrs)
         if expected_set == received_set:
             self.addrv2_received_and_checked = True
@@ -51,25 +44,55 @@ class AddrReceiver(P2PInterface):
         self.wait_until(lambda: "addrv2" in self.last_message)
 
 
+def create_test_addrs(mocktime):
+    """Create test addresses using mocktime instead of real time."""
+    addrs = []
+    for i in range(10):
+        addr = CAddress()
+        addr.time = mocktime + i
+        addr.nServices = NODE_NETWORK | NODE_WITNESS
+        # Add one I2P address at an arbitrary position.
+        if i == 5:
+            addr.net = addr.NET_I2P
+            addr.ip = I2P_ADDR
+        else:
+            addr.ip = f"123.123.123.{i % 256}"
+        addr.port = REDDCOIN_REGTEST_PORT + i
+        addrs.append(addr)
+    return addrs
+
+
 class AddrTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [["-whitelist=addr@127.0.0.1"]]
+        # -whitelist=addr@... grants addr relay permissions
+        # -whitelist=127.0.0.1 prevents timeout disconnections from mocktime jumps
+        self.extra_args = [["-whitelist=addr@127.0.0.1", "-whitelist=127.0.0.1"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
+        # Initialize mocktime for consistent addr timestamps
+        self.mocktime = int(time.time())
+        self.nodes[0].setmocktime(self.mocktime)
+
+        # Create test addresses using mocktime
+        test_addrs = create_test_addrs(self.mocktime)
+
         self.log.info('Create connection that sends addrv2 messages')
         addr_source = self.nodes[0].add_p2p_connection(P2PInterface())
         msg = msg_addrv2()
 
         self.log.info('Send too-large addrv2 message')
-        msg.addrs = ADDRS * 101
+        msg.addrs = test_addrs * 101
         with self.nodes[0].assert_debug_log(['addrv2 message size = 1010']):
             addr_source.send_and_ping(msg)
 
         self.log.info('Check that addrv2 message content is relayed and added to addrman')
-        addr_receiver = self.nodes[0].add_p2p_connection(AddrReceiver())
-        msg.addrs = ADDRS
+        addr_receiver = self.nodes[0].add_p2p_connection(AddrReceiver(test_addrs))
+        msg.addrs = test_addrs
         with self.nodes[0].assert_debug_log([
                 # The I2P address is not added to node's own addrman because it has no
                 # I2P reachability (thus 10 - 1 = 9).
@@ -78,7 +101,16 @@ class AddrTest(BitcoinTestFramework):
                 'sending addrv2 (159 bytes) peer=1',
         ]):
             addr_source.send_and_ping(msg)
-            self.nodes[0].setmocktime(int(time.time()) + 30 * 60)
+            # Advance time gradually to avoid socket timeout disconnections.
+            # Addr relay happens based on time, so we need to move mocktime forward.
+            # Advance in 60-second increments with pings to keep connection alive.
+            for _ in range(30):  # 30 minutes total
+                self.mocktime += 60
+                self.nodes[0].setmocktime(self.mocktime)
+                addr_source.sync_with_ping()
+                if "addrv2" in addr_receiver.last_message:
+                    break
+                time.sleep(0.1)
             addr_receiver.wait_for_addrv2()
 
         assert addr_receiver.addrv2_received_and_checked

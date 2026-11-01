@@ -3,20 +3,45 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test node responses to invalid locators.
+
+ReddCoin adaptation notes:
+- Uses cache with 199 blocks (setup_clean_chain=False) for PoS staking
+- Advances mocktime before generating PoS blocks
+- Uses noban whitelist to prevent mocktime timeout while still allowing disconnect
 """
 
 from test_framework.messages import msg_getheaders, msg_getblocks, MAX_LOCATOR_SZ
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import advance_time_for_pos
 
 
 class InvalidLocatorTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.setup_clean_chain = False  # Use cache with 199 blocks for PoS staking
+        # noban whitelist: prevents mocktime timeout bug while still allowing
+        # disconnect for invalid protocol messages (like oversized locators)
+        self.extra_args = [["-whitelist=noban@127.0.0.1"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         node = self.nodes[0]  # convenience reference to the node
-        node.generatetoaddress(1, node.get_deterministic_priv_key().address)  # Get node out of IBD
+
+        # ReddCoin: Advance time for PoS staking before generating blocks
+        # Use retry logic as PoS block generation is probabilistic
+        advance_time_for_pos(node, seconds=600)
+        for attempt in range(10):
+            try:
+                node.generatetoaddress(1, node.get_deterministic_priv_key().address)
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < 9:
+                    advance_time_for_pos(node, seconds=300)
+                    continue
+                raise
 
         self.log.info('Test max locator size')
         block_count = node.getblockcount()

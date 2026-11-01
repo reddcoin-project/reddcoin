@@ -5,7 +5,16 @@
 """Test p2p permission message.
 
 Test that permissions are correctly calculated and applied
+
+ReddCoin adaptation notes:
+- Uses cache with 199 blocks for PoS staking
+- Funds OP_TRUE address via sendtoaddress (PoS coinbase is empty)
+- Advances mocktime for PoS block generation
+- Syncs mocktime after node restart (mocktime is lost on restart)
+- Periodically advances mocktime during relay wait (trickle delay uses GetTime)
 """
+
+import time
 
 from test_framework.address import ADDRESS_BCRT1_P2WSH_OP_TRUE
 from test_framework.messages import (
@@ -22,13 +31,17 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     p2p_port,
+    advance_time_for_pos,
 )
 
 
 class P2PPermissionsTests(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.setup_clean_chain = True
+        self.setup_clean_chain = False  # Use cache with 199 blocks for PoS
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         self.check_tx_relay()
@@ -92,8 +105,28 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.nodes[1].assert_start_raises_init_error(["-whitelist=noban@127.0.0.1:230"], "Invalid netmask specified in", match=ErrorMatch.PARTIAL_REGEX)
         self.nodes[1].assert_start_raises_init_error(["-whitebind=noban@127.0.0.1/10"], "Cannot resolve -whitebind address", match=ErrorMatch.PARTIAL_REGEX)
 
+    def generate_pos_block(self, node):
+        """Generate a single PoS block with retry logic."""
+        for attempt in range(10):
+            try:
+                return node.generatetoaddress(1, node.get_deterministic_priv_key().address)[0]
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < 9:
+                    advance_time_for_pos(node, seconds=300)
+                    continue
+                raise
+
     def check_tx_relay(self):
-        block_op_true = self.nodes[0].getblock(self.nodes[0].generatetoaddress(100, ADDRESS_BCRT1_P2WSH_OP_TRUE)[0])
+        # ReddCoin: In PoS, coinbase is empty, so we can't use generatetoaddress to
+        # get outputs at a specific address. Instead, generate a block and send coins
+        # to the OP_TRUE address, then confirm.
+        advance_time_for_pos(self.nodes[0], seconds=600)
+        self.generate_pos_block(self.nodes[0])
+
+        # Send coins to OP_TRUE address and store txid for later use
+        self.funding_txid = self.nodes[0].sendtoaddress(ADDRESS_BCRT1_P2WSH_OP_TRUE, 10)
+        self.generate_pos_block(self.nodes[0])  # Confirm the transaction
+
         self.sync_all()
 
         self.log.debug("Create a connection from a forcerelay peer that rebroadcasts raw txs")
@@ -101,14 +134,27 @@ class P2PPermissionsTests(BitcoinTestFramework):
         # rebroadcast via the inv-getdata mechanism. However, even for forcerelay connections, a full node would
         # currently not request a txid that is already in the mempool.
         self.restart_node(1, extra_args=["-whitelist=forcerelay@127.0.0.1"])
+        # ReddCoin: Sync mocktime after restart - without this, node1 uses real time
+        # while node0 uses mocktime, causing tx relay scheduling issues
+        if self.nodes[0].mocktime:
+            self.nodes[1].setmocktime(self.nodes[0].mocktime)
         p2p_rebroadcast_wallet = self.nodes[1].add_p2p_connection(P2PDataStore())
 
         self.log.debug("Send a tx from the wallet initially")
+        # ReddCoin: Find the OP_TRUE output in our funding transaction
+        funding_tx = self.nodes[0].getrawtransaction(self.funding_txid, True)
+        op_true_vout = None
+        for i, vout in enumerate(funding_tx['vout']):
+            if vout['scriptPubKey'].get('address') == ADDRESS_BCRT1_P2WSH_OP_TRUE:
+                op_true_vout = i
+                break
+        assert op_true_vout is not None, "Could not find OP_TRUE output in funding tx"
+
         tx = tx_from_hex(
             self.nodes[0].createrawtransaction(
                 inputs=[{
-                    'txid': block_op_true['tx'][0],
-                    'vout': 0,
+                    'txid': self.funding_txid,
+                    'vout': op_true_vout,
                 }], outputs=[{
                     ADDRESS_BCRT1_P2WSH_OP_TRUE: 5,
                 }]),
@@ -124,7 +170,16 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.connect_nodes(1, 0)
         with self.nodes[1].assert_debug_log(["Force relaying tx {} from peer=0".format(txid)]):
             p2p_rebroadcast_wallet.send_txs_and_test([tx], self.nodes[1])
-            self.wait_until(lambda: txid in self.nodes[0].getrawmempool())
+            # ReddCoin: Need to keep advancing mocktime while waiting for the tx to reach node0
+            # Both the trickle relay and transaction request scheduling use GetTime(),
+            # which is frozen at mocktime. We need to periodically advance mocktime.
+            for _ in range(60):  # Up to 60 iterations
+                advance_time_for_pos(self.nodes, seconds=1)
+                time.sleep(0.1)
+                if txid in self.nodes[0].getrawmempool():
+                    break
+            else:
+                raise AssertionError("tx not in node0's mempool after 60 iterations")
 
         self.log.debug("Check that node[1] will not send an invalid tx to node[0]")
         tx.vout[0].nValue += 1

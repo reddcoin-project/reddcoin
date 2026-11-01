@@ -76,18 +76,23 @@ class WalletEncryptionTest(BitcoinTestFramework):
 
         self.log.info('Check a timeout less than the limit')
         MAX_VALUE = 100000000
-        expected_time = int(time.time()) + MAX_VALUE - 600
+        now = self.nodes[0].mocktime or int(time.time())
+        expected_time = now + MAX_VALUE - 600
         self.nodes[0].walletpassphrase(passphrase2, MAX_VALUE - 600)
         # give buffer for walletpassphrase, since it iterates over all encrypted keys
-        expected_time_with_buffer = time.time() + MAX_VALUE - 600
+        # When mocktime is set, time doesn't advance between calls, so add +1s buffer
+        now_after = (self.nodes[0].mocktime or int(time.time())) + 1
+        expected_time_with_buffer = now_after + MAX_VALUE - 600
         actual_time = self.nodes[0].getwalletinfo()['unlocked_until']
         assert_greater_than_or_equal(actual_time, expected_time)
         assert_greater_than(expected_time_with_buffer, actual_time)
 
         self.log.info('Check a timeout greater than the limit')
-        expected_time = int(time.time()) + MAX_VALUE - 1
+        now = self.nodes[0].mocktime or int(time.time())
+        expected_time = now + MAX_VALUE - 1
         self.nodes[0].walletpassphrase(passphrase2, MAX_VALUE + 1000)
-        expected_time_with_buffer = time.time() + MAX_VALUE
+        now_after = (self.nodes[0].mocktime or int(time.time())) + 1
+        expected_time_with_buffer = now_after + MAX_VALUE
         actual_time = self.nodes[0].getwalletinfo()['unlocked_until']
         assert_greater_than_or_equal(actual_time, expected_time)
         assert_greater_than(expected_time_with_buffer, actual_time)

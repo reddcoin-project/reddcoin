@@ -18,11 +18,15 @@ class MempoolUpdateFromBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [['-limitdescendantsize=1000', '-limitancestorsize=1000']]
+        # ReddCoin: transaction_graph_test issues ~5000 getnewaddress calls; with
+        # keypool=1 the per-call HD derivation latency can push a call past the
+        # default 30s RPC ceiling (worse under parallel contention). Add headroom.
+        self.rpc_timeout = 240
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
-    def transaction_graph_test(self, size, n_tx_to_mine=None, start_input_txid='', end_address='', fee=Decimal(0.00100000)):
+    def transaction_graph_test(self, size, n_tx_to_mine=None, start_input_txid='', end_address='', fee=Decimal(0.02000000)):
         """Create an acyclic tournament (a type of directed graph) of transactions and use it for testing.
 
         Keyword arguments:
@@ -115,8 +119,23 @@ class MempoolUpdateFromBlockTest(BitcoinTestFramework):
             assert_equal(self.nodes[0].getrawmempool(True)[tx]['ancestorsize'], sum(tx_size[0:(k + 1)]))
 
     def run_test(self):
+        # Find an unspent PoW coinbase UTXO (some are consumed by coinstake during cache generation)
+        node = self.nodes[0]
+        start_txid = None
+        for h in range(70, 89):
+            bh = node.getblockhash(h)
+            block = node.getblock(bh, 2)
+            cb_tx = block['tx'][0]
+            for vout in cb_tx['vout']:
+                if vout['value'] > 0 and node.gettxout(cb_tx['txid'], vout['n']):
+                    start_txid = cb_tx['txid']
+                    break
+            if start_txid:
+                break
+        assert start_txid is not None, "Need an unspent PoW coinbase UTXO"
+
         # Use batch size limited by DEFAULT_ANCESTOR_LIMIT = 25 to not fire "too many unconfirmed parents" error.
-        self.transaction_graph_test(size=100, n_tx_to_mine=[25, 50, 75])
+        self.transaction_graph_test(size=100, n_tx_to_mine=[25, 50, 75], start_input_txid=start_txid)
 
 
 if __name__ == '__main__':

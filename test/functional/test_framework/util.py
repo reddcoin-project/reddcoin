@@ -342,6 +342,17 @@ def rpc_port(n):
     return PORT_MIN + PORT_RANGE + n + (MAX_NODES * PortSeed.n) % (PORT_RANGE - 1 - MAX_NODES)
 
 
+def zmq_port(n):
+    """Port for a ZMQ publisher, assigned like the p2p and rpc ones.
+
+    ZMQ has no default port: a publisher is given a whole address, so tests used
+    to name one themselves. A fixed port collides with any node already running
+    on the machine, and with another test run using a different port seed, so
+    take these from the same allocation as everything else instead.
+    """
+    return PORT_MIN + 2 * PORT_RANGE + n + (MAX_NODES * PortSeed.n) % (PORT_RANGE - 1 - MAX_NODES)
+
+
 def rpc_url(datadir, i, chain, rpchost):
     rpc_u, rpc_p = get_auth_cookie(datadir, chain)
     host = '127.0.0.1'
@@ -363,7 +374,7 @@ def initialize_datadir(dirname, n, chain):
     datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
-    write_config(os.path.join(datadir, "bitcoin.conf"), n=n, chain=chain)
+    write_config(os.path.join(datadir, "reddcoin.conf"), n=n, chain=chain)
     os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)
     os.makedirs(os.path.join(datadir, 'stdout'), exist_ok=True)
     return datadir
@@ -405,7 +416,7 @@ def get_datadir_path(dirname, n):
 
 
 def append_config(datadir, options):
-    with open(os.path.join(datadir, "bitcoin.conf"), 'a', encoding='utf8') as f:
+    with open(os.path.join(datadir, "reddcoin.conf"), 'a', encoding='utf8') as f:
         for option in options:
             f.write(option + "\n")
 
@@ -413,8 +424,8 @@ def append_config(datadir, options):
 def get_auth_cookie(datadir, chain):
     user = None
     password = None
-    if os.path.isfile(os.path.join(datadir, "bitcoin.conf")):
-        with open(os.path.join(datadir, "bitcoin.conf"), 'r', encoding='utf8') as f:
+    if os.path.isfile(os.path.join(datadir, "reddcoin.conf")):
+        with open(os.path.join(datadir, "reddcoin.conf"), 'r', encoding='utf8') as f:
             for line in f:
                 if line.startswith("rpcuser="):
                     assert user is None  # Ensure that there is only one rpcuser line
@@ -450,6 +461,92 @@ def softfork_active(node, key):
 def set_node_times(nodes, t):
     for node in nodes:
         node.setmocktime(t)
+        node.mocktime = t  # Track for sync_time()
+
+
+# Mirrors GetStakeModifierSelectionInterval() in src/pos/kernel.cpp for regtest,
+# where consensus.nModifierInterval is 60 seconds and MODIFIER_INTERVAL_RATIO is
+# 3, giving a little under 35 minutes.
+#
+# A coin cannot be staked until the chain holds a block whose timestamp is at
+# least this far after the block that created it, because the kernel walks
+# forward from that block looking for one. Moving mock time on is not enough on
+# its own: the blocks themselves have to carry the later timestamps. Tests that
+# stake coins they have just created need to advance by more than this between
+# blocks.
+STAKE_MODIFIER_SELECTION_INTERVAL = sum(
+    60 * 63 // (63 + (63 - section) * (3 - 1)) for section in range(64))
+
+
+# How many consecutive polls advance_time_for_pos waits for an in-flight block
+# download before stepping the clock regardless. See _settle_block_relay.
+MAX_INFLIGHT_ADVANCE_POLLS = 10
+INFLIGHT_ADVANCE_POLL_INTERVAL = 0.2
+
+
+def _settle_block_relay(nodes):
+    """Let in-flight block downloads land before the caller steps mocktime.
+
+    The block-download stall timer compares GetTime(), which honours mocktime,
+    against the moment the download started (net_processing.cpp:5053):
+
+        current_time > m_downloading_since
+            + nPowTargetSpacing * (1 + 0.5 * other_peers_downloading)
+
+    On regtest nPowTargetSpacing is 600, so with a single downloading peer the
+    budget is exactly 600 seconds. A step of that size therefore trips the
+    timeout outright rather than merely eating into it: the peer is dropped and
+    the next sync_blocks asserts on a node with no peers, which reads as an
+    unrelated failure later in the test. Letting the download land first is what
+    actually makes a step safe, at any step size.
+
+    Bounded, for the same reason the sync_mempools hold-off is bounded: a
+    download that never completes must not stop the clock forever. Past the
+    bound the caller steps anyway and the node's own timeout is free to fire,
+    which is the right outcome for a genuinely stalled download. See RED-58.
+    """
+    for _ in range(MAX_INFLIGHT_ADVANCE_POLLS):
+        try:
+            if not any(peer.get('inflight') for node in nodes for peer in node.getpeerinfo()):
+                return
+        except Exception:
+            # A node that is stopped, crashed, or has no RPC has nothing to
+            # settle, and several tests do step time across such a node on
+            # purpose. Never let this helper be the thing that fails them.
+            return
+        time.sleep(INFLIGHT_ADVANCE_POLL_INTERVAL)
+
+
+def advance_time_for_pos(nodes, seconds=60):
+    """Advance mock time on all nodes to age coins for PoS staking.
+
+    ReddCoin regtest nStakeMinAge = 10 seconds.
+    Default advances by 60 seconds to ensure sufficient coinage.
+
+    Args:
+        nodes: List of TestNode instances or single TestNode
+        seconds: Number of seconds to advance (default 60)
+
+    Returns:
+        New timestamp after advancement
+    """
+    if not isinstance(nodes, list):
+        nodes = [nodes]
+
+    _settle_block_relay(nodes)
+
+    # Get current time - use tracked mocktime if set, otherwise block header time
+    # This allows multiple calls to advance_time_for_pos without generating blocks
+    if hasattr(nodes[0], 'mocktime') and nodes[0].mocktime:
+        current_time = nodes[0].mocktime
+    else:
+        current_time = nodes[0].getblockheader(nodes[0].getbestblockhash())['time']
+    new_time = current_time + seconds
+
+    # Set new time on all nodes
+    set_node_times(nodes, new_time)
+
+    return new_time
 
 
 # Transaction/Block functions

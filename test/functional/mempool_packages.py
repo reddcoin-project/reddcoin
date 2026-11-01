@@ -52,12 +52,13 @@ class MempoolPackagesTest(BitcoinTestFramework):
         vout = utxo[0]['vout']
         value = utxo[0]['amount']
 
-        fee = Decimal("0.0001")
+        fee = Decimal("0.003")
         # MAX_ANCESTORS transactions off a confirmed tx should be fine
         chain = []
         witness_chain = []
         for _ in range(MAX_ANCESTORS):
-            (txid, sent_value) = chain_transaction(self.nodes[0], [txid], [0], value, fee, 1)
+            (txid, sent_value) = chain_transaction(self.nodes[0], [txid], [vout], value, fee, 1)
+            vout = 0
             value = sent_value
             chain.append(txid)
             # We need the wtxids to check P2P announcements

@@ -9,18 +9,26 @@ from decimal import Decimal
 from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 
-MAX_FEE_FILTER = Decimal(9170997) / COIN
-NORMAL_FEE_FILTER = Decimal(100) / COIN
+# ReddCoin: Fee filter values differ from Bitcoin due to higher DEFAULT_MIN_RELAY_TX_FEE (100000 vs 1000)
+# The MAX_FEE_FILTER is the rounded MAX_MONEY value based on bucket boundaries
+MAX_FEE_FILTER = Decimal(9452957) / COIN
+# ReddCoin: NORMAL_FEE_FILTER is 100x Bitcoin's value (0.001 RDD/kvB vs 0.00001 BTC/kvB)
+NORMAL_FEE_FILTER = Decimal(100000) / COIN
 
 
 class P2PIBDTxRelayTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
+        # ReddCoin: Use -maxtipage=0 to force IBD state at startup since regtest
+        # genesis block has a recent timestamp (2022) that would immediately exit IBD
         self.extra_args = [
-            ["-minrelaytxfee={}".format(NORMAL_FEE_FILTER)],
-            ["-minrelaytxfee={}".format(NORMAL_FEE_FILTER)],
+            ["-minrelaytxfee={}".format(NORMAL_FEE_FILTER), "-maxtipage=0"],
+            ["-minrelaytxfee={}".format(NORMAL_FEE_FILTER), "-maxtipage=0"],
         ]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def run_test(self):
         self.log.info("Check that nodes set minfilter to MAX_MONEY while still in IBD")

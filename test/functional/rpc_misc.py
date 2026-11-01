@@ -65,15 +65,16 @@ class RpcMiscTest(BitcoinTestFramework):
         assert_equal(node.echoipc("hello"), "hello")
 
         self.log.info("test getindexinfo")
-        # Without any indices running the RPC returns an empty object
-        assert_equal(node.getindexinfo(), {})
+        # ReddCoin framework always adds -txindex=1, so txindex is already running.
+        # Check that only txindex is running before adding more indices.
+        assert_equal(list(node.getindexinfo().keys()), ["txindex"])
 
-        # Restart the node with indices and wait for them to sync
+        # Restart the node with additional indices and wait for them to sync
         self.restart_node(0, ["-txindex", "-blockfilterindex", "-coinstatsindex"])
         self.wait_until(lambda: all(i["synced"] for i in node.getindexinfo().values()))
 
         # Returns a list of all running indices by default
-        values = {"synced": True, "best_block_height": 200}
+        values = {"synced": True, "best_block_height": 199}
         assert_equal(
             node.getindexinfo(),
             {

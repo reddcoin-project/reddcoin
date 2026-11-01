@@ -148,10 +148,27 @@ def test_ipv6_local():
     import socket
     # By using SOCK_DGRAM this will not actually make a connection, but it will
     # fail if there is no route to IPv6 localhost.
-    have_ipv6 = True
     try:
         s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         s.connect(('::1', 1))
     except socket.error:
-        have_ipv6 = False
-    return have_ipv6
+        return False
+
+    # A route on its own is not enough, because the node does not decide this
+    # the same way. It resolves through getaddrinfo with AI_ADDRCONFIG, see
+    # WrappedGetAddrInfo in src/netbase.cpp, which returns addresses only of a
+    # family the host has configured, and loopback does not count towards that.
+    # A container with a working ::1 and no other IPv6 address passes the check
+    # above while the node rejects the very same address:
+    #
+    #   Error: Invalid -proxy address or hostname: '[::1]:23501'
+    #
+    # Ask the question the way the node asks it, so tests skip their IPv6 parts
+    # where the node cannot follow.
+    try:
+        if not socket.getaddrinfo('::1', None, socket.AF_INET6, flags=socket.AI_ADDRCONFIG):
+            return False
+    except socket.gaierror:
+        return False
+
+    return True

@@ -38,13 +38,19 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
 
         self.log.info("Generate transactions that only node 0 knows about")
 
+        # The sendrawtransaction txn below spends us0. Lock it while the
+        # wallet picks the inputs of its own txn, or coin selection can spend
+        # it first and the raw txn conflicts (txn-mempool-conflict).
+        us0 = utxos.pop()
+        inputs = [{"txid": us0["txid"], "vout": us0["vout"]}]
+        node.lockunspent(False, inputs)
+
         # generate a wallet txn
         addr = node.getnewaddress()
         wallet_tx_hsh = node.sendtoaddress(addr, 0.0001)
+        node.lockunspent(True, inputs)
 
         # generate a txn using sendrawtransaction
-        us0 = utxos.pop()
-        inputs = [{"txid": us0["txid"], "vout": us0["vout"]}]
         outputs = {addr: 0.0001}
         tx = node.createrawtransaction(inputs, outputs)
         node.settxfee(min_relay_fee)
@@ -65,10 +71,17 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
         assert wallet_tx_hsh not in mempool
 
         # ensure that unbroadcast txs are persisted to mempool.dat
-        self.restart_node(0)
+        # Preserve mocktime across restart so LoadMempool doesn't expire txns
+        # (cache uses mocktime ~2022, real time is much later)
+        mock_time = node.mocktime
+        self.restart_node(0, extra_args=["-mocktime={}".format(mock_time)])
 
         self.log.info("Reconnect nodes & check if they are sent to node 1")
         self.connect_nodes(0, 1)
+
+        # Advance mocktime so SendMessages can trigger inv sending.
+        # With frozen -mocktime, GetTime() < nNextInvSend forever.
+        node.setmocktime(mock_time + MAX_INITIAL_BROADCAST_DELAY + 60)
 
         # fast forward into the future & ensure that the second node has the txns
         node.mockscheduler(MAX_INITIAL_BROADCAST_DELAY)

@@ -100,7 +100,12 @@ class P2PVersionStore(P2PInterface):
 class P2PLeakTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.setup_clean_chain = False  # Use cache with 199 blocks
+        # Note: No whitelist - this test specifically verifies peer timeout disconnections
         self.extra_args = [[f"-peertimeout={PEER_TIMEOUT}"]]
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()  # Required for generate()
 
     def create_old_version(self, nversion):
         old_version_msg = msg_version()
@@ -111,6 +116,10 @@ class P2PLeakTest(BitcoinTestFramework):
         return old_version_msg
 
     def run_test(self):
+        # ReddCoin: Sync mocktime to real time so peer timeout checks work correctly
+        # (nTimeConnected uses real time, but InactivityCheck uses mocktime)
+        self.nodes[0].setmocktime(int(time.time()))
+
         self.log.info('Check that the node doesn\'t send unexpected messages before handshake completion')
         # Peer that never sends a version, nor any other messages. It shouldn't receive anything from the node.
         no_version_idle_peer = self.nodes[0].add_p2p_connection(LazyPeer(), send_version=False, wait_for_verack=False)
@@ -119,9 +128,10 @@ class P2PLeakTest(BitcoinTestFramework):
         no_verack_idle_peer = self.nodes[0].add_p2p_connection(NoVerackIdlePeer(), wait_for_verack=False)
 
         # Pre-wtxidRelay peer that sends a version but not a verack and does not support feature negotiation
-        # messages which start at nVersion == 70016
+        # messages which start at nVersion == 80016 for ReddCoin (70016 for Bitcoin)
+        # ReddCoin MIN_PEER_PROTO_VERSION = 80001, WTXID_RELAY_VERSION = 80016
         pre_wtxidrelay_peer = self.nodes[0].add_p2p_connection(NoVerackIdlePeer(), send_version=False, wait_for_verack=False)
-        pre_wtxidrelay_peer.send_message(self.create_old_version(70015))
+        pre_wtxidrelay_peer.send_message(self.create_old_version(80015))
 
         # Wait until the peer gets the verack in response to the version. Though, don't wait for the node to receive the
         # verack, since the peer never sent one
@@ -133,7 +143,21 @@ class P2PLeakTest(BitcoinTestFramework):
         pre_wtxidrelay_peer.wait_until(lambda: pre_wtxidrelay_peer.version_received)
 
         # Mine a block and make sure that it's not sent to the connected peers
-        self.nodes[0].generate(nblocks=1)
+        # ReddCoin PoS: Advance mocktime for block generation while keeping it close to real time
+        # so peer timeout checks still work (they compare nTimeConnected in real time vs mocktime)
+        current_mocktime = int(time.time()) + 600
+        self.nodes[0].setmocktime(current_mocktime)
+        self.nodes[0].mocktime = current_mocktime  # Track for generate()'s internal mocktime handling
+        for attempt in range(10):
+            try:
+                self.nodes[0].generate(nblocks=1)
+                break
+            except Exception as e:
+                if "no valid coinstake found" in str(e) and attempt < 9:
+                    current_mocktime += 60
+                    self.nodes[0].setmocktime(current_mocktime)
+                    continue
+                raise
 
         # Give the node enough time to possibly leak out a message
         time.sleep(PEER_TIMEOUT + 2)
@@ -156,15 +180,25 @@ class P2PLeakTest(BitcoinTestFramework):
         assert not no_verack_idle_peer.is_connected
         assert not pre_wtxidrelay_peer.is_connected
 
+        # ReddCoin: Sync mocktime back to real time before new connections
+        # Otherwise new peers immediately timeout (nTimeConnected uses real time,
+        # but timeout checks use mocktime which is far ahead)
+        real_time = int(time.time())
+        self.nodes[0].setmocktime(real_time)
+        self.nodes[0].mocktime = real_time
+
         self.log.info('Check that the version message does not leak the local address of the node')
         p2p_version_store = self.nodes[0].add_p2p_connection(P2PVersionStore())
         ver = p2p_version_store.version_received
         # Check that received time is within one hour of now
-        assert_greater_than_or_equal(ver.nTime, time.time() - 3600)
-        assert_greater_than_or_equal(time.time() + 3600, ver.nTime)
+        # ReddCoin: Use mocktime instead of real time since tests use setmocktime
+        current_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        assert_greater_than_or_equal(ver.nTime, current_time - 3600)
+        assert_greater_than_or_equal(current_time + 3600, ver.nTime)
         assert_equal(ver.addrFrom.port, 0)
         assert_equal(ver.addrFrom.ip, '0.0.0.0')
-        assert_equal(ver.nStartingHeight, 201)
+        # ReddCoin: Cache has 199 blocks, plus 1 generated = 200
+        assert_equal(ver.nStartingHeight, 200)
         assert_equal(ver.relay, 1)
 
         self.log.info('Check that old peers are disconnected')

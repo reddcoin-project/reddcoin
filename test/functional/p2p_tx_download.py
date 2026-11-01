@@ -4,6 +4,11 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
 Test transaction download behavior
+
+ReddCoin adaptations:
+- Added -whitelist=noban@127.0.0.1 to prevent mocktime-related disconnections
+- Increased fee in test_inv_block (100x for ReddCoin min relay fee)
+- Added skip_if_no_wallet() for test_inv_block which uses wallet RPCs
 """
 
 from test_framework.messages import (
@@ -56,6 +61,13 @@ MAX_GETDATA_INBOUND_WAIT = GETDATA_TX_INTERVAL + INBOUND_PEER_TX_DELAY + TXID_RE
 class TxDownloadTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
+        # ReddCoin: Add whitelist and long peertimeout to prevent mocktime-related
+        # P2P disconnections when test jumps mocktime forward significantly
+        self.extra_args = [['-whitelist=noban@127.0.0.1', '-peertimeout=999999999']] * self.num_nodes
+
+    def skip_test_if_missing_module(self):
+        # ReddCoin: test_inv_block uses wallet RPCs
+        self.skip_if_no_wallet()
 
     def test_tx_requests(self):
         self.log.info("Test that we request transactions from all our peers, eventually")
@@ -74,7 +86,9 @@ class TxDownloadTest(BitcoinTestFramework):
             with p2p_lock:
                 return p.last_message.get("getdata") and p.last_message["getdata"].inv[-1].hash == txid
 
-        node_0_mocktime = int(time.time())
+        # ReddCoin: Use tip-based mocktime to avoid timestamp mismatch issues
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        node_0_mocktime = tip_time + 300
         while outstanding_peer_index:
             node_0_mocktime += MAX_GETDATA_INBOUND_WAIT
             self.nodes[0].setmocktime(node_0_mocktime)
@@ -88,17 +102,24 @@ class TxDownloadTest(BitcoinTestFramework):
 
     def test_inv_block(self):
         self.log.info("Generate a transaction on node 0")
+        # ReddCoin: Use listunspent to find an available UTXO instead of hard-coding block 1
+        # Block 1's coinbase may have been spent in cache blocks
+        utxos = self.nodes[0].listunspent()
+        assert len(utxos) > 0, "No UTXOs available for test_inv_block"
+        utxo = utxos[0]
+        # ReddCoin: Use a reasonable fee (0.001 RDD) to avoid "fee exceeds max" errors
+        # For large UTXOs like coinbase (10000+ RDD), we need to output most of the value
+        fee = 0.001
+        output_amount = round(float(utxo['amount']) - fee, 8)
+        assert output_amount > 0, f"UTXO too small: {utxo['amount']}"
         tx = self.nodes[0].createrawtransaction(
-            inputs=[{  # coinbase
-                "txid": self.nodes[0].getblock(self.nodes[0].getblockhash(1))['tx'][0],
-                "vout": 0
+            inputs=[{
+                "txid": utxo['txid'],
+                "vout": utxo['vout']
             }],
-            outputs={ADDRESS_BCRT1_UNSPENDABLE: 50 - 0.00025},
+            outputs={ADDRESS_BCRT1_UNSPENDABLE: output_amount},
         )
-        tx = self.nodes[0].signrawtransactionwithkey(
-            hexstring=tx,
-            privkeys=[self.nodes[0].get_deterministic_priv_key().key],
-        )['hex']
+        tx = self.nodes[0].signrawtransactionwithwallet(tx)['hex']
         ctx = tx_from_hex(tx)
         txid = int(ctx.rehash(), 16)
 
@@ -133,7 +154,9 @@ class TxDownloadTest(BitcoinTestFramework):
         with p2p_lock:
             p.tx_getdata_count = 0
 
-        mock_time = int(time.time() + 1)
+        # ReddCoin: Use tip-based mocktime to avoid timestamp mismatch issues
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        mock_time = tip_time + 300
         self.nodes[0].setmocktime(mock_time)
         for i in range(MAX_GETDATA_IN_FLIGHT):
             p.send_message(msg_inv([CInv(t=MSG_WTX, h=txids[i])]))
@@ -167,7 +190,11 @@ class TxDownloadTest(BitcoinTestFramework):
             assert_equal(peer_fallback.tx_getdata_count, 0)
         self.nodes[0].setmocktime(int(time.time()) + GETDATA_TX_INTERVAL + 1)  # Wait for request to peer_expiry to expire
         peer_fallback.wait_until(lambda: peer_fallback.tx_getdata_count >= 1, timeout=1)
-        self.restart_node(0)  # reset mocktime
+        # ReddCoin: Preserve whitelist when restarting to prevent mocktime disconnections
+        self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1', '-peertimeout=999999999'])
+        # ReddCoin: Restore mocktime based on tip time (like framework initialization)
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        self.nodes[0].setmocktime(tip_time + 300)
 
     def test_disconnect_fallback(self):
         self.log.info('Check that disconnect will select another peer for download')
@@ -203,10 +230,15 @@ class TxDownloadTest(BitcoinTestFramework):
     def test_preferred_inv(self, preferred=False):
         if preferred:
             self.log.info('Check invs from preferred peers are downloaded immediately')
-            self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1'])
+            self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1', '-peertimeout=999999999'])
         else:
             self.log.info('Check invs from non-preferred peers are downloaded after {} s'.format(NONPREF_PEER_TX_DELAY))
-        mock_time = int(time.time() + 1)
+            # ReddCoin: Restart WITHOUT whitelist to test non-preferred peer behavior
+            # Keep peertimeout to prevent mocktime disconnections
+            self.restart_node(0, extra_args=['-peertimeout=999999999'])
+        # ReddCoin: Use tip-based mocktime to avoid timestamp mismatch issues
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        mock_time = tip_time + 300
         self.nodes[0].setmocktime(mock_time)
         peer = self.nodes[0].add_p2p_connection(TestP2PConn())
         peer.send_message(msg_inv([CInv(t=MSG_WTX, h=0xff00ff00)]))
@@ -221,8 +253,10 @@ class TxDownloadTest(BitcoinTestFramework):
 
     def test_txid_inv_delay(self, glob_wtxid=False):
         self.log.info('Check that inv from a txid-relay peers are delayed by {} s, with a wtxid peer {}'.format(TXID_RELAY_DELAY, glob_wtxid))
-        self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1'])
-        mock_time = int(time.time() + 1)
+        self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1', '-peertimeout=999999999'])
+        # ReddCoin: Use tip-based mocktime to avoid timestamp mismatch issues
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        mock_time = tip_time + 300
         self.nodes[0].setmocktime(mock_time)
         peer = self.nodes[0].add_p2p_connection(TestP2PConn(wtxidrelay=False))
         if glob_wtxid:
@@ -238,13 +272,21 @@ class TxDownloadTest(BitcoinTestFramework):
 
     def test_large_inv_batch(self):
         self.log.info('Test how large inv batches are handled with relay permission')
-        self.restart_node(0, extra_args=['-whitelist=relay@127.0.0.1'])
+        # ReddCoin: Use relay,noban to get relay permission and prevent mocktime disconnections
+        self.restart_node(0, extra_args=['-whitelist=relay,noban@127.0.0.1', '-peertimeout=999999999'])
+        # ReddCoin: Use tip-based mocktime to avoid timestamp mismatch issues
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        self.nodes[0].setmocktime(tip_time + 300)
         peer = self.nodes[0].add_p2p_connection(TestP2PConn())
         peer.send_message(msg_inv([CInv(t=MSG_WTX, h=wtxid) for wtxid in range(MAX_PEER_TX_ANNOUNCEMENTS + 1)]))
         peer.wait_until(lambda: peer.tx_getdata_count == MAX_PEER_TX_ANNOUNCEMENTS + 1)
 
         self.log.info('Test how large inv batches are handled without relay permission')
-        self.restart_node(0)
+        # ReddCoin: Preserve whitelist when restarting to prevent mocktime disconnections
+        self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1', '-peertimeout=999999999'])
+        # ReddCoin: Use tip-based mocktime
+        tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+        self.nodes[0].setmocktime(tip_time + 300)
         peer = self.nodes[0].add_p2p_connection(TestP2PConn())
         peer.send_message(msg_inv([CInv(t=MSG_WTX, h=wtxid) for wtxid in range(MAX_PEER_TX_ANNOUNCEMENTS + 1)]))
         peer.wait_until(lambda: peer.tx_getdata_count == MAX_PEER_TX_ANNOUNCEMENTS)
@@ -270,7 +312,18 @@ class TxDownloadTest(BitcoinTestFramework):
         # the next trickle relay event happens.
         for test in [self.test_in_flight_max, self.test_inv_block, self.test_tx_requests]:
             self.stop_nodes()
-            self.start_nodes()
+            # ReddCoin: test_in_flight_max needs non-preferred peers (no whitelist)
+            # test_inv_block and test_tx_requests need stable inter-node connections (whitelist)
+            # All tests need peertimeout to prevent mocktime disconnections
+            if test == self.test_in_flight_max:
+                self.start_nodes(extra_args=[['-peertimeout=999999999']] * self.num_nodes)
+            else:
+                # Use whitelist to prevent mocktime disconnection between nodes
+                self.start_nodes()
+            # Set mocktime based on tip time before connecting peers
+            for node in self.nodes:
+                tip_time = node.getblockheader(node.getbestblockhash())['time']
+                node.setmocktime(tip_time + 300)
             self.connect_nodes(1, 0)
             # Setup the p2p connections
             self.peers = []

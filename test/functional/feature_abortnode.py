@@ -21,6 +21,9 @@ class AbortNodeTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.rpc_timeout = 240
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def setup_network(self):
         self.setup_nodes()
         # We'll connect the nodes later
