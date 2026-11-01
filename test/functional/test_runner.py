@@ -88,6 +88,7 @@ BASE_SCRIPTS = [
     # Scripts that are run by default.
     # Longest test should go first, to favor running tests in parallel
     'wallet_hd.py --legacy-wallet',
+    'wallet_mixed_key_paths.py --legacy-wallet',
     'wallet_hd.py --descriptors',
     'wallet_backup.py --legacy-wallet',
     'wallet_backup.py --descriptors',
@@ -253,6 +254,7 @@ BASE_SCRIPTS = [
     'p2p_leak.py',
     'wallet_encryption.py --legacy-wallet',
     'wallet_encryption.py --descriptors',
+    'wallet_encrypt_while_flushing.py --descriptors',
     'feature_dersig.py',
     'feature_cltv.py',
     'rpc_uptime.py',

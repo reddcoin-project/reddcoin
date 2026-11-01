@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <interfaces/chain.h>
+#include <node/blockstorage.h>
 #include <node/context.h>
 #include <outputtype.h>
 #include <script/standard.h>
@@ -13,6 +14,7 @@
 #include <util/system.h>
 #include <util/translation.h>
 #include <util/strencodings.h>
+#include <validation.h>
 #include <validationinterface.h>
 #include <wallet/bip39.h>
 #include <wallet/scriptpubkeyman.h>
@@ -98,6 +100,29 @@ BOOST_AUTO_TEST_CASE(encrypted_wallet_keeps_its_hd_seed_when_loaded)
         BOOST_CHECK(spk_man.mapKeyMetadata.at(ToKeyID(std::get<PKHash>(dest))).hd_seed_id == seed_id);
     }
     Unload(std::move(wallet));
+}
+
+// A wallet whose load fails after it has been attached to the chain is
+// released: it is not left behind holding its file, so that the next attempt
+// is told "already loaded" for a wallet that nothing lists.
+BOOST_AUTO_TEST_CASE(wallet_that_fails_to_load_is_released)
+{
+    Unload(Create("rescan_fails"));
+
+    // The wallet is made to read the chain again, and cannot: the file of the
+    // blocks is gone.
+    gArgs.ForceSetArg("-rescan", "1");
+    const int file{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockPos().nFile)};
+    WITH_LOCK(cs_main, Assert(m_node.chainman)->m_blockman.PruneOneBlockFile(file));
+    UnlinkPrunedFiles({file});
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        BOOST_CHECK(!Load("rescan_fails", error, warnings));
+        BOOST_CHECK_MESSAGE(error.original.find("Failed to rescan the wallet during initialization") != std::string::npos, error.original);
+        BOOST_CHECK(!GetWallet("rescan_fails"));
+    }
 }
 
 // -hdseed gave the next mnemonic wallet created the seed it named, unchecked
