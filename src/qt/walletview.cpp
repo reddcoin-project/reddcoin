@@ -40,7 +40,6 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-#include <set>
 
 WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     QStackedWidget(parent),
@@ -352,13 +351,10 @@ void WalletView::unlockWallet()
 void WalletView::showHDNotices()
 {
     if (!walletModel) return;
-    // Once per session for each wallet, as the notices say it in the log and on loading anyway.
-    static std::set<std::string> shown;
-    const std::string name = walletModel->wallet().getWalletName();
-    if (shown.count(name)) return;
+    // Each time the wallet is loaded: this is where the GUI shows them, and
+    // they are not among the warnings of the load (-guiwalletnotices).
     const std::vector<bilingual_str> notices = walletModel->wallet().getHDWarnings();
     if (notices.empty()) return;
-    shown.insert(name);
 
     QStringList lines;
     // As in the notice given at load: "Wallet <name>:", and the text under it.

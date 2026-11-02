@@ -2864,10 +2864,13 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
 
     // What the owner has to be told about where the seed of the wallet is
     // kept, and about the keys of its seed: in the log, and to whoever loaded
-    // the wallet.
+    // the wallet. The GUI shows them itself, once, in the box that can offer
+    // the unlock that some of them call for, so they are not also among the
+    // warnings of the load there.
+    const bool gui_shows_notices{gArgs.GetBoolArg("-guiwalletnotices", false)};
     for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
         walletInstance->WalletLogPrintf("%s\n", notice.original);
-        warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name.empty() ? "default wallet" : name) + notice);
+        if (!gui_shows_notices) warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name.empty() ? "default wallet" : name) + notice);
     }
 
     // This wallet is in its first run if there are no ScriptPubKeyMans and it isn't blank or no privkeys

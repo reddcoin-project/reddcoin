@@ -107,6 +107,7 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
     argsman.AddArg("-walletrejectlongchains", strprintf("Wallet will not create transactions that violate mempool chain limits (default: %u)", DEFAULT_WALLET_REJECT_LONG_CHAINS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::WALLET_DEBUG_TEST);
 
     argsman.AddHiddenArgs({"-zapwallettxes"});
+    argsman.AddArg("-guiwalletnotices", "Leave the notices about a wallet's seed to the GUI, which shows them itself, instead of giving them as warnings of the load (set by the GUI)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::WALLET_DEBUG_TEST);
     // No longer read: still accepted, so that a node with one of them in its
     // configuration starts, and warned about in ParameterInteraction.
     argsman.AddHiddenArgs(IGNORED_SEED_OPTIONS);
