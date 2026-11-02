@@ -460,6 +460,7 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                 return false;
             if (Unlock(_vMasterKey))
             {
+                const CMasterKey old_master_key{pMasterKey.second};
                 int64_t nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
                 pMasterKey.second.nDeriveIterations = static_cast<unsigned int>(pMasterKey.second.nDeriveIterations * (100 / ((double)(GetTimeMillis() - nStartTime))));
@@ -473,11 +474,36 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
 
                 WalletLogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
 
-                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
+                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod) ||
+                    !crypter.Encrypt(_vMasterKey, pMasterKey.second.vchCryptedKey)) {
+                    pMasterKey.second = old_master_key;
                     return false;
-                if (!crypter.Encrypt(_vMasterKey, pMasterKey.second.vchCryptedKey))
+                }
+
+                // A record that is overwritten is not erased: the master key
+                // encrypted with the old passphrase stays in the file or its
+                // log, where the old passphrase still opens it, until the file
+                // is written anew. The marker of the rewrite at first load goes with the
+                // new key, so that a rewrite that fails or is cut short here
+                // is done at the next load.
+                bool written{false};
+                {
+                    // Closed before the rewrite, which waits for every batch of the file.
+                    WalletBatch batch(GetDatabase());
+                    if (batch.TxnBegin()) {
+                        written = batch.WriteMasterKey(pMasterKey.first, pMasterKey.second) &&
+                                  (GetDatabase().Format() != "bdb" || batch.EraseRewritten()) &&
+                                  batch.TxnCommit();
+                        if (!written) batch.TxnAbort();
+                    }
+                }
+                if (!written) {
+                    pMasterKey.second = old_master_key;
                     return false;
-                WalletBatch(GetDatabase()).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
+                if (!RewriteWalletFile()) {
+                    WalletLogPrintf("Error: the wallet file could not be rewritten after the passphrase was changed, and may still hold the master key encrypted with the old passphrase. It will be tried again when the wallet is next loaded\n");
+                }
                 if (fWasLocked)
                     Lock();
                 return true;

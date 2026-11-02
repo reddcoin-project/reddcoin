@@ -1065,4 +1065,64 @@ BOOST_AUTO_TEST_CASE(old_phrase_of_a_reseeded_wallet_gone_after_first_load)
     Unload(std::move(wallet));
 }
 
+// A change of passphrase writes the master key, encrypted with the new
+// passphrase, over the old record, which the old passphrase still opens. The
+// file is rewritten so that the old one is in no file of the wallet. A rewrite
+// that fails leaves a Berkeley DB file unmarked, and the next load does it.
+BOOST_AUTO_TEST_CASE(old_master_key_gone_after_passphrase_change)
+{
+    const SecureString new_passphrase{"the passphrase the wallet is encrypted with now"};
+    const auto crypted_key = [](CWallet& wallet) {
+        LOCK(wallet.cs_wallet);
+        BOOST_REQUIRE_EQUAL(wallet.mapMasterKeys.size(), 1U);
+        return wallet.mapMasterKeys.begin()->second.vchCryptedKey;
+    };
+    const auto marked = [&](const std::string& name) {
+        bool has{false};
+        Edit(name, [&](DatabaseBatch& batch) { has = batch.Exists(DBKeys::REWRITTEN); });
+        return has;
+    };
+    int rewrites{0};
+    bool fail{false};
+    g_wallet_hd_write_fault = [&](const std::string& what) {
+        if (what != "rewrite-file") return false;
+        ++rewrites;
+        return fail;
+    };
+    for (const auto& [format, rewrite_fails] : {std::make_pair(DatabaseFormat::BERKELEY, false), std::make_pair(DatabaseFormat::BERKELEY, true), std::make_pair(DatabaseFormat::SQLITE, false)}) {
+        const bool bdb{format == DatabaseFormat::BERKELEY};
+        const std::string name{strprintf("passphrase_change_%s_%d", bdb ? "bdb" : "sqlite", rewrite_fails)};
+        std::shared_ptr<CWallet> wallet = Create(name, walletType::bip32Wallet, "", WALLET_PASSPHRASE, format);
+        Addresses(*wallet, 2);
+        const std::vector<unsigned char> old_key = crypted_key(*wallet);
+        BOOST_REQUIRE(!FilesHolding(*wallet, old_key).empty());
+
+        rewrites = 0;
+        fail = rewrite_fails;
+        BOOST_REQUIRE(wallet->ChangeWalletPassphrase(WALLET_PASSPHRASE, new_passphrase));
+        fail = false;
+        BOOST_CHECK_EQUAL(rewrites, 1);
+        const std::vector<unsigned char> new_key = crypted_key(*wallet);
+        BOOST_CHECK(new_key != old_key);
+        BOOST_CHECK(wallet->IsLocked());
+        BOOST_CHECK(!wallet->Unlock(WALLET_PASSPHRASE));
+        BOOST_REQUIRE(wallet->Unlock(new_passphrase));
+        BOOST_REQUIRE(wallet->Lock());
+        BOOST_CHECK(!FilesHolding(*wallet, new_key).empty());
+        // Without the rewrite the old key is still there: what the test looks for can be found.
+        BOOST_CHECK_EQUAL(FilesHolding(*wallet, old_key).empty(), !rewrite_fails);
+        Unload(std::move(wallet));
+        // Only a Berkeley DB file is marked; one whose rewrite failed is not, until its next load.
+        BOOST_CHECK_EQUAL(marked(name), bdb && !rewrite_fails);
+
+        wallet = Load(name, /* expect_warnings */ rewrite_fails);
+        BOOST_CHECK_EQUAL(rewrites, rewrite_fails ? 2 : 1);
+        BOOST_CHECK(FilesHolding(*wallet, old_key).empty());
+        BOOST_REQUIRE(wallet->Unlock(new_passphrase));
+        Unload(std::move(wallet));
+        BOOST_CHECK_EQUAL(marked(name), bdb);
+    }
+    g_wallet_hd_write_fault = nullptr;
+}
+
 BOOST_AUTO_TEST_SUITE_END()

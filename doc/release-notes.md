@@ -718,6 +718,19 @@ Wallet
   Copies and backups made with earlier versions are not changed and may
   contain such leftovers: make a new backup and destroy the old ones.
 
+- **Changing the passphrase of a wallet left the master key, encrypted with
+  the old passphrase, in the wallet file.** `walletpassphrasechange`, and the
+  change of passphrase in the GUI, wrote the master key encrypted with the new
+  passphrase over the old record, and the wallet file (SQLite) or its log
+  files (Berkeley DB) could keep the old one.
+  Anyone with the file and the old passphrase could decrypt every private key
+  of the wallet. The wallet file is now rewritten after a change of
+  passphrase. If that cannot be done, a Berkeley DB wallet is rewritten at its
+  next load. Copies and backups made before the change still open with the
+  old passphrase: if it was changed because the old one may be known, make a
+  new backup, destroy the old ones, and if a copy of the file may have been
+  taken, move the funds to a new wallet.
+
 - When a rewrite of the wallet file and a change to the address book came at
   the same moment, both could wait for each other for ever. Fixed.
 
