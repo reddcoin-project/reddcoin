@@ -88,6 +88,8 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     connect(overviewPage, &OverviewPage::transactionClicked, transactionView, qOverload<const QModelIndex&>(&TransactionView::focusTransaction));
 
     connect(overviewPage, &OverviewPage::outOfSyncWarningClicked, this, &WalletView::outOfSyncWarningClicked);
+    connect(overviewPage, &OverviewPage::backupWalletClicked, this, &WalletView::backupWallet);
+    connect(overviewPage, &OverviewPage::moveFundsClicked, this, [this] { Q_EMIT moveFundsToNewWallet(walletModel); });
 
     connect(sendCoinsPage, &SendCoinsDialog::coinsSent, this, &WalletView::coinsSent);
     // Highlight transaction after send
@@ -206,6 +208,12 @@ void WalletView::gotoSendCoinsPage(QString addr)
 
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
+}
+
+void WalletView::sendAllTo(const QString& address)
+{
+    setCurrentWidget(sendCoinsPage);
+    sendCoinsPage->sendAllTo(address);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

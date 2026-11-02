@@ -37,6 +37,7 @@
 #include <functional>
 #include <chain.h>
 #include <chainparams.h>
+#include <key_io.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/ui_interface.h>
@@ -62,6 +63,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
+#include <QPointer>
 #include <QProgressDialog>
 #include <QScreen>
 #include <QSettings>
@@ -891,6 +893,7 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
     connect(wallet_view, &WalletView::stakingStatusChanged, this, &BitcoinGUI::updateWalletStakingStatus);
     connect(wallet_view, &WalletView::incomingTransaction, this, &BitcoinGUI::incomingTransaction);
     connect(wallet_view, &WalletView::hdEnabledStatusChanged, this, &BitcoinGUI::updateWalletStatus);
+    connect(wallet_view, &WalletView::moveFundsToNewWallet, this, &BitcoinGUI::moveFundsToNewWallet);
     connect(this, &BitcoinGUI::setPrivacy, wallet_view, &WalletView::setPrivacy);
     wallet_view->setPrivacy(isPrivacyModeActivated());
     const QString display_name = walletModel->getDisplayName();
@@ -1575,7 +1578,7 @@ bool BitcoinGUI::handlePaymentRequest(const SendCoinsRecipient& recipient)
     return false;
 }
 
-void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
+void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled, const QStringList& notices)
 {
     QString icon = "";
     if (hdEnabled == HD_DISABLED) {
@@ -1588,9 +1591,49 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled)
         icon = ":/icons/hd_enabled_44";
     }
 
+    if (!notices.isEmpty()) {
+        // Stays in view while the wallet has something to tell its owner, and follows the selected wallet.
+        QStringList lines;
+        for (const QString& notice : notices) lines << notice.toHtmlEscaped().replace("\n", "<br>");
+        labelWalletHDStatusIcon->setThemedPixmap(QStringLiteral(":/icons/warning"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        labelWalletHDStatusIcon->setToolTip("<qt>" + lines.join("<br><br>") + "</qt>");
+        labelWalletHDStatusIcon->show();
+        return;
+    }
     labelWalletHDStatusIcon->setThemedPixmap(privkeyDisabled ? QStringLiteral(":/icons/eye") : icon, STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
     labelWalletHDStatusIcon->setToolTip(privkeyDisabled ? tr("Private key <b>disabled</b>") : hdEnabled > 0 ? tr("HD key generation is <b>enabled</b>") : tr("HD key generation is <b>disabled</b>"));
     labelWalletHDStatusIcon->show();
+}
+
+void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
+{
+    if (!from || !m_wallet_controller) return;
+    const QString name = from->getDisplayName().toHtmlEscaped();
+    QMessageBox box(QMessageBox::Information, tr("Move funds to a new wallet"),
+        "<qt>" + tr("To move the funds of wallet %1 to a new wallet:").arg(name) + "<ol>" +
+        "<li>" + tr("Create the new wallet. Choose a mnemonic wallet, and write down its mnemonic phrase: it is the backup of the new wallet.") + "</li>" +
+        "<li>" + tr("The send page of wallet %1 then opens with all of its funds to an address of the new wallet. Check it and press Send.").arg(name) + "</li>" +
+        "</ol>" + tr("Moved coins start their coin age for staking again. Keep the file of wallet %1 until the payment is confirmed.").arg(name) + "</qt>",
+        QMessageBox::Ok | QMessageBox::Cancel, this);
+    if (box.exec() != QMessageBox::Ok) return;
+
+    QPointer<WalletModel> source{from};
+    auto activity = new CreateWalletWizardActivity(m_wallet_controller, this);
+    connect(activity, &CreateWalletWizardActivity::created, this, [this, source](WalletModel* to) {
+        if (!source || !to) return;
+        CTxDestination dest;
+        const std::string label{tr("From wallet %1").arg(source->getDisplayName()).toStdString()};
+        if (!to->wallet().getNewDestination(to->wallet().getDefaultAddressType(), label, dest)) {
+            message(tr("Move funds to a new wallet"),
+                tr("The new wallet %1 could not give an address. Take one from its Receive page, then send all of the funds of wallet %2 to it.").arg(to->getDisplayName(), source->getDisplayName()),
+                CClientUIInterface::MSG_WARNING);
+            return;
+        }
+        setCurrentWallet(source);
+        if (WalletView* view = walletFrame->currentWalletView()) view->sendAllTo(QString::fromStdString(EncodeDestination(dest)));
+    });
+    connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
+    activity->create();
 }
 
 void BitcoinGUI::setWalletLocked(bool wallet_locked)
@@ -1794,7 +1837,9 @@ void BitcoinGUI::updateWalletStatus()
     } else if (walletModel->wallet().hdEnabled()) {
         hdType = HD_ENABLED_32;
     }
-    setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType);
+    QStringList notices;
+    for (const bilingual_str& notice : walletModel->wallet().getHDWarnings(/* with_advice */ false)) notices << QString::fromStdString(notice.translated);
+    setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType, notices);
 }
 #endif // ENABLE_WALLET
 

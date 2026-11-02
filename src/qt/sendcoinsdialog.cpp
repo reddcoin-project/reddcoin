@@ -640,6 +640,15 @@ void SendCoinsDialog::setAddress(const QString &address)
     entry->setAddress(address);
 }
 
+void SendCoinsDialog::sendAllTo(const QString& address)
+{
+    clear();
+    SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(0)->widget());
+    if (!entry) return;
+    entry->setAddress(address);
+    useAvailableBalance(entry);
+}
+
 void SendCoinsDialog::pasteEntry(const SendCoinsRecipient &rv)
 {
     if(!fNewRecipientAllowed)
