@@ -920,10 +920,11 @@ BOOST_AUTO_TEST_CASE(earlier_seed_warning_says_what_is_known)
         BOOST_CHECK_EQUAL(spk_man.IsBip39Enabled(), with_phrase);
         BOOST_CHECK(spk_man.HasEarlierSeedKeys());
         BOOST_CHECK(says(wallet->GetHDWarnings(), known));
-        // At load: after "Wallet <name>: ", from a small letter, with the advice.
+        // At load: with what to do.
         const std::vector<bilingual_str> at_load = wallet->GetHDWarnings(/* for_load */ true);
         BOOST_CHECK(says(at_load, with_phrase ? "This wallet was converted" : "The HD seed of this wallet was replaced"));
-        BOOST_CHECK(says(at_load, "keep a backup of the file, or create a new wallet and move the funds to it."));
+        BOOST_CHECK(says(at_load, "What to do:\n1. Recommended: create a new wallet"));
+        BOOST_CHECK(!says(wallet->GetHDWarnings(), "What to do"));
 
         // The unlock moves the seed: from then on it is of the mnemonic kind, and still told.
         BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
@@ -948,7 +949,7 @@ BOOST_AUTO_TEST_CASE(earlier_seed_warning_says_what_is_known)
         wallet = Load(name, /* expect_warnings */ true);
         BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->HasEarlierSeedKeys());
         BOOST_CHECK(says(wallet->GetHDWarnings(), W3));
-        BOOST_CHECK(says(wallet->GetHDWarnings(true), "The HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither"));
+        BOOST_CHECK(says(wallet->GetHDWarnings(true), "The HD seed of this wallet was replaced by an earlier version (4.22.5 to 4.22.9.3) when it was encrypted. Neither"));
         BOOST_REQUIRE(wallet->Unlock(WALLET_PASSPHRASE));
         BOOST_CHECK(says(wallet->GetHDWarnings(), known));
         BOOST_REQUIRE(wallet->Lock());
