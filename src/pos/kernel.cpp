@@ -177,8 +177,14 @@ bool ComputeNextStakeModifier(CChainState* active_chainstate, const CBlockIndex*
     nStakeModifier = 0;
     fGeneratedStakeModifier = false;
     if (!pindexPrev) {
-        fGeneratedStakeModifier = true;
-        return true; // genesis block's modifier is 0
+        // The genesis block's modifier is 0, and it is not a generated one. A
+        // node that starts from scratch adds genesis without computing its
+        // modifier (LoadGenesisBlock), so the modifiers of the chain were
+        // computed without it; a reindex accepts genesis through here.
+        // Counting it would move the first generated modifier from block 1 to
+        // block 2, and on a chain whose blocks are a modifier interval apart,
+        // as on regtest, every later one with it.
+        return true;
     }
 
     // First find current stake modifier and its generation block time
