@@ -143,7 +143,8 @@ public:
     bool unlock(const SecureString& wallet_passphrase) override { return m_wallet->Unlock(wallet_passphrase); }
     bool hdSecretsRewriteOnUnlock() override { return m_wallet->HDSecretsRewriteOnUnlock(); }
     std::vector<bilingual_str> takeHDSecretsMovedNotices() override { return m_wallet->TakeHDSecretsMovedNotices(); }
-    std::vector<bilingual_str> getHDWarnings() override { return m_wallet->GetHDWarnings(/* for_load */ true); }
+    std::vector<bilingual_str> getHDWarnings(bool with_advice) override { return m_wallet->GetHDWarnings(/* for_load */ with_advice); }
+    bool hasKeysSeedDoesNotRestore() override { return m_wallet->HasKeysSeedDoesNotRestore(); }
     bool isLocked() override { return m_wallet->IsLocked(); }
     bool changeWalletPassphrase(const SecureString& old_wallet_passphrase,
         const SecureString& new_wallet_passphrase) override

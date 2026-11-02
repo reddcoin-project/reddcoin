@@ -277,6 +277,9 @@ static const std::unordered_set<OutputType> LEGACY_OUTPUT_TYPES {
     OutputType::BECH32,
 };
 
+//! What to do when the seed of a wallet does not restore all of its keys: the advice given at load.
+bilingual_str SeedDoesNotRestoreAllAdvice();
+
 class LegacyScriptPubKeyMan : public ScriptPubKeyMan, public FillableSigningProvider
 {
 public:

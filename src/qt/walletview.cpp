@@ -353,7 +353,7 @@ void WalletView::showHDNotices()
     if (!walletModel) return;
     // Each time the wallet is loaded: this is where the GUI shows them, and
     // they are not among the warnings of the load (-guiwalletnotices).
-    const std::vector<bilingual_str> notices = walletModel->wallet().getHDWarnings();
+    const std::vector<bilingual_str> notices = walletModel->wallet().getHDWarnings(/* with_advice */ true);
     if (notices.empty()) return;
 
     QStringList lines;

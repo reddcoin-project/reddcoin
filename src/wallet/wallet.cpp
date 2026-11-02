@@ -3404,10 +3404,18 @@ std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
     LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
     std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices(for_load) : std::vector<bilingual_str>{};
     if (spk_man && spk_man->HasMixedKeyPaths()) {
-        notices.push_back(
-            _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+        bilingual_str notice{_("Some of this wallet's addresses were made on BIP44 paths by an earlier version (4.22.7 to 4.22.9.3), and its later ones on the wallet's ordinary paths. Its HD seed restores only the later ones: if this wallet were restored from the seed alone, the funds on the earlier addresses would not be there. Only this wallet file holds the keys to all of its addresses.")};
+        // The advice is the same as for the keys of an earlier seed: given once.
+        if (for_load && !spk_man->HasEarlierSeedKeys()) notice = notice + Untranslated("\n\n") + SeedDoesNotRestoreAllAdvice();
+        notices.push_back(notice);
     }
     return notices;
+}
+
+bool CWallet::HasKeysSeedDoesNotRestore() const
+{
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man && (spk_man->HasMixedKeyPaths() || spk_man->HasEarlierSeedKeys());
 }
 
 void CWallet::MarkRewritten()
