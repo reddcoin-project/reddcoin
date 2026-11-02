@@ -534,7 +534,7 @@ public:
      *  when it was encrypted. Its mnemonic does not restore the earlier keys. */
     bool HasEarlierSeedKeys() const;
     //! What the owner of the wallet has to be told about where its seed is, if anything.
-    //! What the owner has to be told about the seed. for_load: the form that follows "Wallet <name>: "
+    //! What the owner has to be told about the seed. for_load: the form given at load, with advice
     //! in the notice given when the wallet is loaded (the earlier-seed warning there carries the advice).
     std::vector<bilingual_str> GetHDSecretsNotices(bool for_load) const;
     //! The earlier-seed warning as the commands give it: W1 (a phrase), W2 (no phrase) or W3 (not known: moved and locked).

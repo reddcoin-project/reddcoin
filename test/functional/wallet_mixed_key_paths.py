@@ -37,7 +37,7 @@ from test_framework.util import (
 )
 
 UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
-NOTICE = ("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the "
+NOTICE = ("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the "
           "wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: "
           "keep a backup of the file, or create a new wallet and move the funds to it.")
 HARDENED = 0x80000000
@@ -144,11 +144,11 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.log.info("%s: found and said without the passphrase" % name)
         loaded = node.loadwallet(name)
-        assert_equal(loaded["warning"], "Wallet %s: %s" % (name, NOTICE))
+        assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE))
         wallet = node.get_wallet_rpc(name)
         info = wallet.getwalletinfo()
         assert_equal((info["mixed_key_paths"], info.get("hd_type", "bip32"), info["unlocked_until"]), (True, "bip32", 0))
-        assert_equal(info["hd_warnings"], NOTICE[0].upper() + NOTICE[1:])
+        assert_equal(info["hd_warnings"], NOTICE)
         with open(os.path.join(node.datadir, self.chain, "debug.log"), encoding="utf8") as f:
             assert any(("[%s] %s" % (name, NOTICE)) in line for line in f)
 
@@ -214,7 +214,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
 
         self.log.info("Stays so across a reload")
         wallet.unloadwallet()
-        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed: %s" % NOTICE)
+        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed:\n%s" % NOTICE)
         assert_equal(node.get_wallet_rpc("mixed").getwalletinfo()["mixed_key_paths"], True)
 
         self.log.info("Other wallets are not reported")

@@ -48,7 +48,8 @@ FLAG_HD_SECRETS_ENCRYPTED = 1 << 49
 PENDING = b"hdsecretspending"
 MAGIC = "BITCOIN_CORE_WALLET_DUMP"
 NOTICE_UNMIGRATED = ("The seed of this wallet, and its mnemonic phrase if it has one, are stored without encryption in the wallet file. "
-                     "They will be encrypted the next time the wallet is unlocked. Until then anyone who can read the file can take its funds.")
+                     "To remedy this, the next time the wallet is unlocked they will be encrypted and the wallet file rewritten. "
+                     "Until then anyone who can read this file can take its funds.")
 # How the wallet is unlocked for the first time.
 # Said once, at the first load of a Berkeley DB wallet file written by an earlier version.
 REWRITTEN = ("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a "
@@ -86,6 +87,10 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         """Run the wallet tool, the command last: it must succeed and say nothing on stderr."""
         _, stderr = self.run_wallet_tool(*args)
         assert_equal(stderr, "")
+
+    def log_lines(self, text):
+        with open(os.path.join(self.nodes[0].datadir, self.chain, "debug.log"), encoding="utf8") as f:
+            return sum(1 for line in f if text in line)
 
     def wallets_root(self):
         chain_dir = os.path.join(self.nodes[0].datadir, self.chain)
@@ -233,10 +238,12 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             self.log.info("%s, first unlocked by: %s" % (name, route))
             # Whoever loads it is told, and so is whoever asks about it.
             loaded = node._base_rpc.loadwallet(name)
-            expected = "Wallet %s: %s" % (name, NOTICE_UNMIGRATED)
+            # A file an earlier version wrote is rewritten at this first load,
+            # but that is not said while the seed is still in it unencrypted:
+            # a backup made now would still hold it. The unlock says what to do.
+            assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE_UNMIGRATED))
             if self.options.fixtures and facts["database"] == "bdb":
-                expected += "\n" + REWRITTEN % name
-            assert_equal(loaded["warning"], expected)
+                assert_equal(self.log_lines(REWRITTEN % name), 1)
             wallet = node.get_wallet_rpc(name)
             info = wallet.getwalletinfo()
             assert_equal((info["format"], self.hd_type(wallet, facts), info["unlocked_until"]), (facts["database"], facts["kind"], 0))
