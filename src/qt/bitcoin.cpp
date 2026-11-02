@@ -315,6 +315,10 @@ void BitcoinApplication::parameterSetup()
     // Default printtoconsole to false for the GUI. GUI programs should not
     // print to the console unnecessarily.
     gArgs.SoftSetBoolArg("-printtoconsole", false);
+    // The notices about a wallet's seed are shown once, by WalletView, in the
+    // box that can offer the unlock they call for, and not also among the
+    // warnings of loading the wallet.
+    gArgs.ForceSetArg("-guiwalletnotices", "1");
 
     InitLogging(gArgs);
     InitParameterInteraction(gArgs);
