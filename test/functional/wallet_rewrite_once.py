@@ -27,8 +27,10 @@ from test_framework.util import (
 
 UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
 DOING = "Rewriting wallet file %s to remove data left by earlier versions. This is done once. Do not close the program."
-DONE = ("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a "
-        "small number of unencrypted keys. Make a new backup and destroy old ones.")
+DONE = ("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could "
+        "include private keys without encryption, of this wallet or of other wallets the program had loaded. This is "
+        "done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make "
+        "a new backup and destroy old ones.")
 
 
 def record_type(key_hex):
@@ -101,7 +103,7 @@ class WalletRewriteOnceTest(BitcoinTestFramework):
         self.log.info("At the first load: rewritten, said while it happens and once afterwards, and marked")
         for name in bdb:
             loaded = node.loadwallet(name)
-            assert (DONE % name) in loaded["warning"], loaded["warning"]
+            assert ("Wallet %s:\n%s" % (name, DONE)) in loaded["warning"], loaded["warning"]
             assert_equal(self.log_lines("[%s] " % name + DOING % name), 1)
             wallet = node.get_wallet_rpc(name)
             for address in given[name]:
