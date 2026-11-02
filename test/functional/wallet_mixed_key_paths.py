@@ -46,6 +46,11 @@ NOTICE_AT_LOAD = NOTICE + ("\n\nWhat to do:\n"
     "The new phrase then restores everything. Moved coins start their coin age for staking again.\n"
     "2. Otherwise, back up this wallet file now and keep that backup safe: it is the only backup that restores all of "
     "the wallet's addresses.")
+# Said after it at the first load of a wallet file an earlier version wrote.
+REWRITTEN = ("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could "
+             "include private keys without encryption, of this wallet or of other wallets the program had loaded. This is "
+             "done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make "
+             "a new backup and destroy old ones.")
 HARDENED = 0x80000000
 RELEASES = ("4.22.7", "4.22.8", "4.22.9", "4.22.9.3")
 
@@ -146,11 +151,14 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         self.wallet_tool('-wallet=' + name, '-dumpfile=' + built_dump, 'createfromdump')
         return addresses
 
-    def check_mixed(self, name, passphrase, held=None):
+    def check_mixed(self, name, passphrase, held=None, rewritten=False):
         node = self.nodes[0]
         self.log.info("%s: found and said without the passphrase" % name)
         loaded = node.loadwallet(name)
-        assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE_AT_LOAD))
+        expected = "Wallet %s:\n%s" % (name, NOTICE_AT_LOAD)
+        if rewritten:
+            expected += "\nWallet %s:\n%s" % (name, REWRITTEN)
+        assert_equal(loaded["warning"], expected)
         wallet = node.get_wallet_rpc(name)
         info = wallet.getwalletinfo()
         assert_equal((info["mixed_key_paths"], info.get("hd_type", "bip32"), info["unlocked_until"]), (True, "bip32", 0))
@@ -194,7 +202,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
                     facts = json.load(f)["wallets"]["wallet-created-with-passphrase"]
                 name = "release_" + version.replace(".", "_")
                 shutil.copytree(os.path.join(directory, "wallet-created-with-passphrase"), os.path.join(self.wallets_root(), name))
-                wallet = self.check_mixed(name, facts["wallet_passphrase"])
+                wallet = self.check_mixed(name, facts["wallet_passphrase"], rewritten=True)
                 wallet.walletpassphrase(facts["wallet_passphrase"], 60)
                 dump = os.path.join(self.options.tmpdir, name + ".txt")
                 wallet.dumpwallet(dump)
