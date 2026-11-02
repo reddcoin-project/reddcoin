@@ -52,8 +52,10 @@ NOTICE_UNMIGRATED = ("The seed of this wallet, and its mnemonic phrase if it has
                      "Until then anyone who can read this file can take its funds.")
 # How the wallet is unlocked for the first time.
 # Said once, at the first load of a Berkeley DB wallet file written by an earlier version.
-REWRITTEN = ("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a "
-             "small number of unencrypted keys. Make a new backup and destroy old ones.")
+REWRITTEN = ("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could "
+             "include private keys without encryption, of this wallet or of other wallets the program had loaded. This is "
+             "done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make "
+             "a new backup and destroy old ones.")
 ROUTES = ("walletpassphrase", "staking only", "walletpassphrasechange")
 
 
@@ -243,7 +245,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             # a backup made now would still hold it. The unlock says what to do.
             assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE_UNMIGRATED))
             if self.options.fixtures and facts["database"] == "bdb":
-                assert_equal(self.log_lines(REWRITTEN % name), 1)
+                assert_equal(self.log_lines("[%s] %s" % (name, REWRITTEN)), 1)
             wallet = node.get_wallet_rpc(name)
             info = wallet.getwalletinfo()
             assert_equal((info["format"], self.hd_type(wallet, facts), info["unlocked_until"]), (facts["database"], facts["kind"], 0))

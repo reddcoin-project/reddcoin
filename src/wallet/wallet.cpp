@@ -3403,13 +3403,13 @@ void CWallet::RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_
     if (chain) chain->initMessage(doing.translated);
     const int64_t start{GetTimeMillis()};
     if (!RewriteWalletFile()) {
-        const bilingual_str failed{strprintf(_("Wallet file %s could not be rewritten to remove data left by earlier versions. It will be tried again when the wallet is next loaded."), name)};
+        const bilingual_str failed{_("The wallet file could not be rewritten to remove data that earlier versions left in its unused space, which could include private keys without encryption. It will be tried again when the wallet is next loaded.")};
         WalletLogPrintf("Error: %s\n", failed.original);
-        warnings.push_back(failed);
+        warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name) + failed);
         return;
     }
     WalletLogPrintf("Wallet file rewritten in %d ms\n", GetTimeMillis() - start);
-    const bilingual_str done{strprintf(_("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a small number of unencrypted keys. Make a new backup and destroy old ones."), name)};
+    const bilingual_str done{_("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could include private keys without encryption, of this wallet or of other wallets the program had loaded. This is done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make a new backup and destroy old ones.")};
     WalletLogPrintf("%s\n", done.original);
     // A wallet whose seed is still to be moved out of its chain record, or
     // whose file is still to be rewritten after the move, still holds its
@@ -3418,7 +3418,7 @@ void CWallet::RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_
     // said here that a new backup would help.
     LegacyScriptPubKeyMan* const spk_man = GetLegacyScriptPubKeyMan();
     if (spk_man && (spk_man->GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNMIGRATED || spk_man->IsHDSecretsRewritePending())) return;
-    warnings.push_back(done);
+    warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name) + done);
 }
 
 bool CWallet::RewriteAfterHDSecretsMoved()
@@ -3447,7 +3447,7 @@ bool CWallet::RewriteAfterHDSecretsMoved()
     }
     MarkRewritten();
     spk_man->HDSecretsRewritten();
-    std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
+    std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten so that the old copy, without encryption, is no longer in it. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
     CHDSecrets secrets;
     const bool secrets_known{spk_man->GetHDSecrets(secrets)};
     if (spk_man->HasEarlierSeedKeys() && secrets_known && secrets.vchMnemonic.empty()) {

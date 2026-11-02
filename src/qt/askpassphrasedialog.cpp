@@ -105,7 +105,8 @@ bool WarnBeforeRewrite(QWidget* parent, WalletModel* model)
     if (!model || !model->wallet().hdSecretsRewriteOnUnlock()) return false;
     QMessageBox::information(parent, QObject::tr("Rewriting the wallet file"),
         QObject::tr("If the passphrase is correct, the seed of this wallet will now be encrypted with the wallet passphrase, and the wallet file rewritten. "
-                    "This can take a while. Do not close the program."));
+                    "The rewrite is needed because replacing a record in the file does not erase it: without it, the old copy of the seed, "
+                    "without encryption, would stay in the file. This can take a while. Do not close the program."));
     QApplication::setOverrideCursor(Qt::WaitCursor);
     return true;
 }
