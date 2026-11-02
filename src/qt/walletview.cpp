@@ -210,10 +210,10 @@ void WalletView::gotoSendCoinsPage(QString addr)
         sendCoinsPage->setAddress(addr);
 }
 
-void WalletView::sendAllTo(const QString& address)
+void WalletView::sendAllTo(const QString& address, const QString& label)
 {
     setCurrentWidget(sendCoinsPage);
-    sendCoinsPage->sendAllTo(address);
+    sendCoinsPage->sendAllTo(address, label);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

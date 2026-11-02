@@ -712,11 +712,12 @@ void TestKeysNotice(interfaces::Node& node)
     sendCoinsDialog.setModel(&walletModel);
     sendCoinsDialog.setAddress(QString::fromStdString(EncodeDestination(PKHash())));
     const QString to = QString::fromStdString(EncodeDestination(PKHash(test.coinbaseKey.GetPubKey())));
-    sendCoinsDialog.sendAllTo(to);
+    sendCoinsDialog.sendAllTo(to, "To wallet new");
     QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
     QCOMPARE(entries->count(), 1);
     SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
     QCOMPARE(entry->findChild<QValidatedLineEdit*>("payTo")->text(), to);
+    QCOMPARE(entry->findChild<QLineEdit*>("addAsLabel")->text(), QString("To wallet new"));
     QCOMPARE(entry->findChild<BitcoinAmountField*>("payAmount")->value(), walletModel.wallet().getAvailableBalance(CCoinControl()));
     QVERIFY(entry->findChild<QCheckBox*>("checkboxSubtractFeeFromAmount")->isChecked());
 }
