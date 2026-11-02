@@ -369,9 +369,18 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
     so when it loads such a wallet, and `getwalletinfo` reports
     `earlier_seed_keys`. For it, the phrase restores only the addresses
     created after that encryption; the earlier addresses are in the wallet
-    file only. Keep a backup of the wallet file, made after this version has
-    converted it, or create a new wallet and move the funds.
+    file only. The safest course is to create a new wallet, write down its
+    phrase, and send all the funds to it (moved coins start their coin age
+    for staking again). Otherwise keep a backup of the wallet file, made after
+    this version has converted it: it is the only backup that restores every
+    address.
   - Wallets that are not encrypted are not changed.
+  - In the GUI, opening a wallet that is still to be converted shows a notice
+    with **Unlock now** and **Later**. The unlock says beforehand that the
+    file will be rewritten, and why, and afterwards what to do. The notices
+    about a wallet's seed are shown in that one box, each time the wallet is
+    loaded. `reddcoind` and the RPC give them in the `warning` of
+    `loadwallet`, under a line `Wallet <name>:`; they are also in `debug.log`.
   - The first unlock after upgrading rewrites the wallet file. On a large
     wallet this can take a while. Do not stop the program during it.
   - A converted wallet cannot be opened by earlier versions, nor read by an
@@ -410,7 +419,11 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   protect.
   **The first time this version opens a Berkeley DB wallet it rewrites the
   file once**, which removes what earlier versions left, in the file and in
-  the log files beside it. It says so at start-up and once afterwards. On a
+  the log files beside it. It says so at start-up, and once afterwards with
+  the reason; the wallets opened at start-up are named together in one
+  notice. For a wallet whose seed is still to be encrypted (above), that
+  is left to the unlock that encrypts it, since a backup made before then
+  would still hold the seed. On a
   large wallet this takes a while; do not stop the program during it. If it
   cannot be done (for example on a full disk), the wallet is used as before
   and the next start tries again. `rewritewallet` does it again on request.
