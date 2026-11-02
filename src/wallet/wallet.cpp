@@ -3451,9 +3451,9 @@ bool CWallet::RewriteAfterHDSecretsMoved()
     CHDSecrets secrets;
     const bool secrets_known{spk_man->GetHDSecrets(secrets)};
     if (spk_man->HasEarlierSeedKeys() && secrets_known && secrets.vchMnemonic.empty()) {
-        notices.push_back(_("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it."));
+        notices.push_back(_("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed restores only the addresses created after that. The safest course is to create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. Otherwise make a new backup of this wallet file now and keep it safe: it is the only backup that restores all of the wallet's addresses."));
     } else if (spk_man->HasEarlierSeedKeys()) {
-        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. The phrase (gethdwalletinfo, with the wallet unlocked) restores only addresses created after that. Make a new backup of the wallet file now: it is the only complete backup. Or create a new wallet and move the funds to it."));
+        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. Its phrase can now be read with gethdwalletinfo in the console while the wallet is unlocked, but it restores only the addresses created after the conversion. The safest course is to create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. Otherwise make a new backup of this wallet file now and keep it safe: it is the only backup that restores all of the wallet's addresses."));
     } else if (secrets_known && !secrets.vchMnemonic.empty()) {
         notices.push_back(_("This wallet has a mnemonic phrase. If you never wrote one down (wallets created with version 4.22.6 were given one without showing it), read it now with gethdwalletinfo while the wallet is unlocked, and keep it safe."));
     }

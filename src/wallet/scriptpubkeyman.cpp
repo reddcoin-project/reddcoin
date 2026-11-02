@@ -605,19 +605,18 @@ bilingual_str LegacyScriptPubKeyMan::EarlierSeedWarning(bool with_advice) const
 {
     AssertLockHeld(cs_KeyStore);
     const std::optional<bool> phrase = KnownToHavePhrase();
+    bilingual_str what;
     if (phrase.has_value() && *phrase) {
-        return with_advice ?
-            _("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
-            _("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted. Its mnemonic phrase does not restore the addresses created before that. Only the wallet file holds all of its keys.");
+        what = _("This wallet was converted to a mnemonic wallet by an earlier version (4.22.5 to 4.22.9.3) when it was encrypted, and you may never have been shown its mnemonic phrase. The addresses the wallet had before then come from its old seed. Its mnemonic phrase does not restore them: if this wallet were restored from the phrase alone, the funds on those addresses would not be there. Only this wallet file holds the keys to all of its addresses.");
+    } else if (phrase.has_value()) {
+        what = _("The HD seed of this wallet was replaced by an earlier version (4.22.5 to 4.22.9.3) when it was encrypted. This wallet has no mnemonic phrase. Its seed does not restore the addresses the wallet had before then: if this wallet were restored from the seed alone, the funds on those addresses would not be there. Only this wallet file holds the keys to all of its addresses.");
+    } else {
+        what = _("The HD seed of this wallet was replaced by an earlier version (4.22.5 to 4.22.9.3) when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses the wallet had before then: if this wallet were restored from either alone, the funds on those addresses would not be there. Only this wallet file holds the keys to all of its addresses.");
     }
-    if (phrase.has_value()) {
-        return with_advice ?
-            _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed does not restore the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
-            _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed does not restore the addresses created before that. Only the wallet file holds all of its keys.");
-    }
-    return with_advice ?
-        _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses created before that. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
-        _("The HD seed of this wallet was replaced by an earlier version when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses created before that. Only the wallet file holds all of its keys.");
+    if (!with_advice) return what;
+    return what + Untranslated("\n\n") + _("What to do:\n"
+        "1. Recommended: create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. The new phrase then restores everything. Moved coins start their coin age for staking again.\n"
+        "2. Otherwise, back up this wallet file now and keep that backup safe: it is the only backup that restores all of the wallet's addresses.");
 }
 
 bilingual_str LegacyScriptPubKeyMan::GetEarlierSeedWarning() const
