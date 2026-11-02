@@ -614,7 +614,12 @@ bilingual_str LegacyScriptPubKeyMan::EarlierSeedWarning(bool with_advice) const
         what = _("The HD seed of this wallet was replaced by an earlier version (4.22.5 to 4.22.9.3) when it was encrypted. Neither its seed nor its mnemonic phrase, if it has one, restores the addresses the wallet had before then: if this wallet were restored from either alone, the funds on those addresses would not be there. Only this wallet file holds the keys to all of its addresses.");
     }
     if (!with_advice) return what;
-    return what + Untranslated("\n\n") + _("What to do:\n"
+    return what + Untranslated("\n\n") + SeedDoesNotRestoreAllAdvice();
+}
+
+bilingual_str SeedDoesNotRestoreAllAdvice()
+{
+    return _("What to do:\n"
         "1. Recommended: create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. The new phrase then restores everything. Moved coins start their coin age for staking again.\n"
         "2. Otherwise, back up this wallet file now and keep that backup safe: it is the only backup that restores all of the wallet's addresses.");
 }

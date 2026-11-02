@@ -37,9 +37,15 @@ from test_framework.util import (
 )
 
 UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
-NOTICE = ("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the "
-          "wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: "
-          "keep a backup of the file, or create a new wallet and move the funds to it.")
+NOTICE = ("Some of this wallet's addresses were made on BIP44 paths by an earlier version (4.22.7 to 4.22.9.3), and its later "
+          "ones on the wallet's ordinary paths. Its HD seed restores only the later ones: if this wallet were restored from the seed "
+          "alone, the funds on the earlier addresses would not be there. Only this wallet file holds the keys to all of its addresses.")
+# At load, with what to do.
+NOTICE_AT_LOAD = NOTICE + ("\n\nWhat to do:\n"
+    "1. Recommended: create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. "
+    "The new phrase then restores everything. Moved coins start their coin age for staking again.\n"
+    "2. Otherwise, back up this wallet file now and keep that backup safe: it is the only backup that restores all of "
+    "the wallet's addresses.")
 HARDENED = 0x80000000
 RELEASES = ("4.22.7", "4.22.8", "4.22.9", "4.22.9.3")
 
@@ -144,7 +150,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.log.info("%s: found and said without the passphrase" % name)
         loaded = node.loadwallet(name)
-        assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE))
+        assert_equal(loaded["warning"], "Wallet %s:\n%s" % (name, NOTICE_AT_LOAD))
         wallet = node.get_wallet_rpc(name)
         info = wallet.getwalletinfo()
         assert_equal((info["mixed_key_paths"], info.get("hd_type", "bip32"), info["unlocked_until"]), (True, "bip32", 0))
@@ -214,7 +220,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
 
         self.log.info("Stays so across a reload")
         wallet.unloadwallet()
-        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed:\n%s" % NOTICE)
+        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed:\n%s" % NOTICE_AT_LOAD)
         assert_equal(node.get_wallet_rpc("mixed").getwalletinfo()["mixed_key_paths"], True)
 
         self.log.info("Other wallets are not reported")

@@ -936,6 +936,9 @@ public:
     //! the keys of its seed, if anything.
     //! for_load: the form given at load, with advice.
     std::vector<bilingual_str> GetHDWarnings(bool for_load = false) const;
+    //! Whether the wallet holds keys its seed (and its mnemonic phrase, if it has one) does not restore:
+    //! keys on BIP44 paths beside later ones on the ordinary paths, or keys of an earlier seed.
+    bool HasKeysSeedDoesNotRestore() const;
     //! What the owner is to be told after the seed was moved and the file rewritten; given once, then forgotten.
     std::vector<bilingual_str> TakeHDSecretsMovedNotices() EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);
     //! Whether the next unlock moves the seed into its encrypted record or finishes a rewrite of the file: it takes a while.

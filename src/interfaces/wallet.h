@@ -75,7 +75,11 @@ public:
     virtual std::vector<bilingual_str> takeHDSecretsMovedNotices() = 0;
 
     //! What the owner has to be told about where the seed of the wallet is kept, if anything.
-    virtual std::vector<bilingual_str> getHDWarnings() = 0;
+    //! with_advice: the form given at load, with what to do.
+    virtual std::vector<bilingual_str> getHDWarnings(bool with_advice) = 0;
+
+    //! Whether the wallet holds keys its seed does not restore, so that only its file does.
+    virtual bool hasKeysSeedDoesNotRestore() = 0;
 
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
