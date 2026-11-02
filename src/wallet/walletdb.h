@@ -323,6 +323,7 @@ public:
     bool EraseHDSecretsPending();
     //! The marker that the file has been rewritten once by this version: an ordinary record that earlier versions skip.
     bool WriteRewritten();
+    bool EraseRewritten();
     bool HasRewritten();
 
     bool WriteWalletFlags(const uint64_t flags);

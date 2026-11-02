@@ -2098,7 +2098,9 @@ static RPCHelpMan walletpassphrase()
 static RPCHelpMan walletpassphrasechange()
 {
     return RPCHelpMan{"walletpassphrasechange",
-                "\nChanges the wallet passphrase from 'oldpassphrase' to 'newpassphrase'.\n",
+                "\nChanges the wallet passphrase from 'oldpassphrase' to 'newpassphrase'.\n"
+                "The wallet file is then rewritten, so that it does not keep the master key encrypted with the old\n"
+                "passphrase. Copies of the file made before still open with the old passphrase.\n",
                 {
                     {"oldpassphrase", RPCArg::Type::STR, RPCArg::Optional::NO, "The current passphrase"},
                     {"newpassphrase", RPCArg::Type::STR, RPCArg::Optional::NO, "The new passphrase"},

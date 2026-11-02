@@ -1206,6 +1206,11 @@ bool WalletBatch::WriteRewritten()
     return WriteIC(DBKeys::REWRITTEN, uint32_t{1});
 }
 
+bool WalletBatch::EraseRewritten()
+{
+    return EraseIC(DBKeys::REWRITTEN);
+}
+
 bool WalletBatch::HasRewritten()
 {
     return m_batch->Exists(DBKeys::REWRITTEN);

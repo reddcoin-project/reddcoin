@@ -102,6 +102,8 @@ BASE_SCRIPTS = [
     'wallet_hd_secrets_migration.py --legacy-wallet',
     'wallet_hd_secrets_unreadable.py --legacy-wallet',
     'wallet_rewrite_once.py --legacy-wallet',
+    'wallet_passphrase_change_residue.py --legacy-wallet',
+    'wallet_passphrase_change_residue.py --descriptors',
     'wallet_hd.py --descriptors',
     'wallet_backup.py --legacy-wallet',
     'wallet_backup.py --descriptors',
