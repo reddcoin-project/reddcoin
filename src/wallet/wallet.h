@@ -934,7 +934,7 @@ public:
 
     //! What the owner has to be told about where the seed of the wallet is kept, and about
     //! the keys of its seed, if anything.
-    //! for_load: the form that follows "Wallet <name>: " in the notice given at load.
+    //! for_load: the form given at load, with advice.
     std::vector<bilingual_str> GetHDWarnings(bool for_load = false) const;
     //! What the owner is to be told after the seed was moved and the file rewritten; given once, then forgotten.
     std::vector<bilingual_str> TakeHDSecretsMovedNotices() EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);

@@ -361,8 +361,8 @@ void WalletView::showHDNotices()
     shown.insert(name);
 
     QStringList lines;
-    // As in the notice given at load: "Wallet <name>: " and the text.
-    for (const bilingual_str& notice : notices) lines << tr("Wallet %1: %2").arg(walletModel->getDisplayName(), QString::fromStdString(notice.translated)).toHtmlEscaped();
+    // As in the notice given at load: "Wallet <name>:", and the text under it.
+    for (const bilingual_str& notice : notices) lines << tr("Wallet %1:").arg(walletModel->getDisplayName()).toHtmlEscaped() + "<br>" + QString::fromStdString(notice.translated).toHtmlEscaped();
     QMessageBox box(QMessageBox::Warning, tr("Wallet %1").arg(walletModel->getDisplayName()), "<qt>" + lines.join("<br><br>") + "</qt>", QMessageBox::NoButton, this);
     QPushButton* unlock = nullptr;
     if (walletModel->getEncryptionStatus() == WalletModel::Locked && walletModel->wallet().hdSecretsRewriteOnUnlock()) {

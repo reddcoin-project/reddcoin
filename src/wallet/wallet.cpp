@@ -2902,7 +2902,7 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
     // the wallet.
     for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
         walletInstance->WalletLogPrintf("%s\n", notice.original);
-        warnings.push_back(strprintf(Untranslated("Wallet %s: "), name.empty() ? "default wallet" : name) + notice);
+        warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name.empty() ? "default wallet" : name) + notice);
     }
 
     // This wallet is in its first run if there are no ScriptPubKeyMans and it isn't blank or no privkeys
@@ -3401,8 +3401,7 @@ std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
     LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
     std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices(for_load) : std::vector<bilingual_str>{};
     if (spk_man && spk_man->HasMixedKeyPaths()) {
-        notices.push_back(for_load ?
-            _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
+        notices.push_back(
             _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
     }
     return notices;
@@ -3457,6 +3456,13 @@ void CWallet::RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_
     WalletLogPrintf("Wallet file rewritten in %d ms\n", GetTimeMillis() - start);
     const bilingual_str done{strprintf(_("Wallet file %s has been rewritten. Backups and copies made with earlier versions are not changed and may contain a small number of unencrypted keys. Make a new backup and destroy old ones."), name)};
     WalletLogPrintf("%s\n", done.original);
+    // A wallet whose seed is still to be moved out of its chain record, or
+    // whose file is still to be rewritten after the move, still holds its
+    // seed unencrypted: a backup made now would too. The unlock that moves it
+    // rewrites the file again and tells the owner what to do; nothing is
+    // said here that a new backup would help.
+    LegacyScriptPubKeyMan* const spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man && (spk_man->GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNMIGRATED || spk_man->IsHDSecretsRewritePending())) return;
     warnings.push_back(done);
 }
 
