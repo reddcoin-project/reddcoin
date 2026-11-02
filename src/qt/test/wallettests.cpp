@@ -26,6 +26,7 @@
 #include <key_io.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
+#include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
 #include <qt/overviewpage.h>
 #include <qt/receivecoinsdialog.h>
@@ -41,6 +42,8 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QCoreApplication>
+#include <QFrame>
+#include <QLabel>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -624,6 +627,100 @@ void TestMintingTable(interfaces::Node& node)
     QCOMPARE(proxy.rowCount({}), model->rowCount({}));
 }
 
+//! A wallet whose seed does not restore all of its keys shows the notice on the
+//! Overview page, with the actions it calls for, until the owner hides it; an
+//! ordinary wallet does not. Send all fills the send page with the balance.
+void TestKeysNotice(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    std::shared_ptr<CWallet> wallet = LoadCoinbaseWallet(node, test);
+    QVERIFY(wallet);
+
+    std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    OptionsModel optionsModel;
+    ClientModel clientModel(node, &optionsModel);
+    AddWallet(wallet);
+    WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    RemoveWallet(wallet, std::nullopt);
+
+    {
+        // Nothing to say about an ordinary wallet.
+        OverviewPage overviewPage(platformStyle.get());
+        overviewPage.setWalletModel(&walletModel);
+        QVERIFY(!walletModel.wallet().hasKeysSeedDoesNotRestore());
+        QVERIFY(overviewPage.findChild<QFrame*>("frameKeysNotice")->isHidden());
+    }
+
+    // A plain HD chain (no mnemonic, a version 2 record), and the key that holds
+    // the funds derived from its seed on a BIP44 path, as by 4.22.7 to 4.22.9.3.
+    {
+        auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        CKey seed;
+        seed.MakeNewKey(true);
+        CHDChain chain;
+        chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
+        chain.seed_id = seed.GetPubKey().GetID();
+        spk_man->LoadHDChain(chain);
+        CKeyMetadata meta(GetTime());
+        meta.hd_seed_id = chain.seed_id;
+        meta.has_key_origin = true;
+        meta.key_origin.path = {44 | 0x80000000, 4 | 0x80000000, 0x80000000, 0, 0};
+        spk_man->LoadKeyMetadata(test.coinbaseKey.GetPubKey().GetID(), meta);
+        spk_man->DecideMixedKeyPaths();
+    }
+    QVERIFY(walletModel.wallet().hasKeysSeedDoesNotRestore());
+
+    {
+        OverviewPage overviewPage(platformStyle.get());
+        overviewPage.setWalletModel(&walletModel);
+        QFrame* frame = overviewPage.findChild<QFrame*>("frameKeysNotice");
+        QVERIFY(!frame->isHidden());
+        // With funds: both actions; the full notice in the tooltip.
+        QVERIFY(!overviewPage.findChild<QPushButton*>("buttonMoveFunds")->isHidden());
+        QVERIFY(!overviewPage.findChild<QPushButton*>("buttonBackupWallet")->isHidden());
+        QVERIFY(overviewPage.findChild<QLabel*>("labelKeysNotice")->toolTip().contains("BIP44 paths"));
+
+        // Each action reaches the page's owner.
+        int backups{0}, moves{0};
+        QObject::connect(&overviewPage, &OverviewPage::backupWalletClicked, [&] { ++backups; });
+        QObject::connect(&overviewPage, &OverviewPage::moveFundsClicked, [&] { ++moves; });
+        overviewPage.findChild<QPushButton*>("buttonBackupWallet")->click();
+        overviewPage.findChild<QPushButton*>("buttonMoveFunds")->click();
+        QCOMPARE(backups, 1);
+        QCOMPARE(moves, 1);
+
+        // Hidden until the wallet is next loaded: a change of balance does not bring it back.
+        overviewPage.findChild<QPushButton*>("buttonHideKeysNotice")->click();
+        QVERIFY(frame->isHidden());
+        overviewPage.setBalance(walletModel.wallet().getBalances());
+        QVERIFY(frame->isHidden());
+    }
+
+    {
+        // With no funds left: still shown, without the move.
+        OverviewPage overviewPage(platformStyle.get());
+        overviewPage.setWalletModel(&walletModel);
+        overviewPage.setBalance(interfaces::WalletBalances{});
+        QVERIFY(!overviewPage.findChild<QFrame*>("frameKeysNotice")->isHidden());
+        QVERIFY(overviewPage.findChild<QPushButton*>("buttonMoveFunds")->isHidden());
+        QVERIFY(!overviewPage.findChild<QPushButton*>("buttonBackupWallet")->isHidden());
+    }
+
+    // Send all: one entry, to the address, with the whole available balance and the fee taken from it.
+    SendCoinsDialog sendCoinsDialog(platformStyle.get());
+    sendCoinsDialog.setModel(&walletModel);
+    sendCoinsDialog.setAddress(QString::fromStdString(EncodeDestination(PKHash())));
+    const QString to = QString::fromStdString(EncodeDestination(PKHash(test.coinbaseKey.GetPubKey())));
+    sendCoinsDialog.sendAllTo(to);
+    QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
+    QCOMPARE(entries->count(), 1);
+    SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
+    QCOMPARE(entry->findChild<QValidatedLineEdit*>("payTo")->text(), to);
+    QCOMPARE(entry->findChild<BitcoinAmountField*>("payAmount")->value(), walletModel.wallet().getAvailableBalance(CCoinControl()));
+    QVERIFY(entry->findChild<QCheckBox*>("checkboxSubtractFeeFromAmount")->isChecked());
+}
+
 //! Qt on macOS crashes inside the framework on the "minimal" platform when it
 //! looks up unimplemented cocoa functions (https://bugreports.qt.io/browse/QTBUG-49686).
 bool SkipOnMacMinimalPlatform(const char* test_name)
@@ -664,4 +761,10 @@ void WalletTests::mintingTableTests()
 {
     if (SkipOnMacMinimalPlatform("mintingTableTests")) return;
     TestMintingTable(m_node);
+}
+
+void WalletTests::keysNoticeTests()
+{
+    if (SkipOnMacMinimalPlatform("keysNoticeTests")) return;
+    TestKeysNotice(m_node);
 }

@@ -339,7 +339,14 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   the only complete backup: back it up, or create a new wallet and move the
   funds to it.
   This version says so when it loads such a wallet, and `getwalletinfo` shows
-  `mixed_key_paths`. To check on an earlier version: `getaddressinfo` of the
+  `mixed_key_paths`. In the GUI the HD icon in the status bar becomes a
+  warning, with the notice in its tooltip, and the Overview page of the wallet
+  shows the notice with **Move funds to a new wallet...** and **Back up wallet
+  file...**. The same is shown for a wallet with `earlier_seed_keys` (below).
+  Moving the funds creates a new wallet, then opens the send page of the old
+  one with all of its funds to an address of the new one, to be checked and
+  sent. The notice can be hidden until the wallet is next loaded. To check on
+  an earlier version: `getaddressinfo` of the
   first address the wallet gave out shows an `hdkeypath` beginning with
   `m/44'`, in a wallet that was not created from a mnemonic phrase.
   The Windows and macOS builds of those versions contain the same defect in the
