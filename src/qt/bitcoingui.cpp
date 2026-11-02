@@ -1630,7 +1630,7 @@ void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
             return;
         }
         setCurrentWallet(source);
-        if (WalletView* view = walletFrame->currentWalletView()) view->sendAllTo(QString::fromStdString(EncodeDestination(dest)));
+        if (WalletView* view = walletFrame->currentWalletView()) view->sendAllTo(QString::fromStdString(EncodeDestination(dest)), tr("To wallet %1").arg(to->getDisplayName()));
     });
     connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
     activity->create();

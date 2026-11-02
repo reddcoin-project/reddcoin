@@ -45,7 +45,7 @@ public:
 
     void setAddress(const QString &address);
     /** Replace the entries with one: all of the available balance to this address, the fee subtracted from it. */
-    void sendAllTo(const QString& address);
+    void sendAllTo(const QString& address, const QString& label);
     void pasteEntry(const SendCoinsRecipient &rv);
     bool handlePaymentRequest(const SendCoinsRecipient &recipient);
 

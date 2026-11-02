@@ -92,7 +92,7 @@ public Q_SLOTS:
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to send coins page, with all of the funds of the wallet to one address */
-    void sendAllTo(const QString& address);
+    void sendAllTo(const QString& address, const QString& label);
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
