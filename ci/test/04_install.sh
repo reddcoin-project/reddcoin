@@ -114,8 +114,19 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
   elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
     ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y python3-pip python3-dev libssl-dev
   fi
+  # On macOS pip uses a wheel when the venv's Python has one, and builds the
+  # sdist otherwise (no scrypt wheel exists for Python 3.15, which Homebrew
+  # moved to in November 2026). The build needs OpenSSL's headers, which
+  # Homebrew keeps out of the compiler's default paths, so point it at them.
+  # The flags are set on the pip command only: these scripts share one shell,
+  # and exported CFLAGS/LDFLAGS would reach the node's configure.
+  SCRYPT_BUILD_ENV=""
+  if [ "$CI_OS_NAME" == "macos" ]; then
+    OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+    SCRYPT_BUILD_ENV="CFLAGS=-I${OPENSSL_PREFIX}/include LDFLAGS=-L${OPENSSL_PREFIX}/lib"
+  fi
   ${CI_RETRY_EXE} DOCKER_EXEC pip3 install ${PIP_USER_FLAG} setuptools wheel
-  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install ${PIP_USER_FLAG} scrypt
+  ${CI_RETRY_EXE} DOCKER_EXEC ${SCRYPT_BUILD_ENV} pip3 install ${PIP_USER_FLAG} scrypt
 fi
 
 if [ "$CI_OS_NAME" == "macos" ]; then
