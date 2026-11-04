@@ -409,7 +409,6 @@ KNOWN_FAILING_SCRIPTS = {
     'wallet_bumpfee.py --legacy-wallet': 'RED-167: generate falls back to a PoW block past nLastPowHeight (pow-ended)',
     'rpc_generateblock.py': 'RED-167: generateblock has no PoS path on this line (pow-ended)',
     # Intermittent: pass in some runs.
-    'wallet_basic.py --legacy-wallet': 'RED-206: intermittent, -reindex rejects a PoS block in CheckStakeKernelHash',
     'feature_nulldummy.py --legacy-wallet': 'RED-207: intermittent, no valid coinstake found',
     'feature_reindex.py': 'RED-207: intermittent, no valid coinstake found',
     'rpc_getchaintips.py': 'RED-207: intermittent, no valid coinstake found',
