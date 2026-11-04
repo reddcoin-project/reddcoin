@@ -12,7 +12,13 @@
 // For details see https://github.com/bitcoin/bitcoin/pull/22348.
 #define __kernel_entry
 #endif
+// Boost.Process v2 became the default spelling of boost::process, so the v1
+// API this uses has to be named explicitly wherever the v1 header exists.
+#if __has_include(<boost/process/v1.hpp>)
+#include <boost/process/v1.hpp>
+#else
 #include <boost/process.hpp>
+#endif
 #endif // ENABLE_EXTERNAL_SIGNER
 
 #include <chainparamsbase.h>
@@ -395,7 +401,7 @@ std::optional<unsigned int> ArgsManager::GetArgFlags(const std::string& name) co
     return std::nullopt;
 }
 
-const fs::path& ArgsManager::GetBlocksDirPath() const
+fs::path ArgsManager::GetBlocksDirPath() const
 {
     LOCK(cs_args);
     fs::path& path = m_cached_blocks_path;
@@ -421,7 +427,7 @@ const fs::path& ArgsManager::GetBlocksDirPath() const
     return path;
 }
 
-const fs::path& ArgsManager::GetDataDir(bool net_specific) const
+fs::path ArgsManager::GetDataDir(bool net_specific) const
 {
     LOCK(cs_args);
     fs::path& path = net_specific ? m_cached_network_datadir_path : m_cached_datadir_path;
@@ -1252,7 +1258,11 @@ void runCommand(const std::string& strCommand)
 UniValue RunCommandParseJSON(const std::string& str_command, const std::string& str_std_in)
 {
 #ifdef ENABLE_EXTERNAL_SIGNER
+#if __has_include(<boost/process/v1.hpp>)
+    namespace bp = boost::process::v1;
+#else
     namespace bp = boost::process;
+#endif
 
     UniValue result_json;
     bp::opstream stdin_stream;

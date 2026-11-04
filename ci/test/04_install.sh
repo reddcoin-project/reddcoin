@@ -11,9 +11,23 @@ if [[ $QEMU_USER_CMD == qemu-s390* ]]; then
   export LC_ALL=C
 fi
 
+# pip installs go to the user site on Linux. On macOS the runner's Python is
+# Homebrew's, which is externally managed (PEP 668) and refuses any install
+# into it, --user included, so the packages go into a venv under the scratch
+# dir instead. The CI scripts are sourced into one shell, so putting the venv
+# first on PATH here is enough for the functional tests to run with it.
+PIP_USER_FLAG="--user"
 if [ "$CI_OS_NAME" == "macos" ]; then
-  sudo -H pip3 install --upgrade pip
-  IN_GETOPT_BIN="/usr/local/opt/gnu-getopt/bin/getopt" ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
+  mkdir -p "${BASE_SCRATCH_DIR}"
+  python3 -m venv "${BASE_SCRATCH_DIR}/venv"
+  export PATH="${BASE_SCRATCH_DIR}/venv/bin:${PATH}"
+  PIP_USER_FLAG=""
+  # The retry wrapper needs GNU getopt and macOS ships the BSD one. Export
+  # Homebrew's for every retry in this run, not only the first. Homebrew's
+  # prefix is /usr/local on Intel and /opt/homebrew on Apple Silicon.
+  IN_GETOPT_BIN="$(brew --prefix gnu-getopt)/bin/getopt"
+  export IN_GETOPT_BIN
+  ${CI_RETRY_EXE} pip3 install $PIP_PACKAGES
 fi
 
 # Create folders that are mounted into the docker
@@ -66,12 +80,53 @@ fi
 if [[ $DOCKER_NAME_TAG == *centos* ]]; then
   ${CI_RETRY_EXE} DOCKER_EXEC dnf -y install epel-release
   ${CI_RETRY_EXE} DOCKER_EXEC dnf -y --allowerasing install $DOCKER_PACKAGES $PACKAGES
+  if [ -n "$PIP_PACKAGES" ]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC pip3 install --user $PIP_PACKAGES
+  fi
 elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
   ${CI_RETRY_EXE} DOCKER_EXEC apt-get update
   ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y $PACKAGES $DOCKER_PACKAGES
   if [ -n "$PIP_PACKAGES" ]; then
     ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
   fi
+fi
+
+# ReddCoin uses scrypt for proof-of-work. The functional test framework mines
+# blocks in Python (test/functional/test_framework/messages.py) and imports the
+# `scrypt` module to compute valid solutions. Without it, CBlock.solve() falls
+# back to SHA256d and every framework-mined block is rejected by the node with
+# "CheckProofOfWork() : hash doesn't match nBits" (breaks feature_assumevalid.py,
+# example_test.py, p2p_unrequested_blocks.py, ...). Install it wherever the
+# functional tests run. The containers only ship python3, so pip and the headers
+# needed to build the scrypt C extension (when no wheel matches) are pulled in
+# here rather than added to every task's package list. DOCKER_EXEC targets the
+# build container, or the host itself on the DANGER_RUN_CI_ON_HOST (macOS) path.
+# The scrypt package ships no Linux wheels, so pip always builds the sdist,
+# which needs setuptools + wheel plus the C-extension headers (python3-dev /
+# openssl). Install the distro pip and headers, then get setuptools + wheel from
+# pip (PyPI) rather than distro packages: the names diverge across apt/dnf (e.g.
+# python3-wheel does not exist on centos:stream9), and the container's pip
+# otherwise fails the sdist's `setup.py egg_info` with "No module named
+# 'setuptools'".
+if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
+  if [[ $DOCKER_NAME_TAG == *centos* ]]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC dnf -y install python3-pip python3-devel openssl-devel
+  elif [ "$CI_USE_APT_INSTALL" != "no" ]; then
+    ${CI_RETRY_EXE} DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -y python3-pip python3-dev libssl-dev
+  fi
+  # On macOS pip uses a wheel when the venv's Python has one, and builds the
+  # sdist otherwise (no scrypt wheel exists for Python 3.15, which Homebrew
+  # moved to in November 2026). The build needs OpenSSL's headers, which
+  # Homebrew keeps out of the compiler's default paths, so point it at them.
+  # The flags are set on the pip command only: these scripts share one shell,
+  # and exported CFLAGS/LDFLAGS would reach the node's configure.
+  SCRYPT_BUILD_ENV=""
+  if [ "$CI_OS_NAME" == "macos" ]; then
+    OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+    SCRYPT_BUILD_ENV="CFLAGS=-I${OPENSSL_PREFIX}/include LDFLAGS=-L${OPENSSL_PREFIX}/lib"
+  fi
+  ${CI_RETRY_EXE} DOCKER_EXEC pip3 install ${PIP_USER_FLAG} setuptools wheel
+  ${CI_RETRY_EXE} DOCKER_EXEC ${SCRYPT_BUILD_ENV} pip3 install ${PIP_USER_FLAG} scrypt
 fi
 
 if [ "$CI_OS_NAME" == "macos" ]; then
@@ -87,8 +142,24 @@ DOCKER_EXEC df -h
 
 if [ "$RUN_FUZZ_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS" = "true" ] || [ "$RUN_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
   if [ ! -d ${DIR_QA_ASSETS} ]; then
-    DOCKER_EXEC git clone --depth=1 https://github.com/bitcoin-core/qa-assets ${DIR_QA_ASSETS}
+    # Reddcoin qa-assets: unit_test_data/script_assets_test.json is regenerated
+    # for Reddcoin's nTime transaction format (the upstream Bitcoin vectors fail
+    # to deserialize), and fuzz_seed_corpus is minimised against the Reddcoin
+    # fuzz binary. See the repo README for how both are produced.
+    #
+    # Fetch the pinned commit rather than the branch tip. A shallow fetch of a
+    # single revision keeps this as cheap as the previous --depth=1 clone while
+    # making the run reproducible.
+    DOCKER_EXEC mkdir -p ${DIR_QA_ASSETS}
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} init -q
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} remote add origin https://github.com/reddcoin-project/qa-assets
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} fetch -q --depth=1 origin ${QA_ASSETS_COMMIT}
+    DOCKER_EXEC git -C ${DIR_QA_ASSETS} checkout -q FETCH_HEAD
   fi
+  # DOCKER_EXEC passes its arguments through "$*", which drops quoting, so a
+  # format string containing spaces would reach git as separate arguments.
+  DOCKER_EXEC echo "qa-assets pinned at:"
+  DOCKER_EXEC git -C ${DIR_QA_ASSETS} log -1 --format=%H
 
   export DIR_FUZZ_IN=${DIR_QA_ASSETS}/fuzz_seed_corpus/
   export DIR_UNIT_TEST_DATA=${DIR_QA_ASSETS}/unit_test_data/

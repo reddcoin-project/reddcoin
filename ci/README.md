@@ -30,7 +30,7 @@ To run the default test stage,
 To run the test stage with a specific configuration,
 
 ```
-FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh
+FILE_ENV="./ci/test/00_setup_env_arm64.sh" ./ci/test_run_all.sh
 ```
 
 ### Configurations
@@ -52,7 +52,7 @@ It is also possible to force a specific configuration without modifying the
 file. For example,
 
 ```
-MAKEJOBS="-j1" FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh
+MAKEJOBS="-j1" FILE_ENV="./ci/test/00_setup_env_arm64.sh" ./ci/test_run_all.sh
 ```
 
 The files starting with `0n` (`n` greater than 0) are the scripts that are run

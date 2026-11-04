@@ -23,7 +23,11 @@ CMD_GREP_WALLET_ARGS = r"git grep --function-context 'void WalletInit::AddWallet
 CMD_GREP_WALLET_HIDDEN_ARGS = r"git grep --function-context 'void DummyWalletInit::AddWalletOptions' -- {}".format(CMD_ROOT_DIR)
 CMD_GREP_DOCS = r"git grep --perl-regexp '{}' {}".format(REGEX_DOC, CMD_ROOT_DIR)
 # list unsupported, deprecated and duplicate args as they need no documentation
-SET_DOC_OPTIONAL = set(['-h', '-help', '-dbcrashratio', '-forcecompactdb', '-zapwallettxes'])
+# -hdseed, -mnemonic and -mnemonicpassphrase are no longer used: they are
+# registered hidden through AddHiddenArgs(IGNORED_SEED_OPTIONS) in
+# src/wallet/init.cpp, which REGEX_DOC cannot see, and only warn at startup.
+SET_DOC_OPTIONAL = set(['-h', '-help', '-dbcrashratio', '-forcecompactdb', '-zapwallettxes',
+                        '-hdseed', '-mnemonic', '-mnemonicpassphrase'])
 
 
 def lint_missing_argument_documentation():

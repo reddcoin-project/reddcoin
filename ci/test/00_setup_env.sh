@@ -28,6 +28,11 @@ fi
 echo "Fallback to default values in env (if not yet set)"
 # The number of parallel jobs to pass down to make and test_runner.py
 export MAKEJOBS=${MAKEJOBS:--j4}
+# The number of functional test suites to run concurrently. Defaults to
+# MAKEJOBS, so most tasks are unaffected. A task whose nodes are individually
+# expensive can lower this without also slowing its build down, since the two
+# are no longer the same knob.
+export TEST_RUNNER_JOBS=${TEST_RUNNER_JOBS:-$MAKEJOBS}
 # What host to compile for. See also ./depends/README.md
 # Tests that need cross-compilation export the appropriate HOST.
 # Tests that run natively guess the host
@@ -45,6 +50,18 @@ export TEST_RUNNER_TIMEOUT_FACTOR=${TEST_RUNNER_TIMEOUT_FACTOR:-40}
 export TEST_RUNNER_ENV=${TEST_RUNNER_ENV:-}
 export RUN_FUZZ_TESTS=${RUN_FUZZ_TESTS:-false}
 export EXPECTED_TESTS_DURATION_IN_SECONDS=${EXPECTED_TESTS_DURATION_IN_SECONDS:-1000}
+# Build only: every job builds as usual, then runs no unit, functional or fuzz
+# tests, and fetches nothing that only the tests use. Set by the workflow while
+# this line's tests are not yet ready for CI (RED-200, RED-201). Applied after
+# FILE_ENV, because some task files turn the tests on explicitly. The binary
+# security checks still run where a task asks for them.
+if [ "${CI_BUILD_ONLY}" = "true" ]; then
+  export RUN_UNIT_TESTS=false
+  export RUN_UNIT_TESTS_SEQUENTIAL=false
+  export RUN_FUNCTIONAL_TESTS=false
+  export RUN_FUZZ_TESTS=false
+  export PREVIOUS_RELEASES_TO_DOWNLOAD=""
+fi
 
 export CONTAINER_NAME=${CONTAINER_NAME:-ci_unnamed}
 export DOCKER_NAME_TAG=${DOCKER_NAME_TAG:-ubuntu:20.04}
@@ -68,5 +85,9 @@ export SDK_URL=${SDK_URL:-https://bitcoincore.org/depends-sources/sdks}
 export DOCKER_PACKAGES=${DOCKER_PACKAGES:-build-essential libtool autotools-dev automake pkg-config bsdmainutils curl ca-certificates ccache python3 rsync git procps bison}
 export GOAL=${GOAL:-install}
 export DIR_QA_ASSETS=${DIR_QA_ASSETS:-${BASE_SCRATCH_DIR}/qa-assets}
+# Pinned so a run is reproducible and an unrelated push to qa-assets cannot
+# silently change what CI tests. This governs the unit test vectors as well as
+# the fuzz seed corpus, so bump it deliberately.
+export QA_ASSETS_COMMIT=${QA_ASSETS_COMMIT:-bf5168493bbee26b28490cdbfc3e85ceb4832793}
 export PATH=${BASE_ROOT_DIR}/ci/retry:$PATH
 export CI_RETRY_EXE=${CI_RETRY_EXE:-"retry --"}

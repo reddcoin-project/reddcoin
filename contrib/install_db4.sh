@@ -25,6 +25,11 @@ BDB_VERSION='db-4.8.30.NC'
 BDB_HASH='12edc0df75bf9abd7f82f821795bcee50f42cb2e5f76a6a281b85732798364ef'
 BDB_URL="https://download.oracle.com/berkeley-db/${BDB_VERSION}.tar.gz"
 
+# Where this repository keeps its own config.guess and config.sub, used further
+# below. Resolved here because the working directory changes once the tarball
+# has been unpacked.
+CONFIG_AUX_DIR="$(expand_path "$(dirname "${0}")/..")/depends"
+
 check_exists() {
   command -v "$1" >/dev/null
 }
@@ -32,7 +37,11 @@ check_exists() {
 sha256_check() {
   # Args: <sha256_hash> <filename>
   #
-  if check_exists sha256sum; then
+  # macOS 14 and later ship a BSD sha256sum that does not read a checksum
+  # list from stdin, so use shasum, which every macOS has, there.
+  if [ "$(uname)" = "Darwin" ]; then
+    echo "${1}  ${2}" | shasum -a 256 -c
+  elif check_exists sha256sum; then
     echo "${1}  ${2}" | sha256sum -c
   elif check_exists sha256; then
     if [ "$(uname)" = "FreeBSD" ]; then
@@ -54,7 +63,10 @@ http_get() {
   if [ -f "${2}" ]; then
     echo "File ${2} already exists; not downloading again"
   elif check_exists curl; then
-    curl --insecure --retry 5 "${1}" -o "${2}"
+    # --location: follow HTTP redirects (e.g. the BerkeleyDB tarball host), so a
+    # redirect body is not saved in place of the file and then failed by the
+    # sha256 check. wget, the fallback below, follows redirects by default.
+    curl --insecure --location --retry 5 "${1}" -o "${2}"
   else
     wget --no-check-certificate "${1}" -O "${2}"
   fi
@@ -221,16 +233,26 @@ EOF
 # The packaged config.guess and config.sub are ancient (2009) and can cause build issues.
 # Replace them with modern versions.
 # See https://github.com/bitcoin/bitcoin/issues/16064
-CONFIG_GUESS_URL='https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
-CONFIG_GUESS_HASH='2d1ff7bca773d2ec3c6217118129220fa72d8adda67c7d2bf79994b3129232c1'
-CONFIG_SUB_URL='https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=55eaf3e779455c4e5cc9f82efb5278be8f8f900b'
-CONFIG_SUB_HASH='3a4befde9bcdf0fdb2763fc1bfa74e8696df94e1ad7aac8042d133c8ff1d2e32'
+#
+# Take the copies this repository already carries for depends rather than
+# downloading them. git.savannah.gnu.org is the only host this script needs
+# besides the tarball itself, and it keeps being unusable from CI: the gitweb
+# URLs redirect to a subdomain that is slow and returns errors, and the cgit
+# endpoint that replaced them now times out or answers 502 as well. The in tree
+# copies are newer than the pinned revision that was being fetched, are already
+# what configures depends, and need no hash pinning because they are version
+# controlled.
+if [ ! -f "${CONFIG_AUX_DIR}/config.guess" ] || [ ! -f "${CONFIG_AUX_DIR}/config.sub" ]; then
+  echo "Cannot find config.guess and config.sub in ${CONFIG_AUX_DIR}." >&2
+  echo "Run this script from a checkout, so it can find them." >&2
+  exit 1
+fi
 
 rm -f "dist/config.guess"
 rm -f "dist/config.sub"
 
-http_get "${CONFIG_GUESS_URL}" dist/config.guess "${CONFIG_GUESS_HASH}"
-http_get "${CONFIG_SUB_URL}" dist/config.sub "${CONFIG_SUB_HASH}"
+cp "${CONFIG_AUX_DIR}/config.guess" "dist/config.guess"
+cp "${CONFIG_AUX_DIR}/config.sub" "dist/config.sub"
 
 cd build_unix/
 
