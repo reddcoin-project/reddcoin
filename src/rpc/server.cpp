@@ -47,18 +47,6 @@ static std::string strGithubLink = "/repos/reddcoin-project/reddcoin/releases/la
 //! Host header cannot drift apart from one another.
 static const std::string strGithubHost = "api.github.com";
 
-//! Ceiling on the update check's response body.
-//!
-//! The body is accumulated in memory before it is parsed, so without a bound a
-//! hostile or broken server can make this allocate until the process dies. The
-//! release object this asks for runs to a few kilobytes, so a megabyte is two
-//! orders of magnitude of headroom and still nowhere near enough to hurt.
-//!
-//! This is not the size limit for downloading an artifact. That path does not
-//! exist here, and if it is ever added it must stream to disk rather than raise
-//! this ceiling.
-static const size_t MAX_RESPONSE_BYTES = 1024 * 1024;
-
 struct RPCCommandExecutionInfo
 {
     std::string method;
