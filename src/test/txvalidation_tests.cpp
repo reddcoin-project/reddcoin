@@ -57,7 +57,7 @@ inline CTransactionRef create_placeholder_tx(size_t num_inputs, size_t num_outpu
 {
     CMutableTransaction mtx = CMutableTransaction();
     mtx.nVersion = 2;
-    mtx.nTime = 1;  // Reddcoin: version 2+ requires non-zero nTime
+    mtx.nTime = 1;  // Reddcoin: give the PoS-format transaction a timestamp
     mtx.vin.resize(num_inputs);
     mtx.vout.resize(num_outputs);
     auto random_script = CScript() << ToByteVector(InsecureRand256()) << ToByteVector(InsecureRand256());
