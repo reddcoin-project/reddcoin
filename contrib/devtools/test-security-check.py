@@ -31,6 +31,18 @@ def call_security_check(cc, source, executable, options):
     p = subprocess.run(['./contrib/devtools/security-check.py',executable], stdout=subprocess.PIPE, universal_newlines=True)
     return (p.returncode, p.stdout.rstrip())
 
+def linker_supports(cc, source, executable, flag):
+    '''Whether the linker accepts a flag.
+
+    Apple's linker dropped -allow_stack_execute, so on a current macOS
+    toolchain the cases that rely on it cannot build their fixture at all.
+    '''
+    try:
+        call_security_check(cc, source, executable, [flag])
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
 def is_arm64_macho(cc, source, executable):
     '''Whether cc builds arm64 Mach-O, going by the cputype in the header.'''
     call_security_check(cc, source, executable, [])
@@ -84,7 +96,12 @@ class TestSecurityChecks(unittest.TestCase):
     def test_MACHO(self):
         source = 'test1.c'
         executable = 'test1'
-        cc = determine_wellknown_cmd('CC', 'clang')
+        # Build the fixtures for the deployment target the release binaries
+        # use (OSX_MIN_VERSION in depends/hosts/darwin.mk). Left to default,
+        # a native toolchain targets the host's macOS, for which Apple's
+        # linker deprecates -no_pie and defaults to chained fixups instead
+        # of the dyld info the LAZY_BINDINGS check reads.
+        cc = determine_wellknown_cmd('CC', 'clang') + ['-mmacosx-version-min=10.14']
         write_testcode(source)
 
         if is_arm64_macho(cc, source, executable):
@@ -101,10 +118,18 @@ class TestSecurityChecks(unittest.TestCase):
             clean_files(source, executable)
             return
 
-        self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fno-stack-protector']),
-            (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS Canary CONTROL_FLOW'))
-        self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fstack-protector-all']),
-            (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS CONTROL_FLOW'))
+        # An executable stack can only be asked for where the linker still
+        # takes the flag; the NX check itself is exercised on every real
+        # binary by security-check.py.
+        if linker_supports(cc, source, executable, '-Wl,-allow_stack_execute'):
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fno-stack-protector']),
+                (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS Canary CONTROL_FLOW'))
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fstack-protector-all']),
+                (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS CONTROL_FLOW'))
+        else:
+            self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-fno-stack-protector']),
+                (1, executable+': failed PIE NOUNDEFS LAZY_BINDINGS Canary CONTROL_FLOW'))
+
         self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-fstack-protector-all']),
             (1, executable+': failed PIE NOUNDEFS LAZY_BINDINGS CONTROL_FLOW'))
         self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-fstack-protector-all']),
