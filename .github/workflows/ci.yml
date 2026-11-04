@@ -30,7 +30,8 @@
 #   * Build only (CI_BUILD_ONLY below): the line's unit and functional tests do
 #     not pass yet, so every job builds and runs no tests (RED-211). RED-200
 #     turns them back on, as RED-201 and RED-167 make them pass.
-#   * No ASan, MSan, multiprocess, Android or fuzz jobs for now.
+#   * No ASan, MSan, multiprocess, Android or fuzz jobs for now, and no
+#     no-wallet job until a --disable-wallet build links (RED-214).
 #   * The base branch is v4.22.9-regtest, and caches are saved on pushes to it.
 
 name: CI
@@ -151,10 +152,8 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_tsan.sh'
 
-          - name: 'no wallet'
-            runner: ubuntu-24.04
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_nowallet.sh'
+          # No 'no wallet' job: this line's staking code calls the wallet
+          # directly, so a --disable-wallet build does not link (RED-214).
 
           - name: 'macOS 10.14 cross, gui, no tests'
             runner: ubuntu-24.04
