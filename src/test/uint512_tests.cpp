@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <arith_uint256.h>
+#include <crypto/common.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
@@ -206,9 +207,7 @@ BOOST_AUTO_TEST_CASE( uint512_specialized_methods )
 
     // Verify it actually returns the first 8 bytes (little-endian)
     const unsigned char expected_bytes[] = "\x10\x32\x54\x76\x98\xba\xdc\xfe";
-    uint64_t expected = 0;
-    memcpy(&expected, expected_bytes, 8);
-    BOOST_CHECK_EQUAL(cheap_hash, expected);
+    BOOST_CHECK_EQUAL(cheap_hash, ReadLE64(expected_bytes));
 
     // Test trim256 - should return the first 32 bytes (lower-order bytes in little-endian)
     uint512 full = uint512S("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0");
