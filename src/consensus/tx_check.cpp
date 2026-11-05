@@ -26,6 +26,9 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-vout-negative");
         if (txout.nValue > MAX_MONEY)
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-vout-toolarge");
+        // Check for overflow before adding
+        if (nValueOut > MAX_MONEY - txout.nValue)
+            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-txouttotal-toolarge");
         nValueOut += txout.nValue;
         if (!MoneyRange(nValueOut))
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-txouttotal-toolarge");

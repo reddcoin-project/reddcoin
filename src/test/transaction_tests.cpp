@@ -383,6 +383,34 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
     BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(tx), state) || !state.IsValid(), "Transaction with duplicate txins should be invalid.");
 }
 
+BOOST_AUTO_TEST_CASE(check_transaction_output_total)
+{
+    // Reddcoin: MAX_MONEY is close to INT64_MAX, so the output total has to
+    // be range checked before each addition, not only after it.
+    const auto check = [](const std::vector<CAmount>& values) {
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vin[0].prevout = COutPoint(uint256::ONE, 0);
+        for (const CAmount value : values) {
+            tx.vout.emplace_back(value, CScript() << OP_TRUE);
+        }
+        TxValidationState state;
+        const bool valid = CheckTransaction(CTransaction(tx), state);
+        return valid ? std::string{} : state.GetRejectReason();
+    };
+
+    BOOST_CHECK_EQUAL(check({MAX_MONEY}), "");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY - 1, 1}), "");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY / 2, MAX_MONEY / 2, MAX_MONEY % 2}), "");
+
+    BOOST_CHECK_EQUAL(check({MAX_MONEY + 1}), "bad-txns-vout-toolarge");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY, 1}), "bad-txns-txouttotal-toolarge");
+    BOOST_CHECK_EQUAL(check({1, MAX_MONEY}), "bad-txns-txouttotal-toolarge");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY, MAX_MONEY}), "bad-txns-txouttotal-toolarge");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY / 2 + 1, MAX_MONEY / 2 + 1}), "bad-txns-txouttotal-toolarge");
+    BOOST_CHECK_EQUAL(check({MAX_MONEY, MAX_MONEY, MAX_MONEY}), "bad-txns-txouttotal-toolarge");
+}
+
 BOOST_AUTO_TEST_CASE(test_Get)
 {
     FillableSigningProvider keystore;

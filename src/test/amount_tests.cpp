@@ -88,6 +88,36 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     BOOST_CHECK(CFeeRate(CAmount(27), 789) == CFeeRate(34));
 }
 
+BOOST_AUTO_TEST_CASE(GetFeeOverflowTest)
+{
+    // Regression test for the out-of-range double->int64 conversion in
+    // CFeeRate::GetFee(). The constructor clamps an overflowing rate to INT64_MAX,
+    // after which GetFee()'s double math can land exactly on 2^63. Because
+    // static_cast<double>(INT64_MAX) rounds up to 2^63, a strict ">" bound let that
+    // value fall through to an undefined static_cast<CAmount>(2^63); GetFee() must
+    // clamp with ">=" and return INT64_MAX instead.
+    constexpr CAmount int64_max{std::numeric_limits<int64_t>::max()};
+    constexpr CAmount int64_min{std::numeric_limits<int64_t>::min()};
+    constexpr uint32_t u32_max{std::numeric_limits<uint32_t>::max()};
+
+    const CFeeRate maxRate{int64_max};
+    // size 1000 -> dFee == 2^63 exactly: must clamp, not trap.
+    BOOST_CHECK_EQUAL(maxRate.GetFee(1000), int64_max);
+    // larger sizes overflow further; still clamped.
+    BOOST_CHECK_EQUAL(maxRate.GetFee(2000), int64_max);
+    BOOST_CHECK_EQUAL(maxRate.GetFee(u32_max), int64_max);
+
+    const CFeeRate minRate{int64_min};
+    // negative side: -2^63 is exactly representable, so the boundary is well-defined.
+    BOOST_CHECK_EQUAL(minRate.GetFee(1000), int64_min);
+    BOOST_CHECK_EQUAL(minRate.GetFee(2000), int64_min);
+    BOOST_CHECK_EQUAL(minRate.GetFee(u32_max), int64_min);
+
+    // full constructor must clamp an overflowing rate (bits() > 63 path) to
+    // INT64_MAX rather than wrapping, and GetFee() must stay clamped afterwards.
+    BOOST_CHECK_EQUAL(CFeeRate(int64_max, 1).GetFee(1000), int64_max);
+}
+
 BOOST_AUTO_TEST_CASE(SizeLimitTest)
 {
     // Maximum size in bytes, should not crash
