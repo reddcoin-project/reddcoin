@@ -56,23 +56,17 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     // Find two unspent coinbase outputs (some may be spent during PoS staking)
     // We need two: one for the double-spend tests, one for the fresh_spend test
     CTransactionRef unspent_coinbase;
-    CTransactionRef unspent_coinbase2;
     {
         LOCK(cs_main);
         CCoinsViewCache& utxo_view = m_node.chainman->ActiveChainstate().CoinsTip();
         for (const auto& tx : m_coinbase_txns) {
             if (utxo_view.HaveCoin(COutPoint(tx->GetHash(), 0))) {
-                if (!unspent_coinbase) {
-                    unspent_coinbase = tx;
-                } else if (!unspent_coinbase2) {
-                    unspent_coinbase2 = tx;
-                    break;
-                }
+                unspent_coinbase = tx;
+                break;
             }
         }
     }
     BOOST_REQUIRE_MESSAGE(unspent_coinbase, "No unspent coinbase found for test");
-    BOOST_REQUIRE_MESSAGE(unspent_coinbase2, "Need at least 2 unspent coinbases for test");
 
     // Create a double-spend of mature coinbase txn:
     std::vector<CMutableTransaction> spends;
@@ -147,26 +141,8 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     m_node.mempool->clear();
 
     // Final sanity test: first spend in *m_node.mempool, second in block, that's OK:
-    // Recreate spends[0] to avoid any cached state issues
-    // Use a different coinbase (unspent_coinbase2) to avoid conflicting with spends[1] in mempool
-    CMutableTransaction fresh_spend;
-    fresh_spend.nVersion = 2;
-    fresh_spend.nTime = 1;  // Reddcoin: version 2 transactions require non-zero nTime
-    fresh_spend.vin.resize(1);
-    fresh_spend.vin[0].prevout.hash = unspent_coinbase2->GetHash();
-    fresh_spend.vin[0].prevout.n = 0;
-    fresh_spend.vout.resize(1);
-    fresh_spend.vout[0].nValue = 11*CENT;
-    fresh_spend.vout[0].scriptPubKey = scriptPubKey;
-    // Sign:
-    std::vector<unsigned char> vchSig;
-    uint256 hash = SignatureHash(scriptPubKey, fresh_spend, 0, SIGHASH_ALL, 0, SigVersion::BASE);
-    BOOST_CHECK(coinbaseKey.Sign(hash, vchSig));
-    vchSig.push_back((unsigned char)SIGHASH_ALL);
-    fresh_spend.vin[0].scriptSig << vchSig;
-
     std::vector<CMutableTransaction> oneSpend;
-    oneSpend.push_back(fresh_spend);
+    oneSpend.push_back(spends[0]);
     BOOST_CHECK(ToMemPool(spends[1]));
     block = CreateAndProcessPoSBlock(oneSpend, scriptPubKey, m_wallet);
     SyncWithValidationInterfaceQueue();
