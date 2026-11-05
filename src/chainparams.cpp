@@ -727,12 +727,15 @@ public:
             }
         };
 
-        // Reddcoin: assumeutxo data for 100-block test chain (89 PoW + 11 PoS blocks)
-        // TODO: Recompute these hashes after RegenerateCommitments fix
+        // Reddcoin: assumeutxo data for the unit-test chain (TestChain100Setup:
+        // 89 PoW + 11 PoS blocks, then 10 more staked by
+        // validation_chainstatemanager_tests). The height-110 hash is the
+        // HASH_SERIALIZED UTXO set hash of that chain. Height 200 is a
+        // placeholder that no test reaches.
         m_assumeutxo_data = MapAssumeutxo{
             {
                 110,
-                {AssumeutxoHash{uint256S("106f9f9bd6c57cea84444957b5630e4a1679a658c73455a0e0362ff0174ee181")}, 132},
+                {AssumeutxoHash{uint256S("596e75a6ce3bb671ff5ff4c3fcbd37514d9a34d79a67a4b7b347ce06a0790a26")}, 132},
             },
             {
                 200,

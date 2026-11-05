@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     // Reddcoin: the regtest values in chainparams.cpp. The height-110 snapshot
     // is the one validation_chainstatemanager_tests activates; nChainTx counts
     // the two transactions of each PoS block.
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "106f9f9bd6c57cea84444957b5630e4a1679a658c73455a0e0362ff0174ee181");
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "596e75a6ce3bb671ff5ff4c3fcbd37514d9a34d79a67a4b7b347ce06a0790a26");
     BOOST_CHECK_EQUAL(out110.nChainTx, 132U);
 
     // The height-200 entry is a placeholder on this line (null hash).
