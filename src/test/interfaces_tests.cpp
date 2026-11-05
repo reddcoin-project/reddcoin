@@ -46,10 +46,9 @@ BOOST_AUTO_TEST_CASE(findBlock)
 
     bool cur_active{false}, next_active{false};
     uint256 next_hash;
-    // TestChain100Setup mines nCoinbaseMaturity blocks on this line, which is
-    // 60 on regtest, so the tip is not at the height the fixture's name
-    // suggests. Take it from the chain so these checks follow the fixture
-    // rather than a number kept in step with it by hand.
+    // The chain tip is at height 100 in a wallet build (89 PoW + 11 PoS) and at
+    // 89 in a --disable-wallet build (PoW only); reference it by height so the
+    // nextBlock/inActiveChain checks hold either way.
     const int tip_height = active.Height();
     BOOST_CHECK(chain->findBlock(active[tip_height - 1]->GetBlockHash(), FoundBlock().inActiveChain(cur_active).nextBlock(FoundBlock().inActiveChain(next_active).hash(next_hash))));
     BOOST_CHECK(cur_active);
@@ -95,6 +94,9 @@ BOOST_AUTO_TEST_CASE(findAncestorByHash)
     BOOST_CHECK(!chain->findAncestorByHash(active[10]->GetBlockHash(), active[20]->GetBlockHash()));
 }
 
+// Rebuilds a fork by staking blocks, which needs a wallet; excluded from a
+// --disable-wallet build.
+#ifdef ENABLE_WALLET
 BOOST_AUTO_TEST_CASE(findCommonAncestor)
 {
     auto& chain = m_node.chain;
@@ -124,50 +126,46 @@ BOOST_AUTO_TEST_CASE(findCommonAncestor)
     BOOST_CHECK_EQUAL(active_hash, active.Tip()->GetBlockHash());
     BOOST_CHECK_EQUAL(orig_hash, orig_tip->GetBlockHash());
 }
+#endif // ENABLE_WALLET
 
+// Exercises block ranges up to height 95, taller than the PoW cutoff, so it
+// needs the staked tail that only a wallet build produces.
+#ifdef ENABLE_WALLET
 BOOST_AUTO_TEST_CASE(hasBlocks)
 {
     auto& chain = m_node.chain;
     const CChain& active = Assert(m_node.chainman)->ActiveChain();
 
-    // Reddcoin: the fixture chain is 60 blocks on this line, not 100 (see
-    // findBlock above). Place the range and the pruned blocks relative to the
-    // tip: upstream's 10..90 range, gaps at 5, 95 and 50 become 10..tip-10,
-    // gaps at 5, tip-5 and tip/2.
-    const int tip_height = active.Height();
-    const int hi = tip_height - 10;
-    const int mid = tip_height / 2;
-    BOOST_REQUIRE(hi > mid && mid > 10);
-
     // Test ranges
-    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, hi));
+    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, 90));
     BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, {}));
-    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 0, hi));
+    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 0, 90));
     BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 0, {}));
     BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), -1000, 1000));
     active[5]->nStatus &= ~BLOCK_HAVE_DATA;
-    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, hi));
+    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, 90));
     BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, {}));
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, hi));
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, 90));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, {}));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), -1000, 1000));
-    active[tip_height - 5]->nStatus &= ~BLOCK_HAVE_DATA;
-    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, hi));
+    active[95]->nStatus &= ~BLOCK_HAVE_DATA;
+    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 10, 90));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 10, {}));
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, hi));
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, 90));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, {}));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), -1000, 1000));
-    active[mid]->nStatus &= ~BLOCK_HAVE_DATA;
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 10, hi));
+    active[50]->nStatus &= ~BLOCK_HAVE_DATA;
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 10, 90));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 10, {}));
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, hi));
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, 90));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 0, {}));
     BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), -1000, 1000));
 
     // Test edge cases
-    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 6, mid - 1));
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 5, mid - 1));
-    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 6, mid));
+    BOOST_CHECK(chain->hasBlocks(active.Tip()->GetBlockHash(), 6, 49));
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 5, 49));
+    BOOST_CHECK(!chain->hasBlocks(active.Tip()->GetBlockHash(), 6, 50));
 }
+#endif // ENABLE_WALLET
 
 BOOST_AUTO_TEST_SUITE_END()

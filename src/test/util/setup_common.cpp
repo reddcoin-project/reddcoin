@@ -294,7 +294,10 @@ void TestChain100Setup::stakeBlocks(int num_blocks)
             m_wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
         }
         m_wallet->LoadWallet();
-        AddWallet(m_wallet);
+        // Not added to the global wallet list: staking takes the wallet
+        // directly, and a listed wallet is unloaded by any wallet client a
+        // derived fixture tears down (UnloadWallets), which would wait forever
+        // on the reference this fixture still holds.
         m_wallet_notifications = m_node.chain->handleNotifications(m_wallet);
         {
             LOCK(m_wallet->cs_wallet);
@@ -333,6 +336,20 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
     if (!CollectStakeCandidates(pwallet.get(), candidates) || !candidates.collected) {
         throw std::runtime_error("Could not collect stake candidates");
     }
+    // The wallet does not know about txns, so it may offer a coin one of them
+    // spends; staking that coin would make the block a double spend.
+    for (const CMutableTransaction& tx : txns) {
+        for (const CTxIn& in : tx.vin) {
+            for (auto it = candidates.coins.begin(); it != candidates.coins.end();) {
+                if (it->outpoint == in.prevout) {
+                    candidates.nAvailable -= it->txout.nValue;
+                    it = candidates.coins.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+    }
     StakeKernel kernel;
     bool found = false;
     for (int attempt = 0; attempt < 600 && !found; ++attempt) {
@@ -354,11 +371,15 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
     }
     if (!found) throw std::runtime_error("Could not create PoS block: no stake kernel found");
 
+    // Like CreateAndProcessBlock, build from an empty mempool: the block holds
+    // the coinstake and txns only, so a transaction a test has also put in the
+    // mempool is not included twice.
+    CTxMemPool empty_pool;
     bool fPoSCancel = false;
     std::unique_ptr<CBlockTemplate> pblocktemplate;
     {
         LOCK(pwallet->cs_wallet);
-        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), *m_node.mempool, chainparams)
+        pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), empty_pool, chainparams)
                              .CreateNewBlock(scriptPubKey, pwallet.get(), &fPoSCancel, &candidates, &kernel);
     }
     if (!pblocktemplate) {
@@ -386,7 +407,12 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
 
     std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
     if (!m_node.chainman->ProcessNewBlock(chainparams, shared_pblock, true, nullptr)) {
-        throw std::runtime_error("ProcessNewBlock failed, PoS block not accepted");
+        BlockValidationState state;
+        {
+            LOCK(cs_main);
+            TestBlockValidity(state, chainparams, m_node.chainman->ActiveChainstate(), *pblock, m_node.chainman->ActiveChain().Tip(), false, false);
+        }
+        throw std::runtime_error("ProcessNewBlock failed, PoS block not accepted: " + state.ToString());
     }
     if (WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockHash()) != pblock->GetHash()) {
         throw std::runtime_error("PoS block accepted but not connected to the active chain");
@@ -469,10 +495,7 @@ TestChain100Setup::~TestChain100Setup()
 {
 #ifdef ENABLE_WALLET
     m_wallet_notifications.reset();
-    if (m_wallet) {
-        RemoveWallet(m_wallet, std::nullopt);
-        m_wallet.reset();
-    }
+    m_wallet.reset();
 #endif // ENABLE_WALLET
 
     // Stop() only unregisters the index, and the scheduler keeps running
