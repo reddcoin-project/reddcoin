@@ -134,14 +134,13 @@ void BumpFee(TransactionView& view, const uint256& txid, bool expectDisabled, st
 //     QT_QPA_PLATFORM=cocoa   src/qt/test/test_bitcoin-qt  # macOS
 void TestGUI(interfaces::Node& node)
 {
-    // Set up wallet and chain. TestChain100Setup mines nCoinbaseMaturity (60)
-    // blocks here, at which height no coinbase has matured yet, so five more
-    // are needed before anything is spendable. Heights 61-65 are still at or
-    // below nLastPowHeight = 89, so these are valid PoW blocks.
+    // Set up wallet and chain. TestChain100Setup builds a height-100 chain
+    // (89 PoW blocks then 11 PoS blocks), all rewards paying to coinbaseKey.
+    // With nCoinbaseMaturity=60 the early PoW coinbases are already mature and
+    // spendable, so no extra blocks are needed. (Upstream mined 5 more PoW
+    // blocks here for maturity, but Reddcoin rejects PoW past nLastPowHeight=89
+    // with "pow-ended".)
     TestChain100Setup test;
-    for (int i = 0; i < 5; ++i) {
-        test.CreateAndProcessBlock({}, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()));
-    }
     node.setContext(&test.m_node);
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
     wallet->LoadWallet();
