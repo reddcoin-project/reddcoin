@@ -27,9 +27,6 @@
 #
 # This is the v4.22.9-regtest (release line) copy of develop's workflow, with
 # these differences:
-#   * Build only (CI_BUILD_ONLY below): the line's unit and functional tests do
-#     not pass yet, so every job builds and runs no tests (RED-211). RED-200
-#     turns them back on, as RED-201 and RED-167 make them pass.
 #   * No ASan, MSan, multiprocess, Android or fuzz jobs for now, and no
 #     no-wallet job until a --disable-wallet build links (RED-214).
 #   * The base branch is v4.22.9-regtest, and caches are saved on pushes to it.
@@ -68,9 +65,6 @@ env:
   CCACHE_SIZE: "200M"
   CCACHE_DIR: "/tmp/ccache_dir"
   CCACHE_NOHASHDIR: "1"
-  # Build only, no tests: read by ci/test/00_setup_env.sh. Remove to run the
-  # tests each task file asks for (RED-200).
-  CI_BUILD_ONLY: "true"
 
 jobs:
   # Lint (Cirrus 'lint [bionic]'). Runs in a focal (20.04) container: it still

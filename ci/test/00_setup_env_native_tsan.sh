@@ -11,8 +11,8 @@ export CONTAINER_NAME=ci_native_tsan
 export DOCKER_NAME_TAG=ubuntu:22.04
 # zlib1g-dev: the depends SQLite in the shared cache was built where zlib was
 # present, so its sqlite3.pc asks for -lz (Libs.private). The functional-test
-# packages (python3-dev) pull zlib in by chance; with the tests off they are
-# not installed and the link fails on "cannot find -lz".
+# packages (python3-dev) pull zlib in by chance; name it, so the link does not
+# depend on them ("cannot find -lz").
 export PACKAGES="clang llvm libc++abi-dev libc++-dev python3-zmq zlib1g-dev"
 export DEP_OPTS="CC=clang CXX='clang++ -stdlib=libc++'"
 export GOAL="install"

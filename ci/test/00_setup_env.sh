@@ -50,18 +50,6 @@ export TEST_RUNNER_TIMEOUT_FACTOR=${TEST_RUNNER_TIMEOUT_FACTOR:-40}
 export TEST_RUNNER_ENV=${TEST_RUNNER_ENV:-}
 export RUN_FUZZ_TESTS=${RUN_FUZZ_TESTS:-false}
 export EXPECTED_TESTS_DURATION_IN_SECONDS=${EXPECTED_TESTS_DURATION_IN_SECONDS:-1000}
-# Build only: every job builds as usual, then runs no unit, functional or fuzz
-# tests, and fetches nothing that only the tests use. Set by the workflow while
-# this line's tests are not yet ready for CI (RED-200, RED-201). Applied after
-# FILE_ENV, because some task files turn the tests on explicitly. The binary
-# security checks still run where a task asks for them.
-if [ "${CI_BUILD_ONLY}" = "true" ]; then
-  export RUN_UNIT_TESTS=false
-  export RUN_UNIT_TESTS_SEQUENTIAL=false
-  export RUN_FUNCTIONAL_TESTS=false
-  export RUN_FUZZ_TESTS=false
-  export PREVIOUS_RELEASES_TO_DOWNLOAD=""
-fi
 
 export CONTAINER_NAME=${CONTAINER_NAME:-ci_unnamed}
 export DOCKER_NAME_TAG=${DOCKER_NAME_TAG:-ubuntu:20.04}
