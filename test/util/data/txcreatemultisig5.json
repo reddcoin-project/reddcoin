@@ -1,7 +1,7 @@
 {
-    "txid": "1a63b7ee2f2568232f0dc202f3981b24bf2f6eb22bbdf807d5333250feaaba10",
-    "hash": "1a63b7ee2f2568232f0dc202f3981b24bf2f6eb22bbdf807d5333250feaaba10",
-    "version": 3,
+    "txid": "bd1ebf9065df9bdad6ffcce82cab709e5d93dd5bcf51de2bab0181b843ae9b29",
+    "hash": "bd1ebf9065df9bdad6ffcce82cab709e5d93dd5bcf51de2bab0181b843ae9b29",
+    "version": 2,
     "size": 46,
     "vsize": 46,
     "weight": 184,
@@ -20,5 +20,5 @@
             }
         }
     ],
-    "hex": "03000000000100e1f5050000000017a914a4051c02398868af83f28f083208fae99a769263870000000000000000"
+    "hex": "02000000000100e1f5050000000017a914a4051c02398868af83f28f083208fae99a769263870000000000000000"
 }
