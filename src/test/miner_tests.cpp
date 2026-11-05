@@ -267,6 +267,22 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     LOCK(cs_main);
     LOCK(m_node.mempool->cs);
 
+    // Reddcoin: on this line CreateNewBlock runs TestBlockValidity on its
+    // template only when it is given a staking wallet, so a template built
+    // without one comes back unchecked instead of throwing. Validate the
+    // template here instead, with the same arguments CreateNewBlock would use
+    // (no PoW or merkle-root check), and expect the same reject reason.
+    const auto template_rejected = [&](const std::string& reason) {
+        std::unique_ptr<CBlockTemplate> t = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey);
+        if (!t) return false;
+        BlockValidationState state;
+        const bool valid = TestBlockValidity(state, chainparams, m_node.chainman->ActiveChainstate(), t->block,
+                                             m_node.chainman->ActiveChain().Tip(), false, false);
+        BOOST_CHECK_MESSAGE(!valid && state.GetRejectReason() == reason,
+                            "expected " << reason << ", got " << (valid ? "a valid block" : state.ToString()));
+        return !valid && state.GetRejectReason() == reason;
+    };
+
     // Just to make sure we can still make simple blocks
     BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
 
@@ -294,7 +310,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         tx.vin[0].prevout.hash = hash;
     }
 
-    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-blk-sigops"));
+    BOOST_CHECK(template_rejected("bad-blk-sigops"));
     m_node.mempool->clear();
 
     tx.vin[0].prevout.hash = txFirst[0]->GetHash();
@@ -334,7 +350,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // orphan in *m_node.mempool, template creation fails
     hash = tx.GetHash();
     m_node.mempool->addUnchecked(entry.Fee(LOWFEE).Time(GetTime()).FromTx(tx));
-    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+    BOOST_CHECK(template_rejected("bad-txns-inputs-missingorspent"));
     m_node.mempool->clear();
 
     // child with higher feerate than parent
@@ -363,7 +379,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // give it a fee so it'll get mined
     m_node.mempool->addUnchecked(entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
     // Should throw bad-cb-multiple
-    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-cb-multiple"));
+    BOOST_CHECK(template_rejected("bad-cb-multiple"));
     m_node.mempool->clear();
 
     // double spend txn pair in *m_node.mempool, template creation fails
@@ -376,7 +392,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     tx.vout[0].scriptPubKey = CScript() << OP_2;
     hash = tx.GetHash();
     m_node.mempool->addUnchecked(entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
-    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+    BOOST_CHECK(template_rejected("bad-txns-inputs-missingorspent"));
     m_node.mempool->clear();
 
     // subsidy changing
@@ -421,7 +437,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     hash = tx.GetHash();
     m_node.mempool->addUnchecked(entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
     // Should throw block-validation-failed
-    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("block-validation-failed"));
+    BOOST_CHECK(template_rejected("block-validation-failed"));
     m_node.mempool->clear();
 
     // Delete the dummy blocks again.
