@@ -272,7 +272,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // without one comes back unchecked instead of throwing. Validate the
     // template here instead, with the same arguments CreateNewBlock would use
     // (no PoW or merkle-root check), and expect the same reject reason.
-    const auto template_rejected = [&](const std::string& reason) {
+    const auto template_rejected = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         std::unique_ptr<CBlockTemplate> t = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey);
         if (!t) return false;
         BlockValidationState state;
