@@ -19,6 +19,7 @@
 #include <util/check.h>
 #include <util/string.h>
 #include <util/vector.h>
+#include <interfaces/handler.h>
 
 #include <type_traits>
 #include <vector>
@@ -110,11 +111,18 @@ class CBlock;
 struct CMutableTransaction;
 class CScript;
 
+class CWallet;
+
 /**
  * Testing fixture that pre-creates a 100-block REGTEST-mode block chain
+ * (89 PoW + 11 PoS). Enables txindex for PoS staking support.
  */
-struct TestChain100Setup : public RegTestingSetup {
-    TestChain100Setup();
+struct TestChain100Setup : public TestingSetup {
+    // extra_args are appended after the mandatory -txindex=1 (PoS staking needs
+    // the tx index). Defaulted so BOOST_FIXTURE_TEST_CASE default-constructs it,
+    // and so MakeNoLogFileContext<TestChain100Setup>() can pass -nodebuglogfile.
+    explicit TestChain100Setup(const std::string& chain_name = CBaseChainParams::REGTEST,
+                               const std::vector<const char*>& extra_args = {});
 
     /**
      * Create a new block with just given transactions, coinbase paying to
@@ -123,8 +131,24 @@ struct TestChain100Setup : public RegTestingSetup {
     CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
                                  const CScript& scriptPubKey);
 
+#ifdef ENABLE_WALLET
+    /**
+     * Create a new Proof-of-Stake block with coinstake and given transactions.
+     * Requires mature coins to stake from m_coinbase_txns. Wallet-only: a
+     * --disable-wallet build cannot produce coinstakes.
+     */
+    CBlock CreateAndProcessPoSBlock(const std::vector<CMutableTransaction>& txns,
+                                    const CScript& scriptPubKey,
+                                    const std::shared_ptr<CWallet>& pwallet);
+#endif // ENABLE_WALLET
+
     //! Mine a series of new blocks on the active chain.
     void mineBlocks(int num_blocks);
+
+#ifdef ENABLE_WALLET
+    //! Stake a series of PoS blocks using coinbaseKey
+    void stakeBlocks(int num_blocks);
+#endif // ENABLE_WALLET
 
     /**
      * Create a transaction and submit to the mempool.
@@ -149,6 +173,12 @@ struct TestChain100Setup : public RegTestingSetup {
 
     std::vector<CTransactionRef> m_coinbase_txns; // For convenience, coinbase transactions
     CKey coinbaseKey; // private/public key needed to spend coinbase transactions
+#ifdef ENABLE_WALLET
+    std::shared_ptr<CWallet> m_wallet; // Staking wallet kept alive for PoS operations
+    std::unique_ptr<interfaces::Handler> m_wallet_notifications; // Keep wallet notifications active
+    //! End of the last kernel search, as the staker thread keeps it.
+    int64_t m_last_stake_search_time{0};
+#endif // ENABLE_WALLET
 };
 
 /**
