@@ -21,6 +21,7 @@
 #include <util/strencodings.h>
 #include <util/system.h>
 #include <util/translation.h>
+#include <validation.h>
 #include <validationinterface.h>
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
@@ -130,7 +131,22 @@ struct HDSeedTestingSetup : public TestChain100Setup {
     //! Pay a script with a coinbase of the chain, in a new block. Returns the amount.
     CAmount Pay(const CScript& script)
     {
-        const CTransaction& from = *m_coinbase_txns.at(m_coinbases_spent++);
+        // The fixture's chain is staked past height 89, and its staker has
+        // already spent some of the coinbases, so take the next one that is
+        // unspent and mature.
+        const CTransaction* from_ptr{nullptr};
+        {
+            LOCK(cs_main);
+            const int next_height = m_node.chainman->ActiveChain().Height() + 1;
+            while (!from_ptr) {
+                const CTransactionRef& tx = m_coinbase_txns.at(m_coinbases_spent++);
+                if (!tx->IsCoinBase()) continue;
+                const Coin& coin = m_node.chainman->ActiveChainstate().CoinsTip().AccessCoin(COutPoint(tx->GetHash(), 0));
+                if (coin.IsSpent() || next_height - (int)coin.nHeight < Params().GetConsensus().GetCoinbaseMaturity()) continue;
+                from_ptr = tx.get();
+            }
+        }
+        const CTransaction& from = *from_ptr;
         CMutableTransaction mtx;
         mtx.vout.push_back({from.vout[0].nValue - DEFAULT_TRANSACTION_MAXFEE, script});
         mtx.vin.push_back({CTxIn{from.GetHash(), 0}});
@@ -140,7 +156,7 @@ struct HDSeedTestingSetup : public TestChain100Setup {
         coins[mtx.vin[0].prevout].out = from.vout[0];
         std::map<int, std::string> input_errors;
         BOOST_REQUIRE(SignTransaction(mtx, &keystore, coins, SIGHASH_ALL, input_errors));
-        CreateAndProcessBlock({mtx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        CreateAndProcessPoSBlock({mtx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet);
         SyncWithValidationInterfaceQueue();
         return mtx.vout[0].nValue;
     }
@@ -327,7 +343,7 @@ BOOST_AUTO_TEST_CASE(wallet_that_cannot_derive_old_keys_loads_and_is_paid)
         BOOST_REQUIRE_MESSAGE(wallet->CreateTransaction({{GetScriptForRawPubKey(coinbaseKey.GetPubKey()), amount, /* subtract fee */ false}}, tx, fee, change_position, error, CCoinControl{}, fee_calculation), error.original);
         BOOST_CHECK_EQUAL(tx->vin.size(), 2U);
         wallet->CommitTransaction(tx, {}, {});
-        CreateAndProcessBlock({CMutableTransaction(*tx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        CreateAndProcessPoSBlock({CMutableTransaction(*tx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet);
         SyncWithValidationInterfaceQueue();
         BOOST_CHECK_EQUAL(wallet->GetBalance().m_mine_trusted, first + second - amount - fee);
 

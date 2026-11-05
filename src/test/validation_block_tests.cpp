@@ -12,13 +12,18 @@
 #include <pow.h>
 #include <random.h>
 #include <script/standard.h>
+#include <sync.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
 
+#include <map>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace validation_block_tests {
 struct MinerTestingSetup : public RegTestingSetup {
@@ -27,6 +32,11 @@ struct MinerTestingSetup : public RegTestingSetup {
     std::shared_ptr<const CBlock> BadBlock(const uint256& prev_hash);
     std::shared_ptr<CBlock> FinalizeBlock(std::shared_ptr<CBlock> pblock);
     void BuildChain(const uint256& root, int height, const unsigned int invalid_rate, const unsigned int branch_rate, const unsigned int max_size, std::vector<std::shared_ptr<const CBlock>>& blocks);
+    int Height(const uint256& hash) const;
+
+    // Reddcoin: heights of the blocks built here, which may not be in the
+    // block index yet when their children are built.
+    std::map<uint256, int> m_block_heights;
 };
 } // namespace validation_block_tests
 
@@ -59,6 +69,12 @@ struct TestSubscriber final : public CValidationInterface {
     }
 };
 
+int MinerTestingSetup::Height(const uint256& hash) const
+{
+    if (hash == Params().GenesisBlock().GetHash()) return 0;
+    return m_block_heights.at(hash);
+}
+
 std::shared_ptr<CBlock> MinerTestingSetup::Block(const uint256& prev_hash)
 {
     static int i = 0;
@@ -73,9 +89,17 @@ std::shared_ptr<CBlock> MinerTestingSetup::Block(const uint256& prev_hash)
     // One zero-value one that has a unique pubkey to make sure that blocks at the same height can have a different hash
     // Another one that has the coinbase reward in a P2WSH with OP_TRUE as witness program to make it easy to spend
     CMutableTransaction txCoinbase(*pblock->vtx[0]);
+    // Reddcoin: Coinbase must be version 1 with nTime=0 for PoW blocks
+    txCoinbase.nVersion = 1;
+    txCoinbase.nTime = 0;
     txCoinbase.vout.resize(2);
     txCoinbase.vout[1].scriptPubKey = P2WSH_OP_TRUE;
-    txCoinbase.vout[1].nValue = txCoinbase.vout[0].nValue;
+    // Reddcoin: the template pays the subsidy for the height after the active
+    // tip, which is not this block's height when the chain is built before any
+    // of it is processed. Blocks 1-10 pay the 545M premine and later blocks
+    // 300k, so a block at height 11 or above would pay too much and fail
+    // ConnectBlock with bad-cb-amount. Pay the subsidy for the real height.
+    txCoinbase.vout[1].nValue = GetBlockSubsidy(Height(prev_hash) + 1, Params().GetConsensus());
     txCoinbase.vout[0].nValue = 0;
     txCoinbase.vin[0].scriptWitness.SetNull();
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
@@ -94,6 +118,7 @@ std::shared_ptr<CBlock> MinerTestingSetup::FinalizeBlock(std::shared_ptr<CBlock>
         ++(pblock->nNonce);
     }
 
+    m_block_heights[pblock->GetHash()] = Height(pblock->hashPrevBlock) + 1;
     return pblock;
 }
 
@@ -109,6 +134,9 @@ std::shared_ptr<const CBlock> MinerTestingSetup::BadBlock(const uint256& prev_ha
     auto pblock = Block(prev_hash);
 
     CMutableTransaction coinbase_spend;
+    // Reddcoin: Version 1 transactions must have nTime=0
+    coinbase_spend.nVersion = 1;
+    coinbase_spend.nTime = 0;
     coinbase_spend.vin.push_back(CTxIn(COutPoint(pblock->vtx[0]->GetHash(), 0), CScript(), 0));
     coinbase_spend.vout.push_back(pblock->vtx[0]->vout[0]);
 
@@ -141,10 +169,11 @@ void MinerTestingSetup::BuildChain(const uint256& root, int height, const unsign
 BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
 {
     // build a large-ish chain that's likely to have some forks
+    // Reddcoin: Limit height to 80 to stay within PoW era (ends at block 89 in regtest)
     std::vector<std::shared_ptr<const CBlock>> blocks;
     while (blocks.size() < 50) {
         blocks.clear();
-        BuildChain(Params().GenesisBlock().GetHash(), 100, 15, 10, 500, blocks);
+        BuildChain(Params().GenesisBlock().GetHash(), 80, 15, 10, 500, blocks);
     }
 
     bool ignored;
@@ -171,6 +200,11 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     // create a bunch of threads that repeatedly process a block generated above at random
     // this will create parallelism and randomness inside validation - the ValidationInterface
     // will subscribe to events generated during block validation and assert on ordering invariance
+    // Reddcoin: Boost.Test assertions are not thread-safe, and the subscriber
+    // already makes them on the scheduler thread. The workers collect their
+    // failures here instead, and the main thread reports them at the end.
+    Mutex failures_mutex;
+    std::vector<std::string> failures;
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([&]() {
@@ -184,8 +218,44 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
             // to make sure that eventually we process the full chain - do it here
             for (auto block : blocks) {
                 if (block->vtx.size() == 1) {
-                    bool processed = Assert(m_node.chainman)->ProcessNewBlock(Params(), block, true, &ignored);
-                    assert(processed);
+                    // Reddcoin: Check if block or its parent is already marked as failed before trying to process
+                    // During random processing, blocks may get marked invalid for various reasons.
+                    // Screen on BLOCK_FAILED_MASK, matching the check below: the mask is
+                    // BLOCK_FAILED_VALID|BLOCK_FAILED_CHILD, and InvalidateBlock marks a whole
+                    // subtree by setting BLOCK_FAILED_CHILD on descendants. Invalidating an
+                    // ancestor above the parent therefore leaves both the parent and this block
+                    // carrying only BLOCK_FAILED_CHILD, so screening on BLOCK_FAILED_VALID alone
+                    // let such a block through to a check it could not pass. This chain is built
+                    // with forks on purpose, so multi-level invalid subtrees are expected. RED-80.
+                    {
+                        LOCK(cs_main);
+                        auto* pindex = m_node.chainman->m_blockman.LookupBlockIndex(block->GetHash());
+                        auto* pindexPrev = m_node.chainman->m_blockman.LookupBlockIndex(block->hashPrevBlock);
+                        if (pindex && (pindex->nStatus & BLOCK_FAILED_MASK)) {
+                            continue;
+                        }
+                        if (pindexPrev && (pindexPrev->nStatus & BLOCK_FAILED_MASK)) {
+                            continue;
+                        }
+                    }
+
+                    Assert(m_node.chainman)->ProcessNewBlock(Params(), block, true, &ignored);
+
+                    // Reddcoin: Check if block was accepted even if not connected to active chain
+                    // In a tree with forks, not all valid blocks will be on the active chain.
+                    // Report nStatus on failure: the screen above and this check are separate
+                    // cs_main scopes with an unlocked ProcessNewBlock between them, and ten
+                    // threads run this loop, so a concurrent thread can still invalidate an
+                    // ancestor in that window. If that is what fires, the flag says which.
+                    {
+                        LOCK(cs_main);
+                        auto* pindex = m_node.chainman->m_blockman.LookupBlockIndex(block->GetHash());
+                        if (!pindex || (pindex->nStatus & BLOCK_FAILED_MASK)) {
+                            LOCK(failures_mutex);
+                            failures.push_back(strprintf("block %s unexpectedly failed, nStatus=%u",
+                                                         block->GetHash().ToString(), pindex ? pindex->nStatus : 0u));
+                        }
+                    }
                 }
             }
         });
@@ -197,6 +267,14 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     SyncWithValidationInterfaceQueue();
 
     UnregisterSharedValidationInterface(sub);
+
+    // Reddcoin: the scheduler thread is idle now, so it is safe to report.
+    {
+        LOCK(failures_mutex);
+        for (const std::string& failure : failures) {
+            BOOST_ERROR(failure);
+        }
+    }
 
     LOCK(cs_main);
     BOOST_CHECK_EQUAL(sub->m_expected_tip, m_node.chainman->ActiveChain().Tip()->GetBlockHash());
@@ -234,7 +312,8 @@ BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
     BOOST_REQUIRE(ProcessBlock(last_mined));
 
     // Run the test multiple times
-    for (int test_runs = 3; test_runs > 0; --test_runs) {
+    // Reddcoin: Reduced to 1 run to stay within PoW era
+    for (int test_runs = 1; test_runs > 0; --test_runs) {
         BOOST_CHECK_EQUAL(last_mined->GetHash(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
 
         // Later on split from here
@@ -242,13 +321,18 @@ BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
 
         // Create a bunch of transactions to spend the miner rewards of the
         // most recent blocks
+        // Reddcoin: Reduced to 5 txs to stay within PoW era (regtest COINBASE_MATURITY=60, PoW ends at 89)
         std::vector<CTransactionRef> txs;
-        for (int num_txs = 22; num_txs > 0; --num_txs) {
+        for (int num_txs = 5; num_txs > 0; --num_txs) {
             CMutableTransaction mtx;
+            // Reddcoin: Version 1 transactions must have nTime=0
+            mtx.nVersion = 1;
+            mtx.nTime = 0;
             mtx.vin.push_back(CTxIn{COutPoint{last_mined->vtx[0]->GetHash(), 1}, CScript{}});
             mtx.vin[0].scriptWitness.stack.push_back(WITNESS_STACK_ELEM_OP_TRUE);
             mtx.vout.push_back(last_mined->vtx[0]->vout[1]);
-            mtx.vout[0].nValue -= 1000;
+            // Reddcoin: Increase fee to meet minimum relay fee (at least 9600)
+            mtx.vout[0].nValue -= 10000;
             txs.push_back(MakeTransactionRef(mtx));
 
             last_mined = GoodBlock(last_mined->GetHash());

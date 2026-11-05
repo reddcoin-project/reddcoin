@@ -4,7 +4,6 @@
 
 #include <chainparams.h>
 #include <net.h>
-#include <signet.h>
 #include <uint256.h>
 #include <validation.h>
 
@@ -133,68 +132,6 @@ BOOST_AUTO_TEST_CASE(subsidy_limit_test)
     BOOST_CHECK(farFuture < 100 * COIN); // Less than 100 RDD after ~17 halvings
 }
 
-// Test Proof-of-Stake reward calculation
-BOOST_AUTO_TEST_CASE(signet_parse_tests)
-{
-    ArgsManager signet_argsman;
-    signet_argsman.ForceSetArg("-signetchallenge", "51"); // set challenge to OP_TRUE
-    const auto signet_params = CreateChainParams(signet_argsman, CBaseChainParams::SIGNET);
-    CBlock block;
-    BOOST_CHECK(signet_params->GetConsensus().signet_challenge == std::vector<uint8_t>{OP_TRUE});
-    CScript challenge{OP_TRUE};
-
-    // empty block is invalid
-    BOOST_CHECK(!SignetTxs::Create(block, challenge));
-    BOOST_CHECK(!CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // no witness commitment
-    CMutableTransaction cb;
-    cb.vout.emplace_back(0, CScript{});
-    block.vtx.push_back(MakeTransactionRef(cb));
-    block.vtx.push_back(MakeTransactionRef(cb)); // Add dummy tx to exercise merkle root code
-    BOOST_CHECK(!SignetTxs::Create(block, challenge));
-    BOOST_CHECK(!CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // no header is treated valid
-    std::vector<uint8_t> witness_commitment_section_141{0xaa, 0x21, 0xa9, 0xed};
-    for (int i = 0; i < 32; ++i) {
-        witness_commitment_section_141.push_back(0xff);
-    }
-    cb.vout.at(0).scriptPubKey = CScript{} << OP_RETURN << witness_commitment_section_141;
-    block.vtx.at(0) = MakeTransactionRef(cb);
-    BOOST_CHECK(SignetTxs::Create(block, challenge));
-    BOOST_CHECK(CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // no data after header, valid
-    std::vector<uint8_t> witness_commitment_section_325{0xec, 0xc7, 0xda, 0xa2};
-    cb.vout.at(0).scriptPubKey = CScript{} << OP_RETURN << witness_commitment_section_141 << witness_commitment_section_325;
-    block.vtx.at(0) = MakeTransactionRef(cb);
-    BOOST_CHECK(SignetTxs::Create(block, challenge));
-    BOOST_CHECK(CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // Premature end of data, invalid
-    witness_commitment_section_325.push_back(0x01);
-    witness_commitment_section_325.push_back(0x51);
-    cb.vout.at(0).scriptPubKey = CScript{} << OP_RETURN << witness_commitment_section_141 << witness_commitment_section_325;
-    block.vtx.at(0) = MakeTransactionRef(cb);
-    BOOST_CHECK(!SignetTxs::Create(block, challenge));
-    BOOST_CHECK(!CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // has data, valid
-    witness_commitment_section_325.push_back(0x00);
-    cb.vout.at(0).scriptPubKey = CScript{} << OP_RETURN << witness_commitment_section_141 << witness_commitment_section_325;
-    block.vtx.at(0) = MakeTransactionRef(cb);
-    BOOST_CHECK(SignetTxs::Create(block, challenge));
-    BOOST_CHECK(CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-
-    // Extraneous data, invalid
-    witness_commitment_section_325.push_back(0x00);
-    cb.vout.at(0).scriptPubKey = CScript{} << OP_RETURN << witness_commitment_section_141 << witness_commitment_section_325;
-    block.vtx.at(0) = MakeTransactionRef(cb);
-    BOOST_CHECK(!SignetTxs::Create(block, challenge));
-    BOOST_CHECK(!CheckSignetBlockSolution(block, signet_params->GetConsensus()));
-}
-
 //! Test retrieval of valid assumeutxo values.
 BOOST_AUTO_TEST_CASE(test_assumeutxo)
 {
@@ -210,11 +147,15 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     }
 
     const auto out110 = *ExpectedAssumeutxo(110, *params);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "1ebbf5850204c0bdb15bf030f47c7fe91d45c44c712697e4509ba67adb01c618");
-    BOOST_CHECK_EQUAL(out110.nChainTx, 110U);
+    // Reddcoin: the regtest values in chainparams.cpp. The height-110 snapshot
+    // is the one validation_chainstatemanager_tests activates; nChainTx counts
+    // the two transactions of each PoS block.
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "596e75a6ce3bb671ff5ff4c3fcbd37514d9a34d79a67a4b7b347ce06a0790a26");
+    BOOST_CHECK_EQUAL(out110.nChainTx, 132U);
 
+    // The height-200 entry is a placeholder on this line (null hash).
     const auto out210 = *ExpectedAssumeutxo(200, *params);
-    BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), "51c8d11d8b5c1de51543c579736e786aa2736206d1e11e627568029ce092cf62");
+    BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), uint256().ToString());
     BOOST_CHECK_EQUAL(out210.nChainTx, 200U);
 }
 

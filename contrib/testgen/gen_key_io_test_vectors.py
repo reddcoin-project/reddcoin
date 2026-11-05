@@ -22,16 +22,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../test/functional')
 
 from test_framework.segwit_addr import bech32_encode, decode_segwit_address, convertbits, CHARSET, Encoding  # noqa: E402
 
-# key types
-PUBKEY_ADDRESS = 0x3d
-SCRIPT_ADDRESS = 0x05
-PUBKEY_ADDRESS_TEST = 0x6f
-SCRIPT_ADDRESS_TEST = 0xc4
-PUBKEY_ADDRESS_REGTEST = 0x6f
-SCRIPT_ADDRESS_REGTEST = 0xc4
-PRIVKEY = 0xba
-PRIVKEY_TEST = 0xef
-PRIVKEY_REGTEST = 0xef
+# key types (Reddcoin prefixes)
+PUBKEY_ADDRESS = 0x3d          # 61  - Reddcoin mainnet (R addresses)
+SCRIPT_ADDRESS = 0x05          # 5   - P2SH (3 addresses)
+PUBKEY_ADDRESS_TEST = 0x6f     # 111 - Testnet (m/n addresses)
+SCRIPT_ADDRESS_TEST = 0xc4     # 196 - Testnet P2SH (2 addresses)
+PUBKEY_ADDRESS_REGTEST = 0x7a  # 122 - Regtest (r addresses)
+SCRIPT_ADDRESS_REGTEST = 0x05  # 5   - Regtest P2SH (3 addresses)
+PRIVKEY = 0xbd                 # 189 - Reddcoin mainnet WIF (7/U/V keys)
+PRIVKEY_TEST = 0xef            # 239 - Testnet WIF (c/9 keys)
+PRIVKEY_REGTEST = 0xef         # 239 - Regtest WIF (c/9 keys, same as testnet)
 
 # script
 OP_0 = 0x00

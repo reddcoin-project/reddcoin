@@ -6,6 +6,7 @@
 #include <test/util/setup_common.h>
 #include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -53,9 +54,13 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
     // Check that CoinStatsIndex updates with new blocks.
     coin_stats_index.LookUpStats(block_index, coin_stats);
 
+#ifdef ENABLE_WALLET
+    // Extending the chain past nLastPowHeight needs a PoS block, which needs a
+    // wallet; skip this portion in a --disable-wallet build.
     const CScript script_pub_key{CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG};
     std::vector<CMutableTransaction> noTxns;
-    CreateAndProcessBlock(noTxns, script_pub_key);
+    // Use PoS block since we're past PoW end (100 blocks)
+    CreateAndProcessPoSBlock(noTxns, script_pub_key, m_wallet);
 
     // Let the CoinStatsIndex to catch up again.
     BOOST_CHECK(coin_stats_index.BlockUntilSyncedToCurrentChain());
@@ -69,9 +74,13 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
     coin_stats_index.LookUpStats(new_block_index, new_coin_stats);
 
     BOOST_CHECK(block_index != new_block_index);
+#endif // ENABLE_WALLET
 
     // Shutdown sequence (c.f. Shutdown() in init.cpp)
     coin_stats_index.Stop();
+
+    // Let scheduler events finish running to avoid accessing any memory related to coin_stats_index after it is destructed
+    SyncWithValidationInterfaceQueue();
 
     // Rest of shutdown sequence and destructors happen in ~TestingSetup()
 }

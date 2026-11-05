@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <consensus/tx_check.h>
 #include <consensus/validation.h>
 #include <key.h>
 #include <script/sign.h>
@@ -9,7 +10,10 @@
 #include <script/standard.h>
 #include <test/util/setup_common.h>
 #include <txmempool.h>
+#include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
+#include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -19,6 +23,19 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
                        std::vector<CScriptCheck>* pvChecks) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 BOOST_AUTO_TEST_SUITE(txvalidationcache_tests)
+
+// Helper to create and process PoS blocks that may be invalid (for testing)
+// Unlike CreateAndProcessPoSBlock, this doesn't throw if the block is rejected
+static CBlock CreateAndProcessPoSBlockNoThrow(TestChain100Setup& test, const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
+{
+    try {
+        return test.CreateAndProcessPoSBlock(txns, scriptPubKey, test.m_wallet);
+    } catch (const std::runtime_error& e) {
+        // Block was rejected - return empty block
+        // The test will check if it was added to the chain
+        return CBlock();
+    }
+}
 
 BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
 {
@@ -36,14 +53,30 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
         return result.m_result_type == MempoolAcceptResult::ResultType::VALID;
     };
 
+    // Find two unspent coinbase outputs (some may be spent during PoS staking)
+    // We need two: one for the double-spend tests, one for the fresh_spend test
+    CTransactionRef unspent_coinbase;
+    {
+        LOCK(cs_main);
+        CCoinsViewCache& utxo_view = m_node.chainman->ActiveChainstate().CoinsTip();
+        for (const auto& tx : m_coinbase_txns) {
+            if (utxo_view.HaveCoin(COutPoint(tx->GetHash(), 0))) {
+                unspent_coinbase = tx;
+                break;
+            }
+        }
+    }
+    BOOST_REQUIRE_MESSAGE(unspent_coinbase, "No unspent coinbase found for test");
+
     // Create a double-spend of mature coinbase txn:
     std::vector<CMutableTransaction> spends;
     spends.resize(2);
     for (int i = 0; i < 2; i++)
     {
         spends[i].nVersion = 1;
+        spends[i].nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
         spends[i].vin.resize(1);
-        spends[i].vin[0].prevout.hash = m_coinbase_txns[0]->GetHash();
+        spends[i].vin[0].prevout.hash = unspent_coinbase->GetHash();
         spends[i].vin[0].prevout.n = 0;
         spends[i].vout.resize(1);
         spends[i].vout[0].nValue = 11*CENT;
@@ -60,35 +93,61 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     CBlock block;
 
     // Test 1: block with both of those transactions should be rejected.
-    block = CreateAndProcessBlock(spends, scriptPubKey);
+    // Reddcoin: Use PoS blocks after nLastPowHeight (89)
+    block = CreateAndProcessPoSBlockNoThrow(*this, spends, scriptPubKey);
     {
         LOCK(cs_main);
         BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->GetBlockHash() != block.GetHash());
     }
+    // Sync wallet and advance time regardless of block acceptance (needed for stake age)
+    SyncWithValidationInterfaceQueue();
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    {
+        LOCK(m_wallet->cs_wallet);
+        m_wallet->ReacceptWalletTransactions();  // Ensure wallet UTXO view is correct after failed block
+    }
+    SetMockTime(GetTime() + 60);
 
     // Test 2: ... and should be rejected if spend1 is in the memory pool
     BOOST_CHECK(ToMemPool(spends[0]));
-    block = CreateAndProcessBlock(spends, scriptPubKey);
+    block = CreateAndProcessPoSBlockNoThrow(*this, spends, scriptPubKey);
     {
         LOCK(cs_main);
         BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->GetBlockHash() != block.GetHash());
     }
+    SyncWithValidationInterfaceQueue();
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    {
+        LOCK(m_wallet->cs_wallet);
+        m_wallet->ReacceptWalletTransactions();
+    }
+    SetMockTime(GetTime() + 60);
     m_node.mempool->clear();
 
     // Test 3: ... and should be rejected if spend2 is in the memory pool
     BOOST_CHECK(ToMemPool(spends[1]));
-    block = CreateAndProcessBlock(spends, scriptPubKey);
+    block = CreateAndProcessPoSBlockNoThrow(*this, spends, scriptPubKey);
     {
         LOCK(cs_main);
         BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->GetBlockHash() != block.GetHash());
     }
+    SyncWithValidationInterfaceQueue();
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    {
+        LOCK(m_wallet->cs_wallet);
+        m_wallet->ReacceptWalletTransactions();
+    }
+    SetMockTime(GetTime() + 60);
     m_node.mempool->clear();
 
     // Final sanity test: first spend in *m_node.mempool, second in block, that's OK:
     std::vector<CMutableTransaction> oneSpend;
     oneSpend.push_back(spends[0]);
     BOOST_CHECK(ToMemPool(spends[1]));
-    block = CreateAndProcessBlock(oneSpend, scriptPubKey);
+    block = CreateAndProcessPoSBlock(oneSpend, scriptPubKey, m_wallet);
+    SyncWithValidationInterfaceQueue();
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    SetMockTime(GetTime() + 60);
     {
         LOCK(cs_main);
         BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->GetBlockHash() == block.GetHash());
@@ -166,6 +225,20 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     BOOST_CHECK(keystore.AddKey(coinbaseKey));
     BOOST_CHECK(keystore.AddCScript(p2pk_scriptPubKey));
 
+    // Find an unspent coinbase output (many get spent during PoS staking)
+    CTransactionRef unspent_coinbase;
+    {
+        LOCK(cs_main);
+        CCoinsViewCache& utxo_view = m_node.chainman->ActiveChainstate().CoinsTip();
+        for (const auto& tx : m_coinbase_txns) {
+            if (utxo_view.HaveCoin(COutPoint(tx->GetHash(), 0))) {
+                unspent_coinbase = tx;
+                break;
+            }
+        }
+    }
+    BOOST_REQUIRE_MESSAGE(unspent_coinbase, "No unspent coinbase found for test");
+
     // flags to test: SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY, SCRIPT_VERIFY_CHECKSEQUENCE_VERIFY, SCRIPT_VERIFY_NULLDUMMY, uncompressed pubkey thing
 
     // Create 2 outputs that match the three scripts above, spending the first
@@ -173,8 +246,9 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     CMutableTransaction spend_tx;
 
     spend_tx.nVersion = 1;
+    spend_tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
     spend_tx.vin.resize(1);
-    spend_tx.vin[0].prevout.hash = m_coinbase_txns[0]->GetHash();
+    spend_tx.vin[0].prevout.hash = unspent_coinbase->GetHash();
     spend_tx.vin[0].prevout.n = 0;
     spend_tx.vout.resize(4);
     spend_tx.vout[0].nValue = 11*CENT;
@@ -225,7 +299,10 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     // enabled yet), even though there's no cache entry.
     CBlock block;
 
-    block = CreateAndProcessBlock({spend_tx}, p2pk_scriptPubKey);
+    block = CreateAndProcessPoSBlock({spend_tx}, p2pk_scriptPubKey, m_wallet);
+    SyncWithValidationInterfaceQueue();
+    m_wallet->BlockUntilSyncedToCurrentChain();
+    SetMockTime(GetTime() + 60);
     LOCK(cs_main);
     BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->GetBlockHash() == block.GetHash());
     BOOST_CHECK(m_node.chainman->ActiveChainstate().CoinsTip().GetBestBlock() == block.GetHash());
@@ -235,6 +312,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     {
         CMutableTransaction invalid_under_p2sh_tx;
         invalid_under_p2sh_tx.nVersion = 1;
+        invalid_under_p2sh_tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
         invalid_under_p2sh_tx.vin.resize(1);
         invalid_under_p2sh_tx.vin[0].prevout.hash = spend_tx.GetHash();
         invalid_under_p2sh_tx.vin[0].prevout.n = 0;
@@ -251,6 +329,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     {
         CMutableTransaction invalid_with_cltv_tx;
         invalid_with_cltv_tx.nVersion = 1;
+        invalid_with_cltv_tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
         invalid_with_cltv_tx.nLockTime = 100;
         invalid_with_cltv_tx.vin.resize(1);
         invalid_with_cltv_tx.vin[0].prevout.hash = spend_tx.GetHash();
@@ -311,6 +390,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
     {
         CMutableTransaction valid_with_witness_tx;
         valid_with_witness_tx.nVersion = 1;
+        valid_with_witness_tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
         valid_with_witness_tx.vin.resize(1);
         valid_with_witness_tx.vin[0].prevout.hash = spend_tx.GetHash();
         valid_with_witness_tx.vin[0].prevout.n = 1;
@@ -336,6 +416,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
         CMutableTransaction tx;
 
         tx.nVersion = 1;
+        tx.nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
         tx.vin.resize(2);
         tx.vin[0].prevout.hash = spend_tx.GetHash();
         tx.vin[0].prevout.n = 0;

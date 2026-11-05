@@ -16,18 +16,27 @@
 #include <txmempool.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <vector>
 
 static void AssembleBlock(benchmark::Bench& bench)
 {
-    const CChainParams& chainparams = Params();
+    // TestingSetup calls SelectParams(), which populates globalChainParams; it
+    // must be constructed before Params() is read, or Params() aborts on the
+    // globalChainParams assertion when this benchmark runs first under `make check`.
     const auto test_setup = MakeNoLogFileContext<const TestingSetup>();
+    const CChainParams& chainparams = Params();
 
     CScriptWitness witness;
     witness.stack.push_back(WITNESS_STACK_ELEM_OP_TRUE);
 
-    // Collect some loose transactions that spend the coinbases of our mined blocks
-    const int NUM_BLOCKS{200};
+    // Collect some loose transactions that spend the coinbases of our mined blocks.
+    // ReddCoin: PoW ends at nLastPowHeight (89 on regtest); a PoW CreateNewBlock
+    // above that height is rejected with "pow-ended". MineBlock advances the tip and
+    // the benchmarked PrepareBlock assembles one more block on top of it, so cap the
+    // mined count at nLastPowHeight - 1 to keep every template within the PoW range.
+    // Chains where PoW does not end early (nLastPowHeight is large) still mine 200.
+    const int NUM_BLOCKS{std::min(200, chainparams.GetConsensus().nLastPowHeight - 1)};
     const int COINBASE_MATURITY = chainparams.GetConsensus().GetCoinbaseMaturity();
     std::vector<CTransactionRef> txs;
     for (int b{0}; b < NUM_BLOCKS; ++b) {
@@ -36,7 +45,7 @@ static void AssembleBlock(benchmark::Bench& bench)
         tx.vin.back().scriptWitness = witness;
         tx.vout.emplace_back(1337, P2WSH_OP_TRUE);
         if (NUM_BLOCKS - b >= COINBASE_MATURITY)
-            txs.at(b) = MakeTransactionRef(tx);
+            txs.push_back(MakeTransactionRef(tx));
     }
     {
         LOCK(::cs_main); // Required for ::AcceptToMemoryPool.
