@@ -12,6 +12,10 @@ if [[ $HOST = *-mingw32 ]]; then
   DOCKER_EXEC make $MAKEJOBS -C src/secp256k1 VERBOSE=1
   DOCKER_EXEC make $MAKEJOBS -C src/univalue VERBOSE=1
   DOCKER_EXEC "${BASE_ROOT_DIR}/ci/test/wrap-wine.sh"
+  # Create the Wine prefix once, before any test runs. Otherwise the test
+  # processes that make check starts in parallel all find no prefix, each
+  # starts wineboot, and some time out waiting for it.
+  DOCKER_EXEC wine wineboot --init
 fi
 
 if [ -n "$QEMU_USER_CMD" ]; then
