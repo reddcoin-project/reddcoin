@@ -332,6 +332,14 @@ CBlock TestChain100Setup::CreateAndProcessPoSBlock(const std::vector<CMutableTra
     // candidates, search for a kernel, then build the block around it. The
     // search window is kept here rather than in CreateNewBlock's static, which
     // would carry over between fixtures and then see the clock go backwards.
+    //
+    // Let the wallet catch up with the chain first. A block connected just
+    // before this call reaches the wallet through the validation queue, and
+    // until it does the wallet still offers the coin that block's coinstake
+    // spent; the search can pick it, and the block is then cancelled
+    // ("kernel ... spent on the chain since it was found"). A caller that has
+    // blocked the queue must have synced the wallet already, or this waits.
+    pwallet->BlockUntilSyncedToCurrentChain();
     StakeCandidates candidates;
     if (!CollectStakeCandidates(pwallet.get(), candidates) || !candidates.collected) {
         throw std::runtime_error("Could not collect stake candidates");
