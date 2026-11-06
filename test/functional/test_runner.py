@@ -363,6 +363,7 @@ KNOWN_FAILING_SCRIPTS = {
     # the node stops as soon as such a test needs a PoS block. Not to be
     # supported on 4.22.9.
     **{script: 'RED-167: descriptor-wallet staking is not supported on this line' for script in [
+        'feature_compat_staking_interop.py',
         'feature_descriptor_legacy_staking.py',
         'feature_nulldummy.py --descriptors',
         'rpc_createmultisig.py --descriptors',
@@ -414,6 +415,7 @@ KNOWN_FAILING_SCRIPTS = {
     'rpc_getchaintips.py': 'RED-207: intermittent, no valid coinstake found',
     # Test side: the test relies on develop-only behaviour.
     'feature_bip68_sequence.py': 'RED-167: test side, relies on develop\'s v3-transaction BIP68 rules',
+    'feature_compat_tx_versions.py': 'RED-200: test side, relies on develop\'s v3-transaction BIP68 rules',
     'feature_pos_tx_version_floor.py': 'RED-167: test side, develop-only transaction version floor',
     'mining_basic.py': 'RED-167: test side, develop\'s getblocktemplate coinstakevalue field',
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
@@ -471,6 +473,27 @@ EXPECTED_UNCOVERED_RPCS = {
     # v4.22.9's 169900, as there is no upgrade delta to test before then.
     'upgradewallet',
 }
+
+# RPCs whose only tests are in KNOWN_FAILING_SCRIPTS, and so do not run by
+# default. Unlike EXPECTED_UNCOVERED_RPCS these are reachable: each maps to the
+# known-failing tests that cover it. The check below keeps the map honest, so
+# when one of those tests is fixed and leaves KNOWN_FAILING_SCRIPTS, its RPCs
+# have to leave this map too and count for coverage again.
+KNOWN_FAILING_COVERED_RPCS = {
+    'generateblock': ['rpc_generateblock.py', 'wallet_bumpfee.py --legacy-wallet', 'wallet_bumpfee.py --descriptors'],
+    'gethdwalletinfo': ['wallet_createwallet.py --legacy-wallet'],
+    'getinflation': ['rpc_inflation.py'],
+    'getinflationmultiplier': ['rpc_inflation.py'],
+    'getinterest': ['wallet_interest.py'],
+    'getstakinginfo': ['rpc_staking.py', 'wallet_staking_thread.py'],
+    'psbtbumpfee': ['wallet_bumpfee.py --legacy-wallet'],
+    'setstaking': ['rpc_staking.py', 'wallet_staking_thread.py'],
+    'staking': ['rpc_staking.py', 'wallet_staking_thread.py'],
+    'submitheader': ['mining_basic.py'],
+    'walletdisplayaddress': ['wallet_signer.py --descriptors'],
+}
+_running = sorted({script for scripts in KNOWN_FAILING_COVERED_RPCS.values() for script in scripts if script not in KNOWN_FAILING_SCRIPTS})
+assert not _running, "KNOWN_FAILING_COVERED_RPCS names tests that are no longer known failing: {}".format(_running)
 
 def main():
     # Parse arguments and pass through unrecognised args
@@ -944,7 +967,8 @@ class RPCCoverage():
         # covered_cmds is what the tests reached; EXPECTED_UNCOVERED_RPCS is what
         # they cannot reach at all. Subtracting the latter separately keeps the
         # two claims apart, so an exemption is never mistaken for coverage.
-        return all_cmds - covered_cmds - EXPECTED_UNCOVERED_RPCS
+        # KNOWN_FAILING_COVERED_RPCS is what only the known-failing tests reach.
+        return all_cmds - covered_cmds - EXPECTED_UNCOVERED_RPCS - set(KNOWN_FAILING_COVERED_RPCS)
 
 
 if __name__ == '__main__':
