@@ -1,0 +1,108 @@
+// Copyright (c) 2025 The Reddcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef BITCOIN_TEST_REDDID_TEST_FIXTURE_H
+#define BITCOIN_TEST_REDDID_TEST_FIXTURE_H
+
+#include <id/reddid.h>
+#include <id/namespace.h>
+#include <id/auction.h>
+#include <id/profile.h>
+#include <id/reddid_db.h>
+#include <node/context.h>
+#include <scheduler.h>
+#include <test/util/setup_common.h>
+#include <util/system.h>
+#include <util/time.h>
+#include <validationinterface.h>
+#include <key.h>
+
+#include <memory>
+#include <string>
+
+/**
+ * Test fixture that initializes ReddIDManager with in-memory database.
+ * Extends RegTestingSetup for access to chain state.
+ */
+struct ReddIDTestingSetup : public RegTestingSetup {
+    std::unique_ptr<ReddIDManager> reddidManager;
+
+    ReddIDTestingSetup()
+    {
+        gArgs.ForceSetArg("-reddid", "1");
+        gArgs.ForceSetArg("-reddidbmemory", "1");
+
+        reddidManager = std::make_unique<ReddIDManager>(m_node);
+        bool initOk = reddidManager->Init();
+        assert(initOk);
+
+        bool startOk = StartWithoutScheduler(*reddidManager);
+        assert(startOk);
+    }
+
+    /**
+     * Start a manager with the scheduler hidden, so that Start() does not
+     * schedule the periodic task. The task holds a pointer to the manager and
+     * cannot be cancelled, so it must not be given to a scheduler that
+     * outlives the manager or keeps running after the manager was stopped.
+     *
+     * The scheduler thread of the fixture reads m_node.scheduler when it
+     * begins to run, so the pointer is not taken away before the thread
+     * services the queue: a callback that has run there proves it.
+     */
+    bool StartWithoutScheduler(ReddIDManager& manager)
+    {
+        SyncWithValidationInterfaceQueue();
+        auto savedScheduler = std::move(m_node.scheduler);
+        bool startOk = manager.Start();
+        m_node.scheduler = std::move(savedScheduler);
+        return startOk;
+    }
+
+    ~ReddIDTestingSetup()
+    {
+        if (reddidManager) {
+            // Stop() saves and releases the component managers, unless the
+            // test has interrupted the manager: then Stop() does nothing and
+            // their destructors save them.
+            reddidManager->Stop();
+            reddidManager.reset();
+        }
+    }
+
+    /** Create a test namespace directly in the namespace manager (bypasses auction). */
+    void CreateTestNamespace(const std::string& nsId, const CKeyID& owner)
+    {
+        NamespaceInfo nsInfo;
+        nsInfo.id = nsId;
+        nsInfo.owner = owner;
+        nsInfo.allowNumbers = true;
+        nsInfo.allowHyphens = true;
+        nsInfo.allowUnderscores = true;
+        nsInfo.minLength = 3;
+        nsInfo.maxLength = 32;
+        nsInfo.renewalPeriod = 365;
+        nsInfo.gracePeriod = 30;
+        nsInfo.namespaceRevenuePct = 10;
+        nsInfo.burnPct = 70;
+        nsInfo.nodePct = 15;
+        nsInfo.devPct = 5;
+        nsInfo.minAuctionDuration = 3;
+        nsInfo.maxAuctionDuration = 7;
+        nsInfo.minBidIncrement = 5.0;
+
+        bool ok = reddidManager->GetNamespaceManager()->CreateNamespace(nsInfo);
+        assert(ok);
+    }
+
+    /** Generate a random CKeyID for test use. */
+    CKeyID MakeKeyID()
+    {
+        CKey key;
+        key.MakeNewKey(true);
+        return key.GetPubKey().GetID();
+    }
+};
+
+#endif // BITCOIN_TEST_REDDID_TEST_FIXTURE_H

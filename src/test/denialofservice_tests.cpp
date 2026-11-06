@@ -55,7 +55,7 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     // Disable inactivity checks for this test to avoid interference
     connman->SetPeerConnectTimeout(std::chrono::seconds{99999});
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, nullptr,
-                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false);
+                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false, m_node);
 
     // Mock an outbound peer
     CAddress addr1(ip(0xa0b0c001), NODE_NONE);
@@ -123,7 +123,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
     const CChainParams& chainparams = Params();
     auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman);
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, nullptr,
-                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false);
+                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false, m_node);
 
     constexpr int max_outbound_full_relay = MAX_OUTBOUND_FULL_RELAY_CONNECTIONS;
     CConnman::Options options;
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     auto banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
     auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman);
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, banman.get(),
-                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false);
+                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false, m_node);
 
     CNetAddr tor_netaddr;
     BOOST_REQUIRE(
@@ -294,7 +294,7 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     auto banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
     auto connman = std::make_unique<CConnman>(0x1337, 0x1337, *m_node.addrman);
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, banman.get(),
-                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false);
+                                       *m_node.scheduler, *m_node.chainman, *m_node.mempool, false, m_node);
 
     banman->ClearBanned();
     int64_t nStartTime = GetTime();

@@ -11,8 +11,10 @@ invokable
 keypair
 mor
 nin
+noone
 ser
 sur
+tolen
 unparseable
 unser
 useable

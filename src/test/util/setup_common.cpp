@@ -30,6 +30,7 @@
 #include <scheduler.h>
 #include <script/sigcache.h>
 #include <streams.h>
+#include <test/util/net.h>
 #include <txdb.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -208,10 +209,10 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 
     m_node.addrman = std::make_unique<CAddrMan>();
     m_node.banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
-    m_node.connman = std::make_unique<CConnman>(0x1337, 0x1337, *m_node.addrman); // Deterministic randomness for tests.
+    m_node.connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman); // Deterministic randomness for tests.
     m_node.peerman = PeerManager::make(chainparams, *m_node.connman, *m_node.addrman,
                                        m_node.banman.get(), *m_node.scheduler, *m_node.chainman,
-                                       *m_node.mempool, false);
+                                       *m_node.mempool, false, m_node);
     {
         CConnman::Options options;
         options.m_msgproc = m_node.peerman.get();

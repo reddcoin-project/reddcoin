@@ -53,6 +53,7 @@ class CConnman;
 class CScriptCheck;
 class CTxMemPool;
 class ChainstateManager;
+class ReddIDManager;
 struct ChainTxData;
 
 struct DisconnectedBlockTransactions;
@@ -588,6 +589,10 @@ protected:
     //! Only the active chainstate has a mempool.
     CTxMemPool* m_mempool;
 
+    //! Optional ReddID manager for processing identity transactions.
+    //! Set after ReddID initialization via SetReddIDManager().
+    ReddIDManager* m_reddid GUARDED_BY(::cs_main){nullptr};
+
     const CChainParams& m_params;
 
     //! Manages the UTXO set, which is a reflection of the contents of `m_chain`.
@@ -602,6 +607,9 @@ public:
         CTxMemPool* mempool,
         BlockManager& blockman,
         std::optional<uint256> from_snapshot_blockhash = std::nullopt);
+
+    void SetReddIDManager(ReddIDManager* reddid) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { m_reddid = reddid; }
+    ReddIDManager* GetReddIDManager() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_reddid; }
 
     /**
      * Initialize the CoinsViews UTXO set database management data structures. The in-memory

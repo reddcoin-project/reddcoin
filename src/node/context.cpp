@@ -7,6 +7,7 @@
 
 #include <addrman.h>
 #include <banman.h>
+#include <id/reddid.h>
 #include <interfaces/chain.h>
 #include <net.h>
 #include <net_processing.h>
