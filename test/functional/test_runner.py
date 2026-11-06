@@ -363,6 +363,7 @@ KNOWN_FAILING_SCRIPTS = {
     # the node stops as soon as such a test needs a PoS block. Not to be
     # supported on 4.22.9.
     **{script: 'RED-167: descriptor-wallet staking is not supported on this line' for script in [
+        'feature_compat_staking_interop.py',
         'feature_descriptor_legacy_staking.py',
         'feature_nulldummy.py --descriptors',
         'rpc_createmultisig.py --descriptors',
@@ -414,6 +415,7 @@ KNOWN_FAILING_SCRIPTS = {
     'rpc_getchaintips.py': 'RED-207: intermittent, no valid coinstake found',
     # Test side: the test relies on develop-only behaviour.
     'feature_bip68_sequence.py': 'RED-167: test side, relies on develop\'s v3-transaction BIP68 rules',
+    'feature_compat_tx_versions.py': 'RED-200: test side, relies on develop\'s v3-transaction BIP68 rules',
     'feature_pos_tx_version_floor.py': 'RED-167: test side, develop-only transaction version floor',
     'mining_basic.py': 'RED-167: test side, develop\'s getblocktemplate coinstakevalue field',
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
