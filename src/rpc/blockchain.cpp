@@ -22,6 +22,7 @@
 #include <node/blockstorage.h>
 #include <node/coinstats.h>
 #include <node/context.h>
+#include <node/signalling.h>
 #include <node/utxo_snapshot.h>
 #include <policy/feerate.h>
 #include <policy/fees.h>
@@ -1584,6 +1585,124 @@ RPCHelpMan getblockchaininfo()
     };
 }
 
+static std::string ThresholdStateName(ThresholdState state)
+{
+    switch (state) {
+    case ThresholdState::DEFINED: return "defined";
+    case ThresholdState::STARTED: return "started";
+    case ThresholdState::LOCKED_IN: return "locked_in";
+    case ThresholdState::ACTIVE: return "active";
+    case ThresholdState::FAILED: return "failed";
+    } // no default case, so the compiler can warn about missing cases
+    CHECK_NONFATAL(false);
+}
+
+static RPCHelpMan getdeploymentinfo()
+{
+    return RPCHelpMan{"getdeploymentinfo",
+                "Returns versionbits signalling for the period that includes the next block: every deployment this\n"
+                "version knows, including those not scheduled, and any other bit that recent blocks set.\n",
+                {},
+                RPCResult{
+                    RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "height", "height of the chain tip"},
+                        {RPCResult::Type::STR_HEX, "hash", "hash of the chain tip"},
+                        {RPCResult::Type::OBJ, "period", "the signalling period that includes the next block",
+                        {
+                            {RPCResult::Type::NUM, "length", "blocks in a signalling period"},
+                            {RPCResult::Type::NUM, "threshold", "blocks setting a bit that lock in its deployment"},
+                            {RPCResult::Type::NUM, "elapsed", "blocks of this period so far"},
+                            {RPCResult::Type::NUM, "end_height", "height of the last block of this period"},
+                            {RPCResult::Type::NUM_TIME, "end_time", "estimated time of that block, in " + UNIX_EPOCH_TIME},
+                            {RPCResult::Type::NUM, "previous_elapsed", "blocks counted for the previous period (less than a whole period only near genesis)"},
+                        }},
+                        {RPCResult::Type::OBJ_DYN, "deployments", "the versionbits deployments this version knows",
+                        {
+                            {RPCResult::Type::OBJ, "xxxx", "name of the deployment",
+                            {
+                                {RPCResult::Type::NUM, "bit", "the version bit the deployment signals with"},
+                                {RPCResult::Type::STR, "status", "one of \"not_scheduled\", \"defined\", \"started\", \"locked_in\", \"active\", \"failed\""},
+                                {RPCResult::Type::NUM_TIME, "start_time", /*optional=*/true, "the minimum median time past of a block at which the bit gains its meaning (not for \"not_scheduled\")"},
+                                {RPCResult::Type::NUM_TIME, "timeout", /*optional=*/true, "the median time past of a block at which the deployment fails if not yet locked in (not for \"not_scheduled\")"},
+                                {RPCResult::Type::NUM, "min_activation_height", /*optional=*/true, "minimum height of blocks for which the rules may be enforced (not for \"not_scheduled\")"},
+                                {RPCResult::Type::NUM, "since", /*optional=*/true, "height of the first block to which the status applies (not for \"not_scheduled\")"},
+                                {RPCResult::Type::NUM, "activation_height", /*optional=*/true, "height from which the rules apply (only for \"locked_in\" and \"active\")"},
+                                {RPCResult::Type::NUM_TIME, "activation_time", /*optional=*/true, "estimated time of activation_height, in " + UNIX_EPOCH_TIME + " (only for \"locked_in\")"},
+                                {RPCResult::Type::NUM, "count", "blocks of this period setting the bit"},
+                                {RPCResult::Type::NUM, "previous_count", "blocks of the previous period setting the bit"},
+                                {RPCResult::Type::BOOL, "possible", /*optional=*/true, "whether the threshold can still be reached this period (only for \"started\")"},
+                            }},
+                        }},
+                        {RPCResult::Type::ARR, "unknown_bits", "bits no deployment of this version uses, set by at least one block of this period or the previous one",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::NUM, "bit", "the version bit"},
+                                {RPCResult::Type::NUM, "count", "blocks of this period setting the bit"},
+                                {RPCResult::Type::NUM, "previous_count", "blocks of the previous period setting the bit"},
+                            }},
+                        }},
+                    }},
+                RPCExamples{
+                    HelpExampleCli("getdeploymentinfo", "")
+            + HelpExampleRpc("getdeploymentinfo", "")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    ChainstateManager& chainman = EnsureAnyChainman(request.context);
+    LOCK(cs_main);
+    const CBlockIndex* tip = chainman.ActiveChain().Tip();
+    CHECK_NONFATAL(tip);
+    const SignallingInfo info = GetSignallingInfo(tip, Params().GetConsensus());
+
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("height", info.height);
+    obj.pushKV("hash", info.hash);
+
+    UniValue period(UniValue::VOBJ);
+    period.pushKV("length", info.period);
+    period.pushKV("threshold", info.threshold);
+    period.pushKV("elapsed", info.elapsed);
+    period.pushKV("end_height", info.period_end_height);
+    period.pushKV("end_time", info.period_end_time);
+    period.pushKV("previous_elapsed", info.previous_elapsed);
+    obj.pushKV("period", period);
+
+    UniValue deployments(UniValue::VOBJ);
+    for (const DeploymentSignalling& d : info.deployments) {
+        UniValue dep(UniValue::VOBJ);
+        dep.pushKV("bit", d.bit);
+        dep.pushKV("status", d.scheduled ? ThresholdStateName(d.state) : "not_scheduled");
+        if (d.scheduled) {
+            dep.pushKV("start_time", d.start_time);
+            dep.pushKV("timeout", d.timeout);
+            dep.pushKV("min_activation_height", d.min_activation_height);
+            dep.pushKV("since", d.since);
+            if (d.activation_height >= 0) dep.pushKV("activation_height", d.activation_height);
+            if (d.state == ThresholdState::LOCKED_IN) dep.pushKV("activation_time", d.activation_time);
+        }
+        dep.pushKV("count", d.count);
+        dep.pushKV("previous_count", d.previous_count);
+        if (d.scheduled && d.state == ThresholdState::STARTED) dep.pushKV("possible", d.possible);
+        deployments.pushKV(d.name, dep);
+    }
+    obj.pushKV("deployments", deployments);
+
+    UniValue unknown(UniValue::VARR);
+    for (const UnknownBitSignalling& u : info.unknown_bits) {
+        UniValue bit(UniValue::VOBJ);
+        bit.pushKV("bit", u.bit);
+        bit.pushKV("count", u.count);
+        bit.pushKV("previous_count", u.previous_count);
+        unknown.push_back(bit);
+    }
+    obj.pushKV("unknown_bits", unknown);
+    return obj;
+},
+    };
+}
+
 /** Comparison function for sorting the getchaintips heads.  */
 struct CompareBlocksByHeight
 {
@@ -2699,6 +2818,7 @@ static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- ------------------------
     { "blockchain",         &getblockchaininfo,                  },
+    { "blockchain",         &getdeploymentinfo,                  },
     { "blockchain",         &getchaintxstats,                    },
     { "blockchain",         &getblockstats,                      },
     { "blockchain",         &getbestblockhash,                   },

@@ -22,6 +22,7 @@
 #include <node/blockstorage.h>
 #include <node/coin.h>
 #include <node/context.h>
+#include <node/signalling.h>
 #include <node/transaction.h>
 #include <node/ui_interface.h>
 #include <node/update_check.h>
@@ -80,6 +81,11 @@ public:
     void initLogging() override { InitLogging(*Assert(m_context->args)); }
     void initParameterInteraction() override { InitParameterInteraction(*Assert(m_context->args)); }
     bilingual_str getWarnings() override { return GetWarnings(true); }
+    SignallingInfo getSignallingInfo() override
+    {
+        LOCK(::cs_main);
+        return GetSignallingInfo(chainman().ActiveChain().Tip(), Params().GetConsensus());
+    }
     uint32_t getLogCategories() override { return LogInstance().GetCategoryMask(); }
     bool baseInitialize() override
     {
