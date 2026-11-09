@@ -192,6 +192,7 @@ BITCOIN_CORE_H = \
   node/release_verify.h \
   node/context.h \
   node/psbt.h \
+  node/signalling.h \
   node/transaction.h \
   node/ui_interface.h \
   node/update_check.h \
@@ -374,6 +375,7 @@ libbitcoin_server_a_SOURCES = \
   node/context.cpp \
   node/interfaces.cpp \
   node/psbt.cpp \
+  node/signalling.cpp \
   node/transaction.cpp \
   node/update_check.cpp \
   node/ui_interface.cpp \
