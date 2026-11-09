@@ -488,7 +488,6 @@ KNOWN_FAILING_COVERED_RPCS = {
     'psbtbumpfee': ['wallet_bumpfee.py --legacy-wallet'],
     'setstaking': ['rpc_staking.py', 'wallet_staking_thread.py'],
     'staking': ['rpc_staking.py', 'wallet_staking_thread.py'],
-    'submitheader': ['mining_basic.py'],
     'walletdisplayaddress': ['wallet_signer.py --descriptors'],
 }
 _running = sorted({script for scripts in KNOWN_FAILING_COVERED_RPCS.values() for script in scripts if script not in KNOWN_FAILING_SCRIPTS})
