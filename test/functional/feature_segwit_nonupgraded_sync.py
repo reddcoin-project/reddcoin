@@ -30,7 +30,7 @@ SEGWIT_ACTIVATION_HEIGHT = 432
 
 # WarningBitsConditionChecker fires for a bit the node itself does not signal.
 SEGWIT_BIT = 3
-WARN_UNKNOWN_RULES = "Unknown new rules activated (versionbit {})".format(SEGWIT_BIT)
+WARN_UNKNOWN_RULES = "(versionbit {}) is in effect since block {}. This version may not follow the network.".format(SEGWIT_BIT, SEGWIT_ACTIVATION_HEIGHT)
 
 
 class SegwitNonUpgradedSyncTest(BitcoinTestFramework):

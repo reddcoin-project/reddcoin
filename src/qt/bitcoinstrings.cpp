@@ -9,6 +9,10 @@
 #define UNUSED
 #endif
 static const char UNUSED *bitcoin_strings[] = {
+QT_TRANSLATE_NOOP("bitcoin-core", "%i of the last %i blocks use a block version that this version does not recognise. The network may be changing its rules. Upgrade Reddcoin Core: %s"),
+QT_TRANSLATE_NOOP("bitcoin-core", "A network rule change that this version does not know about (versionbit %i) is in effect since block %i. This version may not follow the network. Upgrade Reddcoin Core now: %s"),
+QT_TRANSLATE_NOOP("bitcoin-core", "A network rule change that this version does not know about (versionbit %i) is locked in and takes effect at block %i (about %s). Upgrade Reddcoin Core before then: %s"),
+QT_TRANSLATE_NOOP("bitcoin-core", "A network rule change that this version does not know about is being signalled (versionbit %i, %i%% of the last %i blocks). Upgrade Reddcoin Core: %s"),
 QT_TRANSLATE_NOOP("bitcoin-core", "The %s developers"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "%s corrupt. Try using the wallet tool reddcoin-wallet to salvage or "
@@ -239,7 +243,6 @@ QT_TRANSLATE_NOOP("bitcoin-core", "Unknown -blockfilterindex value %s."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Unknown address type '%s'"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Unknown change type '%s'"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Unknown network specified in -onlynet: '%s'"),
-QT_TRANSLATE_NOOP("bitcoin-core", "Unknown new rules activated (versionbit %i)"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Unsupported logging category %s=%s."),
 QT_TRANSLATE_NOOP("bitcoin-core", "Upgrading UTXO database"),
 QT_TRANSLATE_NOOP("bitcoin-core", "Upgrading txindex database"),

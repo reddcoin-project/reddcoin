@@ -54,9 +54,12 @@
 #include <validationinterface.h>
 #include <warnings.h>
 
+#include <array>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <string>
+#include <vector>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -2320,21 +2323,104 @@ void CChainState::PruneAndFlush()
     }
 }
 
-static void DoWarning(const bilingual_str& warning)
-{
-    static bool fWarned = false;
-    SetMiscWarning(warning);
-    if (!fWarned) {
-        AlertNotify(warning.original);
-        fWarned = true;
-    }
-}
-
 /** Private helper function that concatenates warning messages. */
 static void AppendWarning(bilingual_str& res, const bilingual_str& warn)
 {
     if (!res.empty()) res += Untranslated(", ");
     res += warn;
+}
+
+/** Blocks examined for the unknown block version warning. */
+static constexpr int UNKNOWN_VERSION_WINDOW{100};
+
+/** Upgrade warnings already passed to -alertnotify, so each runs it once. */
+static std::set<std::string> g_upgrade_alerts_sent GUARDED_BY(cs_main);
+/** The upgrade warnings set by the last call, to tell the GUI only about changes. */
+static std::vector<std::string> g_upgrade_warnings_last GUARDED_BY(cs_main);
+
+/**
+ * Recompute the upgrade warnings for a new tip: unknown versionbits that are
+ * signalled, locked in or active, and blocks using a version format this
+ * release doesn't recognise. Each warning runs -alertnotify the first time
+ * it appears.
+ *
+ * @returns the warnings, for the UpdateTip log line
+ */
+static bilingual_str UpdateUpgradeWarnings(const CBlockIndex* pindex, const Consensus::Params& params) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+
+    // Count recent blocks that signal a bit this release doesn't expect, and
+    // blocks that don't use the versionbits format at all. A block's expected
+    // version only changes at a period boundary, so compute it once per period.
+    const int period = params.nMinerConfirmationWindow;
+    const int recent_window = std::max(1, period / 10);
+    const int walk = std::max(recent_window, UNKNOWN_VERSION_WINDOW);
+    std::array<int, VERSIONBITS_NUM_BITS> signalled{};
+    int unknown_format = 0;
+    int expected_period = -1;
+    int32_t expected_version = 0;
+    const CBlockIndex* block = pindex;
+    for (int i = 0; i < walk && block != nullptr; ++i, block = block->pprev) {
+        if (block->nHeight < params.MinBIP9WarningHeight || block->nHeight <= params.nLastPowHeight) break;
+        const bool versionbits_format = (block->nVersion & VERSIONBITS_TOP_MASK) == VERSIONBITS_TOP_BITS;
+        if (i < UNKNOWN_VERSION_WINDOW && !versionbits_format) ++unknown_format;
+        if (i >= recent_window || !versionbits_format) continue;
+        if (block->nHeight / period != expected_period) {
+            expected_period = block->nHeight / period;
+            expected_version = g_versionbitscache.ComputeBlockVersion(block->pprev, params);
+        }
+        for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+            if (((block->nVersion >> bit) & 1) && !((expected_version >> bit) & 1)) ++signalled[bit];
+        }
+    }
+
+    std::vector<std::pair<std::string, bilingual_str>> warnings;
+    for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+        WarningBitsConditionChecker checker(bit);
+        const ThresholdState state = checker.GetStateFor(pindex, params, warningcache[bit]);
+        if (state == ThresholdState::ACTIVE || state == ThresholdState::LOCKED_IN) {
+            // The first block of the period in which the state took effect.
+            const int since = checker.GetStateSinceHeightFor(pindex, params, warningcache[bit]);
+            if (state == ThresholdState::ACTIVE) {
+                warnings.emplace_back(strprintf("active:%d", bit), UnknownRuleActiveWarning(bit, since));
+            } else {
+                const int activation_height = since + period;
+                const int64_t activation_time = pindex->GetBlockTime() + int64_t{activation_height - pindex->nHeight} * params.nPowTargetSpacing;
+                warnings.emplace_back(strprintf("lockedin:%d", bit), UnknownRuleLockedInWarning(bit, activation_height, activation_time));
+            }
+        } else if (state == ThresholdState::STARTED && 2 * signalled[bit] > recent_window) {
+            warnings.emplace_back(strprintf("signalling:%d", bit),
+                                  UnknownRuleSignallingWarning(bit, signalled[bit] * 100 / recent_window, recent_window));
+        }
+    }
+    if (2 * unknown_format > UNKNOWN_VERSION_WINDOW) {
+        warnings.emplace_back("blockversion", UnknownBlockVersionWarning(unknown_format, UNKNOWN_VERSION_WINDOW));
+    }
+
+    bilingual_str log_messages;
+    std::vector<bilingual_str> texts;
+    std::vector<std::string> originals;
+    for (const auto& entry : warnings) {
+        AppendWarning(log_messages, entry.second);
+        texts.push_back(entry.second);
+        originals.push_back(entry.second.original);
+    }
+    const bool changed = originals != g_upgrade_warnings_last;
+    SetUpgradeWarnings(std::move(texts));
+    g_upgrade_warnings_last = std::move(originals);
+    bool alerted = false;
+    for (const auto& [key, warning] : warnings) {
+        if (g_upgrade_alerts_sent.insert(key).second) {
+            LogPrintf("Warning: %s\n", warning.original);
+            AlertNotify(warning.original);
+            alerted = true;
+        }
+    }
+    // AlertNotify already tells the GUI. Otherwise tell it when a warning
+    // changed or went away.
+    if (changed && !alerted) uiInterface.NotifyAlertChanged();
+    return log_messages;
 }
 
 void CChainState::UpdateTip(const CBlockIndex* pindexNew)
@@ -2352,19 +2438,7 @@ void CChainState::UpdateTip(const CBlockIndex* pindexNew)
 
     bilingual_str warning_messages;
     if (!this->IsInitialBlockDownload()) {
-        const CBlockIndex* pindex = pindexNew;
-        for (int bit = 0; bit < VERSIONBITS_NUM_BITS; bit++) {
-            WarningBitsConditionChecker checker(bit);
-            ThresholdState state = checker.GetStateFor(pindex, m_params.GetConsensus(), warningcache[bit]);
-            if (state == ThresholdState::ACTIVE || state == ThresholdState::LOCKED_IN) {
-                const bilingual_str warning = strprintf(_("Unknown new rules activated (versionbit %i)"), bit);
-                if (state == ThresholdState::ACTIVE) {
-                    DoWarning(warning);
-                } else {
-                    AppendWarning(warning_messages, warning);
-                }
-            }
-        }
+        warning_messages = UpdateUpgradeWarnings(pindexNew, m_params.GetConsensus());
     }
     LogPrintf("%s: new best=%s height=%d version=0x%08x log2_work=%f tx=%lu date='%s' progress=%f cache=%.1fMiB(%utxo)%s\n", __func__,
       pindexNew->GetBlockHash().ToString(), pindexNew->nHeight, pindexNew->nVersion,

@@ -2,29 +2,46 @@
 # Copyright (c) 2016-2020 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test version bits warning system.
+"""Test the upgrade warnings for unknown rule changes and block versions.
 
-Generate chains with block versions that appear to be signalling unknown
-soft-forks, and test that warning alerts are generated.
+Generate chains with block versions that signal an unknown soft fork, or use a
+block version format the node doesn't recognise, and check the warnings in RPC
+and -alertnotify at each stage: signalling, locked in and active.
 """
 import os
-import re
 
 from test_framework.address import key_to_p2pkh
 from test_framework.blocktools import create_block, create_coinbase, sign_block, NORMAL_GBT_REQUEST_PARAMS
 from test_framework.messages import msg_block
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import advance_time_for_pos
+from test_framework.util import advance_time_for_pos, assert_equal
 
 VB_PERIOD = 144           # versionbits period length for regtest
 VB_THRESHOLD = 108        # versionbits activation threshold for regtest
+VB_RECENT = VB_PERIOD // 10  # blocks examined for the signalling warning
 VB_TOP_BITS = 0x20000000
 VB_UNKNOWN_BIT = 27       # Choose a bit unassigned to any deployment
 VB_UNKNOWN_VERSION = VB_TOP_BITS | (1 << VB_UNKNOWN_BIT)
+UNKNOWN_FORMAT_VERSION = 0x40000000  # not the versionbits format (top bits 001)
+UNKNOWN_VERSION_WINDOW = 100
 
-WARN_UNKNOWN_RULES_ACTIVE = "Unknown new rules activated (versionbit {})".format(VB_UNKNOWN_BIT)
-VB_PATTERN = re.compile("Unknown new rules activated.*versionbit")
+UPGRADE_URL = "https://download.reddcoin.com/"
+WARN_SIGNALLING = "A network rule change that this version does not know about is being signalled (versionbit {}, 100% of the last {} blocks). Upgrade Reddcoin Core: {}".format(VB_UNKNOWN_BIT, VB_RECENT, UPGRADE_URL)
+WARN_ANY = "network rule change that this version does not know about"
+
+
+def warn_locked_in(height):
+    return "(versionbit {}) is locked in and takes effect at block {} (about ".format(VB_UNKNOWN_BIT, height)
+
+
+def warn_active(height):
+    return "A network rule change that this version does not know about (versionbit {}) is in effect since block {}. This version may not follow the network. Upgrade Reddcoin Core now: {}".format(VB_UNKNOWN_BIT, height, UPGRADE_URL)
+
+
+def warn_block_version(count):
+    return "{} of the last {} blocks use a block version that this version does not recognise. The network may be changing its rules. Upgrade Reddcoin Core: {}".format(count, UNKNOWN_VERSION_WINDOW, UPGRADE_URL)
+
 
 class VersionBitsWarningTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -120,10 +137,17 @@ class VersionBitsWarningTest(BitcoinTestFramework):
                         continue
                     raise
 
-    def versionbits_in_alert_file(self):
-        """Test that the versionbits warning has been written to the alert file."""
-        alert_text = open(self.alert_filename, 'r', encoding='utf8').read()
-        return VB_PATTERN.search(alert_text) is not None
+    def alerts(self, text):
+        """How many -alertnotify runs carried text. -alertnotify strips '%'."""
+        with open(self.alert_filename, 'r', encoding='utf8') as f:
+            return f.read().count(text)
+
+    def warnings(self):
+        node = self.nodes[0]
+        # All three RPCs return the same concise warning.
+        warning = node.getnetworkinfo()["warnings"]
+        assert warning == node.getmininginfo()["warnings"] == node.getblockchaininfo()["warnings"]
+        return warning
 
     def run_test(self):
         node = self.nodes[0]
@@ -131,38 +155,61 @@ class VersionBitsWarningTest(BitcoinTestFramework):
 
         # Mine one period worth of blocks
         node.generate(VB_PERIOD)
+        self.wait_until(lambda: not node.getblockchaininfo()['initialblockdownload'])
+        assert WARN_ANY not in self.warnings()
 
-        self.log.info("Check that there is no warning if previous VB_BLOCKS have <VB_THRESHOLD blocks with unknown versionbits version.")
-        # Build one period of blocks with < VB_THRESHOLD blocks signaling some unknown bit
+        self.log.info("A majority of recent blocks signalling an unknown bit raises the signalling warning")
         self.send_blocks_with_version(peer, VB_THRESHOLD - 1, VB_UNKNOWN_VERSION)
+        assert_equal(self.warnings(), WARN_SIGNALLING)
+        self.wait_until(lambda: self.alerts("is being signalled (versionbit {}".format(VB_UNKNOWN_BIT)) == 1)
+
+        self.log.info("The warning goes away once recent blocks stop signalling, and the bit fails to lock in")
         node.generate(VB_PERIOD - VB_THRESHOLD + 1)
+        assert WARN_ANY not in self.warnings()
 
-        # Check that we're not getting any versionbit-related errors in get*info()
-        assert not VB_PATTERN.match(node.getmininginfo()["warnings"])
-        assert not VB_PATTERN.match(node.getnetworkinfo()["warnings"])
-
-        # Build one period of blocks with VB_THRESHOLD blocks signaling some unknown bit
+        self.log.info("Signalling again raises the warning without running -alertnotify a second time")
         self.send_blocks_with_version(peer, VB_THRESHOLD, VB_UNKNOWN_VERSION)
+        assert_equal(self.warnings(), WARN_SIGNALLING)
+
+        self.log.info("Once the bit locks in, the warning gives the activation height")
         node.generate(VB_PERIOD - VB_THRESHOLD)
+        # Periods start at multiples of VB_PERIOD. The period holding the next
+        # block is locked in, and the rule takes effect one period later.
+        activation_height = ((node.getblockcount() + 1) // VB_PERIOD + 1) * VB_PERIOD
+        assert warn_locked_in(activation_height) in self.warnings()
+        assert self.warnings().endswith("Upgrade Reddcoin Core before then: " + UPGRADE_URL)
+        self.wait_until(lambda: self.alerts(warn_locked_in(activation_height)) == 1)
+        assert_equal(self.alerts("is being signalled (versionbit {}".format(VB_UNKNOWN_BIT)), 1)
 
-        self.log.info("Check that there is a warning if previous VB_BLOCKS have >=VB_THRESHOLD blocks with unknown versionbits version.")
-        # Mine a period worth of expected blocks so the generic block-version warning
-        # is cleared. This will move the versionbit state to ACTIVE.
+        self.log.info("Once the bit is active, the warning says since when and to upgrade now")
         node.generate(VB_PERIOD)
+        assert_equal(self.warnings(), warn_active(activation_height))
+        self.wait_until(lambda: self.alerts(warn_active(activation_height)) == 1)
 
-        # Stop-start the node. This is required because bitcoind will only warn once about unknown versions or unknown rules activating.
+        self.log.info("After a restart the active warning comes back and runs -alertnotify again")
         self.restart_node(0)
-
         # Generating one block guarantees that we'll get out of IBD
         node.generate(1)
         self.wait_until(lambda: not node.getblockchaininfo()['initialblockdownload'])
-        # Generating one more block will be enough to generate an error.
         node.generate(1)
-        # Check that get*info() shows the versionbits unknown rules warning
-        assert WARN_UNKNOWN_RULES_ACTIVE in node.getmininginfo()["warnings"]
-        assert WARN_UNKNOWN_RULES_ACTIVE in node.getnetworkinfo()["warnings"]
-        # Check that the alert file shows the versionbits unknown rules warning
-        self.wait_until(lambda: self.versionbits_in_alert_file())
+        assert_equal(self.warnings(), warn_active(activation_height))
+        self.wait_until(lambda: self.alerts(warn_active(activation_height)) == 2)
+
+        self.log.info("Half of recent blocks with an unknown block version format raises no warning")
+        peer = node.add_p2p_connection(P2PInterface())
+        half = UNKNOWN_VERSION_WINDOW // 2
+        self.send_blocks_with_version(peer, half, UNKNOWN_FORMAT_VERSION)
+        assert_equal(self.warnings(), warn_active(activation_height))
+
+        self.log.info("More than half raises the unknown block version warning")
+        self.send_blocks_with_version(peer, 1, UNKNOWN_FORMAT_VERSION)
+        assert_equal(self.warnings(), warn_block_version(half + 1))
+        self.wait_until(lambda: self.alerts("of the last {} blocks use a block version".format(UNKNOWN_VERSION_WINDOW)) == 1)
+
+        self.log.info("The warning goes away as those blocks leave the window")
+        node.generate(half)
+        assert_equal(self.warnings(), warn_active(activation_height))
+
 
 if __name__ == '__main__':
     VersionBitsWarningTest().main()
