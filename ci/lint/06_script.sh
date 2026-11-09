@@ -44,9 +44,21 @@ test/lint/check-doc.py
 test/lint/lint-all.sh
 
 if [ "$CI_REPO_FULL_NAME" = "reddcoin-project/reddcoin" ] && [ "$RUN_COMMIT_VERIFY" = "true" ]; then
-    git log --merges --before="2 days ago" -1 --format='%H' > ./contrib/verify-commits/trusted-sha512-root-commit
-    ${CI_RETRY_EXE}  gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys $(<contrib/verify-commits/trusted-keys) &&
-    ./contrib/verify-commits/verify-commits.py --clean-merge=2;
+    # The trusted keys ship in the repo, so the check does not depend on a
+    # keyserver. Merges come from the GitHub merge button, which writes no
+    # Tree-SHA512 line, so the tree check is off. The clean-merge check redoes
+    # recent merges with git merge, which needs an identity; the container
+    # has none.
+    gpg --import contrib/verify-commits/trusted-keys.asc &&
+    # Pick up revocations of the trusted keys if the keyserver answers; a
+    # revoked key then fails the check. The fetch is best effort: an
+    # unreachable keyserver must not fail the job, and a fetched key is only
+    # trusted if its fingerprint is in trusted-keys anyway.
+    { timeout 120 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys $(<contrib/verify-commits/trusted-keys) ||
+      echo "verify-commits: keyserver refresh failed, using the keys in trusted-keys.asc"; } &&
+    GIT_AUTHOR_NAME=verify-commits GIT_AUTHOR_EMAIL=verify-commits@localhost \
+    GIT_COMMITTER_NAME=verify-commits GIT_COMMITTER_EMAIL=verify-commits@localhost \
+    ./contrib/verify-commits/verify-commits.py --disable-tree-check --clean-merge=2;
 fi
 
 echo

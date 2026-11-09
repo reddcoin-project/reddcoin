@@ -37,11 +37,29 @@ Configuration files
 
 Import trusted keys
 -------------------
-In order to check the commit signatures, you must add the trusted PGP keys to your machine. [GnuPG](https://gnupg.org/) may be used to import the trusted keys by running the following command:
+In order to check the commit signatures, you must add the trusted PGP keys to your machine. The public keys ship next to the fingerprint list, so [GnuPG](https://gnupg.org/) can import them without a keyserver:
 
 ```sh
-gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys $(<contrib/verify-commits/trusted-keys)
+gpg --import contrib/verify-commits/trusted-keys.asc
 ```
+
+Check that the fingerprints gpg prints match `trusted-keys`.
+
+Reddcoin signing policy
+-----------------------
+
+Every commit on the first-parent history of `develop` after `trusted-git-root` must carry a valid signature from a key in `trusted-keys`:
+
+* Pull requests are merged with the GitHub merge button, so merge commits are signed by GitHub's web-flow key (`968479A1AFF927E37D1A566BB5690EEEBB952194`). The branch protection on `develop` requires signed commits.
+* Commits pushed straight to `develop` must be signed by a maintainer key.
+
+GitHub's merge commits carry no `Tree-SHA512` line, so CI runs the check with `--disable-tree-check`. It runs on the nightly scheduled CI job:
+
+```sh
+./contrib/verify-commits/verify-commits.py --disable-tree-check --clean-merge=2
+```
+
+To add a maintainer, append the primary key fingerprint to `trusted-keys` and the public key to `trusted-keys.asc`. If GitHub rotates its web-flow key, add the new key the same way, and keep the old one until no commit after `trusted-git-root` depends on it, or list those commits in `allow-revsig-commits`.
 
 Key expiry/revocation
 ---------------------

@@ -93,6 +93,9 @@ def main():
     if ' ' in current_commit:
         print("Commit must not contain spaces", file=sys.stderr)
         sys.exit(1)
+    # Merges made with the GitHub merge button carry no Tree-SHA512 line, so
+    # --disable-tree-check has to switch off the check on the tip as well.
+    tree_check_enabled = args.verify_tree
     verify_tree = args.verify_tree
     no_sha1 = True
     prev_commit = ""
@@ -130,7 +133,7 @@ def main():
             sys.exit(1)
 
         # Check the Tree-SHA512
-        if (verify_tree or prev_commit == "") and current_commit not in incorrect_sha512_allowed:
+        if tree_check_enabled and (verify_tree or prev_commit == "") and current_commit not in incorrect_sha512_allowed:
             tree_hash = tree_sha512sum(current_commit)
             if ("Tree-SHA512: {}".format(tree_hash)) not in subprocess.check_output([GIT, 'show', '-s', '--format=format:%B', current_commit]).decode('utf8').splitlines():
                 print("Tree-SHA512 did not match for commit " + current_commit, file=sys.stderr)

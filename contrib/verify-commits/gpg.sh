@@ -4,13 +4,19 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 export LC_ALL=C
-INPUT=$(cat /dev/stdin)
+# Keep the signed payload byte for byte. Reading it into a shell variable
+# drops the trailing newline, and adding one back breaks the signature on
+# commits whose message does not end in a newline, such as every merge
+# made with the GitHub merge button.
+INPUT=$(mktemp)
+trap 'rm -f "$INPUT"' EXIT
+cat > "$INPUT"
 VALID=false
 REVSIG=false
 IFS='
 '
 if [ "$BITCOIN_VERIFY_COMMITS_ALLOW_SHA1" = 1 ]; then
-	GPG_RES="$(printf '%s\n' "$INPUT" | gpg --trust-model always "$@" 2>/dev/null)"
+	GPG_RES="$(gpg --trust-model always "$@" < "$INPUT" 2>/dev/null)"
 else
 	# Note how we've disabled SHA1 with the --weak-digest option, disabling
 	# signatures - including selfsigs - that use SHA1. While you might think that
@@ -25,7 +31,7 @@ else
 		case "$LINE" in
 			"gpg (GnuPG) 1.4.1"*|"gpg (GnuPG) 2.0."*)
 				echo "Please upgrade to at least gpg 2.1.10 to check for weak signatures" > /dev/stderr
-				GPG_RES="$(printf '%s\n' "$INPUT" | gpg --trust-model always "$@" 2>/dev/null)"
+				GPG_RES="$(gpg --trust-model always "$@" < "$INPUT" 2>/dev/null)"
 				;;
 			# We assume if you're running 2.1+, you're probably running 2.1.10+
 			# gpg will fail otherwise
@@ -33,7 +39,7 @@ else
 			# gpg will fail otherwise
 		esac
 	done
-	[ "$GPG_RES" = "" ] && GPG_RES="$(printf '%s\n' "$INPUT" | gpg --trust-model always --weak-digest sha1 "$@" 2>/dev/null)"
+	[ "$GPG_RES" = "" ] && GPG_RES="$(gpg --trust-model always --weak-digest sha1 "$@" < "$INPUT" 2>/dev/null)"
 fi
 for LINE in $GPG_RES; do
 	case "$LINE" in
@@ -58,8 +64,8 @@ if ! $VALID; then
 	exit 1
 fi
 if $VALID && $REVSIG; then
-	printf '%s\n' "$INPUT" | gpg --trust-model always "$@" 2>/dev/null | grep "^\[GNUPG:\] \(NEWSIG\|SIG_ID\|VALIDSIG\)"
+	gpg --trust-model always "$@" < "$INPUT" 2>/dev/null | grep "^\[GNUPG:\] \(NEWSIG\|SIG_ID\|VALIDSIG\)"
 	echo "$GOODREVSIG"
 else
-	printf '%s\n' "$INPUT" | gpg --trust-model always "$@" 2>/dev/null
+	gpg --trust-model always "$@" < "$INPUT" 2>/dev/null
 fi
