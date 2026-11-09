@@ -12,6 +12,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <memory>
+#include <vector>
+
 /* Define a virtual block time, one block per 10 minutes after Nov 14 2014, 0:55:36am */
 static int32_t TestTime(int nHeight) { return 1415926536 + 600 * nHeight; }
 
@@ -451,6 +454,93 @@ BOOST_AUTO_TEST_CASE(versionbits_computeblockversion)
         const auto chainParams = CreateChainParams(args, CBaseChainParams::REGTEST);
         check_computeblockversion(chainParams->GetConsensus(), Consensus::DEPLOYMENT_TESTDUMMY);
     }
+}
+
+/** Count signalling for the period holding the block after tip, and the one before, from scratch. */
+static std::pair<SignallingCounts, SignallingCounts> RecountSignalling(const CBlockIndex* tip, int period)
+{
+    std::pair<SignallingCounts, SignallingCounts> result;
+    const int current_start = (tip->nHeight + 1) / period * period;
+    for (const CBlockIndex* b = tip; b != nullptr; b = b->pprev) {
+        SignallingCounts* counts{nullptr};
+        if (b->nHeight >= current_start) {
+            counts = &result.first;
+        } else if (b->nHeight >= current_start - period) {
+            counts = &result.second;
+        } else {
+            break;
+        }
+        ++counts->elapsed;
+        if ((b->nVersion & VERSIONBITS_TOP_MASK) != VERSIONBITS_TOP_BITS) continue;
+        for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+            if ((b->nVersion >> bit) & 1) ++counts->count[bit];
+        }
+    }
+    return result;
+}
+
+static void CheckSignalling(VersionBitsCache& cache, const CBlockIndex* tip, const Consensus::Params& params)
+{
+    const auto [current, previous] = cache.Signalling(tip, params);
+    const auto [want_current, want_previous] = RecountSignalling(tip, params.nMinerConfirmationWindow);
+    BOOST_CHECK_EQUAL(current.elapsed, want_current.elapsed);
+    BOOST_CHECK_EQUAL(previous.elapsed, want_previous.elapsed);
+    BOOST_CHECK(current.count == want_current.count);
+    BOOST_CHECK(previous.count == want_previous.count);
+}
+
+BOOST_AUTO_TEST_CASE(versionbits_signalling_counts)
+{
+    Consensus::Params params;
+    params.nMinerConfirmationWindow = 10;
+
+    // Build a chain from a list of versions; fork_from is the parent of the first block.
+    std::vector<std::unique_ptr<CBlockIndex>> blocks;
+    auto build = [&](const CBlockIndex* fork_from, const std::vector<int32_t>& versions) {
+        std::vector<const CBlockIndex*> chain;
+        CBlockIndex* prev = const_cast<CBlockIndex*>(fork_from);
+        for (int32_t version : versions) {
+            blocks.push_back(std::make_unique<CBlockIndex>());
+            CBlockIndex* b = blocks.back().get();
+            b->pprev = prev;
+            b->nHeight = prev ? prev->nHeight + 1 : 0;
+            b->nVersion = version;
+            b->BuildSkip();
+            chain.push_back(b);
+            prev = b;
+        }
+        return chain;
+    };
+    const int32_t signal5{VERSIONBITS_TOP_BITS | (1 << 5)};
+    const int32_t signal5_27{VERSIONBITS_TOP_BITS | (1 << 5) | (1 << 27)};
+    std::vector<int32_t> versions;
+    for (int i = 0; i < 35; ++i) {
+        // A mix of plain versionbits, signalling and old-format blocks.
+        versions.push_back(i % 3 == 0 ? signal5 : i % 4 == 0 ? signal5_27 : i % 5 == 0 ? 4 : VERSIONBITS_TOP_BITS);
+    }
+    const auto chain_a = build(nullptr, versions);
+
+    VersionBitsCache cache;
+    // Extending one block at a time, across period boundaries.
+    for (const CBlockIndex* tip : chain_a) CheckSignalling(cache, tip, params);
+
+    // A reorg to a fork from height 17, all blocks setting bit 27.
+    const auto chain_b = build(chain_a[17], std::vector<int32_t>(20, signal5_27));
+    for (const CBlockIndex* tip : chain_b) CheckSignalling(cache, tip, params);
+
+    // Back to the first chain, then jumps of several blocks at once.
+    CheckSignalling(cache, chain_a[20], params);
+    CheckSignalling(cache, chain_a[24], params);
+    CheckSignalling(cache, chain_a[29], params);
+    CheckSignalling(cache, chain_a[34], params);
+    // Going back within the same period is a reorg too.
+    CheckSignalling(cache, chain_a[31], params);
+
+    // The first period has no previous one.
+    VersionBitsCache fresh;
+    const auto [current, previous] = fresh.Signalling(chain_a[4], params);
+    BOOST_CHECK_EQUAL(current.elapsed, 5);
+    BOOST_CHECK_EQUAL(previous.elapsed, 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

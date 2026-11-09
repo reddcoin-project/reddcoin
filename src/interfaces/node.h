@@ -34,6 +34,7 @@ class proxyType;
 enum class SynchronizationState;
 struct CNodeStateStats;
 struct NodeContext;
+struct SignallingInfo;
 struct bilingual_str;
 
 namespace interfaces {
@@ -65,6 +66,9 @@ public:
 
     //! Get warnings.
     virtual bilingual_str getWarnings() = 0;
+
+    //! Versionbits signalling for the period that includes the next block.
+    virtual SignallingInfo getSignallingInfo() = 0;
 
     // Get log flags.
     virtual uint32_t getLogCategories() = 0;

@@ -228,10 +228,52 @@ int32_t VersionBitsCache::ComputeBlockVersion(const CBlockIndex* pindexPrev, con
     return nVersion;
 }
 
+/** Add the blocks from pindex down to, but not including, stop to counts. */
+static void CountSignalling(const CBlockIndex* pindex, const CBlockIndex* stop, SignallingCounts& counts)
+{
+    for (; pindex != nullptr && pindex != stop; pindex = pindex->pprev) {
+        ++counts.elapsed;
+        if ((pindex->nVersion & VERSIONBITS_TOP_MASK) != VERSIONBITS_TOP_BITS) continue;
+        for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+            if ((pindex->nVersion >> bit) & 1) ++counts.count[bit];
+        }
+    }
+}
+
+std::pair<SignallingCounts, SignallingCounts> VersionBitsCache::Signalling(const CBlockIndex* pindexPrev, const Consensus::Params& params)
+{
+    if (pindexPrev == nullptr) return {};
+    const int period = params.nMinerConfirmationWindow;
+    // The last block of the previous period, as in GetStateStatisticsFor.
+    // nullptr while the chain is still in its first period.
+    const CBlockIndex* end_of_prev = pindexPrev->GetAncestor(pindexPrev->nHeight - ((pindexPrev->nHeight + 1) % period));
+
+    LOCK(m_mutex);
+    const bool extends_cached = m_signalling_tip != nullptr &&
+                                m_signalling_tip->nHeight <= pindexPrev->nHeight &&
+                                pindexPrev->GetAncestor(m_signalling_tip->nHeight) == m_signalling_tip &&
+                                (end_of_prev == nullptr || end_of_prev->nHeight <= m_signalling_tip->nHeight);
+    if (extends_cached) {
+        CountSignalling(pindexPrev, m_signalling_tip, m_signalling_current);
+    } else {
+        m_signalling_current = {};
+        m_signalling_previous = {};
+        CountSignalling(pindexPrev, end_of_prev, m_signalling_current);
+        if (end_of_prev != nullptr) {
+            CountSignalling(end_of_prev, end_of_prev->GetAncestor(end_of_prev->nHeight - period), m_signalling_previous);
+        }
+    }
+    m_signalling_tip = pindexPrev;
+    return {m_signalling_current, m_signalling_previous};
+}
+
 void VersionBitsCache::Clear()
 {
     LOCK(m_mutex);
     for (unsigned int d = 0; d < Consensus::MAX_VERSION_BITS_DEPLOYMENTS; d++) {
         m_caches[d].clear();
     }
+    m_signalling_tip = nullptr;
+    m_signalling_current = {};
+    m_signalling_previous = {};
 }

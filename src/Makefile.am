@@ -192,6 +192,7 @@ BITCOIN_CORE_H = \
   node/coinstats.h \
   node/context.h \
   node/psbt.h \
+  node/signalling.h \
   node/transaction.h \
   node/ui_interface.h \
   node/utxo_snapshot.h \
@@ -373,6 +374,7 @@ libbitcoin_server_a_SOURCES = \
   node/context.cpp \
   node/interfaces.cpp \
   node/psbt.cpp \
+  node/signalling.cpp \
   node/transaction.cpp \
   node/ui_interface.cpp \
   noui.cpp \
