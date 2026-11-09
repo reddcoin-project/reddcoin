@@ -32,9 +32,17 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
     def info(self):
         return self.nodes[0].getdeploymentinfo()
 
-    def mine(self, node_index, n):
-        self.generate(n, node=self.nodes[node_index])
+    def settle(self):
+        # generate() moves mocktime forward. A block download still in flight
+        # when the clock jumps trips the stall timeout and drops the peer, so
+        # only mine once no node is waiting for a block.
         self.sync_blocks()
+        self.wait_until(lambda: all(not p["inflight"] for n in self.nodes for p in n.getpeerinfo()))
+
+    def mine(self, node_index, n):
+        self.settle()
+        self.generate(n, node=self.nodes[node_index])
+        self.settle()
 
     def unknown(self, info):
         return {u["bit"]: (u["count"], u["previous_count"]) for u in info["unknown_bits"]}
@@ -85,6 +93,8 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
         before_reorg = info
 
         self.log.info("A reorg updates the counts")
+        # Reorg node0 on its own, so node1 doesn't fetch blocks from it meanwhile.
+        self.disconnect_nodes(0, 1)
         first_new_block = node0.getblockhash(height + 1)
         node0.invalidateblock(first_new_block)
         info = self.info()
@@ -95,6 +105,7 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
         node0.reconsiderblock(first_new_block)
         self.wait_until(lambda: node0.getbestblockhash() == before_reorg["hash"])
         assert_equal(self.info(), before_reorg)
+        self.connect_nodes(0, 1)
 
         self.log.info("Once too many blocks miss the bit, the threshold can't be reached this period")
         info = self.info()
