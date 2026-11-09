@@ -155,6 +155,11 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     // Set block version
     pblock->nVersion = g_versionbitscache.ComputeBlockVersion(pindexPrev, chainparams.GetConsensus());
+    // -regtest only: allow overriding block.nVersion with
+    // -blockversion=N to test forking scenarios
+    if (chainparams.MineBlocksOnDemand()) {
+        pblock->nVersion = gArgs.GetArg("-blockversion", pblock->nVersion);
+    }
 
     // Add dummy coinbase tx as first transaction
     pblock->vtx.emplace_back();
