@@ -253,6 +253,14 @@ class MiningTest(BitcoinTestFramework):
         bad_block = copy.deepcopy(block)
         bad_block.nTime = 2**31 - 1
         assert_template(node, bad_block, 'time-too-new')
+        # The coinstake's own timestamp must match the block's, and on v4.22.9
+        # CheckBlock compares them before anything looks at the header's time.
+        # Move the coinstake too, so the block is rejected for its time alone.
+        # (develop's CheckBlockHeader rejects the future time even earlier.)
+        coinstake = bad_block.vtx[1]
+        coinstake.nTime = bad_block.nTime
+        coinstake.rehash()
+        bad_block.hashMerkleRoot = bad_block.calc_merkle_root()
         assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
         bad_block.nTime = 0
         assert_template(node, bad_block, 'time-too-old')
