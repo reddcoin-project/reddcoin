@@ -9,8 +9,10 @@ hist
 inout
 invokable
 keypair
+keyservers
 mor
 nin
+reencode
 ser
 sur
 unparseable
