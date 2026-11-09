@@ -625,6 +625,7 @@ class CompactBlocksTest(BitcoinTestFramework):
             comp_block = HeaderAndShortIDs()
             comp_block.header = CBlockHeader(block)
             comp_block.nonce = 0
+            comp_block.vchBlockSig = block.vchBlockSig
             [k0, k1] = comp_block.get_siphash_keys()
             # ReddCoin: Calculate shortids for both coinbase and coinstake
             coinbase_hash = block.vtx[0].sha256

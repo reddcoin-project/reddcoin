@@ -3320,13 +3320,19 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (nSigOps * WITNESS_SCALE_FACTOR > MAX_BLOCK_SIGOPS_COST)
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "out-of-bounds SigOpCount");
 
-    if (fCheckPOW && fCheckMerkleRoot)
-        block.fChecked = true;
-
-    // reddcoin: check block signature
-    if (block.IsProofOfStake() && !CheckBlockSignature(block)) {
+    // reddcoin: a proof-of-stake block must be signed by the key its coinstake
+    // pays to. Like the proof of work, the signature is only skipped when the
+    // caller passes !fCheckPOW: that is TestBlockValidity on a template that
+    // isn't signed yet (generateblock, getblocktemplate proposals).
+    // Every block from a peer, submitblock or disk is checked with fCheckPOW.
+    // This runs before fChecked is set, so a failed check is never cached as
+    // a pass.
+    if (fCheckPOW && block.IsProofOfStake() && !CheckBlockSignature(block)) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sign", "bad block signature");
     }
+
+    if (fCheckPOW && fCheckMerkleRoot)
+        block.fChecked = true;
 
     return true;
 }

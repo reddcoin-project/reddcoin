@@ -871,6 +871,7 @@ static RPCHelpMan getblocktemplate()
                     {RPCResult::Type::STR_HEX, "key", "values must be in the coinbase (keys may be ignored)"},
                 }},
                 {RPCResult::Type::NUM, "coinbasevalue", "maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)"},
+                {RPCResult::Type::NUM, "coinstakevalue", "value of the coinstake's first payout output, vout[1] (in satoshis); 0 for a proof-of-work template"},
                 {RPCResult::Type::STR, "longpollid", "an id to include with a request to longpoll on an update to this template"},
                 {RPCResult::Type::STR, "target", "The hash target"},
                 {RPCResult::Type::NUM_TIME, "mintime", "The minimum timestamp appropriate for the next block time, expressed in " + UNIX_EPOCH_TIME},
@@ -1220,6 +1221,11 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("transactions", transactions);
     result.pushKV("coinbaseaux", aux);
     result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0]->vout[0].nValue);
+    // The coinstake is vtx[1], and its first output is the empty marker, so the
+    // staked value is in vout[1]. IsProofOfStake() guarantees both exist: it
+    // requires vtx[1] to be a coinstake, and a coinstake has at least two
+    // outputs. The coinbase itself only ever has one output.
+    result.pushKV("coinstakevalue", pblock->IsProofOfStake() ? (int64_t)pblock->vtx[1]->vout[1].nValue : 0);
     result.pushKV("longpollid", active_chain.Tip()->GetBlockHash().GetHex() + ToString(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
     result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
