@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <sync.h>
 
+#include <array>
 #include <map>
 
 /** What block version to use for new blocks (pre versionbits) */
@@ -52,6 +53,17 @@ struct BIP9Stats {
     bool possible;
 };
 
+/** How many blocks of one signalling period set each version bit. */
+struct SignallingCounts {
+    /** Blocks of the period counted: the whole period once it is over, fewer
+     *  for the current one, 0 if the period doesn't exist. */
+    int elapsed{0};
+    /** Blocks using the versionbits format with each bit set. This is the
+     *  condition the deployments count, with no regard to which bits this
+     *  release knows. */
+    std::array<int, VERSIONBITS_NUM_BITS> count{};
+};
+
 /**
  * Abstract class that implements BIP9-style threshold logic, and caches results.
  */
@@ -82,6 +94,12 @@ private:
     Mutex m_mutex;
     ThresholdConditionCache m_caches[Consensus::MAX_VERSION_BITS_DEPLOYMENTS] GUARDED_BY(m_mutex);
 
+    /** Signalling counts for the period holding the block after
+     *  m_signalling_tip, and for the period before it. */
+    const CBlockIndex* m_signalling_tip GUARDED_BY(m_mutex){nullptr};
+    SignallingCounts m_signalling_current GUARDED_BY(m_mutex);
+    SignallingCounts m_signalling_previous GUARDED_BY(m_mutex);
+
 public:
     /** Get the numerical statistics for a given deployment for the signalling period that includes the block after pindexPrev. */
     static BIP9Stats Statistics(const CBlockIndex* pindexPrev, const Consensus::Params& params, Consensus::DeploymentPos pos);
@@ -97,6 +115,13 @@ public:
     /** Determine what nVersion a new block should use
      */
     int32_t ComputeBlockVersion(const CBlockIndex* pindexPrev, const Consensus::Params& params);
+
+    /** Per-bit signalling counts for the period that includes the block after
+     *  pindexPrev (its blocks up to pindexPrev), and for the period before it.
+     *  The counts are cached: when pindexPrev extends the last tip asked for
+     *  within the same period, only the new blocks are counted. Otherwise,
+     *  after a reorg or at a new period, both periods are counted again. */
+    std::pair<SignallingCounts, SignallingCounts> Signalling(const CBlockIndex* pindexPrev, const Consensus::Params& params);
 
     void Clear();
 };
