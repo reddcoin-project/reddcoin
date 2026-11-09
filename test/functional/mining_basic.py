@@ -64,12 +64,15 @@ class MiningTest(BitcoinTestFramework):
         assert_equal(mining_info['currentblockweight'], 4000)
 
         self.log.info('test blockversion')
-        # In PoS, -blockversion override is not honored (version is set by consensus).
         # Restart node to reset staking state, advance time for coinstake search.
+        self.restart_node(0, extra_args=['-mocktime={}'.format(t), '-blockversion=1337'])
+        self.connect_nodes(0, 1)
+        self.nodes[0].setmocktime(t + 120)
+        assert_equal(1337, self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
         self.restart_node(0, extra_args=['-mocktime={}'.format(t)])
         self.connect_nodes(0, 1)
         self.nodes[0].setmocktime(t + 120)
-        # Verify getblocktemplate returns a version with VERSIONBITS_TOP_BITS set.
+        # Without the override the template uses the versionbits format.
         tmpl_version = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version']
         assert_equal(tmpl_version & VERSIONBITS_TOP_BITS, VERSIONBITS_TOP_BITS)
         # Keep mocktime for PoS staking to work in run_test.
