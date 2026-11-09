@@ -417,7 +417,6 @@ KNOWN_FAILING_SCRIPTS = {
     'feature_bip68_sequence.py': 'RED-167: test side, relies on develop\'s v3-transaction BIP68 rules',
     'feature_compat_tx_versions.py': 'RED-200: test side, relies on develop\'s v3-transaction BIP68 rules',
     'feature_pos_tx_version_floor.py': 'RED-167: test side, develop-only transaction version floor',
-    'mining_basic.py': 'RED-167: test side, develop\'s getblocktemplate coinstakevalue field',
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
     'wallet_createwallet.py --legacy-wallet': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
     'wallet_createwallet.py --usecli': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
