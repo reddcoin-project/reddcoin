@@ -14,13 +14,16 @@ from io import BytesIO
 from test_framework.blocktools import (
     create_coinbase,
     NORMAL_GBT_REQUEST_PARAMS,
+    sign_block,
     TIME_GENESIS_BLOCK,
 )
+from test_framework.key import ECKey
 from test_framework.messages import (
     CBlock,
     CBlockHeader,
     CTransaction,
     BLOCK_HEADER_SIZE,
+    ser_uint256,
 )
 from test_framework.script import CScript
 from test_framework.test_framework import BitcoinTestFramework
@@ -90,8 +93,17 @@ class MiningTest(BitcoinTestFramework):
         node.setmocktime(self.mock_time)
         node.mocktime = self.mock_time
 
+        # Every block submitted below is signed, so that it gets past the
+        # proof-of-stake signature check to the failure it is meant to hit.
+        # node0 stakes with the deterministic key.
+        stake_key = node.get_deterministic_priv_key()
+
+        def sign(block):
+            sign_block(block, stake_key.key)
+
         def assert_submitblock(block, result_str_1, result_str_2=None):
             block.solve()
+            sign(block)
             result_str_2 = result_str_2 or 'duplicate-invalid'
             assert_equal(result_str_1, node.submitblock(hexdata=block.serialize().hex()))
             assert_equal(result_str_2, node.submitblock(hexdata=block.serialize().hex()))
@@ -142,6 +154,8 @@ class MiningTest(BitcoinTestFramework):
         # value from it used to run off the end of its output vector.
         assert_equal(tmpl['coinstakevalue'], coinstake_tx.vout[1].nValue)
         assert_equal(tmpl['coinbasevalue'], 0)
+        stake_pubkey = bytes.fromhex(node.getaddressinfo(stake_key.address)['pubkey'])
+        assert stake_pubkey in bytes(coinstake_tx.vout[1].scriptPubKey)
 
         block = CBlock()
         block.nVersion = tmpl["version"]
@@ -155,7 +169,22 @@ class MiningTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "getblocktemplate must be called with the segwit rule set", node.getblocktemplate)
 
         self.log.info("getblocktemplate: Test valid block")
+        # A proposal is checked before the staker signs it, so it needn't be.
         assert_template(node, block, None)
+
+        self.log.info("submitblock: a proof-of-stake block must be signed by its staker")
+        # A block rejected here is not marked invalid, so it is
+        # reported the same way the second time.
+        assert_equal(block.vchBlockSig, b"")
+        assert_equal(node.submitblock(block.serialize().hex()), 'bad-blk-sign')
+        assert_equal(node.submitblock(block.serialize().hex()), 'bad-blk-sign')
+        other_key = ECKey()
+        other_key.generate()
+        wrong_sig = copy.deepcopy(block)
+        wrong_sig.rehash()
+        wrong_sig.vchBlockSig = other_key.sign_ecdsa(ser_uint256(wrong_sig.sha256))
+        assert_equal(node.submitblock(wrong_sig.serialize().hex()), 'bad-blk-sign')
+        assert_equal(node.getblockcount(), 201)
 
         self.log.info("submitblock: Test block decode failure")
         assert_raises_rpc_error(-22, "Block decode failed", node.submitblock, block.serialize()[:-15].hex())
@@ -227,6 +256,14 @@ class MiningTest(BitcoinTestFramework):
         bad_block = copy.deepcopy(block)
         bad_block.nTime = 2**31 - 1
         assert_template(node, bad_block, 'time-too-new')
+        # The coinstake's own timestamp must match the block's, and on v4.22.9
+        # CheckBlock compares them before anything looks at the header's time.
+        # Move the coinstake too, so the block is rejected for its time alone.
+        # (develop's CheckBlockHeader rejects the future time even earlier.)
+        coinstake = bad_block.vtx[1]
+        coinstake.nTime = bad_block.nTime
+        coinstake.rehash()
+        bad_block.hashMerkleRoot = bad_block.calc_merkle_root()
         assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
         bad_block.nTime = 0
         assert_template(node, bad_block, 'time-too-old')
@@ -252,6 +289,7 @@ class MiningTest(BitcoinTestFramework):
         # block.solve() is a no-op for PoS, so nNonce is not overwritten.
         block.nNonce = 1
         block.rehash()
+        sign(block)
 
         def chain_tip(b_hash, *, status='headers-only', branchlen=1):
             return {'hash': b_hash, 'height': 202, 'branchlen': branchlen, 'status': status}
@@ -265,6 +303,7 @@ class MiningTest(BitcoinTestFramework):
         bad_block_root = copy.deepcopy(block)
         bad_block_root.hashMerkleRoot += 2
         bad_block_root.solve()
+        sign(bad_block_root)
         assert chain_tip(bad_block_root.hash) not in node.getchaintips()
         node.submitheader(hexdata=CBlockHeader(bad_block_root).serialize().hex())
         assert chain_tip(bad_block_root.hash) in node.getchaintips()
@@ -281,6 +320,7 @@ class MiningTest(BitcoinTestFramework):
         bad_block_lock.vtx[0].rehash()
         bad_block_lock.hashMerkleRoot = bad_block_lock.calc_merkle_root()
         bad_block_lock.solve()
+        sign(bad_block_lock)
         assert_equal(node.submitblock(hexdata=bad_block_lock.serialize().hex()), 'bad-txns-nonfinal')
         assert_equal(node.submitblock(hexdata=bad_block_lock.serialize().hex()), 'duplicate-invalid')
         # Build a "good" block on top of the submitted bad block
