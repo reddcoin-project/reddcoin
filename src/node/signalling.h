@@ -16,6 +16,10 @@ namespace Consensus {
 struct Params;
 }
 
+/** Completed periods kept in each history: enough to see whether support is
+ *  growing, a little over 11 weeks on mainnet. */
+static constexpr int SIGNALLING_HISTORY_PERIODS{8};
+
 /** Signalling state of one versionbits deployment this release knows. */
 struct DeploymentSignalling {
     std::string name;
@@ -39,6 +43,9 @@ struct DeploymentSignalling {
     int previous_count{0};
     /** While STARTED: whether the threshold can still be reached this period. */
     bool possible{false};
+    /** Blocks setting the bit in each completed period of SignallingInfo's
+     *  history, oldest first; the last is previous_count. */
+    std::vector<int> history{};
 };
 
 /** A bit that no deployment of this release uses, seen set in recent blocks. */
@@ -46,6 +53,8 @@ struct UnknownBitSignalling {
     int bit{0};
     int count{0};
     int previous_count{0};
+    /** As DeploymentSignalling::history. */
+    std::vector<int> history{};
 };
 
 /** Versionbits signalling for the period that includes the block after the tip. */
@@ -60,6 +69,10 @@ struct SignallingInfo {
     /** Height of the last block of the current period, and its estimated time. */
     int period_end_height{0};
     int64_t period_end_time{0};
+    /** Height of the first block of the oldest period in the histories, which
+     *  cover up to SIGNALLING_HISTORY_PERIODS completed periods before the
+     *  current one (fewer near genesis, and none in the first period). */
+    int history_start{0};
     std::vector<DeploymentSignalling> deployments;
     /** Only bits set in at least one block of the two periods. */
     std::vector<UnknownBitSignalling> unknown_bits;
