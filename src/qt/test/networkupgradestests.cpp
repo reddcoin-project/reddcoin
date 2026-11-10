@@ -186,3 +186,61 @@ void NetworkUpgradesTests::updateReplacesTheRows()
     QVERIFY(!widget.findChild<QLabel*>("state_segwit"));
     QCOMPARE(widget.findChildren<SignallingBar*>().size(), 2);
 }
+
+void NetworkUpgradesTests::historyStripsForSignalledDeploymentsAndUnknownBits()
+{
+    // Tip 899: the next block opens window 6 (864-1007) with 36 in. Three
+    // completed windows of history: 3, 4 and 5, from block 432.
+    SignallingInfo info = Window(899, 36);
+    info.history_start = 432;
+    DeploymentSignalling csv = Deployment("csv", 0, ThresholdState::STARTED);
+    csv.history = {20, 70, 107};
+    info.deployments.push_back(csv);
+    DeploymentSignalling segwit = Deployment("segwit", 1, ThresholdState::LOCKED_IN);
+    segwit.history = {50, 100, 120};
+    info.deployments.push_back(segwit);
+    DeploymentSignalling taproot = Deployment("taproot", 2, ThresholdState::ACTIVE);
+    taproot.history = {144, 144, 144};
+    info.deployments.push_back(taproot);
+    info.unknown_bits.push_back({7, 30, 90, {0, 40, 90}});
+
+    NetworkUpgradesWidget widget;
+    widget.setInfo(info);
+
+    const auto* strip = widget.findChild<HistoryStrip*>("history_csv");
+    QVERIFY(strip);
+    QCOMPARE(strip->counts(), (std::vector<int>{20, 70, 107}));
+    QCOMPARE(strip->firstHeight(), 432);
+    QVERIFY2(strip->toolTip().startsWith("Completed windows: 3, oldest on the left."), qPrintable(strip->toolTip()));
+    QVERIFY2(strip->toolTip().contains("threshold of 108 blocks (75.0%)"), qPrintable(strip->toolTip()));
+    // One bar per window, oldest on the left, gaps between them.
+    QCOMPARE(strip->sizeHint().width(), 3 * 10 + 2 * 3);
+    QCOMPARE(strip->windowAt(0), 0);
+    QCOMPARE(strip->windowAt(9), 0);
+    QCOMPARE(strip->windowAt(11), -1);
+    QCOMPARE(strip->windowAt(13), 1);
+    QCOMPARE(strip->windowAt(26), 2);
+    QCOMPARE(strip->windowAt(40), -1);
+
+    // Each window's own tooltip.
+    QCOMPARE(NetworkUpgrades::HistoryWindowToolTip(107, 720, 144, 108),
+             QString("Window 5, blocks 720 to 863: 107 of 144 blocks signalled (74.3%). It was 1 short of the threshold of 108."));
+    QCOMPARE(NetworkUpgrades::HistoryWindowToolTip(120, 720, 144, 108),
+             QString("Window 5, blocks 720 to 863: 120 of 144 blocks signalled (83.3%). It reached the threshold of 108."));
+
+    // Locked in keeps its strip, to show how it got there; active doesn't.
+    QVERIFY(widget.findChild<HistoryStrip*>("history_segwit"));
+    QVERIFY(!widget.findChild<HistoryStrip*>("history_taproot"));
+
+    // The unknown bit gets one too, in the warning colour.
+    const auto* unknown = widget.findChild<HistoryStrip*>("history_bit7");
+    QVERIFY(unknown);
+    QCOMPARE(unknown->counts(), (std::vector<int>{0, 40, 90}));
+
+    // No completed window yet: no strip.
+    SignallingInfo first = Window(100, 101);
+    DeploymentSignalling early = Deployment("csv", 0, ThresholdState::STARTED);
+    first.deployments.push_back(early);
+    widget.setInfo(first);
+    QVERIFY(!widget.findChild<HistoryStrip*>("history_csv"));
+}

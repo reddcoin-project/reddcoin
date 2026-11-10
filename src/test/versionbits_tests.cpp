@@ -12,6 +12,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -541,6 +542,85 @@ BOOST_AUTO_TEST_CASE(versionbits_signalling_counts)
     const auto [current, previous] = fresh.Signalling(chain_a[4], params);
     BOOST_CHECK_EQUAL(current.elapsed, 5);
     BOOST_CHECK_EQUAL(previous.elapsed, 0);
+}
+
+/** Count signalling for each whole period before the one holding the block after tip, from scratch, oldest first. */
+static std::vector<SignallingCounts> RecountHistory(const CBlockIndex* tip, int period, int periods)
+{
+    const int current_start = (tip->nHeight + 1) / period * period;
+    const int first = std::max(0, current_start / period - periods);
+    std::vector<SignallingCounts> history(current_start / period - first);
+    for (const CBlockIndex* b = tip; b != nullptr && b->nHeight >= first * period; b = b->pprev) {
+        if (b->nHeight >= current_start) continue;
+        SignallingCounts& counts = history[b->nHeight / period - first];
+        ++counts.elapsed;
+        if ((b->nVersion & VERSIONBITS_TOP_MASK) != VERSIONBITS_TOP_BITS) continue;
+        for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+            if ((b->nVersion >> bit) & 1) ++counts.count[bit];
+        }
+    }
+    return history;
+}
+
+static void CheckHistory(VersionBitsCache& cache, const CBlockIndex* tip, const Consensus::Params& params, int periods)
+{
+    const std::vector<SignallingCounts> history = cache.SignallingHistory(tip, params, periods);
+    const std::vector<SignallingCounts> want = RecountHistory(tip, params.nMinerConfirmationWindow, periods);
+    BOOST_REQUIRE_EQUAL(history.size(), want.size());
+    for (size_t i = 0; i < want.size(); ++i) {
+        BOOST_CHECK_EQUAL(history[i].elapsed, params.nMinerConfirmationWindow);
+        BOOST_CHECK_EQUAL(history[i].elapsed, want[i].elapsed);
+        BOOST_CHECK(history[i].count == want[i].count);
+    }
+    // The last completed period is the previous one of Signalling().
+    if (!history.empty()) {
+        BOOST_CHECK(history.back().count == cache.Signalling(tip, params).second.count);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(versionbits_signalling_history)
+{
+    Consensus::Params params;
+    params.nMinerConfirmationWindow = 10;
+
+    std::vector<std::unique_ptr<CBlockIndex>> blocks;
+    auto build = [&](const CBlockIndex* fork_from, const std::vector<int32_t>& versions) {
+        std::vector<const CBlockIndex*> chain;
+        CBlockIndex* prev = const_cast<CBlockIndex*>(fork_from);
+        for (int32_t version : versions) {
+            blocks.push_back(std::make_unique<CBlockIndex>());
+            CBlockIndex* b = blocks.back().get();
+            b->pprev = prev;
+            b->nHeight = prev ? prev->nHeight + 1 : 0;
+            b->nVersion = version;
+            b->BuildSkip();
+            chain.push_back(b);
+            prev = b;
+        }
+        return chain;
+    };
+    // Support for bit 5 that grows period by period, among old-format blocks.
+    std::vector<int32_t> versions;
+    for (int i = 0; i < 95; ++i) {
+        const bool signals = (i % 10) < i / 10;
+        versions.push_back(i % 7 == 6 ? 4 : signals ? VERSIONBITS_TOP_BITS | (1 << 5) : VERSIONBITS_TOP_BITS);
+    }
+    const auto chain_a = build(nullptr, versions);
+
+    VersionBitsCache cache;
+    // No completed period yet, then one more at each boundary, up to the limit.
+    BOOST_CHECK(cache.SignallingHistory(chain_a[5], params, 4).empty());
+    for (const CBlockIndex* tip : chain_a) CheckHistory(cache, tip, params, 4);
+    BOOST_CHECK_EQUAL(cache.SignallingHistory(chain_a[94], params, 4).size(), 4U);
+    BOOST_CHECK_EQUAL(cache.SignallingHistory(chain_a[94], params, 20).size(), 9U);
+    BOOST_CHECK(cache.SignallingHistory(chain_a[94], params, 0).empty());
+
+    // A reorg that replaces the last two whole periods: the cached counts of
+    // the old ones must not be used for the new ones.
+    const auto chain_b = build(chain_a[69], std::vector<int32_t>(25, VERSIONBITS_TOP_BITS | (1 << 27)));
+    for (const CBlockIndex* tip : chain_b) CheckHistory(cache, tip, params, 4);
+    CheckHistory(cache, chain_a[94], params, 4);
+    CheckHistory(cache, chain_a[50], params, 8);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

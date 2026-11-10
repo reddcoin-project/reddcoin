@@ -39,6 +39,7 @@
 #include <txmempool.h>
 #include <undo.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -1590,6 +1591,13 @@ static std::string ThresholdStateName(ThresholdState state)
     CHECK_NONFATAL(false);
 }
 
+static UniValue HistoryArray(const std::vector<int>& counts)
+{
+    UniValue arr(UniValue::VARR);
+    for (const int count : counts) arr.push_back(count);
+    return arr;
+}
+
 static RPCHelpMan getdeploymentinfo()
 {
     return RPCHelpMan{"getdeploymentinfo",
@@ -1609,6 +1617,7 @@ static RPCHelpMan getdeploymentinfo()
                             {RPCResult::Type::NUM, "end_height", "height of the last block of this period"},
                             {RPCResult::Type::NUM_TIME, "end_time", "estimated time of that block, in " + UNIX_EPOCH_TIME},
                             {RPCResult::Type::NUM, "previous_elapsed", "blocks counted for the previous period (less than a whole period only near genesis)"},
+                            {RPCResult::Type::NUM, "history_start", "height of the first block of the oldest period in the history arrays, which cover up to " + ToString(SIGNALLING_HISTORY_PERIODS) + " completed periods before this one"},
                         }},
                         {RPCResult::Type::OBJ_DYN, "deployments", "the versionbits deployments this version knows",
                         {
@@ -1625,6 +1634,10 @@ static RPCHelpMan getdeploymentinfo()
                                 {RPCResult::Type::NUM, "count", "blocks of this period setting the bit"},
                                 {RPCResult::Type::NUM, "previous_count", "blocks of the previous period setting the bit"},
                                 {RPCResult::Type::BOOL, "possible", /*optional=*/true, "whether the threshold can still be reached this period (only for \"started\")"},
+                                {RPCResult::Type::ARR, "history", "blocks setting the bit in each completed period from history_start, oldest first; the last is previous_count",
+                                {
+                                    {RPCResult::Type::NUM, "", "blocks of that period setting the bit"},
+                                }},
                             }},
                         }},
                         {RPCResult::Type::ARR, "unknown_bits", "bits no deployment of this version uses, set by at least one block of this period or the previous one",
@@ -1634,6 +1647,10 @@ static RPCHelpMan getdeploymentinfo()
                                 {RPCResult::Type::NUM, "bit", "the version bit"},
                                 {RPCResult::Type::NUM, "count", "blocks of this period setting the bit"},
                                 {RPCResult::Type::NUM, "previous_count", "blocks of the previous period setting the bit"},
+                                {RPCResult::Type::ARR, "history", "blocks setting the bit in each completed period from history_start, oldest first; the last is previous_count",
+                                {
+                                    {RPCResult::Type::NUM, "", "blocks of that period setting the bit"},
+                                }},
                             }},
                         }},
                     }},
@@ -1660,6 +1677,7 @@ static RPCHelpMan getdeploymentinfo()
     period.pushKV("end_height", info.period_end_height);
     period.pushKV("end_time", info.period_end_time);
     period.pushKV("previous_elapsed", info.previous_elapsed);
+    period.pushKV("history_start", info.history_start);
     obj.pushKV("period", period);
 
     UniValue deployments(UniValue::VOBJ);
@@ -1678,6 +1696,7 @@ static RPCHelpMan getdeploymentinfo()
         dep.pushKV("count", d.count);
         dep.pushKV("previous_count", d.previous_count);
         if (d.scheduled && d.state == ThresholdState::STARTED) dep.pushKV("possible", d.possible);
+        dep.pushKV("history", HistoryArray(d.history));
         deployments.pushKV(d.name, dep);
     }
     obj.pushKV("deployments", deployments);
@@ -1688,6 +1707,7 @@ static RPCHelpMan getdeploymentinfo()
         bit.pushKV("bit", u.bit);
         bit.pushKV("count", u.count);
         bit.pushKV("previous_count", u.previous_count);
+        bit.pushKV("history", HistoryArray(u.history));
         unknown.push_back(bit);
     }
     obj.pushKV("unknown_bits", unknown);
