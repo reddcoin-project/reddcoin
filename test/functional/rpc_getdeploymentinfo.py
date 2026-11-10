@@ -16,6 +16,9 @@ from test_framework.util import assert_equal
 VB_PERIOD = 144
 VB_THRESHOLD = 108
 VB_TOP_BITS = 0x20000000
+VERSIONBITS_TOP_MASK = 0xE0000000
+VERSIONBITS_TOP_BITS = VB_TOP_BITS
+HISTORY_PERIODS = 8  # SIGNALLING_HISTORY_PERIODS
 UNKNOWN_BIT = 27
 UNKNOWN_VERSION = VB_TOP_BITS | (1 << UNKNOWN_BIT)
 
@@ -47,6 +50,30 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
     def unknown(self, info):
         return {u["bit"]: (u["count"], u["previous_count"]) for u in info["unknown_bits"]}
 
+    def check_history(self, info):
+        """Recount each completed period of the history from the block headers."""
+        node0 = self.nodes[0]
+        period = info["period"]
+        current_start = info["height"] + 1 - period["elapsed"]
+        periods = (current_start - period["history_start"]) // VB_PERIOD
+        assert_equal(period["history_start"], current_start - periods * VB_PERIOD)
+        assert periods <= HISTORY_PERIODS
+        if current_start >= HISTORY_PERIODS * VB_PERIOD:
+            assert_equal(periods, HISTORY_PERIODS)
+        counts = [[0] * 32 for _ in range(periods)]
+        for height in range(period["history_start"], current_start):
+            version = node0.getblockheader(node0.getblockhash(height))["version"]
+            if version & VERSIONBITS_TOP_MASK != VERSIONBITS_TOP_BITS:
+                continue
+            for bit in range(32):
+                if version >> bit & 1:
+                    counts[(height - period["history_start"]) // VB_PERIOD][bit] += 1
+        entries = list(info["deployments"].values()) + info["unknown_bits"]
+        for entry in entries:
+            assert_equal(entry["history"], [c[entry["bit"]] for c in counts])
+            if periods:
+                assert_equal(entry["history"][-1], entry["previous_count"])
+
     def run_test(self):
         node0 = self.nodes[0]
 
@@ -77,6 +104,7 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
         assert_equal(csv["count"], period["elapsed"])
         assert csv["possible"]
         assert_equal(base["unknown_bits"], [])
+        self.check_history(base)
 
         self.log.info("Blocks setting an unknown bit are counted for that bit only")
         self.mine(1, 10)
@@ -126,6 +154,8 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
         assert_equal(info["deployments"]["csv"]["status"], "started")
         assert_equal(info["deployments"]["csv"]["count"], 0)
         assert_equal(info["deployments"]["csv"]["previous_count"], VB_PERIOD - signalled_unknown)
+        assert_equal(info["unknown_bits"][0]["history"][-1], signalled_unknown)
+        self.check_history(info)
 
         self.log.info("A full period of signalling locks the deployment in, with its activation height")
         self.mine(0, VB_PERIOD)
@@ -147,6 +177,11 @@ class GetDeploymentInfoTest(BitcoinTestFramework):
         assert_equal(csv["activation_height"], activation_height)
         assert "activation_time" not in csv
         assert_equal(info["unknown_bits"], [])
+
+        self.log.info("The history keeps the last completed periods, oldest first")
+        # The period short of the threshold, then the one that locked csv in, then a whole period after.
+        assert_equal(csv["history"][-3:], [VB_PERIOD - signalled_unknown, VB_PERIOD, VB_PERIOD])
+        self.check_history(info)
 
 
 if __name__ == '__main__':

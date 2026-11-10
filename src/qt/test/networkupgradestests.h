@@ -25,6 +25,7 @@ private Q_SLOTS:
     void lockedInActiveAndUnscheduledRows();
     void unknownBitsShownOnlyWhileSignalledThisWindow();
     void updateReplacesTheRows();
+    void historyStripsForSignalledDeploymentsAndUnknownBits();
 };
 
 #endif // BITCOIN_QT_TEST_NETWORKUPGRADESTESTS_H

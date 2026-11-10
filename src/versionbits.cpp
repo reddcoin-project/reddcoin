@@ -5,6 +5,8 @@
 #include <versionbits.h>
 #include <consensus/params.h>
 
+#include <algorithm>
+
 ThresholdState AbstractThresholdConditionChecker::GetStateFor(const CBlockIndex* pindexPrev, const Consensus::Params& params, ThresholdConditionCache& cache) const
 {
     int nPeriod = Period(params);
@@ -267,6 +269,33 @@ std::pair<SignallingCounts, SignallingCounts> VersionBitsCache::Signalling(const
     return {m_signalling_current, m_signalling_previous};
 }
 
+std::vector<SignallingCounts> VersionBitsCache::SignallingHistory(const CBlockIndex* pindexPrev, const Consensus::Params& params, int periods)
+{
+    std::vector<SignallingCounts> history;
+    if (pindexPrev == nullptr || periods <= 0) return history;
+    const int period = params.nMinerConfirmationWindow;
+    // The last block of the previous period, then of each one before it.
+    const CBlockIndex* end = pindexPrev->GetAncestor(pindexPrev->nHeight - ((pindexPrev->nHeight + 1) % period));
+
+    LOCK(m_mutex);
+    std::map<const CBlockIndex*, SignallingCounts> kept;
+    for (int i = 0; i < periods && end != nullptr; ++i) {
+        auto it = m_period_counts.find(end);
+        SignallingCounts counts;
+        if (it != m_period_counts.end()) {
+            counts = it->second;
+        } else {
+            CountSignalling(end, end->GetAncestor(end->nHeight - period), counts);
+        }
+        kept.emplace(end, counts);
+        history.push_back(counts);
+        end = end->GetAncestor(end->nHeight - period);
+    }
+    m_period_counts = std::move(kept);
+    std::reverse(history.begin(), history.end());
+    return history;
+}
+
 void VersionBitsCache::Clear()
 {
     LOCK(m_mutex);
@@ -276,4 +305,5 @@ void VersionBitsCache::Clear()
     m_signalling_tip = nullptr;
     m_signalling_current = {};
     m_signalling_previous = {};
+    m_period_counts.clear();
 }

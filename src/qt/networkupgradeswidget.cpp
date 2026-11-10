@@ -12,9 +12,14 @@
 
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
+#include <QHelpEvent>
 #include <QLabel>
 #include <QPainter>
+#include <QToolTip>
 #include <QVBoxLayout>
+
+#include <utility>
 
 namespace NetworkUpgrades {
 
@@ -161,7 +166,114 @@ QString HeaderToolTip(const SignallingInfo& info)
         .arg(info.threshold);
 }
 
+QString HistoryToolTip(int windows, int period, int threshold)
+{
+    // No %n plural: the English forms only come from a translation file.
+    return QObject::tr("Completed windows: %1, oldest on the left. Each bar is one window of %2 blocks: "
+                       "the coloured part is the share of its blocks that signalled, and the line marks the "
+                       "threshold of %3 blocks (%4%). Bars that grow towards the line mean support is growing.")
+        .arg(windows)
+        .arg(period)
+        .arg(threshold)
+        .arg(Percent(threshold, period));
+}
+
+QString HistoryWindowToolTip(int count, int start_height, int period, int threshold)
+{
+    QString text = QObject::tr("Window %1, blocks %2 to %3: %4 of %5 blocks signalled (%6%).")
+                       .arg(start_height / period)
+                       .arg(start_height)
+                       .arg(start_height + period - 1)
+                       .arg(count)
+                       .arg(period)
+                       .arg(Percent(count, period));
+    text += ' ';
+    if (count >= threshold) {
+        text += QObject::tr("It reached the threshold of %1.").arg(threshold);
+    } else {
+        text += QObject::tr("It was %1 short of the threshold of %2.").arg(threshold - count).arg(threshold);
+    }
+    return text;
+}
+
 } // namespace NetworkUpgrades
+
+HistoryStrip::HistoryStrip(QWidget* parent)
+    : QWidget(parent), m_fill(palette().color(QPalette::Highlight))
+{
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+}
+
+void HistoryStrip::setValues(std::vector<int> counts, int first_height, int period, int threshold)
+{
+    m_counts = std::move(counts);
+    m_first_height = first_height;
+    m_period = period;
+    m_threshold = threshold;
+    setToolTip(NetworkUpgrades::HistoryToolTip(int(m_counts.size()), period, threshold));
+    updateGeometry();
+    update();
+}
+
+void HistoryStrip::setFillColor(const QColor& color)
+{
+    m_fill = color;
+    update();
+}
+
+int HistoryStrip::windowAt(int x) const
+{
+    if (x < 0) return -1;
+    const int index = x / (BAR_WIDTH + BAR_GAP);
+    if (index >= int(m_counts.size()) || x % (BAR_WIDTH + BAR_GAP) >= BAR_WIDTH) return -1;
+    return index;
+}
+
+QSize HistoryStrip::sizeHint() const
+{
+    const int bars = m_counts.size();
+    return QSize(bars > 0 ? bars * BAR_WIDTH + (bars - 1) * BAR_GAP : 0, HEIGHT);
+}
+
+QSize HistoryStrip::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+bool HistoryStrip::event(QEvent* event)
+{
+    if (event->type() == QEvent::ToolTip) {
+        auto* help = static_cast<QHelpEvent*>(event);
+        const int index = windowAt(help->pos().x());
+        if (index >= 0 && m_period > 0) {
+            QToolTip::showText(help->globalPos(),
+                               NetworkUpgrades::HistoryWindowToolTip(m_counts[index], m_first_height + index * m_period, m_period, m_threshold),
+                               this, QRect(index * (BAR_WIDTH + BAR_GAP), 0, BAR_WIDTH, height()));
+            return true;
+        }
+    }
+    return QWidget::event(event);
+}
+
+void HistoryStrip::paintEvent(QPaintEvent*)
+{
+    if (m_period <= 0) return;
+    QPainter painter(this);
+    const int bottom = height() - 1;
+    const auto y = [&](int blocks) {
+        return bottom - static_cast<int>(int64_t{bottom} * std::clamp(blocks, 0, m_period) / m_period);
+    };
+    for (size_t i = 0; i < m_counts.size(); ++i) {
+        const QRect bar(int(i) * (BAR_WIDTH + BAR_GAP), 0, BAR_WIDTH - 1, bottom);
+        painter.fillRect(bar, palette().color(QPalette::Base));
+        painter.fillRect(QRect(QPoint(bar.left(), y(m_counts[i])), bar.bottomRight()), m_fill);
+        painter.setPen(palette().color(QPalette::Mid));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(bar);
+    }
+    painter.setPen(QPen(palette().color(QPalette::WindowText), 1));
+    painter.drawLine(0, y(m_threshold), width() - 1, y(m_threshold));
+}
 
 SignallingBar::SignallingBar(QWidget* parent)
     : QWidget(parent), m_fill(palette().color(QPalette::Highlight))
@@ -249,6 +361,23 @@ QColor NetworkUpgradesWidget::warningColor()
     return QColor(0xd9, 0x7a, 0x00);
 }
 
+QWidget* NetworkUpgradesWidget::HistoryRow(const QString& key, const std::vector<int>& history, const SignallingInfo& info, const QColor& fill)
+{
+    auto* row = new QWidget;
+    auto* layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    auto* label = new QLabel(tr("Past windows:"));
+    auto* strip = new HistoryStrip;
+    strip->setObjectName("history_" + key);
+    strip->setFillColor(fill);
+    strip->setValues(history, info.history_start, info.period, info.threshold);
+    label->setToolTip(strip->toolTip());
+    layout->addWidget(label);
+    layout->addWidget(strip);
+    layout->addStretch(1);
+    return row;
+}
+
 void NetworkUpgradesWidget::clearLayout(QGridLayout* layout)
 {
     // Delete at once rather than deleteLater, so the old rows are gone as
@@ -284,6 +413,7 @@ void NetworkUpgradesWidget::setInfo(const SignallingInfo& info)
             bar->setObjectName("bar_" + key);
             bar->setValues(d.count, info.elapsed, info.period, info.threshold);
             column->addWidget(bar);
+            if (!d.history.empty()) column->addWidget(HistoryRow(key, d.history, info, palette().color(QPalette::Highlight)));
         }
         auto* detail = new QLabel(DetailText(d, info));
         detail->setObjectName("detail_" + key);
@@ -325,6 +455,7 @@ void NetworkUpgradesWidget::setInfo(const SignallingInfo& info)
         bar->setFillColor(warningColor());
         bar->setValues(u.count, info.elapsed, info.period, info.threshold);
         column->addWidget(bar);
+        if (!u.history.empty()) column->addWidget(HistoryRow(key, u.history, info, warningColor()));
         auto* detail = new QLabel(UnknownBitText(u, info));
         detail->setObjectName("detail_" + key);
         detail->setWordWrap(true);
