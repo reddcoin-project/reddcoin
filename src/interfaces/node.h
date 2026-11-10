@@ -14,9 +14,11 @@
 #include <netbase.h>    // For ConnectionDirection
 #include <support/allocators/secure.h> // For SecureString
 #include <util/translation.h>
+#include <warnings.h> // For WarningKind
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -69,6 +71,9 @@ public:
 
     //! Versionbits signalling for the period that includes the next block.
     virtual SignallingInfo getSignallingInfo() = 0;
+
+    //! Kinds of warning that are up, without their text.
+    virtual std::set<WarningKind> getWarningKinds() = 0;
 
     // Get log flags.
     virtual uint32_t getLogCategories() = 0;
