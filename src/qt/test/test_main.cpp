@@ -11,6 +11,7 @@
 #include <qt/bitcoin.h>
 #include <qt/test/apptests.h>
 #include <qt/test/networkupgradestests.h>
+#include <qt/test/upgradeindicatortests.h>
 #include <qt/test/rpcnestedtests.h>
 #include <qt/test/updatedialogtests.h>
 #include <qt/test/uritests.h>
@@ -92,6 +93,10 @@ int main(int argc, char* argv[])
     }
     NetworkUpgradesTests network_upgrades_tests;
     if (QTest::qExec(&network_upgrades_tests) != 0) {
+        fInvalid = true;
+    }
+    UpgradeIndicatorTests upgrade_indicator_tests;
+    if (QTest::qExec(&upgrade_indicator_tests) != 0) {
         fInvalid = true;
     }
     UpdateDialogTests update_dialog_tests;

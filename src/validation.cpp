@@ -2396,7 +2396,12 @@ static bilingual_str UpdateUpgradeWarnings(const CBlockIndex* pindex, const Cons
         }
     }
 
-    std::vector<std::pair<std::string, bilingual_str>> warnings;
+    struct Warning {
+        std::string key; //!< -alertnotify runs once per key.
+        WarningKind kind;
+        bilingual_str text;
+    };
+    std::vector<Warning> warnings;
     for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
         WarningBitsConditionChecker checker(bit);
         const ThresholdState state = checker.GetStateFor(pindex, params, warningcache[bit]);
@@ -2404,37 +2409,37 @@ static bilingual_str UpdateUpgradeWarnings(const CBlockIndex* pindex, const Cons
             // The first block of the period in which the state took effect.
             const int since = checker.GetStateSinceHeightFor(pindex, params, warningcache[bit]);
             if (state == ThresholdState::ACTIVE) {
-                warnings.emplace_back(strprintf("active:%d", bit), UnknownRuleActiveWarning(bit, since));
+                warnings.push_back({strprintf("active:%d", bit), WarningKind::UNKNOWN_RULE_ACTIVE, UnknownRuleActiveWarning(bit, since)});
             } else {
                 const int activation_height = since + period;
                 const int64_t activation_time = pindex->GetBlockTime() + int64_t{activation_height - pindex->nHeight} * params.nPowTargetSpacing;
-                warnings.emplace_back(strprintf("lockedin:%d", bit), UnknownRuleLockedInWarning(bit, activation_height, activation_time));
+                warnings.push_back({strprintf("lockedin:%d", bit), WarningKind::UNKNOWN_RULE_LOCKED_IN, UnknownRuleLockedInWarning(bit, activation_height, activation_time)});
             }
         } else if (state == ThresholdState::STARTED && 2 * signalled[bit] > recent_window) {
-            warnings.emplace_back(strprintf("signalling:%d", bit),
-                                  UnknownRuleSignallingWarning(bit, signalled[bit] * 100 / recent_window, recent_window));
+            warnings.push_back({strprintf("signalling:%d", bit), WarningKind::UNKNOWN_RULE_SIGNALLING,
+                                UnknownRuleSignallingWarning(bit, signalled[bit] * 100 / recent_window, recent_window)});
         }
     }
     if (2 * unknown_format > UNKNOWN_VERSION_WINDOW) {
-        warnings.emplace_back("blockversion", UnknownBlockVersionWarning(unknown_format, UNKNOWN_VERSION_WINDOW));
+        warnings.push_back({"blockversion", WarningKind::UNKNOWN_BLOCK_VERSION, UnknownBlockVersionWarning(unknown_format, UNKNOWN_VERSION_WINDOW)});
     }
 
     bilingual_str log_messages;
-    std::vector<bilingual_str> texts;
+    std::vector<UpgradeWarning> upgrade_warnings;
     std::vector<std::string> originals;
-    for (const auto& entry : warnings) {
-        AppendWarning(log_messages, entry.second);
-        texts.push_back(entry.second);
-        originals.push_back(entry.second.original);
+    for (const Warning& warning : warnings) {
+        AppendWarning(log_messages, warning.text);
+        upgrade_warnings.push_back({warning.kind, warning.text});
+        originals.push_back(warning.text.original);
     }
     const bool changed = originals != g_upgrade_warnings_last;
-    SetUpgradeWarnings(std::move(texts));
+    SetUpgradeWarnings(std::move(upgrade_warnings));
     g_upgrade_warnings_last = std::move(originals);
     bool alerted = false;
-    for (const auto& [key, warning] : warnings) {
-        if (g_upgrade_alerts_sent.insert(key).second) {
-            LogPrintf("Warning: %s\n", warning.original);
-            AlertNotify(warning.original);
+    for (const Warning& warning : warnings) {
+        if (g_upgrade_alerts_sent.insert(warning.key).second) {
+            LogPrintf("Warning: %s\n", warning.text.original);
+            AlertNotify(warning.text.original);
             alerted = true;
         }
     }

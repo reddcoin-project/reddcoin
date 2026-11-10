@@ -26,6 +26,9 @@ static const int MAX_PASSPHRASE_SIZE = 1024;
 /* BitcoinGUI -- Size of icons in status bar */
 static const int STATUSBAR_ICONSIZE = 16;
 
+/* Shortest interval between refreshes of the network upgrade indicator, in milliseconds */
+static const int UPGRADE_INDICATOR_REFRESH_MS = 3000;
+
 static const bool DEFAULT_SPLASHSCREEN = true;
 
 /* Invalid field background style */

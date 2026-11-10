@@ -8,6 +8,7 @@ TESTS += qt/test/test_reddcoin-qt
 TEST_QT_MOC_CPP = \
   qt/test/moc_apptests.cpp \
   qt/test/moc_networkupgradestests.cpp \
+  qt/test/moc_upgradeindicatortests.cpp \
   qt/test/moc_rpcnestedtests.cpp \
   qt/test/moc_uritests.cpp \
   qt/test/moc_updatedialogtests.cpp
@@ -22,6 +23,7 @@ TEST_QT_H = \
   qt/test/addressbooktests.h \
   qt/test/apptests.h \
   qt/test/networkupgradestests.h \
+  qt/test/upgradeindicatortests.h \
   qt/test/rpcnestedtests.h \
   qt/test/uritests.h \
   qt/test/updatedialogtests.h \
@@ -34,6 +36,7 @@ qt_test_test_reddcoin_qt_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BITCOIN
 qt_test_test_reddcoin_qt_SOURCES = \
   qt/test/apptests.cpp \
   qt/test/networkupgradestests.cpp \
+  qt/test/upgradeindicatortests.cpp \
   qt/test/rpcnestedtests.cpp \
   qt/test/test_main.cpp \
   qt/test/uritests.cpp \
