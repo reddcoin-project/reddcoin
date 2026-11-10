@@ -14,9 +14,11 @@
 #include <QByteArray>
 #include <QCompleter>
 #include <QThread>
+#include <QTimer>
 #include <QWidget>
 
 class ClientModel;
+class NetworkUpgradesWidget;
 class PlatformStyle;
 class RPCTimerInterface;
 class WalletModel;
@@ -66,10 +68,11 @@ public:
         CONSOLE,
         GRAPH,
         PEERS,
-        STAKE
+        STAKE,
+        UPGRADES
     };
 
-    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::GRAPH, TabTypes::PEERS, TabTypes::STAKE}; }
+    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::GRAPH, TabTypes::PEERS, TabTypes::STAKE, TabTypes::UPGRADES}; }
 
     QString tabTitle(TabTypes tab_type) const;
     QKeySequence tabShortcut(TabTypes tab_type) const;
@@ -103,6 +106,12 @@ private Q_SLOTS:
     void updateDetailWidget();
     /** show staking stats for each wallet */
     void onChangeWallet(int idx);
+    /** Note a new block for the Network Upgrades tab; it refreshes at most
+     *  every UPGRADES_REFRESH_MS. */
+    void upgradesBlockChanged(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers);
+    /** Refresh the Network Upgrades tab if it is showing, else leave it for
+     *  when it is next shown. */
+    void updateUpgrades();
 
 public Q_SLOTS:
     void clear(bool keep_prompt = false);
@@ -176,6 +185,10 @@ private:
     bool m_is_executing{false};
     QByteArray m_peer_widget_header_state;
     QByteArray m_banlist_widget_header_state;
+    NetworkUpgradesWidget* m_upgrades_widget{nullptr};
+    QTimer m_upgrades_timer;
+    bool m_upgrades_stale{true};
+    static constexpr int UPGRADES_REFRESH_MS{3000};
 
     /** Update UI with latest network info from model. */
     void updateNetworkState();

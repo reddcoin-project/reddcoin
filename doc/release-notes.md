@@ -658,6 +658,14 @@ GUI
   cancelling sets a flag the worker polls between reads rather than tearing
   down an in-flight operation.
 
+- The debug window has a new **Network Upgrades** tab (Window > Network
+  Upgrades, Ctrl+U). It lists every versionbits deployment this release
+  knows, with its state and, while a deployment is being signalled, a bar
+  showing how many blocks of the current window set its bit against the
+  lock-in threshold. Bits this release doesn't know are listed in a separate
+  section, in a warning colour, with a link to download a newer release. The
+  tab shows the same numbers as the `getdeploymentinfo` RPC.
+
 4.22.9.5 change log
 ===============
 
