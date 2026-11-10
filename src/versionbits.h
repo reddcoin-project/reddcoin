@@ -11,6 +11,7 @@
 
 #include <array>
 #include <map>
+#include <vector>
 
 /** What block version to use for new blocks (pre versionbits) */
 static const int32_t VERSIONBITS_LAST_OLD_BLOCK_VERSION = 5;
@@ -99,6 +100,8 @@ private:
     const CBlockIndex* m_signalling_tip GUARDED_BY(m_mutex){nullptr};
     SignallingCounts m_signalling_current GUARDED_BY(m_mutex);
     SignallingCounts m_signalling_previous GUARDED_BY(m_mutex);
+    /** Counts of completed periods, keyed by each period's last block. */
+    std::map<const CBlockIndex*, SignallingCounts> m_period_counts GUARDED_BY(m_mutex);
 
 public:
     /** Get the numerical statistics for a given deployment for the signalling period that includes the block after pindexPrev. */
@@ -122,6 +125,14 @@ public:
      *  within the same period, only the new blocks are counted. Otherwise,
      *  after a reorg or at a new period, both periods are counted again. */
     std::pair<SignallingCounts, SignallingCounts> Signalling(const CBlockIndex* pindexPrev, const Consensus::Params& params);
+
+    /** Per-bit signalling counts for up to `periods` completed periods before
+     *  the one that includes the block after pindexPrev, oldest first; fewer
+     *  near genesis. The last is the previous period, as in Signalling(). A
+     *  completed period's counts never change, so each is counted once and
+     *  kept by its last block, which stays right across reorgs. Only the
+     *  periods asked for by the last call are kept. */
+    std::vector<SignallingCounts> SignallingHistory(const CBlockIndex* pindexPrev, const Consensus::Params& params, int periods);
 
     void Clear();
 };

@@ -26,6 +26,13 @@ SignallingInfo GetSignallingInfo(const CBlockIndex* tip, const Consensus::Params
     info.previous_elapsed = previous.elapsed;
     info.period_end_height = tip->nHeight + (info.period - current.elapsed);
     info.period_end_time = tip->GetBlockTime() + int64_t{info.period_end_height - tip->nHeight} * params.nPowTargetSpacing;
+    const std::vector<SignallingCounts> history = g_versionbitscache.SignallingHistory(tip, params, SIGNALLING_HISTORY_PERIODS);
+    info.history_start = (tip->nHeight + 1 - current.elapsed) - int(history.size()) * info.period;
+    const auto bit_history = [&](int bit) {
+        std::vector<int> counts;
+        for (const SignallingCounts& period : history) counts.push_back(period.count[bit]);
+        return counts;
+    };
 
     std::array<bool, VERSIONBITS_NUM_BITS> known{};
     for (int i = 0; i < Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++i) {
@@ -38,6 +45,7 @@ SignallingInfo GetSignallingInfo(const CBlockIndex* tip, const Consensus::Params
         d.bit = dep.bit;
         d.count = current.count[dep.bit];
         d.previous_count = previous.count[dep.bit];
+        d.history = bit_history(dep.bit);
         d.scheduled = DeploymentEnabled(params, pos);
         if (d.scheduled) {
             d.state = g_versionbitscache.State(tip, params, pos);
@@ -68,7 +76,7 @@ SignallingInfo GetSignallingInfo(const CBlockIndex* tip, const Consensus::Params
 
     for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
         if (known[bit] || (current.count[bit] == 0 && previous.count[bit] == 0)) continue;
-        info.unknown_bits.push_back({bit, current.count[bit], previous.count[bit]});
+        info.unknown_bits.push_back({bit, current.count[bit], previous.count[bit], bit_history(bit)});
     }
     return info;
 }
