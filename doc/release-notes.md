@@ -344,6 +344,14 @@ GUI changes
 
 - A new tab has been added to display the staking probability of available utxo's for each wallet.
 
+- The debug window has a new **Network Upgrades** tab (Window > Network
+  Upgrades, Ctrl+U). It lists every versionbits deployment this release
+  knows, with its state and, while a deployment is being signalled, a bar
+  showing how many blocks of the current window set its bit against the
+  lock-in threshold. Bits this release doesn't know are listed in a separate
+  section, in a warning colour, with a link to download a newer release. The
+  tab shows the same numbers as the `getdeploymentinfo` RPC.
+
 - A new `Check for Software Updates` menu item. Help -> Check for Software Updates. Can be used to determine if there is a later version available.
 
 - A new `Open Social Websites` menu item. Help -> Open Social Websites. Providing a quick access to `reddcoin.com` ,`redd.love`, `Reddcoin Wiki`,  `Discord Chatroom`, `reddcointalk.org`.
