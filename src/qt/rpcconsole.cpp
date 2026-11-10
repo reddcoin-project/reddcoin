@@ -13,8 +13,10 @@
 #include <chainparams.h>
 #include <interfaces/node.h>
 #include <netbase.h>
+#include <node/signalling.h>
 #include <qt/bantablemodel.h>
 #include <qt/clientmodel.h>
+#include <qt/networkupgradeswidget.h>
 #include <qt/peertablesortproxy.h>
 #include <qt/platformstyle.h>
 #include <qt/walletmodel.h>
@@ -45,6 +47,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QScreen>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QString>
@@ -547,6 +550,19 @@ RPCConsole::RPCConsole(interfaces::Node& node, const PlatformStyle *_platformSty
     connect(ui->stakingWalletSelector, QOverload<int>::of(&QComboBox::currentIndexChanged),
         [=](int index){RPCConsole::onChangeWallet(index);});
 
+    // Network Upgrades tab. It is added last, so its index matches TabTypes::UPGRADES.
+    m_upgrades_widget = new NetworkUpgradesWidget;
+    auto* upgrades_scroll = new QScrollArea;
+    upgrades_scroll->setObjectName("tab_upgrades");
+    upgrades_scroll->setWidgetResizable(true);
+    upgrades_scroll->setFrameShape(QFrame::NoFrame);
+    upgrades_scroll->setWidget(m_upgrades_widget);
+    ui->tabWidget->addTab(upgrades_scroll, tr("Network &Upgrades"));
+    assert(ui->tabWidget->indexOf(upgrades_scroll) == int(TabTypes::UPGRADES));
+    m_upgrades_timer.setSingleShot(true);
+    m_upgrades_timer.setInterval(UPGRADES_REFRESH_MS);
+    connect(&m_upgrades_timer, &QTimer::timeout, this, &RPCConsole::updateUpgrades);
+
     // disable the wallet selector by default
     ui->WalletSelector->setVisible(false);
     ui->WalletSelectorLabel->setVisible(false);
@@ -662,6 +678,10 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         setStakingInfo();
         connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setStakingInfo);
 
+        m_upgrades_stale = true;
+        updateUpgrades();
+        connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::upgradesBlockChanged);
+
         updateNetworkState();
         connect(model, &ClientModel::networkActiveChanged, this, &RPCConsole::setNetworkActive);
 
@@ -755,6 +775,7 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
     }
     if (!model) {
         // Client model is being set to 0, this means shutdown() is about to be called.
+        m_upgrades_timer.stop();
         thread.quit();
         thread.wait();
     }
@@ -1184,6 +1205,9 @@ void RPCConsole::on_tabWidget_currentChanged(int index)
     if (ui->tabWidget->widget(index) == ui->tab_console) {
         ui->lineEdit->setFocus();
     }
+    if (index == int(TabTypes::UPGRADES)) {
+        updateUpgrades();
+    }
 }
 
 void RPCConsole::on_openDebugLogfileButton_clicked()
@@ -1294,6 +1318,8 @@ void RPCConsole::resizeEvent(QResizeEvent *event)
 void RPCConsole::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+
+    updateUpgrades();
 
     if (!clientModel || !clientModel->getPeerTableModel())
         return;
@@ -1419,6 +1445,7 @@ QKeySequence RPCConsole::tabShortcut(TabTypes tab_type) const
     case TabTypes::GRAPH: return QKeySequence(Qt::CTRL + Qt::Key_N);
     case TabTypes::PEERS: return QKeySequence(Qt::CTRL + Qt::Key_P);
     case TabTypes::STAKE: return QKeySequence(Qt::CTRL + Qt::Key_S);
+    case TabTypes::UPGRADES: return QKeySequence(Qt::CTRL + Qt::Key_U);
     } // no default case, so the compiler can warn about missing cases
 
     assert(false);
@@ -1428,6 +1455,24 @@ void RPCConsole::updateAlerts(const QString& warnings)
 {
     this->ui->label_alerts->setVisible(!warnings.isEmpty());
     this->ui->label_alerts->setText(warnings);
+}
+
+void RPCConsole::upgradesBlockChanged(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers)
+{
+    if (headers) return;
+    m_upgrades_stale = true;
+    // A burst of blocks (initial sync, a reorg) costs one refresh per interval.
+    if (!m_upgrades_timer.isActive()) m_upgrades_timer.start();
+}
+
+void RPCConsole::updateUpgrades()
+{
+    if (!clientModel || !m_upgrades_stale) return;
+    if (!isVisible() || ui->tabWidget->currentIndex() != int(TabTypes::UPGRADES)) return;
+    // The node keeps the counts up to date as blocks connect, so this only
+    // reads them: no block index walk on the GUI thread.
+    m_upgrades_widget->setInfo(clientModel->node().getSignallingInfo());
+    m_upgrades_stale = false;
 }
 
 void RPCConsole::onChangeWallet(int walletSelected)
