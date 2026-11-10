@@ -45,6 +45,9 @@ SignallingInfo GetSignallingInfo(const CBlockIndex* tip, const Consensus::Params
             d.timeout = dep.nTimeout;
             d.min_activation_height = dep.min_activation_height;
             d.since = g_versionbitscache.StateSinceHeight(tip, params, pos);
+            if (const CBlockIndex* since_block = tip->GetAncestor(d.since)) {
+                d.since_time = since_block->GetBlockTime();
+            }
             if (d.state == ThresholdState::ACTIVE) {
                 d.activation_height = d.since;
             } else if (d.state == ThresholdState::LOCKED_IN) {
