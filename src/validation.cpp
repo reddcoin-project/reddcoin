@@ -1326,6 +1326,20 @@ static void AlertNotify(const std::string& strMessage)
 #endif
 }
 
+/** A chain must have this many blocks' worth of work (at our tip's difficulty)
+ *  over our tip before a fork warning reports it. */
+static constexpr int FORK_WARNING_BLOCKS{6};
+/** How long a heavier chain must go unfollowed before it is reported. A reorg
+ *  onto a valid chain is over long before this, so it raises no warning. */
+static constexpr std::chrono::seconds HEAVIER_CHAIN_GRACE{std::chrono::minutes{10}};
+
+/** Fork warnings already passed to -alertnotify, so each fork runs it once. */
+static std::set<std::string> g_fork_alerts_sent GUARDED_BY(cs_main);
+/** The fork warnings set by the last check, to tell the GUI only about changes. */
+static std::vector<std::string> g_fork_warnings_last GUARDED_BY(cs_main);
+/** Where the heavier chain we don't follow branches off, and when we first saw it. */
+static std::optional<std::pair<uint256, std::chrono::seconds>> g_heavier_chain_since GUARDED_BY(cs_main);
+
 void CChainState::CheckForkWarningConditions()
 {
     AssertLockHeld(cs_main);
@@ -1335,13 +1349,74 @@ void CChainState::CheckForkWarningConditions()
     if (IsInitialBlockDownload()) {
         return;
     }
+    const CBlockIndex* tip = m_chain.Tip();
+    if (tip == nullptr) return;
+    const arith_uint256 threshold = tip->nChainWork + GetBlockProof(*tip) * FORK_WARNING_BLOCKS;
 
-    if (pindexBestInvalid && pindexBestInvalid->nChainWork > m_chain.Tip()->nChainWork + (GetBlockProof(*m_chain.Tip()) * 6)) {
-        LogPrintf("%s: Warning: Found invalid chain at least ~6 blocks longer than our best chain.\nChain state database corruption likely.\n", __func__);
-        SetfLargeWorkInvalidChainFound(true);
-    } else {
-        SetfLargeWorkInvalidChainFound(false);
+    struct ForkWarning {
+        std::string key; //!< -alertnotify runs once per key.
+        WarningKind kind;
+        bilingual_str text;
+        std::string log; //!< The tips' hashes, for the debug log.
+    };
+    std::vector<ForkWarning> warnings;
+    const auto describe = [&](const char* what, const CBlockIndex* fork, const CBlockIndex* theirs) {
+        return strprintf("%s: fork at %d (%s), their tip %s at %d, our tip %s at %d", what,
+                         fork->nHeight, fork->GetBlockHash().ToString(), theirs->GetBlockHash().ToString(), theirs->nHeight,
+                         tip->GetBlockHash().ToString(), tip->nHeight);
+    };
+
+    // A chain with more work than ours that contains an invalid block.
+    if (pindexBestInvalid && pindexBestInvalid->nChainWork > threshold) {
+        const CBlockIndex* fork = LastCommonAncestor(pindexBestInvalid, tip);
+        warnings.push_back({"invalidchain:" + fork->GetBlockHash().ToString(), WarningKind::INVALID_CHAIN,
+                            InvalidChainWarning(fork->nHeight, pindexBestInvalid->nHeight, tip->nHeight),
+                            describe("Chain with more work contains an invalid block", fork, pindexBestInvalid)});
     }
+
+    // A chain with more work than ours that we have headers for but don't
+    // follow, and that isn't marked invalid: its blocks never arrived, or
+    // failed a check that doesn't mark them invalid (as side chain blocks
+    // failing bad-pos did in August 2024). Headers that extend our tip are
+    // normal while syncing, so only a chain that branches off counts.
+    const CBlockIndex* header = pindexBestHeader;
+    if (header != nullptr && header->nChainWork > threshold && !(header->nStatus & BLOCK_FAILED_MASK) &&
+        header->GetAncestor(tip->nHeight) != tip) {
+        const CBlockIndex* fork = LastCommonAncestor(header, tip);
+        const auto now = GetTime<std::chrono::seconds>();
+        if (!g_heavier_chain_since || g_heavier_chain_since->first != fork->GetBlockHash()) {
+            g_heavier_chain_since = std::make_pair(fork->GetBlockHash(), now);
+        }
+        if (now - g_heavier_chain_since->second >= HEAVIER_CHAIN_GRACE) {
+            const bool received = header->GetAncestor(fork->nHeight + 1)->nStatus & BLOCK_HAVE_DATA;
+            warnings.push_back({"heavierchain:" + fork->GetBlockHash().ToString(), WarningKind::HEAVIER_CHAIN,
+                                HeavierChainWarning(fork->nHeight, header->nHeight, tip->nHeight, received),
+                                describe("Chain with more work is not being followed", fork, header)});
+        }
+    } else {
+        g_heavier_chain_since.reset();
+    }
+
+    std::vector<UpgradeWarning> fork_warnings;
+    std::vector<std::string> originals;
+    for (const ForkWarning& warning : warnings) {
+        fork_warnings.push_back({warning.kind, warning.text});
+        originals.push_back(warning.text.original);
+    }
+    const bool changed = originals != g_fork_warnings_last;
+    SetForkWarnings(std::move(fork_warnings));
+    g_fork_warnings_last = std::move(originals);
+    bool alerted = false;
+    for (const ForkWarning& warning : warnings) {
+        if (g_fork_alerts_sent.insert(warning.key).second) {
+            LogPrintf("Warning: %s\n", warning.log);
+            AlertNotify(warning.text.original);
+            alerted = true;
+        }
+    }
+    // AlertNotify already tells the GUI. Otherwise tell it when a warning
+    // changed or went away.
+    if (changed && !alerted) uiInterface.NotifyAlertChanged();
 }
 
 // Called both upon regular invalid block discovery *and* InvalidateBlock
@@ -1350,6 +1425,10 @@ void CChainState::InvalidChainFound(CBlockIndex* pindexNew)
     if (!pindexBestInvalid || pindexNew->nChainWork > pindexBestInvalid->nChainWork)
         pindexBestInvalid = pindexNew;
     if (pindexBestHeader != nullptr && pindexBestHeader->GetAncestor(pindexNew->nHeight) == pindexNew) {
+        // The best header now has an invalid ancestor. Keep it as the best
+        // invalid chain, so the fork warning still sees all of that chain's
+        // work, not only the work up to the invalid block.
+        if (pindexBestHeader->nChainWork > pindexBestInvalid->nChainWork) pindexBestInvalid = pindexBestHeader;
         pindexBestHeader = m_chain.Tip();
     }
 
@@ -3104,6 +3183,16 @@ void CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
 
     int nHeight = pindex->nHeight;
 
+    // The best invalid chain may end in a header above the invalid block (see
+    // InvalidChainFound). If it is on this branch, it is valid again: make it
+    // the best header again if it has the most work, so the node goes back to
+    // downloading that chain.
+    CBlockIndex* former_best_invalid = nullptr;
+    if (pindexBestInvalid != nullptr && pindexBestInvalid->GetAncestor(nHeight) == pindex) {
+        former_best_invalid = pindexBestInvalid;
+        pindexBestInvalid = nullptr;
+    }
+
     // Remove the invalidity flag from this block and all its descendants.
     BlockMap::iterator it = m_blockman.m_block_index.begin();
     while (it != m_blockman.m_block_index.end()) {
@@ -3131,6 +3220,12 @@ void CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
         }
         pindex = pindex->pprev;
     }
+
+    if (former_best_invalid != nullptr && former_best_invalid->IsValid(BLOCK_VALID_TREE) &&
+        (pindexBestHeader == nullptr || CBlockIndexWorkComparator()(pindexBestHeader, former_best_invalid))) {
+        pindexBestHeader = former_best_invalid;
+    }
+    CheckForkWarningConditions();
 }
 
 CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block)
@@ -3660,6 +3755,8 @@ bool ChainstateManager::ProcessNewBlockHeaders(const std::vector<CBlockHeader>& 
                 *ppindex = pindex;
             }
         }
+        // New headers may show a chain with more work than ours.
+        ActiveChainstate().CheckForkWarningConditions();
     }
     if (NotifyHeaderTip(ActiveChainstate())) {
         if (ActiveChainstate().IsInitialBlockDownload() && ppindex && *ppindex) {
@@ -3804,6 +3901,12 @@ bool ChainstateManager::ProcessNewBlock(const CChainParams& chainparams, const s
         if (ret) {
             // Store to disk
             ret = ActiveChainstate().AcceptBlock(block, state, &pindex, force_processing, nullptr, new_block);
+        }
+        // A block that doesn't extend our tip, accepted or not, may show a
+        // chain with more work than ours. Blocks that do are checked once
+        // they connect.
+        if (pindex != nullptr && pindex->pprev != ActiveChain().Tip()) {
+            ActiveChainstate().CheckForkWarningConditions();
         }
         if (!ret) {
             GetMainSignals().BlockChecked(*block, state);
