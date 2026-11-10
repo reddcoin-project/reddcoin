@@ -86,6 +86,7 @@ public:
         LOCK(::cs_main);
         return GetSignallingInfo(chainman().ActiveChain().Tip(), Params().GetConsensus());
     }
+    std::set<WarningKind> getWarningKinds() override { return GetWarningKinds(); }
     uint32_t getLogCategories() override { return LogInstance().GetCategoryMask(); }
     bool baseInitialize() override
     {

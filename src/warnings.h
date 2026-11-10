@@ -7,21 +7,40 @@
 #ifndef BITCOIN_WARNINGS_H
 #define BITCOIN_WARNINGS_H
 
+#include <util/translation.h>
+
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
-
-struct bilingual_str;
 
 /** Where the upgrade warnings send users for a new release. */
 extern const char* const UPGRADE_URL;
 
 void SetMiscWarning(const bilingual_str& warning);
 void SetfLargeWorkInvalidChainFound(bool flag);
+/** Kinds of warning that call for the user to act, for code that needs to
+ *  know which are up rather than show their text (the GUI's status bar). */
+enum class WarningKind {
+    UNKNOWN_RULE_SIGNALLING, //!< An unknown versionbit is set in most recent blocks.
+    UNKNOWN_RULE_LOCKED_IN,  //!< An unknown rule is locked in.
+    UNKNOWN_RULE_ACTIVE,     //!< An unknown rule is in effect.
+    UNKNOWN_BLOCK_VERSION,   //!< Most recent blocks use a block version format this release doesn't recognise.
+    INVALID_CHAIN,           //!< A chain with more work than ours is invalid to us.
+};
+
+struct UpgradeWarning {
+    WarningKind kind;
+    bilingual_str text;
+};
+
 /** Replace the current upgrade warnings (unknown rule changes, unknown block
  * versions). They are recomputed for every new tip, so each one goes away
  * once its cause does. */
-void SetUpgradeWarnings(std::vector<bilingual_str> warnings);
+void SetUpgradeWarnings(std::vector<UpgradeWarning> warnings);
+
+/** The kinds of warning that are up now. */
+std::set<WarningKind> GetWarningKinds();
 
 /** The upgrade warning texts. Each says what is happening, when, and what to do. */
 bilingual_str UnknownRuleSignallingWarning(int bit, int percent, int blocks);

@@ -23,7 +23,7 @@ std::string strMintWarning;
 static Mutex g_warnings_mutex;
 static bilingual_str g_misc_warnings GUARDED_BY(g_warnings_mutex);
 static bool fLargeWorkInvalidChainFound GUARDED_BY(g_warnings_mutex) = false;
-static std::vector<bilingual_str> g_upgrade_warnings GUARDED_BY(g_warnings_mutex);
+static std::vector<UpgradeWarning> g_upgrade_warnings GUARDED_BY(g_warnings_mutex);
 
 void SetMiscWarning(const bilingual_str& warning)
 {
@@ -37,10 +37,19 @@ void SetfLargeWorkInvalidChainFound(bool flag)
     fLargeWorkInvalidChainFound = flag;
 }
 
-void SetUpgradeWarnings(std::vector<bilingual_str> warnings)
+void SetUpgradeWarnings(std::vector<UpgradeWarning> warnings)
 {
     LOCK(g_warnings_mutex);
     g_upgrade_warnings = std::move(warnings);
+}
+
+std::set<WarningKind> GetWarningKinds()
+{
+    LOCK(g_warnings_mutex);
+    std::set<WarningKind> kinds;
+    if (fLargeWorkInvalidChainFound) kinds.insert(WarningKind::INVALID_CHAIN);
+    for (const UpgradeWarning& warning : g_upgrade_warnings) kinds.insert(warning.kind);
+    return kinds;
 }
 
 bilingual_str UnknownRuleSignallingWarning(int bit, int percent, int blocks)
@@ -100,9 +109,9 @@ bilingual_str GetWarnings(bool verbose)
 
     // Upgrade warnings come last, so the concise form shows one of them: they
     // are the ones that need the user to act.
-    for (const bilingual_str& warning : g_upgrade_warnings) {
-        warnings_concise = warning;
-        warnings_verbose.emplace_back(warning);
+    for (const UpgradeWarning& warning : g_upgrade_warnings) {
+        warnings_concise = warning.text;
+        warnings_verbose.emplace_back(warning.text);
     }
 
     if (verbose) {
