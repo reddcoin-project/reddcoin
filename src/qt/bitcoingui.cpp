@@ -20,6 +20,7 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
+#include <qt/upgradeindicator.h>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -174,6 +175,9 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     labelProxyIcon = new GUIUtil::ClickableLabel(platformStyle);
     connectionsControl = new GUIUtil::ClickableLabel(platformStyle);
     labelBlocksIcon = new GUIUtil::ClickableLabel(platformStyle);
+    labelUpgradeIcon = new GUIUtil::ClickableLabel(platformStyle);
+    labelUpgradeIcon->setObjectName("labelUpgradeIcon");
+    labelUpgradeIcon->setVisible(false); // until there is something to report
     if(enableWallet)
     {
         frameBlocksLayout->addStretch();
@@ -189,6 +193,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     frameBlocksLayout->addWidget(connectionsControl);
     frameBlocksLayout->addStretch();
     frameBlocksLayout->addWidget(labelBlocksIcon);
+    frameBlocksLayout->addStretch();
+    frameBlocksLayout->addWidget(labelUpgradeIcon);
     frameBlocksLayout->addStretch();
     if (enableWallet)
     {
@@ -235,6 +241,13 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     });
 
     connect(labelBlocksIcon, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showModalOverlay);
+    connect(labelUpgradeIcon, &GUIUtil::ClickableLabel::clicked, [this] {
+        rpcConsole->setTabFocus(RPCConsole::TabTypes::UPGRADES);
+        showDebugWindow();
+    });
+    m_upgrade_indicator_timer.setSingleShot(true);
+    m_upgrade_indicator_timer.setInterval(UPGRADE_INDICATOR_REFRESH_MS);
+    connect(&m_upgrade_indicator_timer, &QTimer::timeout, this, &BitcoinGUI::updateUpgradeIndicator);
     connect(progressBar, &GUIUtil::ClickableProgressBar::clicked, this, &BitcoinGUI::showModalOverlay);
     connect(labelCheckUpdate, &GUIUtil::ClickableLabel::clicked, this, &BitcoinGUI::showUpdatesClicked);
 
@@ -763,6 +776,15 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
 
         updateProxyIcon();
 
+        // The indicator follows the warnings at once, and new blocks at most
+        // once per interval: a burst of blocks (initial sync, a reorg) costs
+        // one refresh.
+        updateUpgradeIndicator();
+        connect(_clientModel, &ClientModel::alertsChanged, this, &BitcoinGUI::updateUpgradeIndicator);
+        connect(_clientModel, &ClientModel::numBlocksChanged, this, [this](int, const QDateTime&, double, bool headers, SynchronizationState) {
+            if (!headers && !m_upgrade_indicator_timer.isActive()) m_upgrade_indicator_timer.start();
+        });
+
 #ifdef ENABLE_WALLET
         if(walletFrame)
         {
@@ -804,6 +826,8 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
             // Disable context menu on tray icon
             trayIconMenu->clear();
         }
+        m_upgrade_indicator_timer.stop();
+        labelUpgradeIcon->setVisible(false);
         // Propagate cleared model to child objects
         rpcConsole->setClientModel(nullptr);
 #ifdef ENABLE_WALLET
@@ -1772,6 +1796,17 @@ void BitcoinGUI::updateWalletStatus()
 }
 #endif // ENABLE_WALLET
 
+void BitcoinGUI::updateUpgradeIndicator()
+{
+    if (!clientModel) return;
+    const UpgradeIndicator::Status status = UpgradeIndicator::Evaluate(m_node.getSignallingInfo(), m_node.getWarningKinds());
+    // Nothing to report: no icon, so the status bar looks as it always did.
+    labelUpgradeIcon->setVisible(status.level != UpgradeIndicator::Level::NONE);
+    if (status.level == UpgradeIndicator::Level::NONE) return;
+    labelUpgradeIcon->setPixmap(UpgradeIndicator::Icon(status.level, platformStyle->SingleColor(), STATUSBAR_ICONSIZE, devicePixelRatioF()));
+    labelUpgradeIcon->setToolTip(UpgradeIndicator::ToolTip(status));
+}
+
 void BitcoinGUI::updateProxyIcon()
 {
     std::string ip_port;
@@ -1918,6 +1953,8 @@ void BitcoinGUI::updateStatusBarIconColor()
     for (QWidget* w : statusBarWidgets) {
         if (w) QApplication::sendEvent(w, &paletteChange);
     }
+    // Drawn rather than loaded from a file, so redraw it in the new colour.
+    updateUpgradeIndicator();
 }
 
 static bool ThreadSafeMessageBox(BitcoinGUI* gui, const bilingual_str& message, const std::string& caption, unsigned int style)

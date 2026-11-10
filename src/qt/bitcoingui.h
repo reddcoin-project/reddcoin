@@ -23,6 +23,7 @@
 #include <QMenu>
 #include <QPoint>
 #include <QSystemTrayIcon>
+#include <QTimer>
 
 #ifdef Q_OS_MAC
 #include <qt/macos_appnap.h>
@@ -146,6 +147,10 @@ private:
     GUIUtil::ClickableLabel* labelProxyIcon = nullptr;
     GUIUtil::ClickableLabel* connectionsControl = nullptr;
     GUIUtil::ClickableLabel* labelBlocksIcon = nullptr;
+    /** Network upgrade and fork warning indicator; opens the Network Upgrades tab. */
+    GUIUtil::ClickableLabel* labelUpgradeIcon = nullptr;
+    /** Throttles indicator refreshes during bursts of blocks. */
+    QTimer m_upgrade_indicator_timer;
     GUIUtil::ClickableLabel* labelCheckUpdate = nullptr;
     GUIUtil::ClickableLabel* labelStakingIcon = nullptr;
     GUIUtil::ClickableLabel* walletstakingStatusControl = nullptr;
@@ -325,6 +330,8 @@ public Q_SLOTS:
 private:
     /** Set the proxy-enabled icon as shown in the UI. */
     void updateProxyIcon();
+    /** Refresh the network upgrade indicator from the node. */
+    void updateUpgradeIndicator();
     void updateWindowTitle();
 
 public Q_SLOTS:
