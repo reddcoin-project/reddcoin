@@ -666,6 +666,13 @@ GUI
   section, in a warning colour, with a link to download a newer release. The
   tab shows the same numbers as the `getdeploymentinfo` RPC.
 
+- The Network Upgrades tab also shows, for each deployment being signalled
+  or locked in and each unknown bit, a small bar for each of the last 8
+  completed windows: the share of that window's blocks that signalled,
+  against the threshold, so you can see whether support is growing. The
+  `getdeploymentinfo` RPC reports the same counts as a `history` array for
+  each deployment and unknown bit, starting at `period.history_start`.
+
 - A new icon in the status bar, beside the connection and sync icons, shows
   when a network upgrade is under way. It is hidden while there is nothing
   to report. An up arrow, in the theme's icon colour: a rule change this
