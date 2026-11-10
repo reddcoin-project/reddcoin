@@ -352,6 +352,16 @@ GUI changes
   section, in a warning colour, with a link to download a newer release. The
   tab shows the same numbers as the `getdeploymentinfo` RPC.
 
+- A new icon in the status bar, beside the connection and sync icons, shows
+  when a network upgrade is under way. It is hidden while there is nothing
+  to report. An up arrow, in the theme's icon colour: a rule change this
+  release knows is being signalled or is locked in. An amber warning sign:
+  recent blocks signal a rule change this release does not know, use a block
+  version it does not recognise, or a chain with more work than ours is
+  invalid to this node. A red warning sign: a rule change this release does
+  not know is locked in or in effect, and this release must be upgraded. Its
+  tooltip gives the reasons, and clicking it opens the Network Upgrades tab.
+
 - A new `Check for Software Updates` menu item. Help -> Check for Software Updates. Can be used to determine if there is a later version available.
 
 - A new `Open Social Websites` menu item. Help -> Open Social Websites. Providing a quick access to `reddcoin.com` ,`redd.love`, `Reddcoin Wiki`,  `Discord Chatroom`, `reddcointalk.org`.
