@@ -26,8 +26,10 @@ struct DeploymentSignalling {
     int64_t start_time{0};
     int64_t timeout{0};
     int min_activation_height{0};
-    /** Height of the first block to which the state applies. */
+    /** Height of the first block to which the state applies, and that block's
+     *  time if it is already in the chain (0 otherwise). */
     int since{0};
+    int64_t since_time{0};
     /** Height from which the rules apply, once LOCKED_IN or ACTIVE; -1 otherwise. */
     int activation_height{-1};
     /** Estimated time of activation_height while LOCKED_IN; 0 otherwise. */
