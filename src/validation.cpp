@@ -1355,6 +1355,31 @@ struct DeepReorg {
 };
 static std::optional<DeepReorg> g_deep_reorg GUARDED_BY(cs_main);
 
+/** What -forknotify passes on about a fork warning. */
+struct ForkEvent {
+    const char* type;    //!< %t: invalid-chain, heavier-chain or deep-reorg
+    int fork_height;     //!< %h
+    int64_t difference;  //!< %d: the other chain's extra work in blocks, or the blocks a reorg replaced
+    uint256 ours;        //!< %o: our tip, or the tip a reorg replaced
+    uint256 theirs;      //!< %n: the other chain's tip, or the new tip after a reorg
+};
+
+static void ForkNotify(const ForkEvent& event)
+{
+#if HAVE_SYSTEM
+    std::string cmd = gArgs.GetArg("-forknotify", "");
+    if (cmd.empty()) return;
+    // Every value is a word, a number or a hash, so none needs quoting.
+    boost::replace_all(cmd, "%t", event.type);
+    boost::replace_all(cmd, "%h", ToString(event.fork_height));
+    boost::replace_all(cmd, "%d", ToString(event.difference));
+    boost::replace_all(cmd, "%o", event.ours.ToString());
+    boost::replace_all(cmd, "%n", event.theirs.ToString());
+    std::thread t(runCommand, cmd);
+    t.detach(); // thread runs free
+#endif
+}
+
 void CChainState::CheckForkWarningConditions()
 {
     AssertLockHeld(cs_main);
@@ -1373,6 +1398,7 @@ void CChainState::CheckForkWarningConditions()
         WarningKind kind;
         bilingual_str text;
         std::string log; //!< The tips' hashes, for the debug log.
+        ForkEvent event; //!< For -forknotify.
     };
     std::vector<ForkWarning> warnings;
     const auto describe = [&](const char* what, const CBlockIndex* fork, const CBlockIndex* theirs) {
@@ -1380,13 +1406,18 @@ void CChainState::CheckForkWarningConditions()
                          fork->nHeight, fork->GetBlockHash().ToString(), theirs->GetBlockHash().ToString(), theirs->nHeight,
                          tip->GetBlockHash().ToString(), tip->nHeight);
     };
+    const auto event = [&](const char* type, const CBlockIndex* fork, const CBlockIndex* theirs) {
+        const arith_uint256 extra = (theirs->nChainWork - tip->nChainWork) / GetBlockProof(*tip);
+        return ForkEvent{type, fork->nHeight, static_cast<int64_t>(extra.GetLow64()), tip->GetBlockHash(), theirs->GetBlockHash()};
+    };
 
     // A chain with more work than ours that contains an invalid block.
     if (pindexBestInvalid && pindexBestInvalid->nChainWork > threshold) {
         const CBlockIndex* fork = LastCommonAncestor(pindexBestInvalid, tip);
         warnings.push_back({"invalidchain:" + fork->GetBlockHash().ToString(), WarningKind::INVALID_CHAIN,
                             InvalidChainWarning(fork->nHeight, pindexBestInvalid->nHeight, tip->nHeight),
-                            describe("Chain with more work contains an invalid block", fork, pindexBestInvalid)});
+                            describe("Chain with more work contains an invalid block", fork, pindexBestInvalid),
+                            event("invalid-chain", fork, pindexBestInvalid)});
     }
 
     // A chain with more work than ours that we have headers for but don't
@@ -1406,7 +1437,8 @@ void CChainState::CheckForkWarningConditions()
             const bool received = header->GetAncestor(fork->nHeight + 1)->nStatus & BLOCK_HAVE_DATA;
             warnings.push_back({"heavierchain:" + fork->GetBlockHash().ToString(), WarningKind::HEAVIER_CHAIN,
                                 HeavierChainWarning(fork->nHeight, header->nHeight, tip->nHeight, received),
-                                describe("Chain with more work is not being followed", fork, header)});
+                                describe("Chain with more work is not being followed", fork, header),
+                                event("heavier-chain", fork, header)});
         }
     } else {
         g_heavier_chain_since.reset();
@@ -1422,7 +1454,8 @@ void CChainState::CheckForkWarningConditions()
         warnings.push_back({"deepreorg:" + reorg.old_tip.ToString() + ":" + reorg.new_tip.ToString(), WarningKind::DEEP_REORG,
                             DeepReorgWarning(reorg.depth, reorg.fork_height, reorg.old_height, reorg.new_height, count_seconds(reorg.time)),
                             strprintf("Reorg replaced %d blocks: fork at %d, old tip %s at %d, new tip %s at %d", reorg.depth,
-                                      reorg.fork_height, reorg.old_tip.ToString(), reorg.old_height, reorg.new_tip.ToString(), reorg.new_height)});
+                                      reorg.fork_height, reorg.old_tip.ToString(), reorg.old_height, reorg.new_tip.ToString(), reorg.new_height),
+                            ForkEvent{"deep-reorg", reorg.fork_height, reorg.depth, reorg.old_tip, reorg.new_tip}});
     }
 
     std::vector<UpgradeWarning> fork_warnings;
@@ -1439,6 +1472,7 @@ void CChainState::CheckForkWarningConditions()
         if (g_fork_alerts_sent.insert(warning.key).second) {
             LogPrintf("Warning: %s\n", warning.log);
             AlertNotify(warning.text.original);
+            ForkNotify(warning.event);
             alerted = true;
         }
     }

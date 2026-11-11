@@ -9,7 +9,8 @@ reconnect and node 0 reorgs onto it. A reorg that replaces fewer than
 -reorgwarndepth blocks (default 10) raises nothing. One that replaces at least
 that many raises a warning in RPC, runs -alertnotify once and logs both tips.
 The warning goes away after 24 hours or a restart, and -reorgwarndepth=0
-turns it off.
+turns it off. Each deep reorg also runs -forknotify once, with the type, the
+fork height, the number of blocks replaced and both tips filled in.
 """
 import os
 import re
@@ -40,8 +41,11 @@ class ReorgWarningTest(BitcoinTestFramework):
         self.alert_filename = os.path.join(self.options.tmpdir, "alert.txt")
         with open(self.alert_filename, 'w', encoding='utf8'):
             pass
-        self.alert_arg = "-alertnotify=echo %s >> \"" + self.alert_filename + "\""
-        self.extra_args[0] = self.extra_args[0] + [self.alert_arg]
+        self.fork_filename = os.path.join(self.options.tmpdir, "fork.txt")
+        with open(self.fork_filename, 'w', encoding='utf8'):
+            pass
+        self.extra_args[0] = self.extra_args[0] + ["-alertnotify=echo %s >> \"" + self.alert_filename + "\"",
+                                                   "-forknotify=echo %t %h %d %o %n >> \"" + self.fork_filename + "\""]
         self.setup_nodes()
         self.connect_nodes(0, 1)
         self.sync_all()
@@ -77,6 +81,18 @@ class ReorgWarningTest(BitcoinTestFramework):
         """-alertnotify runs on its own thread: wait for it, then check it ran no more than count times."""
         self.wait_until(lambda: self.alerts() >= count)
         assert_equal(self.alerts(), count)
+
+    def fork_notes(self):
+        """The -forknotify runs so far, one list of fields each."""
+        with open(self.fork_filename, 'r', encoding='utf8') as f:
+            return [line.split() for line in f.read().splitlines()]
+
+    def check_fork_note(self, count, depth, fork, old_tip, new):
+        """-forknotify has run count times, the last for this reorg."""
+        self.wait_until(lambda: len(self.fork_notes()) >= count)
+        notes = self.fork_notes()
+        assert_equal(len(notes), count)
+        assert_equal(notes[-1], ["deep-reorg", str(fork), str(depth), old_tip, self.nodes[0].getblockhash(new)])
 
     def settle(self):
         # A block download in flight when generate() moves the clock trips the
@@ -125,6 +141,7 @@ class ReorgWarningTest(BitcoinTestFramework):
         self.reorg(DEPTH - 1)
         assert_equal(self.reorg_warnings(), [])
         assert_equal(self.alerts(), 0)
+        assert_equal(self.fork_notes(), [])
 
         self.log.info("A reorg that replaces 10 blocks raises the warning, runs -alertnotify and logs both tips")
         self.settle()
@@ -133,6 +150,7 @@ class ReorgWarningTest(BitcoinTestFramework):
             fork, old, last, old_tip, _ = self.reorg(DEPTH)
         new = self.check_warning(DEPTH, fork, old, last)
         self.wait_for_alerts(1)
+        self.check_fork_note(1, DEPTH, fork, old_tip, new)
         expected_log = "old tip {} at {}, new tip {} at {}".format(old_tip, old, node0.getblockhash(new), new)
         with open(os.path.join(node0.datadir, self.chain, "debug.log"), encoding="utf-8") as f:
             assert expected_log in f.read()
@@ -142,15 +160,17 @@ class ReorgWarningTest(BitcoinTestFramework):
         self.settle()
         assert_equal(self.check_warning(DEPTH, fork, old, last), new)
         assert_equal(self.alerts(), 1)
+        assert_equal(len(self.fork_notes()), 1)
 
         self.log.info("A restart clears it")
         self.restart()
         assert_equal(self.reorg_warnings(), [])
 
         self.log.info("It goes away 24 hours after the reorg")
-        fork, old, last, _, _ = self.reorg(DEPTH + 2)
+        fork, old, last, old_tip, _ = self.reorg(DEPTH + 2)
         new = self.check_warning(DEPTH + 2, fork, old, last)
         self.wait_for_alerts(2)
+        self.check_fork_note(2, DEPTH + 2, fork, old_tip, new)
         self.advance_time(DAY - 120)
         self.generate(1, node=node0)
         self.settle()
@@ -165,12 +185,14 @@ class ReorgWarningTest(BitcoinTestFramework):
         self.reorg(DEPTH)
         assert_equal(self.reorg_warnings(), [])
         assert_equal(self.alerts(), 2)
+        assert_equal(len(self.fork_notes()), 2)
 
         self.log.info("-reorgwarndepth sets the depth")
         self.restart("-reorgwarndepth=3")
-        fork, old, last, _, _ = self.reorg(3)
-        self.check_warning(3, fork, old, last)
+        fork, old, last, old_tip, _ = self.reorg(3)
+        new = self.check_warning(3, fork, old, last)
         self.wait_for_alerts(3)
+        self.check_fork_note(3, 3, fork, old_tip, new)
 
 
 if __name__ == '__main__':
