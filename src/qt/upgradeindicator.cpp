@@ -37,6 +37,9 @@ Status Evaluate(const SignallingInfo& info, const std::set<WarningKind>& kinds)
     if (kinds.count(WarningKind::HEAVIER_CHAIN)) {
         warning << QObject::tr("A chain with more work than this node's is not being followed. This node may be on a minority fork.");
     }
+    if (kinds.count(WarningKind::DEEP_REORG)) {
+        warning << QObject::tr("This node recently switched to another chain and replaced many of its latest blocks. Check recent payments.");
+    }
 
     for (const DeploymentSignalling& deployment : info.deployments) {
         if (!deployment.scheduled) continue;
