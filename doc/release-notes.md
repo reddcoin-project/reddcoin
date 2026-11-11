@@ -706,7 +706,8 @@ GUI
   release knows is being signalled or is locked in. An amber warning sign:
   recent blocks signal a rule change this release does not know, use a block
   version it does not recognise, or a chain with more work than ours is
-  invalid to this node or not being followed. A red warning sign: a rule change this release does
+  invalid to this node or not being followed, or this node recently replaced
+  many of its latest blocks in a reorganisation. A red warning sign: a rule change this release does
   not know is locked in or in effect, and this release must be upgraded. Its
   tooltip gives the reasons, and clicking it opens the Network Upgrades tab.
 
