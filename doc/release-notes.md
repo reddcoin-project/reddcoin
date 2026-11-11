@@ -193,6 +193,15 @@ It stays up for 24 hours or until a restart. Blocks disconnected with
 `invalidateblock` don't count. The new option `-reorgwarndepth=<n>` sets the
 depth (0 turns the warning off).
 
+The new option `-forknotify=<cmd>` runs a command once for each of these
+warnings, so operators can act on forks without parsing `-alertnotify` text.
+In the command, `%t` is replaced by the type (`invalid-chain`, `heavier-chain`
+or `deep-reorg`), `%h` by the height where the chains branch off, `%d` by the
+other chain's extra work in blocks at our tip's difficulty (for a deep reorg,
+the number of blocks replaced), `%o` by our tip's hash (for a deep reorg, the
+replaced tip) and `%n` by the other chain's tip hash (for a deep reorg, the new
+tip).
+
 Verified release upgrades
 -------------------------
 
