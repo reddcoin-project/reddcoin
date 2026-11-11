@@ -18,7 +18,6 @@
 extern const char* const UPGRADE_URL;
 
 void SetMiscWarning(const bilingual_str& warning);
-void SetfLargeWorkInvalidChainFound(bool flag);
 /** Kinds of warning that call for the user to act, for code that needs to
  *  know which are up rather than show their text (the GUI's status bar). */
 enum class WarningKind {
@@ -26,7 +25,8 @@ enum class WarningKind {
     UNKNOWN_RULE_LOCKED_IN,  //!< An unknown rule is locked in.
     UNKNOWN_RULE_ACTIVE,     //!< An unknown rule is in effect.
     UNKNOWN_BLOCK_VERSION,   //!< Most recent blocks use a block version format this release doesn't recognise.
-    INVALID_CHAIN,           //!< A chain with more work than ours is invalid to us.
+    INVALID_CHAIN,           //!< A chain with more work than ours contains a block that is invalid to us.
+    HEAVIER_CHAIN,           //!< A chain with more work than ours isn't being followed: its blocks are missing or couldn't be verified.
 };
 
 struct UpgradeWarning {
@@ -39,6 +39,10 @@ struct UpgradeWarning {
  * once its cause does. */
 void SetUpgradeWarnings(std::vector<UpgradeWarning> warnings);
 
+/** Replace the current fork warnings (a chain with more work than ours that
+ * this node doesn't follow). They are recomputed as blocks and headers arrive. */
+void SetForkWarnings(std::vector<UpgradeWarning> warnings);
+
 /** The kinds of warning that are up now. */
 std::set<WarningKind> GetWarningKinds();
 
@@ -47,6 +51,11 @@ bilingual_str UnknownRuleSignallingWarning(int bit, int percent, int blocks);
 bilingual_str UnknownRuleLockedInWarning(int bit, int activation_height, int64_t activation_time);
 bilingual_str UnknownRuleActiveWarning(int bit, int since_height);
 bilingual_str UnknownBlockVersionWarning(int count, int blocks);
+
+/** The fork warning texts. Each gives the fork height, both tips' heights,
+ * why the other chain isn't followed, and what to do. */
+bilingual_str InvalidChainWarning(int fork_height, int their_height, int our_height);
+bilingual_str HeavierChainWarning(int fork_height, int their_height, int our_height, bool blocks_received);
 
 /** Format a string that describes several potential problems detected by the core.
  * @param[in] verbose bool

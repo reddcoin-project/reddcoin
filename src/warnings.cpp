@@ -22,8 +22,8 @@ std::string strMintWarning;
 
 static Mutex g_warnings_mutex;
 static bilingual_str g_misc_warnings GUARDED_BY(g_warnings_mutex);
-static bool fLargeWorkInvalidChainFound GUARDED_BY(g_warnings_mutex) = false;
 static std::vector<UpgradeWarning> g_upgrade_warnings GUARDED_BY(g_warnings_mutex);
+static std::vector<UpgradeWarning> g_fork_warnings GUARDED_BY(g_warnings_mutex);
 
 void SetMiscWarning(const bilingual_str& warning)
 {
@@ -31,10 +31,10 @@ void SetMiscWarning(const bilingual_str& warning)
     g_misc_warnings = warning;
 }
 
-void SetfLargeWorkInvalidChainFound(bool flag)
+void SetForkWarnings(std::vector<UpgradeWarning> warnings)
 {
     LOCK(g_warnings_mutex);
-    fLargeWorkInvalidChainFound = flag;
+    g_fork_warnings = std::move(warnings);
 }
 
 void SetUpgradeWarnings(std::vector<UpgradeWarning> warnings)
@@ -47,8 +47,8 @@ std::set<WarningKind> GetWarningKinds()
 {
     LOCK(g_warnings_mutex);
     std::set<WarningKind> kinds;
-    if (fLargeWorkInvalidChainFound) kinds.insert(WarningKind::INVALID_CHAIN);
     for (const UpgradeWarning& warning : g_upgrade_warnings) kinds.insert(warning.kind);
+    for (const UpgradeWarning& warning : g_fork_warnings) kinds.insert(warning.kind);
     return kinds;
 }
 
@@ -74,6 +74,22 @@ bilingual_str UnknownBlockVersionWarning(int count, int blocks)
 {
     return strprintf(_("%i of the last %i blocks use a block version that this version does not recognise. The network may be changing its rules. Upgrade Reddcoin Core: %s"),
                      count, blocks, UPGRADE_URL);
+}
+
+bilingual_str InvalidChainWarning(int fork_height, int their_height, int our_height)
+{
+    return strprintf(_("A chain with more work than this node's chain branches off at block %i and reaches block %i, but it contains a block that this node considers invalid, so this node stays on its own chain at block %i. Unless you marked that block invalid yourself, either this version is missing a rule change (upgrade Reddcoin Core: %s) or the other chain breaks the rules. Compare your best block with other nodes before relying on recent payments."),
+                     fork_height, their_height, our_height, UPGRADE_URL);
+}
+
+bilingual_str HeavierChainWarning(int fork_height, int their_height, int our_height, bool blocks_received)
+{
+    if (blocks_received) {
+        return strprintf(_("A chain with more work than this node's chain branches off at block %i and reaches block %i, but its blocks have arrived and could not be connected, so this node stays on its own chain at block %i. This node may be on a minority fork, or the other chain may break rules that this version enforces. Make sure Reddcoin Core is up to date (%s) and compare your best block with other nodes before relying on recent payments."),
+                         fork_height, their_height, our_height, UPGRADE_URL);
+    }
+    return strprintf(_("A chain with more work than this node's chain branches off at block %i and reaches block %i, but its blocks have not arrived or could not be verified, so this node stays on its own chain at block %i. This node may be on a minority fork, or the other chain may break rules that this version enforces. Make sure Reddcoin Core is up to date (%s) and compare your best block with other nodes before relying on recent payments."),
+                     fork_height, their_height, our_height, UPGRADE_URL);
 }
 
 bilingual_str GetWarnings(bool verbose)
@@ -102,14 +118,14 @@ bilingual_str GetWarnings(bool verbose)
         warnings_verbose.emplace_back(warnings_concise);
     }
 
-    if (fLargeWorkInvalidChainFound) {
-        warnings_concise = _("Warning: We do not appear to fully agree with our peers! You may need to upgrade, or other nodes may need to upgrade.");
-        warnings_verbose.emplace_back(warnings_concise);
-    }
-
-    // Upgrade warnings come last, so the concise form shows one of them: they
-    // are the ones that need the user to act.
+    // Upgrade and fork warnings come last, so the concise form shows one of
+    // them: they are the ones that need the user to act. A fork warning goes
+    // last of all, as this node may already be on the wrong chain.
     for (const UpgradeWarning& warning : g_upgrade_warnings) {
+        warnings_concise = warning.text;
+        warnings_verbose.emplace_back(warning.text);
+    }
+    for (const UpgradeWarning& warning : g_fork_warnings) {
         warnings_concise = warning.text;
         warnings_verbose.emplace_back(warning.text);
     }
