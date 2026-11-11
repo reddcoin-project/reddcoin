@@ -743,6 +743,14 @@ public:
     /** Remove invalidity status from a block and its descendants. */
     void ResetBlockFailureFlags(CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
+    /**
+     * Raise or clear the fork warnings: a chain with more work than ours, by
+     * more than 6 blocks' worth, that contains an invalid block, or that we
+     * have headers for but have not followed for 10 minutes. Each new fork
+     * runs -alertnotify once. Does nothing during initial block download.
+     */
+    void CheckForkWarningConditions() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
     /** Replay blocks that aren't fully applied to the database. */
     bool ReplayBlocks();
 
@@ -792,7 +800,6 @@ private:
 
     bool RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& inputs) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
-    void CheckForkWarningConditions() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void InvalidChainFound(CBlockIndex* pindexNew) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     bool LoadBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(cs_main);

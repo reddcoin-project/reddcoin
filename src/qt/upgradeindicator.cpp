@@ -34,6 +34,9 @@ Status Evaluate(const SignallingInfo& info, const std::set<WarningKind>& kinds)
     if (kinds.count(WarningKind::INVALID_CHAIN)) {
         warning << QObject::tr("A chain with more work than this node's is invalid to this node. This node or other nodes may need to upgrade.");
     }
+    if (kinds.count(WarningKind::HEAVIER_CHAIN)) {
+        warning << QObject::tr("A chain with more work than this node's is not being followed. This node may be on a minority fork.");
+    }
 
     for (const DeploymentSignalling& deployment : info.deployments) {
         if (!deployment.scheduled) continue;

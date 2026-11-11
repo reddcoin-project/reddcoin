@@ -94,7 +94,7 @@ void UpgradeIndicatorTests::amberForUnknownSignallingBlockVersionsAndInvalidChai
     SignallingInfo info = Window();
     info.deployments.push_back(Deployment("csv", ThresholdState::STARTED));
 
-    for (const WarningKind kind : {WarningKind::UNKNOWN_RULE_SIGNALLING, WarningKind::UNKNOWN_BLOCK_VERSION, WarningKind::INVALID_CHAIN}) {
+    for (const WarningKind kind : {WarningKind::UNKNOWN_RULE_SIGNALLING, WarningKind::UNKNOWN_BLOCK_VERSION, WarningKind::INVALID_CHAIN, WarningKind::HEAVIER_CHAIN}) {
         const auto status = UpgradeIndicator::Evaluate(info, {kind});
         QCOMPARE(status.level, Level::WARNING);
         // The warning comes first, the known deployment's progress after it.
@@ -104,6 +104,7 @@ void UpgradeIndicatorTests::amberForUnknownSignallingBlockVersionsAndInvalidChai
     QVERIFY(UpgradeIndicator::Evaluate(info, {WarningKind::UNKNOWN_RULE_SIGNALLING}).reasons[0].contains("does not know about"));
     QVERIFY(UpgradeIndicator::Evaluate(info, {WarningKind::UNKNOWN_BLOCK_VERSION}).reasons[0].contains("block version"));
     QVERIFY(UpgradeIndicator::Evaluate(info, {WarningKind::INVALID_CHAIN}).reasons[0].contains("invalid"));
+    QVERIFY(UpgradeIndicator::Evaluate(info, {WarningKind::HEAVIER_CHAIN}).reasons[0].contains("minority fork"));
 
     const auto both = UpgradeIndicator::Evaluate(info, {WarningKind::UNKNOWN_RULE_SIGNALLING, WarningKind::UNKNOWN_BLOCK_VERSION});
     QCOMPARE(both.level, Level::WARNING);
