@@ -184,6 +184,15 @@ reorg raises no warning. The invalid chain warning replaces "We do not appear
 to fully agree with our peers", now also sees the whole chain behind a block
 marked invalid with `invalidateblock`, and runs `-alertnotify`.
 
+When a reorganisation replaces at least 10 blocks of this node's chain, the
+node says so in the GUI, in the `warnings` field of `getblockchaininfo` and
+`getnetworkinfo`, and through `-alertnotify`, and logs the old and new tips.
+The warning gives the time, the number of blocks replaced, the height where the
+chains branch off and both tips' heights, and advises checking recent payments.
+It stays up for 24 hours or until a restart. Blocks disconnected with
+`invalidateblock` don't count. The new option `-reorgwarndepth=<n>` sets the
+depth (0 turns the warning off).
+
 Verified release upgrades
 -------------------------
 
@@ -697,7 +706,8 @@ GUI
   release knows is being signalled or is locked in. An amber warning sign:
   recent blocks signal a rule change this release does not know, use a block
   version it does not recognise, or a chain with more work than ours is
-  invalid to this node or not being followed. A red warning sign: a rule change this release does
+  invalid to this node or not being followed, or this node recently replaced
+  many of its latest blocks in a reorganisation. A red warning sign: a rule change this release does
   not know is locked in or in effect, and this release must be upgraded. Its
   tooltip gives the reasons, and clicking it opens the Network Upgrades tab.
 

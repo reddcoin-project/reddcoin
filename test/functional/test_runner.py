@@ -236,6 +236,7 @@ BASE_SCRIPTS = [
     'rpc_packages.py',
     'feature_versionbits_warning.py',
     'feature_fork_warning.py',
+    'feature_reorg_warning.py',
     'rpc_preciousblock.py',
     'wallet_importprunedfunds.py --legacy-wallet',
     'wallet_importprunedfunds.py --descriptors',

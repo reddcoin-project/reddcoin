@@ -92,6 +92,12 @@ bilingual_str HeavierChainWarning(int fork_height, int their_height, int our_hei
                      fork_height, their_height, our_height, UPGRADE_URL);
 }
 
+bilingual_str DeepReorgWarning(int depth, int fork_height, int old_height, int new_height, int64_t time)
+{
+    return strprintf(_("At %s this node switched to another chain and replaced its last %i blocks: the chains branch off at block %i, and the tip moved from block %i to block %i. Payments in the replaced blocks may have been reversed or may confirm again later, so check recent payments before relying on them."),
+                     FormatISO8601DateTime(time), depth, fork_height, old_height, new_height);
+}
+
 bilingual_str GetWarnings(bool verbose)
 {
     bilingual_str warnings_concise;
