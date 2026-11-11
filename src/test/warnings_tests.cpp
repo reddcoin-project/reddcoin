@@ -57,6 +57,11 @@ BOOST_AUTO_TEST_CASE(fork_warning_texts)
     BOOST_CHECK(missing.find("its own chain at block 215") != std::string::npos);
     BOOST_CHECK(HeavierChainWarning(200, 230, 215, true).original.find("have arrived and could not be connected") != std::string::npos);
 
+    BOOST_CHECK_EQUAL(DeepReorgWarning(12, 300, 312, 317, 1700000000).original,
+                      "At 2023-11-14T22:13:20Z this node switched to another chain and replaced its last 12 blocks: the chains branch off at block 300, "
+                      "and the tip moved from block 312 to block 317. Payments in the replaced blocks may have been reversed or may confirm again later, "
+                      "so check recent payments before relying on them.");
+
     // The concise form shows a fork warning ahead of an upgrade warning: this
     // node may already be on the wrong chain.
     SetUpgradeWarnings({{WarningKind::UNKNOWN_BLOCK_VERSION, UnknownBlockVersionWarning(60, 100)}});
