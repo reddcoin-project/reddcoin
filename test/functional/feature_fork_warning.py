@@ -15,6 +15,9 @@ it in three ways and is checked each time:
   clears when node 0 follows the branch.
 - As headers with an invalidated block: the invalid chain warning comes up at
   once and clears after reconsiderblock.
+
+Each warning also runs -forknotify once, with the type, the fork height, the
+other chain's extra work in blocks and both tips filled in.
 """
 import os
 
@@ -54,7 +57,11 @@ class ForkWarningTest(BitcoinTestFramework):
         self.alert_filename = os.path.join(self.options.tmpdir, "alert.txt")
         with open(self.alert_filename, 'w', encoding='utf8'):
             pass
-        self.extra_args[0] = self.extra_args[0] + ["-alertnotify=echo %s >> \"" + self.alert_filename + "\""]
+        self.fork_filename = os.path.join(self.options.tmpdir, "fork.txt")
+        with open(self.fork_filename, 'w', encoding='utf8'):
+            pass
+        self.extra_args[0] = self.extra_args[0] + ["-alertnotify=echo %s >> \"" + self.alert_filename + "\"",
+                                                   "-forknotify=echo %t %h %d %o %n >> \"" + self.fork_filename + "\""]
         self.setup_nodes()
         self.connect_nodes(0, 1)
         self.sync_all()
@@ -75,6 +82,25 @@ class ForkWarningTest(BitcoinTestFramework):
         """-alertnotify runs on its own thread: wait for it, then check it ran no more than count times."""
         self.wait_until(lambda: self.alerts(text) >= count)
         assert_equal(self.alerts(text), count)
+
+    def fork_notes(self):
+        """The -forknotify runs so far, one list of fields each."""
+        with open(self.fork_filename, 'r', encoding='utf8') as f:
+            return [line.split() for line in f.read().splitlines()]
+
+    def check_fork_note(self, count, kind, fork_height, theirs):
+        """-forknotify has run count times, the last for this warning, with our current tip."""
+        node0 = self.nodes[0]
+        self.wait_until(lambda: len(self.fork_notes()) >= count)
+        notes = self.fork_notes()
+        assert_equal(len(notes), count)
+        ours = node0.getbestblockhash()
+        # The other chain's extra work, in blocks at our tip's difficulty.
+        our_header, their_header = node0.getblockheader(ours), node0.getblockheader(theirs)
+        target = int(our_header["bits"][2:], 16) << (8 * (int(our_header["bits"][:2], 16) - 3))
+        extra = (int(their_header["chainwork"], 16) - int(our_header["chainwork"], 16)) // ((1 << 256) // (target + 1))
+        assert extra >= 6, extra
+        assert_equal(notes[-1], [kind, str(fork_height), str(extra), ours, theirs])
 
     def settle(self):
         # A block download in flight when generate() moves the clock trips the
@@ -117,6 +143,7 @@ class ForkWarningTest(BitcoinTestFramework):
         self.reconnect()
         assert_equal(self.fork_warnings(), [])
         assert_equal(self.alerts(FORK_TEXT), 0)
+        assert_equal(self.fork_notes(), [])
 
         self.log.info("Headers of a chain with more work: no warning within the grace period")
         fork_height, hashes = self.fork(2, 15)
@@ -127,6 +154,7 @@ class ForkWarningTest(BitcoinTestFramework):
         self.advance_time(GRACE - 60)
         self.submit_headers(hashes[-1:])
         assert_equal(self.fork_warnings(), [])
+        assert_equal(self.fork_notes(), [])
 
         self.log.info("The warning comes up once the chain has gone unfollowed for 10 minutes")
         self.advance_time(60)
@@ -135,11 +163,13 @@ class ForkWarningTest(BitcoinTestFramework):
         theirs = node1.getblockcount()
         assert_equal(self.fork_warnings(), [heavier_text(fork_height, theirs, ours)])
         self.wait_for_alerts(NOT_ARRIVED, 1)
+        self.check_fork_note(1, "heavier-chain", fork_height, hashes[-1])
         self.log.info("More headers on the same chain update the text without running -alertnotify again")
         hashes += self.generate(1, node=node1, sync_every=1000)
         self.submit_headers(hashes[-1:])
         assert_equal(self.fork_warnings(), [heavier_text(fork_height, theirs + 1, ours)])
         assert_equal(self.alerts(NOT_ARRIVED), 1)
+        assert_equal(len(self.fork_notes()), 1)
 
         self.log.info("The warning clears once node 0 follows the chain")
         self.reconnect()
@@ -153,6 +183,7 @@ class ForkWarningTest(BitcoinTestFramework):
         node0.invalidateblock(hashes[0])
         assert_equal(self.fork_warnings(), [invalid_text(fork_height, theirs, ours)])
         self.wait_for_alerts(INVALID, 1)
+        self.check_fork_note(2, "invalid-chain", fork_height, hashes[-1])
 
         self.log.info("reconsiderblock clears it, and the heavier chain warning follows after the grace period")
         node0.reconsiderblock(hashes[0])
@@ -163,6 +194,7 @@ class ForkWarningTest(BitcoinTestFramework):
         assert_equal(self.fork_warnings(), [heavier_text(fork_height, theirs + 1, ours)])
         # A new fork runs -alertnotify again.
         self.wait_for_alerts(NOT_ARRIVED, 2)
+        self.check_fork_note(3, "heavier-chain", fork_height, hashes[-1])
 
         self.reconnect()
         assert_equal(self.fork_warnings(), [])

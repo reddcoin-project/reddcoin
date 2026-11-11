@@ -384,6 +384,10 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-version", "Print version and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #if HAVE_SYSTEM
     argsman.AddArg("-alertnotify=<cmd>", "Execute command when a relevant alert is received or we see a really long fork (%s in cmd is replaced by message)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-forknotify=<cmd>", "Execute command once for each fork warning: a chain with more work than ours that contains an invalid block or isn't followed, or a deep reorganisation (see -reorgwarndepth). "
+                   "In cmd, %t is replaced by the type (invalid-chain, heavier-chain or deep-reorg), %h by the height where the chains branch off, "
+                   "%d by the other chain's extra work in blocks at our tip's difficulty (for deep-reorg, the number of blocks replaced), "
+                   "%o by our tip's hash (for deep-reorg, the replaced tip) and %n by the other chain's tip hash (for deep-reorg, the new tip)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
     argsman.AddArg("-reorgwarndepth=<n>", strprintf("Warn, and run -alertnotify, when a reorganisation replaces at least <n> blocks of the active chain. The warning stays up for 24 hours (0 to disable, default: %u)", DEFAULT_REORG_WARN_DEPTH), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-assumevalid=<hex>", strprintf("If this block is in the chain assume that it and its ancestors are valid and potentially skip their script verification (0 to verify all, default: %s, testnet: %s, signet: %s)", defaultChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnetChainParams->GetConsensus().defaultAssumeValid.GetHex(), signetChainParams->GetConsensus().defaultAssumeValid.GetHex()), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
