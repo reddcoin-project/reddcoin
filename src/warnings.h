@@ -27,6 +27,7 @@ enum class WarningKind {
     UNKNOWN_BLOCK_VERSION,   //!< Most recent blocks use a block version format this release doesn't recognise.
     INVALID_CHAIN,           //!< A chain with more work than ours contains a block that is invalid to us.
     HEAVIER_CHAIN,           //!< A chain with more work than ours isn't being followed: its blocks are missing or couldn't be verified.
+    DEEP_REORG,              //!< A recent reorg replaced at least -reorgwarndepth blocks.
 };
 
 struct UpgradeWarning {
@@ -40,7 +41,8 @@ struct UpgradeWarning {
 void SetUpgradeWarnings(std::vector<UpgradeWarning> warnings);
 
 /** Replace the current fork warnings (a chain with more work than ours that
- * this node doesn't follow). They are recomputed as blocks and headers arrive. */
+ * this node doesn't follow, a recent deep reorg). They are recomputed as
+ * blocks and headers arrive. */
 void SetForkWarnings(std::vector<UpgradeWarning> warnings);
 
 /** The kinds of warning that are up now. */
@@ -56,6 +58,7 @@ bilingual_str UnknownBlockVersionWarning(int count, int blocks);
  * why the other chain isn't followed, and what to do. */
 bilingual_str InvalidChainWarning(int fork_height, int their_height, int our_height);
 bilingual_str HeavierChainWarning(int fork_height, int their_height, int our_height, bool blocks_received);
+bilingual_str DeepReorgWarning(int depth, int fork_height, int old_height, int new_height, int64_t time);
 
 /** Format a string that describes several potential problems detected by the core.
  * @param[in] verbose bool

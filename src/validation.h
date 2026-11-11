@@ -80,6 +80,7 @@ static const int MAX_SCRIPTCHECK_THREADS = 15;
 static const int DEFAULT_SCRIPTCHECK_THREADS = 0;
 static const int64_t DEFAULT_MAX_TIP_AGE = 8 * 60 * 60;
 static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
+static const int DEFAULT_REORG_WARN_DEPTH = 10;
 static const bool DEFAULT_TXINDEX = true;
 static constexpr bool DEFAULT_COINSTATSINDEX{false};
 static const char* const DEFAULT_BLOCKFILTERINDEX = "0";
@@ -126,6 +127,8 @@ extern bool g_parallel_script_checks;
 extern bool fRequireStandard;
 extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
+/** A reorg that replaces at least this many blocks raises a warning (0: never). */
+extern int g_reorg_warn_depth;
 /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
 extern CFeeRate minRelayTxFee;
 /** If the tip is older than this (in seconds), the node is considered to be in initial block download. */
@@ -750,6 +753,9 @@ public:
      * runs -alertnotify once. Does nothing during initial block download.
      */
     void CheckForkWarningConditions() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Raise the deep reorg warning if the active chain no longer contains
+     *  at least -reorgwarndepth blocks that led to old_tip. */
+    void CheckDeepReorg(const CBlockIndex* old_tip) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /** Replay blocks that aren't fully applied to the database. */
     bool ReplayBlocks();
