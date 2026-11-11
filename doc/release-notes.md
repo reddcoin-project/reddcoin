@@ -184,6 +184,15 @@ reorg raises no warning. The invalid chain warning replaces "We do not appear
 to fully agree with our peers", now also sees the whole chain behind a block
 marked invalid with `invalidateblock`, and runs `-alertnotify`.
 
+When a reorganisation replaces at least 10 blocks of this node's chain, the
+node says so in the GUI, in the `warnings` field of `getblockchaininfo` and
+`getnetworkinfo`, and through `-alertnotify`, and logs the old and new tips.
+The warning gives the time, the number of blocks replaced, the height where the
+chains branch off and both tips' heights, and advises checking recent payments.
+It stays up for 24 hours or until a restart. Blocks disconnected with
+`invalidateblock` don't count. The new option `-reorgwarndepth=<n>` sets the
+depth (0 turns the warning off).
+
 Verified release upgrades
 -------------------------
 

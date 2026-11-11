@@ -127,6 +127,7 @@ bool g_parallel_script_checks{false};
 bool fRequireStandard = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
+int g_reorg_warn_depth = DEFAULT_REORG_WARN_DEPTH;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 
 uint256 hashAssumeValid;
@@ -1340,6 +1341,20 @@ static std::vector<std::string> g_fork_warnings_last GUARDED_BY(cs_main);
 /** Where the heavier chain we don't follow branches off, and when we first saw it. */
 static std::optional<std::pair<uint256, std::chrono::seconds>> g_heavier_chain_since GUARDED_BY(cs_main);
 
+/** How long the deep reorg warning stays up. */
+static constexpr std::chrono::seconds DEEP_REORG_WARNING_TIME{std::chrono::hours{24}};
+/** The last reorg that replaced at least -reorgwarndepth blocks. */
+struct DeepReorg {
+    int depth;
+    int fork_height;
+    int old_height;
+    int new_height;
+    uint256 old_tip;
+    uint256 new_tip;
+    std::chrono::seconds time;
+};
+static std::optional<DeepReorg> g_deep_reorg GUARDED_BY(cs_main);
+
 void CChainState::CheckForkWarningConditions()
 {
     AssertLockHeld(cs_main);
@@ -1395,6 +1410,19 @@ void CChainState::CheckForkWarningConditions()
         }
     } else {
         g_heavier_chain_since.reset();
+    }
+
+    // A recent reorg that replaced many blocks. It stays up for a day, and
+    // goes away on restart.
+    if (g_deep_reorg && GetTime<std::chrono::seconds>() - g_deep_reorg->time >= DEEP_REORG_WARNING_TIME) {
+        g_deep_reorg.reset();
+    }
+    if (g_deep_reorg) {
+        const DeepReorg& reorg = *g_deep_reorg;
+        warnings.push_back({"deepreorg:" + reorg.old_tip.ToString() + ":" + reorg.new_tip.ToString(), WarningKind::DEEP_REORG,
+                            DeepReorgWarning(reorg.depth, reorg.fork_height, reorg.old_height, reorg.new_height, count_seconds(reorg.time)),
+                            strprintf("Reorg replaced %d blocks: fork at %d, old tip %s at %d, new tip %s at %d", reorg.depth,
+                                      reorg.fork_height, reorg.old_tip.ToString(), reorg.old_height, reorg.new_tip.ToString(), reorg.new_height)});
     }
 
     std::vector<UpgradeWarning> fork_warnings;
@@ -2907,6 +2935,20 @@ static void LimitValidationInterfaceQueue() LOCKS_EXCLUDED(cs_main) {
     }
 }
 
+void CChainState::CheckDeepReorg(const CBlockIndex* old_tip)
+{
+    AssertLockHeld(cs_main);
+    // Blocks disconnected by invalidateblock don't count: they are gone
+    // before ActivateBestChain starts, and are the user's own doing.
+    const CBlockIndex* new_tip = m_chain.Tip();
+    if (old_tip == nullptr || new_tip == nullptr || g_reorg_warn_depth <= 0 || IsInitialBlockDownload()) return;
+    const CBlockIndex* fork = m_chain.FindFork(old_tip);
+    if (fork == nullptr || old_tip->nHeight - fork->nHeight < g_reorg_warn_depth) return;
+    g_deep_reorg = DeepReorg{old_tip->nHeight - fork->nHeight, fork->nHeight, old_tip->nHeight, new_tip->nHeight,
+                             old_tip->GetBlockHash(), new_tip->GetBlockHash(), GetTime<std::chrono::seconds>()};
+    CheckForkWarningConditions();
+}
+
 bool CChainState::ActivateBestChain(BlockValidationState& state, std::shared_ptr<const CBlock> pblock)
 {
     // Note that while we're often called here from ProcessNewBlock, this is
@@ -2924,6 +2966,10 @@ bool CChainState::ActivateBestChain(BlockValidationState& state, std::shared_ptr
     CBlockIndex *pindexMostWork = nullptr;
     CBlockIndex *pindexNewTip = nullptr;
     int nStopAtHeight = gArgs.GetArg("-stopatheight", DEFAULT_STOPATHEIGHT);
+    // The tip before this call, to tell a deep reorg once the call is done:
+    // a reorg can take several rounds of the loop below.
+    const CBlockIndex* call_start_tip = WITH_LOCK(cs_main, return m_chain.Tip());
+    bool call_connected = false;
     do {
         // Block until the validation queue drains. This should largely
         // never happen in normal operation, however may happen during
@@ -2960,6 +3006,7 @@ bool CChainState::ActivateBestChain(BlockValidationState& state, std::shared_ptr
                     return false;
                 }
                 blocks_connected = true;
+                call_connected = true;
 
                 if (fInvalidFound) {
                     // Wipe cache, we may need another branch now.
@@ -2972,10 +3019,14 @@ bool CChainState::ActivateBestChain(BlockValidationState& state, std::shared_ptr
                     GetMainSignals().BlockConnected(trace.pblock, trace.pindex);
                 }
             } while (!m_chain.Tip() || (starting_tip && CBlockIndexWorkComparator()(m_chain.Tip(), starting_tip)));
-            if (!blocks_connected) return true;
+            if (!blocks_connected) {
+                if (call_connected) CheckDeepReorg(call_start_tip);
+                return true;
+            }
 
             const CBlockIndex* pindexFork = m_chain.FindFork(starting_tip);
             bool fInitialDownload = IsInitialBlockDownload();
+
 
             // Notify external listeners about the new tip.
             // Enqueue while holding cs_main to ensure that UpdatedBlockTip is called in the order in which blocks are connected
@@ -2997,6 +3048,7 @@ bool CChainState::ActivateBestChain(BlockValidationState& state, std::shared_ptr
         // that the best block hash is non-null.
         if (ShutdownRequested()) break;
     } while (pindexNewTip != pindexMostWork);
+    if (call_connected) WITH_LOCK(cs_main, CheckDeepReorg(call_start_tip));
     CheckBlockIndex();
 
     // Write changes periodically to disk, after relay.
