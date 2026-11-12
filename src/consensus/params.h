@@ -130,7 +130,9 @@ struct Params {
     int nLastPowHeight;
     /** Height at (and above) which PoS-era blocks must contain only
      *  nVersion > POW_TX_VERSION transactions (bad-txns-version-pos).
-     *  Set above the deployment tip so pre-existing v1 txs are grandfathered.
+     *  Also the height for bad-txns-time-zero. History contains PoS-era v1
+     *  transactions, so only a future height can be used (audited with
+     *  contrib/devtools/audit_tx_version.py).
      *  Defaults to "never active" so a network that does not set it (e.g. signet)
      *  never spuriously rejects blocks. */
     int nPosTxVersionFloorHeight{std::numeric_limits<int>::max()};

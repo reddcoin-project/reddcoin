@@ -194,4 +194,16 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     BOOST_CHECK_EQUAL(out210.nChainTx, 312U);  // genesis + 89 PoW + 111 PoS (2 tx each)
 }
 
+//! The PoS-era transaction rules stay off on mainnet and testnet until a
+//! deployment sets a height; regtest enforces them for the whole PoS era.
+BOOST_AUTO_TEST_CASE(pos_era_tx_rules_activation)
+{
+    for (const auto& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = CreateChainParams(*m_node.args, chain);
+        BOOST_CHECK_EQUAL(params->GetConsensus().nPosTxVersionFloorHeight, std::numeric_limits<int>::max());
+    }
+    const auto regtest = CreateChainParams(*m_node.args, CBaseChainParams::REGTEST);
+    BOOST_CHECK_EQUAL(regtest->GetConsensus().nPosTxVersionFloorHeight, regtest->GetConsensus().nLastPowHeight + 1);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
