@@ -82,7 +82,9 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_reject_zero_time, TestChain100Setup)
     BOOST_CHECK_EQUAL(m_node.mempool->size(), initialPoolSize);
     BOOST_CHECK(result.m_state.IsInvalid());
     BOOST_CHECK_EQUAL(result.m_state.GetRejectReason(), "bad-txns-time-zero");
-    BOOST_CHECK(result.m_state.GetResult() == TxValidationResult::TX_CONSENSUS);
+    // Not TX_CONSENSUS: a peer relaying it may run a release without the rule,
+    // and must not be punished for that.
+    BOOST_CHECK(result.m_state.GetResult() == TxValidationResult::TX_RECENT_CONSENSUS_CHANGE);
 }
 
 /**

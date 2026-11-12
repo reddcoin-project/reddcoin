@@ -57,10 +57,10 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
                 return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-prevout-null");
     }
 
-    // ReddCoin: Validate transaction timestamp for PoS transactions
-    if (tx.nVersion > POW_TX_VERSION && tx.nTime == 0) {
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-time-zero");
-    }
+    // ReddCoin: the PoS-era timestamp rule (bad-txns-time-zero) depends on the
+    // block height, so it lives with the version floor in ContextualCheckBlock
+    // and MemPoolAccept::PreChecks (see PosEraTxRuleViolation), not in this
+    // context-free check.
 
     return true;
 }
