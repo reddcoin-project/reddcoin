@@ -71,7 +71,7 @@ class CompatP2PSyncTest(BitcoinTestFramework):
         self.add_nodes(
             self.num_nodes,
             extra_args=self.extra_args,
-            versions=[4220903, None],
+            versions=[self.options.compat_release, None],
         )
         self.start_nodes()
         self.import_deterministic_coinbase_privkeys()

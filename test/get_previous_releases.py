@@ -34,6 +34,7 @@ import hashlib
 # runs in ubuntu:18.04, and a host build wants far newer than it has.
 SHA256_SUMS = {
     'f58a9d42b56f0d0392bc0008db2be8b0705c68c9d86d21431f1fdeca52f90e62': 'reddcoin-4.22.9.3-x86_64-linux-gnu.tar.gz',
+    '7fdf030710f0fee778f80823ef1e56b1883e458cfa0180d133d95984f76ec255': 'reddcoin-4.22.9.5-x86_64-linux-gnu.tar.gz',
 }
 
 
