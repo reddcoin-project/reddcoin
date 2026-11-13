@@ -265,6 +265,7 @@ BASE_SCRIPTS = [
     'feature_pos_coinstake_fees.py',
     'feature_pos_sync.py',
     'feature_pos_tx_version_floor.py',
+    'feature_pos_era_tx_policy.py',
     # Compatibility tests against the previous release (require
     # releases/v4.22.9.3/bin/). That is v4.22.9 plus the commits that let it run
     # regtest, which the released v4.22.9 cannot; the fourth version component

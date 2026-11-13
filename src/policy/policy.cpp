@@ -73,6 +73,19 @@ bool IsStandard(const CScript& scriptPubKey, TxoutType& whichType)
     return true;
 }
 
+bool IsPosEraTxStandard(const CTransaction& tx, std::string& reason)
+{
+    if (tx.nVersion <= POW_TX_VERSION) {
+        reason = "bad-txns-version-pos";
+        return false;
+    }
+    if (tx.nTime == 0) {
+        reason = "bad-txns-time-zero";
+        return false;
+    }
+    return true;
+}
+
 bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, const CFeeRate& dust_relay_fee, std::string& reason)
 {
     if (tx.nVersion > TX_MAX_STANDARD_VERSION || tx.nVersion < 1) {
