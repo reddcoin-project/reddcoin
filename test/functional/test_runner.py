@@ -397,16 +397,7 @@ KNOWN_FAILING_SCRIPTS = {
         'wallet_signer.py --descriptors',
         'wallet_txn_doublespend.py --descriptors',
     ]},
-    # Tracked separately.
-    **{script: 'tracked separately' for script in [
-        'feature_block.py',
-        'feature_taproot.py',
-        'mempool_accept.py',
-        'mempool_accept_wtxid.py',
-        'p2p_invalid_tx.py',
-        'p2p_segwit.py',
-        'rpc_inflation.py',
-    ]},
+    'rpc_inflation.py': 'RED-238: getinflation crashes a chain shorter than the measurement interval',
     # Staking: to be root-caused.
     'rpc_staking.py': 'RED-167: staking, staker predicate times out',
     'wallet_staking_thread.py': 'RED-167: staking, staker predicate times out',
