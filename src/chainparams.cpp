@@ -776,6 +776,17 @@ public:
 
 void CRegTestParams::UpdateActivationParametersFromArgs(const ArgsManager& args)
 {
+    if (args.IsArgSet("-postxfloorheight")) {
+        int64_t height = args.GetArg("-postxfloorheight", consensus.nPosTxVersionFloorHeight);
+        if (height < -1 || height >= std::numeric_limits<int>::max()) {
+            throw std::runtime_error(strprintf("Activation height %ld for the PoS-era transaction rules is out of valid range. Use -1 to disable them.", height));
+        } else if (height == -1) {
+            LogPrintf("PoS-era transaction rules disabled for testing\n");
+            height = std::numeric_limits<int>::max();
+        }
+        consensus.nPosTxVersionFloorHeight = static_cast<int>(height);
+    }
+
     if (!args.IsArgSet("-vbparams")) return;
 
     for (const std::string& strDeployment : args.GetArgs("-vbparams")) {

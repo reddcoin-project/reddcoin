@@ -11,6 +11,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <limits>
+
 BOOST_FIXTURE_TEST_SUITE(validation_tests, TestingSetup)
 
 // Test Reddcoin's unique block reward schedule
@@ -204,6 +206,23 @@ BOOST_AUTO_TEST_CASE(pos_era_tx_rules_activation)
     }
     const auto regtest = CreateChainParams(*m_node.args, CBaseChainParams::REGTEST);
     BOOST_CHECK_EQUAL(regtest->GetConsensus().nPosTxVersionFloorHeight, regtest->GetConsensus().nLastPowHeight + 1);
+
+    // -postxfloorheight moves it on regtest; -1 means never.
+    {
+        ArgsManager args;
+        args.ForceSetArg("-postxfloorheight", "150");
+        BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosTxVersionFloorHeight, 150);
+    }
+    {
+        ArgsManager args;
+        args.ForceSetArg("-postxfloorheight", "-1");
+        BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosTxVersionFloorHeight, std::numeric_limits<int>::max());
+    }
+    {
+        ArgsManager args;
+        args.ForceSetArg("-postxfloorheight", "-2");
+        BOOST_CHECK_THROW(CreateChainParams(args, CBaseChainParams::REGTEST), std::runtime_error);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
