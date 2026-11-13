@@ -616,15 +616,26 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (tx.IsCoinBase() || tx.IsCoinStake())
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "coinbase");
 
-    // ReddCoin: apply the PoS-era transaction rules to the block this tx would be
-    // confirmed in (tip height + 1), so such txs are never relayed or mined into a
-    // block that would reject them. Peers on releases without these rules relay
+    // ReddCoin: from nPosTxVersionFloorHeight on, apply the PoS-era transaction
+    // rules to the block this tx would be confirmed in (tip height + 1), so such
+    // txs are never relayed or mined into a block that would reject them. Peers on releases without these rules relay
     // such txs in good faith, so the rejection must not count against them:
     // TX_RECENT_CONSENSUS_CHANGE is not punished (MaybePunishNodeForTx).
-    if (m_active_chainstate.m_chain.Height() + 1 >= args.m_chainparams.GetConsensus().nPosTxVersionFloorHeight) {
+    //
+    // Before that height, but once the next block is a PoS block, refuse them
+    // as policy (TX_NOT_STANDARD, also unpunished) on every network, whatever
+    // -acceptnonstdtxn says: nodes neither relay nor mine them, while blocks
+    // containing them stay valid until the rules activate. The 4.22.9 line
+    // has the same policy.
+    const int next_height = m_active_chainstate.m_chain.Height() + 1;
+    const Consensus::Params& pos_params = args.m_chainparams.GetConsensus();
+    if (next_height > pos_params.nLastPowHeight) {
         std::string pos_reason, pos_debug;
         if (PosEraTxRuleViolation(tx, pos_reason, pos_debug)) {
-            return state.Invalid(TxValidationResult::TX_RECENT_CONSENSUS_CHANGE, pos_reason, pos_debug);
+            const auto result = next_height >= pos_params.nPosTxVersionFloorHeight
+                                    ? TxValidationResult::TX_RECENT_CONSENSUS_CHANGE
+                                    : TxValidationResult::TX_NOT_STANDARD;
+            return state.Invalid(result, pos_reason, pos_debug);
         }
     }
 

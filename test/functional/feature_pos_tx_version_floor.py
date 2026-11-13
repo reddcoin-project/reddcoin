@@ -15,6 +15,10 @@ Both rules are enforced in two places:
     TX_RECENT_CONSENSUS_CHANGE so a peer relaying such a tx is not punished;
   * block validation (ContextualCheckBlock).
 
+Before that height, but once the next block is a PoS block (mainnet and
+testnet today), the mempool still refuses both, as policy (TX_NOT_STANDARD),
+while blocks containing them stay valid. The 4.22.9 line has the same policy.
+
 This test drives:
 
   * v1                      -> bad-txns-version-pos (mempool and block),
@@ -22,7 +26,10 @@ This test drives:
   * both relayed by a peer  -> rejected, and the peer stays connected,
   * v2 with a valid nTime   -> accepted and mined,
   * a normal wallet tx      -> accepted and mined,
-  * an empty PoS block      -> accepted.
+  * an empty PoS block      -> accepted,
+  * with the rules not active (-postxfloorheight=-1): both are still refused
+    by the mempool and the peer stays connected, but a block containing both
+    is accepted.
 """
 
 from test_framework.blocktools import (
@@ -37,6 +44,7 @@ from test_framework.messages import (
     CTxIn,
     CTxOut,
     msg_tx,
+    tx_from_hex,
 )
 from test_framework.p2p import P2PInterface
 from test_framework.script_util import keyhash_to_p2pkh_script
@@ -86,6 +94,21 @@ class PosTxVersionFloorTest(BitcoinTestFramework):
         tx.vout = [CTxOut(value_sat, spk)]
         tx.rehash()
         return tx
+
+    def _signed_tx(self, node, version, ntime):
+        """A tx spending one of the wallet's coins, signed by the wallet, so a
+        block can contain it when the rules are not active. nTime is not
+        covered by the signature hash."""
+        utxo = [u for u in node.listunspent(1) if u["amount"] >= 100][0]
+        node.lockunspent(False, [{"txid": utxo["txid"], "vout": utxo["vout"]}])
+        tx = CTransaction()
+        tx.nVersion = version
+        tx.nTime = ntime
+        tx.vin = [CTxIn(COutPoint(int(utxo["txid"], 16), utxo["vout"]))]
+        tx.vout = [CTxOut(int(utxo["amount"] * COIN) - COIN, self._new_spk(node))]
+        signed = node.signrawtransactionwithwallet(tx.serialize().hex())
+        assert signed["complete"], signed
+        return tx_from_hex(signed["hex"])
 
     def _new_spk(self, node):
         return bytes.fromhex(node.getaddressinfo(node.getnewaddress())["scriptPubKey"])
@@ -224,7 +247,35 @@ class PosTxVersionFloorTest(BitcoinTestFramework):
         assert resp is None, f"a valid empty PoS block was rejected: {resp!r}"
         assert_equal(node.getbestblockhash(), good_block.hash)
 
-        self.log.info("PoS-era transaction rules verified (mempool, P2P and block enforcement)")
+        # --- Policy before the rules activate --------------------------------
+        # Mainnet and testnet are here today: PoS era, rules not active. The
+        # mempool still refuses both shapes, but blocks containing them are valid.
+        self.log.info("Rules not active (-postxfloorheight=-1): mempool still refuses both")
+        self.restart_node(0, extra_args=["-postxfloorheight=-1", f"-mocktime={node.mocktime}"])
+        node = self.nodes[0]
+        cases = ((self._signed_tx(node, POW_TX_VERSION, 0), "bad-txns-version-pos"),
+                 (self._signed_tx(node, POSV_TX_VERSION, 0), "bad-txns-time-zero"))
+        for tx, reason in cases:
+            assert_raises_rpc_error(-26, reason, node.sendrawtransaction, tx.serialize().hex(), 0)
+
+        self.log.info("Rules not active: a peer relaying either is not punished")
+        peer = node.add_p2p_connection(P2PInterface())
+        for tx, reason in cases:
+            with node.assert_debug_log([reason], unexpected_msgs=["Misbehaving"]):
+                peer.send_and_ping(msg_tx(tx))
+            assert tx.hash not in node.getrawmempool()
+        assert peer.is_connected
+        node.disconnect_p2ps()
+
+        self.log.info("Rules not active: a PoS block containing both is accepted")
+        block = self._build_pos_block(node, [tx for tx, _ in cases])
+        assert_equal(node.submitblock(block.serialize().hex()), None)
+        assert_equal(node.getbestblockhash(), block.hash)
+        block_txs = node.getblock(block.hash)["tx"]
+        for tx, _ in cases:
+            assert tx.hash in block_txs
+
+        self.log.info("PoS-era transaction rules verified (mempool, P2P and block enforcement, and policy before activation)")
 
 
 if __name__ == '__main__':
