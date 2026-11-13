@@ -1042,4 +1042,47 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     fIsBareMultisigStd = DEFAULT_PERMIT_BAREMULTISIG;
 }
 
+// Reddcoin: the PoS-era rules as relay policy (bad-txns-version-pos,
+// bad-txns-time-zero), the same reject reasons develop uses for its consensus rules.
+BOOST_AUTO_TEST_CASE(pos_era_tx_policy)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    CMutableTransaction t;
+    t.vin.resize(1);
+    t.vin[0].prevout = COutPoint(InsecureRand256(), 0);
+    t.vout.resize(1);
+    t.vout[0].nValue = 90 * CENT;
+    t.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
+    t.nTime = 1600000000;
+    std::string reason;
+
+    // v2 and v3 with a timestamp pass.
+    t.nVersion = 2;
+    BOOST_CHECK(IsPosEraTxStandard(CTransaction(t), reason));
+    t.nVersion = 3;
+    BOOST_CHECK(IsPosEraTxStandard(CTransaction(t), reason));
+
+    // v1 (and lower) carries no nTime and is refused, whatever its nTime field holds.
+    for (int32_t version : {1, 0, -1}) {
+        t.nVersion = version;
+        reason.clear();
+        BOOST_CHECK(!IsPosEraTxStandard(CTransaction(t), reason));
+        BOOST_CHECK_EQUAL(reason, "bad-txns-version-pos");
+    }
+
+    // v2+ with nTime 0 is refused.
+    t.nVersion = 2;
+    t.nTime = 0;
+    reason.clear();
+    BOOST_CHECK(!IsPosEraTxStandard(CTransaction(t), reason));
+    BOOST_CHECK_EQUAL(reason, "bad-txns-time-zero");
+
+    // Policy only: CheckTransaction still accepts both shapes.
+    TxValidationState state;
+    BOOST_CHECK(CheckTransaction(CTransaction(t), state));
+    t.nVersion = 1;
+    BOOST_CHECK(CheckTransaction(CTransaction(t), state));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

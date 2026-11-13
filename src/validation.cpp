@@ -594,6 +594,15 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (fRequireStandard && !IsStandardTx(tx, reason))
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, reason);
 
+    // Reddcoin: don't relay or mine transactions that break the PoS-era rules
+    // (v1, or nTime 0) once the next block is a PoS block. Policy only, on
+    // every network: blocks containing them stay valid on this line, and a
+    // peer relaying one is not punished.
+    if (m_active_chainstate.m_chain.Height() + 1 > args.m_chainparams.GetConsensus().nLastPowHeight &&
+        !IsPosEraTxStandard(tx, reason)) {
+        return state.Invalid(TxValidationResult::TX_NOT_STANDARD, reason);
+    }
+
     // Do not work on transactions that are too small.
     // A transaction with 1 segwit input and 1 P2WPHK output has non-witness size of 82 bytes.
     // Transactions smaller than this are not relayed to mitigate CVE-2017-12842 by not relaying

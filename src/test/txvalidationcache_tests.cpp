@@ -73,8 +73,10 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain100Setup)
     spends.resize(2);
     for (int i = 0; i < 2; i++)
     {
-        spends[i].nVersion = 1;
-        spends[i].nTime = 0;  // Reddcoin: version 1 transactions must have nTime=0
+        // Reddcoin: the mempool refuses PoS-era txs with nVersion < 2
+        // (bad-txns-version-pos) or nTime 0 (bad-txns-time-zero), as on develop.
+        spends[i].nVersion = 2;
+        spends[i].nTime = 1;
         spends[i].vin.resize(1);
         spends[i].vin[0].prevout.hash = unspent_coinbase->GetHash();
         spends[i].vin[0].prevout.n = 0;

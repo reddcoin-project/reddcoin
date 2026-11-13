@@ -103,6 +103,17 @@ static constexpr decltype(CTransaction::nVersion) TX_MAX_STANDARD_VERSION{2};
 */
 bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, const CFeeRate& dust_relay_fee, std::string& reason);
 /**
+ * Reddcoin: the PoS-era transaction rules, as relay policy. A PoS-era
+ * transaction must be v2+ (nTime is only serialized for nVersion >
+ * POW_TX_VERSION) and carry a non-zero nTime. Develop enforces both as
+ * consensus from nPosTxVersionFloorHeight, with the same reject reasons;
+ * this line only refuses to relay or mine such transactions, so blocks that
+ * contain them stay valid. Unlike IsStandardTx this applies on every network,
+ * whatever -acceptnonstdtxn says.
+ * @return false and fill reason if tx breaks either rule.
+ */
+bool IsPosEraTxStandard(const CTransaction& tx, std::string& reason);
+/**
 * Check for standard transaction types
 * @param[in] mapInputs       Map of previous transactions that have outputs we're spending
 * @param[in] taproot_active  Whether or taproot consensus rules are active (used to decide whether spends of them are permitted)
