@@ -454,14 +454,16 @@ BOOST_AUTO_TEST_CASE(transaction_time_validation_tests) {
     BOOST_CHECK_MESSAGE(CheckTransaction(CTransaction(tx), state) && state.IsValid(),
                        "Version 1 transaction with nTime=0 should be valid (PoW era)");
 
-    // Test version 2 transaction with nTime=0 (should be invalid - PoS era)
+    // A version 2 transaction with nTime=0 also passes the context-free check:
+    // bad-txns-time-zero depends on the height (nPosTxVersionFloorHeight), so it
+    // is enforced in ContextualCheckBlock and the mempool instead
+    // (txvalidation_tests, feature_pos_tx_version_floor.py).
     tx.nVersion = 2;  // Version 2
     tx.nTime = 0;
     state = TxValidationState();  // Reset state
 
-    BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(tx), state) || !state.IsValid(),
-                       "Version 2 transaction with nTime=0 should be invalid");
-    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-time-zero");
+    BOOST_CHECK_MESSAGE(CheckTransaction(CTransaction(tx), state) && state.IsValid(),
+                       "CheckTransaction must not depend on nTime");
 
     // Test version 2 transaction with valid nTime (should be valid)
     tx.nTime = GetTime();  // Current timestamp

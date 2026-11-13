@@ -2,30 +2,27 @@
 # Copyright (c) 2026 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test the PoS-era transaction-version floor (bad-txns-version-pos).
+"""Test the PoS-era transaction rules (bad-txns-version-pos, bad-txns-time-zero).
 
-After the PoW era the chain is PoS-only, so every transaction must carry a
-non-zero nTime. nTime is serialized only for nVersion > POW_TX_VERSION, so a
-legacy v1 (nVersion <= POW_TX_VERSION) transaction has no timestamp and its
-outputs would enter the UTXO set with Coin.nTime == 0 — making PoSV coin age
-ambiguous. consensus.nPosTxVersionFloorHeight enforces a minimum version at and
-above that height (regtest = 90, i.e. the whole PoS era), rejecting v1 txs with
-reason bad-txns-version-pos in two places:
+nTime is serialized only for nVersion > POW_TX_VERSION, so a v1 transaction
+has no timestamp and its outputs enter the UTXO set with Coin.nTime == 0. From
+consensus.nPosTxVersionFloorHeight on (regtest 90, the whole PoS era; mainnet
+and testnet not active until a deployment sets a height), every transaction
+must be v2+ (bad-txns-version-pos) with a non-zero nTime (bad-txns-time-zero).
+Both rules are enforced in two places:
 
-  * the mempool  (MemPoolAccept::PreChecks), and
-  * block connection (ContextualCheckBlock).
+  * the mempool, for the next block (MemPoolAccept::PreChecks), as
+    TX_RECENT_CONSENSUS_CHANGE so a peer relaying such a tx is not punished;
+  * block validation (ContextualCheckBlock).
 
-A companion rule in CheckTransaction requires nVersion > POW_TX_VERSION txs to
-carry a non-zero nTime (bad-txns-time-zero). Together they mean a PoS-era tx
-must be v2+ with a timestamp. This test drives, at the v1/v2 boundary:
+This test drives:
 
-  * v1                      -> bad-txns-version-pos (floor; mempool and block),
-  * v2 with nTime == 0      -> bad-txns-time-zero (CheckTransaction),
-  * v2 with a valid nTime   -> accepted (above the floor) and mined,
-  * a normal v3 wallet tx   -> accepted and mined,
-  * an empty PoS block      -> accepted,
-
-so the floor rejects only v1 and correctly admits v2/v3.
+  * v1                      -> bad-txns-version-pos (mempool and block),
+  * v2 with nTime == 0      -> bad-txns-time-zero (mempool and block),
+  * both relayed by a peer  -> rejected, and the peer stays connected,
+  * v2 with a valid nTime   -> accepted and mined,
+  * a normal wallet tx      -> accepted and mined,
+  * an empty PoS block      -> accepted.
 """
 
 from test_framework.blocktools import (
@@ -39,7 +36,9 @@ from test_framework.messages import (
     CTransaction,
     CTxIn,
     CTxOut,
+    msg_tx,
 )
+from test_framework.p2p import P2PInterface
 from test_framework.script_util import keyhash_to_p2pkh_script
 from test_framework.address import hash160
 from test_framework.test_framework import BitcoinTestFramework
@@ -71,6 +70,17 @@ class PosTxVersionFloorTest(BitcoinTestFramework):
         rejects it before any script/input checks, so no signature is needed."""
         tx = CTransaction()
         tx.nVersion = POW_TX_VERSION  # v1: no nTime is serialized for nVersion <= 1
+        tx.nTime = 0
+        tx.vin = [CTxIn(outpoint)]
+        tx.vout = [CTxOut(value_sat, spk)]
+        tx.rehash()
+        return tx
+
+    def _v2_zero_time_tx(self, outpoint, value_sat, spk):
+        """A v2 transaction with nTime == 0, unsigned: the timestamp rule rejects
+        it before any input or script check."""
+        tx = CTransaction()
+        tx.nVersion = POSV_TX_VERSION
         tx.nTime = 0
         tx.vin = [CTxIn(outpoint)]
         tx.vout = [CTxOut(value_sat, spk)]
@@ -143,17 +153,25 @@ class PosTxVersionFloorTest(BitcoinTestFramework):
         assert_raises_rpc_error(-26, "bad-txns-version-pos",
                                 node.sendrawtransaction, v1.serialize().hex(), 0)
 
-        # A v2 tx with nTime == 0 is rejected by the companion rule
-        # (bad-txns-time-zero, CheckTransaction) before any script check.
+        # A v2 tx with nTime == 0 is rejected by the timestamp rule before any
+        # input or script check (the prevout doesn't exist).
         self.log.info("Mempool: v2 tx with nTime==0 -> bad-txns-time-zero")
-        v2_zero = CTransaction()
-        v2_zero.nVersion = POSV_TX_VERSION
-        v2_zero.nTime = 0
-        v2_zero.vin = [CTxIn(COutPoint(0xdeadbeef, 1))]
-        v2_zero.vout = [CTxOut(COIN, self._new_spk(node))]
-        v2_zero.rehash()
+        v2_zero = self._v2_zero_time_tx(COutPoint(0xdeadbeef, 1), COIN, self._new_spk(node))
         assert_raises_rpc_error(-26, "bad-txns-time-zero",
                                 node.sendrawtransaction, v2_zero.serialize().hex(), 0)
+
+        # A peer on a release without these rules relays such txs in good faith.
+        # The node rejects them but must not punish the peer: a TX_CONSENSUS
+        # rejection would discourage and disconnect it.
+        self.log.info("P2P: a peer relaying either tx is not punished")
+        peer = node.add_p2p_connection(P2PInterface())
+        for tx, reason in ((v1, "bad-txns-version-pos"), (v2_zero, "bad-txns-time-zero")):
+            with node.assert_debug_log([reason]):
+                peer.send_and_ping(msg_tx(tx))
+            assert tx.hash not in node.getrawmempool()
+        assert peer.is_connected
+        assert_equal(len(node.getpeerinfo()), 1)
+        node.disconnect_p2ps()
 
         # A signed v2 tx with a valid nTime is accepted: v2 is above the floor.
         self.log.info("Mempool: signed v2 tx with a valid nTime -> accepted")
@@ -191,14 +209,22 @@ class PosTxVersionFloorTest(BitcoinTestFramework):
             f"expected bad-txns-version-pos rejection, got: {resp!r}"
         assert_equal(node.getbestblockhash(), tip)  # tip must not advance
 
-        # Positive control: the same block shape without the v1 tx is accepted.
+        self.log.info("Block: a PoS block containing a v2 tx with nTime==0 is rejected")
+        bad_block = self._build_pos_block(
+            node, [self._v2_zero_time_tx(COutPoint(0xdeadbeef, 2), COIN, self._new_spk(node))])
+        resp = node.submitblock(bad_block.serialize().hex())
+        assert resp is not None and "bad-txns-time-zero" in resp, \
+            f"expected bad-txns-time-zero rejection, got: {resp!r}"
+        assert_equal(node.getbestblockhash(), tip)
+
+        # Positive control: the same block shape without the bad tx is accepted.
         self.log.info("Block: an empty PoS block (no v1 tx) is accepted")
         good_block = self._build_pos_block(node, [])
         resp = node.submitblock(good_block.serialize().hex())
         assert resp is None, f"a valid empty PoS block was rejected: {resp!r}"
         assert_equal(node.getbestblockhash(), good_block.hash)
 
-        self.log.info("PoS tx-version floor verified (mempool + block enforcement)")
+        self.log.info("PoS-era transaction rules verified (mempool, P2P and block enforcement)")
 
 
 if __name__ == '__main__':
