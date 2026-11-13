@@ -175,6 +175,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--previous-releases", dest="prev_releases", action="store_true",
                             default=os.path.isdir(previous_releases_path) and bool(os.listdir(previous_releases_path)),
                             help="Force test of previous releases (default: %(default)s)")
+        parser.add_argument("--compat-release", dest="compat_release", type=int, default=4220903,
+                            help="Previous release the compatibility tests run against, as a version "
+                                 "number (4220903 = v4.22.9.3, 4220905 = v4.22.9.5; default: %(default)s)")
         parser.add_argument("--coveragedir", dest="coveragedir",
                             help="Write tested RPC commands into this directory")
         parser.add_argument("--configfile", dest="configfile",

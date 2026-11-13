@@ -1250,9 +1250,10 @@ class TaprootTest(BitcoinTestFramework):
         be connected during initial block generation — mocktime drift causes
         header rejection. Connect after syncing mocktime."""
         self.add_nodes(self.num_nodes, self.extra_args, versions=[
-            # ReddCoin: use the v4.22.9.3 previous release (encoded 4220903), not
-            # upstream's pre-Taproot v0.20.1 (200100) which ReddCoin doesn't ship.
-            4220903 if self.options.previous_release else None,
+            # ReddCoin: use a v4.22.9 previous release (--compat-release, default
+            # v4.22.9.3), not upstream's pre-Taproot v0.20.1 (200100), which
+            # ReddCoin doesn't ship.
+            self.options.compat_release if self.options.previous_release else None,
             None,
         ])
         self.start_nodes()

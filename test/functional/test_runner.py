@@ -268,16 +268,25 @@ BASE_SCRIPTS = [
     'feature_pos_sync.py',
     'feature_pos_sidechain_modifier.py',
     'feature_pos_tx_version_floor.py',
-    # Compatibility tests against the previous release (require
-    # releases/v4.22.9.3/bin/). That is v4.22.9 plus the commits that let it run
-    # regtest, which the released v4.22.9 cannot; the fourth version component
-    # is what distinguishes the two.
+    # Compatibility tests against the previous releases (require
+    # releases/v4.22.9.3/bin/ and releases/v4.22.9.5/bin/). v4.22.9.3 is v4.22.9
+    # plus the commits that let it run regtest, which the released v4.22.9
+    # cannot; the fourth version component is what distinguishes the two.
+    # v4.22.9.5 is the newest point release. Each test runs once per release.
     'feature_compat_p2p_sync.py',
+    'feature_compat_p2p_sync.py --compat-release=4220905',
     'feature_compat_pos_blocks.py',
+    'feature_compat_pos_blocks.py --compat-release=4220905',
     'feature_pos_coinstake_fees.py --previous_release',
+    'feature_pos_coinstake_fees.py --previous_release --compat-release=4220905',
     'feature_compat_tx_versions.py',
+    'feature_compat_tx_versions.py --compat-release=4220905',
     'feature_compat_staking_interop.py',
+    'feature_compat_staking_interop.py --compat-release=4220905',
     'feature_compat_softfork_signaling.py',
+    'feature_compat_softfork_signaling.py --compat-release=4220905',
+    'feature_compat_pos_era_tx_rules.py',
+    'feature_compat_pos_era_tx_rules.py --compat-release=4220905',
     'wallet_descriptor_staking.py',
     'wallet_descriptor_staking_witness.py',
     'feature_descriptor_legacy_staking.py',
@@ -331,6 +340,7 @@ BASE_SCRIPTS = [
     'feature_asmap.py',
     'mempool_unbroadcast.py',
     'mempool_compatibility.py',
+    'mempool_compatibility.py --compat-release=4220905',
     'mempool_accept_wtxid.py',
     'rpc_deriveaddresses.py',
     'rpc_deriveaddresses.py --usecli',

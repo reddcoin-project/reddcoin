@@ -92,7 +92,6 @@ RELATIVE_LOCK_10_BLOCKS = 10
 NOT_FINAL_ERROR = "non-BIP68-final"
 
 # Version numbers
-VERSION_OLD = 4220903  # v4.22.9.3
 VERSION_NEW = None     # v4.22.10 (current build)
 
 
@@ -149,7 +148,7 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         self.skip_if_no_previous_releases()
 
     def setup_network(self):
-        self.add_nodes(self.num_nodes, versions=[VERSION_OLD, VERSION_NEW],
+        self.add_nodes(self.num_nodes, versions=[self.options.compat_release, VERSION_NEW],
                        extra_args=self.extra_args)
         self.start_nodes()
         self.import_deterministic_coinbase_privkeys()

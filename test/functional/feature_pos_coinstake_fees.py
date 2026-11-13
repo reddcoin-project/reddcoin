@@ -74,7 +74,7 @@ class PosCoinstakeFeesTest(BitcoinTestFramework):
     def setup_network(self):
         if self.compat:
             self.add_nodes(self.num_nodes, extra_args=self.extra_args, versions=[
-                4220903,  # node0 - v4.22.9.3 follower
+                self.options.compat_release,  # node0 - previous release follower
                 None,     # node1 — current build, lead staker
             ])
             self.start_nodes()
