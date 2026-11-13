@@ -397,7 +397,6 @@ KNOWN_FAILING_SCRIPTS = {
         'wallet_signer.py --descriptors',
         'wallet_txn_doublespend.py --descriptors',
     ]},
-    'rpc_inflation.py': 'RED-238: getinflation crashes a chain shorter than the measurement interval',
     # Staking: to be root-caused.
     'rpc_staking.py': 'RED-167: staking, staker predicate times out',
     'wallet_staking_thread.py': 'RED-167: staking, staker predicate times out',
@@ -476,8 +475,6 @@ EXPECTED_UNCOVERED_RPCS = {
 KNOWN_FAILING_COVERED_RPCS = {
     'generateblock': ['rpc_generateblock.py', 'wallet_bumpfee.py --legacy-wallet', 'wallet_bumpfee.py --descriptors'],
     'gethdwalletinfo': ['wallet_createwallet.py --legacy-wallet'],
-    'getinflation': ['rpc_inflation.py'],
-    'getinflationmultiplier': ['rpc_inflation.py'],
     'getinterest': ['wallet_interest.py'],
     'getstakinginfo': ['rpc_staking.py', 'wallet_staking_thread.py'],
     'psbtbumpfee': ['wallet_bumpfee.py --legacy-wallet'],
