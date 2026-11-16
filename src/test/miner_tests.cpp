@@ -441,8 +441,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     std::vector<int> prevheights;
 
     // relative height locked
-    // Reddcoin: BIP68 sequence locks require nVersion >= 3 (not 2 as in Bitcoin)
-    tx.nVersion = 3;
+    tx.nVersion = 2;
     tx.vin.resize(1);
     prevheights.resize(1);
     tx.vin[0].prevout.hash = txFirst[0]->GetHash(); // only 1 transaction
@@ -464,16 +463,12 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         BOOST_CHECK(SequenceLocks(CTransaction(tx), flags, prevheights, CreateBlockIndex(active_chain_tip->nHeight + 2, active_chain_tip))); // Sequence locks pass on 2nd block
     }
 
-    // Reddcoin BIP68 version boundary: the relative-height-locked input above is
-    // sequence-locked at nVersion >= 3 (asserted above), but exempt at v2/v1 —
-    // CalculateSequenceLocks only enforces BIP68 for nVersion >= 3, keeping
-    // v2 (PoSV) transactions out of relative-locktime enforcement.
+    // BIP68 applies from nVersion 2, as in Bitcoin: the same relative-height
+    // lock that binds the v2 transaction above does not bind a v1 one.
     {
-        CMutableTransaction tx_ver{tx};
-        tx_ver.nVersion = 2;
-        BOOST_CHECK(TestSequenceLocks(CTransaction(tx_ver), flags)); // v2 exempt: locks not enforced
-        tx_ver.nVersion = 1;
-        BOOST_CHECK(TestSequenceLocks(CTransaction(tx_ver), flags)); // v1 exempt: locks not enforced
+        CMutableTransaction tx_v1{tx};
+        tx_v1.nVersion = 1;
+        BOOST_CHECK(TestSequenceLocks(CTransaction(tx_v1), flags));
     }
 
     // relative time locked
