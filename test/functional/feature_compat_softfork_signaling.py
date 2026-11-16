@@ -338,8 +338,8 @@ class CompatSoftforkSignalingTest(BitcoinTestFramework):
         """Verify CSV enforcement and chain health after activation.
 
         If CSV is active on both nodes:
-          - Create a version 3 tx with a BIP68 relative lock of 1 block (satisfied).
-          - Broadcast to both nodes, verify accepted.
+          - Create a version 2 tx with a BIP68 relative lock of 1 block (satisfied).
+          - Broadcast it to the new node, verify it relays to the old node.
           - Mine and verify confirmed on both.
         Also perform a getchaintips check to confirm a single active tip.
         """
@@ -363,7 +363,7 @@ class CompatSoftforkSignalingTest(BitcoinTestFramework):
             )
 
         if csv_on_new:
-            self.log.info("Testing CSV-enforced BIP68 v3 tx with satisfied relative lock...")
+            self.log.info("Testing CSV-enforced BIP68 v2 tx with satisfied relative lock...")
 
             # Fund a UTXO on node1 and confirm it
             txid_int, vout, value_sat = self._fund_and_confirm(node1, amount_rdd=10.0)
@@ -374,10 +374,10 @@ class CompatSoftforkSignalingTest(BitcoinTestFramework):
             self._generate_pos_blocks(node1, 2)
             self.sync_blocks(timeout=60)
 
-            # Build a v3 tx with nSequence=1 (1-block relative lock, satisfied)
-            # ReddCoin enforces BIP68 for nVersion >= 3 on v4.22.10
+            # Build a v2 tx with nSequence=1 (1-block relative lock, satisfied).
+            # Both versions apply BIP68 from nVersion 2.
             tx = CTransaction()
-            tx.nVersion = 3
+            tx.nVersion = 2
             tx.vin = [CTxIn(COutPoint(txid_int, vout), nSequence=SEQUENCE_LOCK_1_BLOCK)]
             fee_sat = 1_000_000  # 0.01 RDD — well above minimum relay fee
             output_value = value_sat - fee_sat
@@ -391,29 +391,17 @@ class CompatSoftforkSignalingTest(BitcoinTestFramework):
             )
             tx_hex = signed["hex"]
 
-            # Broadcast to new node — must be accepted (lock satisfied)
-            self.log.info("Broadcasting satisfied v3 BIP68 tx to new node...")
+            # Broadcast to the new node; it must be accepted (lock satisfied)
+            # and relayed to the old node, which applies the same threshold.
+            self.log.info("Broadcasting satisfied v2 BIP68 tx to new node...")
             txid_csv = node1.sendrawtransaction(tx_hex)
-            assert txid_csv in node1.getrawmempool(), "CSV v3 tx not in new node mempool"
-            self.log.info("New node accepted CSV v3 tx: %s" % txid_csv)
-
-            # Broadcast to old node — nVersion 3 may be non-standard on v4.22.9,
-            # but the transaction is otherwise valid. Use try/except to handle
-            # old node's TX_MAX_STANDARD_VERSION=2 rejection.
-            try:
-                txid_csv_old = node0.sendrawtransaction(tx_hex)
-                assert txid_csv_old in node0.getrawmempool(), (
-                    "CSV v3 tx accepted by old node but not in mempool"
-                )
-                self.log.info("Old node accepted CSV v3 tx in mempool")
-            except Exception as exc:
-                self.log.info(
-                    "Old node rejected CSV v3 tx from mempool (expected if TX_MAX_STANDARD_VERSION=2): %s" %
-                    str(exc)
-                )
+            assert txid_csv in node1.getrawmempool(), "CSV v2 tx not in new node mempool"
+            self.sync_mempools(timeout=60)
+            assert txid_csv in node0.getrawmempool(), "CSV v2 tx not relayed to old node"
+            self.log.info("Both nodes accepted CSV v2 tx: %s" % txid_csv)
 
             # Mine the tx on new node and verify both nodes confirm it
-            self.log.info("Mining CSV v3 tx on new node...")
+            self.log.info("Mining CSV v2 tx on new node...")
             self._generate_pos_blocks(node1, 1)
             self.sync_blocks(timeout=60)
 
@@ -422,14 +410,14 @@ class CompatSoftforkSignalingTest(BitcoinTestFramework):
             assert_equal(tip_height0, tip_height1)
 
             # Verify the tx is confirmed (not in mempool)
-            assert txid_csv not in node1.getrawmempool(), "CSV v3 tx still in new node mempool after mining"
-            assert txid_csv not in node0.getrawmempool(), "CSV v3 tx still in old node mempool after mining"
+            assert txid_csv not in node1.getrawmempool(), "CSV v2 tx still in new node mempool after mining"
+            assert txid_csv not in node0.getrawmempool(), "CSV v2 tx still in old node mempool after mining"
             self.log.info(
                 "Phase E CSV tx confirmed on both nodes at height %d" % tip_height1
             )
         else:
             self.log.warning(
-                "CSV not active on new node — skipping BIP68 v3 tx test. "
+                "CSV not active on new node — skipping BIP68 v2 tx test. "
                 "This is unexpected given bootstrap to height 455."
             )
 

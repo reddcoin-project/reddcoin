@@ -80,6 +80,18 @@ class PosBasicTest(BitcoinTestFramework):
         self.log.info(f"Final block height: {final_height}")
         assert_equal(final_height, initial_height + 4)
 
+        # BIP68 applies from nVersion 2, which is the coinstake's version, so a
+        # coinstake input with a non-final nSequence would carry a relative
+        # lock. Every coinstake input must stay final.
+        self.log.info("Checking coinstake version and input sequences...")
+        for height in range(initial_height + 1, final_height + 1):
+            block = node.getblock(node.getblockhash(height), 2)
+            coinstake = block["tx"][1]
+            assert_equal(coinstake["version"], 2)
+            assert len(coinstake["vin"]) > 0
+            for txin in coinstake["vin"]:
+                assert_equal(txin["sequence"], 0xffffffff)
+
         self.log.info("PoS basic test completed successfully!")
 
 
