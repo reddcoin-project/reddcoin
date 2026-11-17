@@ -1992,8 +1992,9 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return true;
     }
 
-    // Small optimization whilst syncing
-    bool fScriptChecks = !IsInitialBlockDownload();
+    // Verify scripts, also during initial block download. Only ancestors of
+    // the assumevalid block may skip them (below).
+    bool fScriptChecks = true;
     if (!hashAssumeValid.IsNull()) {
         // We've been configured with the hash of a block which has been externally verified to have a valid history.
         // A suitable default value is included with the software and updated from time to time.  Because validity
