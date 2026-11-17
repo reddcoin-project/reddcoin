@@ -80,6 +80,7 @@ from test_framework.script_util import (
 )
 from test_framework.address import key_to_p2pkh
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.authproxy import JSONRPCException
 from test_framework.util import (
     assert_equal,
     softfork_active,
@@ -440,7 +441,7 @@ class SegWitTest(BitcoinTestFramework):
 
         self.test_non_witness_transaction()
         self.test_unnecessary_witness_before_segwit_activation()
-        self.test_v0_outputs_arent_spendable()
+        self.test_v0_outputs_spendable_before_activation()
         self.test_getblocktemplate_before_lockin()
         self.test_witness_tx_relay_before_segwit_activation()
         self.test_block_relay()
@@ -666,16 +667,15 @@ class SegWitTest(BitcoinTestFramework):
             assert block4.sha256 not in self.old_node.getdataset
 
     @subtest  # type: ignore
-    def test_v0_outputs_arent_spendable(self):
-        """Test that v0 outputs aren't spendable before segwit activation.
+    def test_v0_outputs_spendable_before_activation(self):
+        """Test that v0 outputs are anyone-can-spend before segwit activation.
 
-        ~6 months after segwit activation, the SCRIPT_VERIFY_WITNESS flag was
-        backdated so that it applies to all blocks, going back to the genesis
-        block.
-
-        Consequently, version 0 witness outputs are never spendable without
-        witness, and so can't be spent before segwit activation (the point at which
-        blocks are permitted to contain witnesses)."""
+        Bitcoin backdated SCRIPT_VERIFY_WITNESS to the genesis block when it
+        buried segwit, so its version of this test expects v0 outputs to be
+        unspendable without a witness at any height. ReddCoin's segwit is still
+        a BIP9 deployment and the flag follows activation: before it, a block
+        may spend a v0 output without a witness, but still may not carry
+        witness data."""
 
         # node2 doesn't need to be connected for this test.
         # (If it's connected, node0 may propagate an invalid block to it over
@@ -706,7 +706,7 @@ class SegWitTest(BitcoinTestFramework):
         # Now send the block without witness. It should be accepted
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True, with_witness=False)
 
-        # Now try to spend the outputs. This should fail since SCRIPT_VERIFY_WITNESS is always enabled.
+        # Now spend the outputs without a witness. Before activation this is valid.
         p2wsh_tx = CTransaction()
         p2wsh_tx.vin = [CTxIn(COutPoint(txid, 0), b'')]
         p2wsh_tx.vout = [CTxOut(value, CScript([OP_TRUE]))]
@@ -732,15 +732,9 @@ class SegWitTest(BitcoinTestFramework):
             # data isn't allowed in blocks that don't commit to witness data.
             test_witness_block(self.nodes[0], self.test_node, block, accepted=False, with_witness=True, reason='unexpected-witness')
 
-            # When the block is serialized without witness, validation fails because the transaction is
-            # invalid (transactions are always validated with SCRIPT_VERIFY_WITNESS so a segwit v0 transaction
-            # without a witness is invalid).
-            # Note: The reject reason for this failure could be
-            # 'block-validation-failed' (if script check threads > 1) or
-            # 'non-mandatory-script-verify-flag (Witness program was passed an
-            # empty witness)' (otherwise).
-            # TODO: support multiple acceptable reject reasons.
-            test_witness_block(self.nodes[0], self.test_node, block, accepted=False, with_witness=False)
+            # When the block is serialized without witness, it is valid: SCRIPT_VERIFY_WITNESS only
+            # applies once segwit is active, and until then a v0 output is anyone-can-spend.
+            test_witness_block(self.nodes[0], self.test_node, block, accepted=True, with_witness=False)
 
         self.connect_nodes(0, 2)
 
@@ -769,7 +763,17 @@ class SegWitTest(BitcoinTestFramework):
         #
         # Note: Only test on node0 because ReddCoin's PoS getblocktemplate requires
         # finding a valid coinstake, and only node0 has the cache wallet keys
-        gbt_results = self.nodes[0].getblocktemplate({"rules": ["segwit"]})
+        gbt_results = None
+        for _ in range(10):
+            # The previous subtests mine in quick succession: give the staker time to find a kernel.
+            advance_time_for_pos(self.nodes, seconds=120)
+            try:
+                gbt_results = self.nodes[0].getblocktemplate({"rules": ["segwit"]})
+                break
+            except JSONRPCException as e:
+                if "no valid coinstake found" not in str(e):
+                    raise
+        assert gbt_results is not None, "failed to get a PoS block template"
         # Before LOCKED_IN, witness commitment should NOT be present
         if 'default_witness_commitment' not in gbt_results:
             self.log.info("Pre-LOCKED_IN: default_witness_commitment not present (expected)")

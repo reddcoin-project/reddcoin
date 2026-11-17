@@ -141,6 +141,8 @@ BASE_SCRIPTS = [
     'feature_abortnode.py',
     # vv Tests less than 30s vv
     'feature_segwit_service_bit.py',
+    'feature_ibd_script_checks.py',
+    'feature_segwit_activation_gate.py',
     'wallet_keypool_topup.py --legacy-wallet',
     'wallet_keypool_topup.py --descriptors',
     'feature_fee_estimation.py',
