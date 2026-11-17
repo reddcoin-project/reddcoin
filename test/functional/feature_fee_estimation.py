@@ -277,30 +277,22 @@ class EstimateFeeTest(BitcoinTestFramework):
         # so the estimates would not be affected by the splitting transactions
         self.start_node(1)
         self.start_node(2)
-        self.connect_nodes(1, 0)
-        self.connect_nodes(0, 2)
-        self.connect_nodes(2, 1)
 
-        self.sync_all()
-
-        # ReddCoin: Sync mocktime across all nodes to prevent P2P relay issues
-        # Node 0 has advanced mocktime from block generation; nodes 1/2 need to match
+        # ReddCoin: node0's mocktime has moved on with the blocks it mined.
+        # Give nodes 1 and 2 the same clock before they connect: each
+        # connection schedules its next transaction announcement from the
+        # clock at connect time, and a clock moved back afterwards would keep
+        # that time out of reach, so no transaction would ever be relayed.
         if self.nodes[0].mocktime:
             for n in self.nodes[1:]:
                 n.setmocktime(self.nodes[0].mocktime)
                 n.mocktime = self.nodes[0].mocktime
 
-        # ReddCoin: Warm up P2P relay by advancing mocktime and sending a probe tx.
-        # Without this, the first sync_mempools takes 10+ minutes because
-        # nNextInvSend timers haven't fired yet on fresh connections.
-        from test_framework.util import advance_time_for_pos
-        advance_time_for_pos(self.nodes, seconds=30)
-        # Send a small tx to trigger relay initialization
-        probe_addr = self.nodes[0].getnewaddress()
-        self.nodes[1].sendtoaddress(probe_addr, 0.01)
-        self.sync_mempools(wait=1, timeout=60)
-        self.nodes[0].generate(1)
-        self.sync_blocks(wait=.1)
+        self.connect_nodes(1, 0)
+        self.connect_nodes(0, 2)
+        self.connect_nodes(2, 1)
+
+        self.sync_all()
 
         self.fees_per_kb = []
         self.memutxo = []
