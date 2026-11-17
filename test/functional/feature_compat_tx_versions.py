@@ -3,64 +3,38 @@
 # Copyright (c) 2014-2024 The Reddcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test BIP68 / CSV transaction version compatibility between v4.22.9 and v4.22.10.
+"""Test BIP68 / CSV transaction version compatibility with a previous release.
 
-v4.22.10's BIP68 threshold is hardcoded to nVersion >= 3 in tx_verify.cpp
-(HEAD via pr/core-fixes commit 5e6d88dc61). That threshold applies to BOTH
-the mempool path AND the consensus path — STANDARD_LOCKTIME_VERIFY_FLAGS
-unconditionally sets LOCKTIME_VERIFY_SEQUENCE on both versions, so the
-mempool BIP68 check fires too. v4.22.9's threshold is >= 2 in both layers.
+Both the current build and v4.22.9 releases apply BIP68 sequence locks and
+OP_CHECKSEQUENCEVERIFY from nVersion 2, as Bitcoin does, and both treat
+nVersion 2 as the highest standard version. STANDARD_LOCKTIME_VERIFY_FLAGS sets
+LOCKTIME_VERIFY_SEQUENCE whatever the deployment state, so the mempools apply
+BIP68 even before CSV is active. The two must therefore agree on every v2
+transaction, before and after CSV, and the current wallet's default
+transactions must relay to the old node.
 
-This produces a coherent version-version delta:
+Test phases:
 
-  - Mempool delta on v2 unsatisfied-lock txs: v4.22.10 ACCEPTS (>= 3
-    exempts v2 from BIP68), v4.22.9 REJECTS (>= 2 enforces v2). Observable
-    pre-CSV too — STANDARD flags don't depend on CSV state.
-  - No consensus delta on v2 unsatisfied-lock blocks. Block validation gates
-    LOCKTIME_VERIFY_SEQUENCE on DeploymentActiveAt(DEPLOYMENT_CSV), and CSV
-    is NEVER_ACTIVE in every release up to and including v4.22.9, so that
-    node never enforces BIP68 in blocks and cannot be made to by network
-    signalling. It accepts what v4.22.10 mines. Relay diverges, chains do not.
-  - No divergence on v3 sends (the v4.22.10 wallet default after RED-13):
-    v3 meets both thresholds; both versions enforce BIP68 identically.
+  Phase A: before CSV, a v2 tx with an unsatisfied relative lock is refused
+    by both mempools (non-BIP68-final).
 
-Test phases (execution order: A, B, C, E, D):
+  Phase B: activate CSV via BIP9 signalling on the current build only. The
+    old node follows the chain; CSV stays NEVER_ACTIVE there because the
+    release carries mainnet's deployment state.
 
-  Phase A — Pre-CSV: mempool delta on v2 unsat
-    node1 (v4.22.10) accepts v2 unsat into mempool; node0 (v4.22.9) rejects.
-    Chain stays in sync — block-validation BIP68 isn't active yet.
+  Phase C: a v2 tx with a satisfied lock is accepted by both and mined; the
+    block syncs.
 
-  Phase B — Activate CSV via BIP9 signalling on v4.22.10 only
-    Node1 restarts with CSV signalling enabled and generates blocks through
-    BIP9 activation. Node0 follows the chain, but CSV stays NEVER_ACTIVE on
-    it: since ced15b87da the v4.22.9.3 build carries mainnet's deployment
-    state, so there is no BIP9 window for CSV to move through there.
+  Phase D: after CSV, a v2 tx with an unsatisfied lock is still refused by
+    both mempools.
 
-  Phase C — v2 satisfied lock — both accept
-    Different reasoning per version (v4.22.10 exempts v2; v4.22.9 enforces
-    and finds the lock satisfied) — same outcome, no divergence.
+  Phase E: a v3 tx is non-standard on both ("version"), and the current
+    wallet's default transaction is v2 and relays to the old node.
 
-  Phase E — v3 sequence-lock — convergent across versions
-    Proves the v4.22.10 wallet default (v3) is divergence-free in normal
-    wallet activity. v3 meets both thresholds, both versions enforce.
-      - v3 unsatisfied-lock: both reject from mempool
-      - v3 satisfied-lock:   both accept; mined block syncs
-
-  Phase D — v2 unsatisfied lock post-CSV: relay divergence only
-    Mempool delta from Phase A re-asserted. node1 mines a block that
-    naturally includes the v2 unsat tx (its mempool accepted it — no
-    generateblock force-include needed). node0 will not relay that tx, but
-    it ACCEPTS the block, because BIP68 is not a consensus rule on a node
-    with CSV NEVER_ACTIVE. The chains converge. RED-8's residual risk is to
-    propagation, not to consensus.
-
-v1 transactions are not tested because Reddcoin wallets do not produce v1
-(PoSV requires nTime → every Reddcoin wallet tx is v2+ by design).
+v1 transactions are not tested: the mempool refuses them in the PoS era.
 
 Requires previous releases (the v4.22.9.3 binary), see test/README.md.
 """
-
-import hashlib
 
 from test_framework.messages import (
     COIN,
@@ -69,14 +43,6 @@ from test_framework.messages import (
     CTxIn,
     CTxOut,
 )
-from test_framework.script import (
-    CScript,
-    OP_CHECKSIG,
-    OP_DUP,
-    OP_EQUALVERIFY,
-    OP_HASH160,
-)
-from test_framework.script_util import DUMMY_P2WPKH_SCRIPT
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -93,40 +59,22 @@ NOT_FINAL_ERROR = "non-BIP68-final"
 
 # Version numbers
 VERSION_OLD = 4220903  # v4.22.9.3
-VERSION_NEW = None     # v4.22.10 (current build)
+VERSION_NEW = None     # current build
 
 
 def build_signed_tx(node, txid_int, vout, value_sat, nversion, nsequence, fee_sat=1_000_000):
-    """Build a transaction with specified nVersion and nSequence, sign it, return hex."""
-    dest_addr = node.getnewaddress()
-
-    tx = CTransaction()
-    tx.nVersion = nversion
-    tx.vin = [CTxIn(COutPoint(txid_int, vout), nSequence=nsequence)]
+    """Build a tx with the given nVersion and nSequence paying one of the
+    node's P2PKH addresses (standard on both versions), sign it, return hex."""
     output_value = value_sat - fee_sat
     if output_value <= 0:
         raise AssertionError("Fee (%d) exceeds value (%d)" % (fee_sat, value_sat))
-    tx.vout = [CTxOut(output_value, DUMMY_P2WPKH_SCRIPT)]
-    tx.rehash()
-
+    spk = bytes.fromhex(node.getaddressinfo(node.getnewaddress("", "legacy"))["scriptPubKey"])
+    tx = CTransaction()
+    tx.nVersion = nversion
+    tx.vin = [CTxIn(COutPoint(txid_int, vout), nSequence=nsequence)]
+    tx.vout = [CTxOut(output_value, spk)]
     signed = node.signrawtransactionwithwallet(tx.serialize().hex())
-    if signed.get("complete") is not True:
-        # Fallback: use a P2PKH output the wallet controls
-        tx2 = CTransaction()
-        tx2.nVersion = nversion
-        tx2.vin = [CTxIn(COutPoint(txid_int, vout), nSequence=nsequence)]
-        addr_info = node.getaddressinfo(dest_addr)
-        pubkey_hex = addr_info.get("pubkey", "")
-        if pubkey_hex:
-            pubkey_bytes = bytes.fromhex(pubkey_hex)
-            h160 = hashlib.new("ripemd160", hashlib.sha256(pubkey_bytes).digest()).digest()
-            script = CScript([OP_DUP, OP_HASH160, h160, OP_EQUALVERIFY, OP_CHECKSIG])
-            tx2.vout = [CTxOut(output_value, script)]
-        else:
-            tx2.vout = [CTxOut(output_value, DUMMY_P2WPKH_SCRIPT)]
-        tx2.rehash()
-        signed = node.signrawtransactionwithwallet(tx2.serialize().hex())
-
+    assert signed["complete"], signed
     return signed["hex"]
 
 
@@ -136,12 +84,13 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # node0 (v4.22.9): natural state — CSV is NEVER_ACTIVE in compiled
         # chainparams, matching the current mainnet v4.22.9 release.
-        # node1 (v4.22.10): also starts with CSV disabled (regtest default
+        # node1 (current build): also starts with CSV disabled (regtest default
         # has nStartTime=0, so override to NEVER_ACTIVE initially).
         # -whitelist prevents mocktime-driven peer disconnections.
+        # -acceptnonstdtxn=0 applies standardness on regtest (phase E).
         self.extra_args = [
-            ["-whitelist=127.0.0.1", "-staking=0"],                        # node0 = old v4.22.9 (natural)
-            ["-whitelist=127.0.0.1", "-staking=0", "-vbparams=csv:-2:0"],  # node1 = new v4.22.10 (CSV off initially)
+            ["-whitelist=127.0.0.1", "-staking=0", "-acceptnonstdtxn=0"],                        # node0 = old v4.22.9 (natural)
+            ["-whitelist=127.0.0.1", "-staking=0", "-acceptnonstdtxn=0", "-vbparams=csv:-2:0"],  # node1 = current build (CSV off initially)
         ]
 
     def skip_test_if_missing_module(self):
@@ -181,6 +130,17 @@ class CompatTxVersionsTest(BitcoinTestFramework):
                 return int(txid_hex, 16), i, int(vout["value"] * COIN)
         raise AssertionError("Could not find funded vout")
 
+    def _assert_both_refuse_unsatisfied_v2(self):
+        """Fund a fresh UTXO with one confirmation and offer both nodes a v2
+        spend with a 10-block relative lock: both must refuse it."""
+        node0, node1 = self.nodes
+        txid_int, vout, value_sat = self._fund_and_confirm(node1, amount_rdd=10.0)
+        self.sync_blocks(timeout=60)
+        tx_hex = build_signed_tx(node1, txid_int, vout, value_sat,
+                                 nversion=2, nsequence=RELATIVE_LOCK_10_BLOCKS)
+        assert_raises_rpc_error(-26, NOT_FINAL_ERROR, node1.sendrawtransaction, tx_hex)
+        assert_raises_rpc_error(-26, NOT_FINAL_ERROR, node0.sendrawtransaction, tx_hex)
+
     # ------------------------------------------------------------------
     # Phase A — Pre-activation baseline
     # ------------------------------------------------------------------
@@ -217,37 +177,11 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         assert not self._csv_is_active(node1), "CSV should not be active on new node"
         self.log.info("CSV is NOT active on either node (as expected)")
 
-        # Test the version-version mempool delta on v2 unsatisfied-lock txs.
-        # Under Path B, v4.22.10's BIP68 threshold is hardcoded to >= 3 (HEAD's
-        # tx_verify.cpp from pr/core-fixes), and that threshold applies to the
-        # mempool path too because STANDARD_LOCKTIME_VERIFY_FLAGS sets
-        # LOCKTIME_VERIFY_SEQUENCE. v4.22.9's threshold is >= 2. So:
-        #   - node1 (v4.22.10) mempool: v2 < 3 → BIP68 exempt → accepts
-        #   - node0 (v4.22.9)  mempool: v2 >= 2 → BIP68 enforced → rejects
-        # Pre-CSV, block-validation BIP68 isn't active on either node
-        # (LOCKTIME_VERIFY_SEQUENCE is gated on CSV deployment), so the
-        # mempool divergence does NOT translate into a chain split here.
-        self.log.info("Testing v2 unsatisfied-lock mempool delta (pre-CSV)...")
-        txid_int, vout, value_sat = self._fund_and_confirm(node1, amount_rdd=10.0)
-        self.sync_blocks(timeout=60)
+        self.log.info("Testing v2 unsatisfied-lock (pre-CSV)...")
+        self._assert_both_refuse_unsatisfied_v2()
 
-        tx_hex = build_signed_tx(node1, txid_int, vout, value_sat,
-                                 nversion=2, nsequence=RELATIVE_LOCK_10_BLOCKS)
-
-        # node1 (v4.22.10): mempool exempts v2 from BIP68 → accepts
-        v2_txid = node1.sendrawtransaction(tx_hex)
-        assert v2_txid in node1.getrawmempool(), "v2 unsat not in node1 mempool"
-        self.log.info("node1 (v4.22.10) accepted v2 unsat (BIP68 exempt at threshold >= 3)")
-
-        # node0 (v4.22.9): mempool enforces v2 BIP68 → rejects
-        assert_raises_rpc_error(-26, NOT_FINAL_ERROR,
-                                node0.sendrawtransaction, tx_hex)
-        self.log.info("node0 (v4.22.9) rejected v2 unsat (BIP68 enforced at threshold >= 2)")
-
-        # Chain stays in sync despite mempool divergence — block-validation
-        # BIP68 is gated on CSV which is not yet active.
         assert_equal(node0.getbestblockhash(), node1.getbestblockhash())
-        self.log.info("Phase A passed: mempool delta confirmed; chain in sync at height %d"
+        self.log.info("Phase A passed: both mempools refuse v2 unsat; chain in sync at height %d"
                       % node1.getblockcount())
 
     # ------------------------------------------------------------------
@@ -258,7 +192,7 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         """Restart node1 with CSV signaling enabled, generate blocks through
         BIP9 activation. Node0 (v4.22.9) stays in natural state — CSV remains
         NEVER_ACTIVE on it, simulating the real mainnet upgrade scenario."""
-        self.log.info("=== Phase B: Activate CSV on v4.22.10 only ===")
+        self.log.info("=== Phase B: Activate CSV on the current build only ===")
         node0 = self.nodes[0]
         node1 = self.nodes[1]
 
@@ -269,7 +203,7 @@ class CompatTxVersionsTest(BitcoinTestFramework):
         mocktime = node1.mocktime
 
         self.restart_node(1, extra_args=[
-            "-whitelist=127.0.0.1", "-staking=0",
+            "-whitelist=127.0.0.1", "-staking=0", "-acceptnonstdtxn=0",
             "-vbparams=csv:0:999999999999",
         ])
         node1 = self.nodes[1]
@@ -278,7 +212,7 @@ class CompatTxVersionsTest(BitcoinTestFramework):
 
         # Also restart node0 with mocktime for P2P sync
         self.restart_node(0, extra_args=[
-            "-whitelist=127.0.0.1", "-staking=0",
+            "-whitelist=127.0.0.1", "-staking=0", "-acceptnonstdtxn=0",
             f'-mocktime={mocktime}',
         ])
         node0 = self.nodes[0]
@@ -311,11 +245,11 @@ class CompatTxVersionsTest(BitcoinTestFramework):
 
         # Node0 (v4.22.9): CSV is NEVER_ACTIVE — it syncs the chain but
         # does not activate BIP68 enforcement.
-        # Node1 (v4.22.10): CSV is ACTIVE — BIP68 is now enforced.
+        # Node1 (current build): CSV is ACTIVE — BIP68 is now enforced.
         csv_on_old = self._csv_is_active(node0)
         csv_on_new = self._csv_is_active(node1)
         self.log.info("CSV on old node (v4.22.9): %s" % csv_on_old)
-        self.log.info("CSV on new node (v4.22.10): %s" % csv_on_new)
+        self.log.info("CSV on new node (current build): %s" % csv_on_new)
         assert csv_on_new, "CSV should be active on new node"
 
         assert_equal(node0.getblockcount(), node1.getblockcount())
@@ -363,213 +297,62 @@ class CompatTxVersionsTest(BitcoinTestFramework):
                       % node1.getblockcount())
 
     # ------------------------------------------------------------------
-    # Phase D — v2 tx with unsatisfied lock: documented residual divergence
+    # Phase D: v2 tx with unsatisfied lock (post-activation)
     # ------------------------------------------------------------------
 
-    def phase_d_v2_unsatisfied_lock_divergence(self):
-        """Documented divergence (RED-8), which is relay-only. Under Path B,
-        v4.22.10's BIP68 threshold is >= 3 in both mempool AND consensus
-        (HEAD's hardcoded tx_verify.cpp from pr/core-fixes). v4.22.9's
-        threshold is >= 2 in both layers. So for a v2 unsatisfied-lock tx:
+    def phase_d_v2_unsatisfied_lock(self):
+        """After CSV, both mempools still refuse a v2 tx whose relative lock
+        is not yet satisfied: the thresholds match, so there is no version
+        whose sequence locks one node applies and the other ignores."""
+        self.log.info("=== Phase D: v2 tx with unsatisfied lock (post-CSV) ===")
+        self._assert_both_refuse_unsatisfied_v2()
+        assert_equal(self.nodes[0].getbestblockhash(), self.nodes[1].getbestblockhash())
+        self.log.info("Phase D passed: both nodes refuse v2 unsat after CSV")
 
-          mempool:    node1 accepts (>= 3 exempts v2); node0 rejects (>= 2 enforces)
-          block-val:  node1 accepts a block containing it; so does node0
+    # ------------------------------------------------------------------
+    # Phase E: v3 non-standard on both; wallet default relays
+    # ------------------------------------------------------------------
 
-        The block-validation halves agree for a reason that has nothing to do
-        with the threshold: LOCKTIME_VERIFY_SEQUENCE is set only when
-        DeploymentActiveAt(DEPLOYMENT_CSV) holds, and CSV is NEVER_ACTIVE on
-        the released node, so BIP68 is not among the rules it applies to
-        blocks at all. Its stricter threshold governs relay and nothing else.
-
-        Node1's block template naturally picks the tx from its mempool — no
-        generateblock force-include is needed. node0 is disconnected first so
-        that its acceptance of the block is an observable event on reconnect
-        rather than something that happened during mining.
-
-        This phase is run LAST because it is the destructive one: it leaves a
-        transaction on the chain that node0 would never have relayed.
-        """
-        self.log.info("=== Phase D: v2 tx with unsatisfied lock — documented divergence ===")
+    def phase_e_v3_and_wallet_default(self):
+        """v3 is non-standard on both versions, and the current wallet's
+        default transaction is v2, which the old node relays."""
+        self.log.info("=== Phase E: v3 non-standard on both; wallet default is v2 ===")
         node0 = self.nodes[0]
         node1 = self.nodes[1]
 
-        # Sync baseline before forcing the divergence
-        self.sync_blocks(timeout=60)
-        common_tip = node1.getbestblockhash()
-
-        # Fund and confirm with only 1 block (lock of 10 NOT satisfied)
         txid_int, vout, value_sat = self._fund_and_confirm(node1, amount_rdd=10.0)
         self.sync_blocks(timeout=60)
-        common_tip = node1.getbestblockhash()
+        v3_hex = build_signed_tx(node1, txid_int, vout, value_sat,
+                                 nversion=3, nsequence=0xffffffff)
+        assert_raises_rpc_error(-26, "version", node1.sendrawtransaction, v3_hex)
+        assert_raises_rpc_error(-26, "version", node0.sendrawtransaction, v3_hex)
+        self.log.info("v3: both nodes refuse it as non-standard")
 
-        v2_unsat_hex = build_signed_tx(node1, txid_int, vout, value_sat,
-                                       nversion=2, nsequence=RELATIVE_LOCK_10_BLOCKS)
-
-        # Mempool delta: node1 accepts v2 (>= 3 exempts); node0 rejects (>= 2 enforces)
-        self.log.info("Broadcasting v2 unsat — expecting asymmetric mempool acceptance...")
-        v2_txid = node1.sendrawtransaction(v2_unsat_hex)
-        assert v2_txid in node1.getrawmempool(), "v2 unsat not in node1 mempool"
-        self.log.info("node1 (v4.22.10) accepted v2 unsat into mempool (BIP68 exempt for v2)")
-
-        assert_raises_rpc_error(-26, NOT_FINAL_ERROR, node0.sendrawtransaction, v2_unsat_hex)
-        self.log.info("node0 (v4.22.9) rejected v2 unsat from mempool (BIP68 enforced for v2)")
-
-        # Disconnect so node0 doesn't auto-receive the divergent block via P2P
-        self.disconnect_nodes(0, 1)
-
-        # Mine on node1 — block template includes the v2 unsat from its mempool.
-        # Retry loop wraps the PoS coinstake search variability under mocktime.
-        self.log.info("Mining a block on node1 — should include the v2 unsat tx...")
-        new_block_hash = None
-        last_exc = None
-        for attempt in range(20):
-            advance_time_for_pos(node1, seconds=300)
-            try:
-                node1.generate(1)
-                new_block_hash = node1.getbestblockhash()
-                break
-            except Exception as exc:
-                last_exc = exc
-                if "No valid coinstake found" not in str(exc):
-                    raise
-        if new_block_hash is None:
-            raise AssertionError(
-                "generate could not find a coinstake after 20 retries: %s" % last_exc
-            )
-
-        # Verify the v2 unsat tx made it into the block
-        block = node1.getblock(new_block_hash, 2)
-        block_txids = [tx["txid"] for tx in block["tx"]]
-        assert v2_txid in block_txids, (
-            "v2 unsat tx %s not in node1's new block %s" % (v2_txid, new_block_hash)
-        )
-        self.log.info("node1 mined block %s containing the v2 unsat tx" % new_block_hash)
-
-        # node1 advanced; node0 still at common_tip
-        assert_equal(node1.getbestblockhash(), new_block_hash)
-        assert_equal(node0.getbestblockhash(), common_tip)
-        self.log.info("node0 (v4.22.9) still at common tip %s" % common_tip)
-
-        # Reconnect. node0 has no BIP68 consensus rule to break, so it follows
-        # the chain rather than splitting from it.
-        self.log.info("Reconnecting nodes — node0 (v4.22.9) should accept the block...")
-        set_node_times([node0, node1], node1.mocktime)
-        self.connect_nodes(0, 1)
-        self.sync_blocks(timeout=60)
-
-        # The chains converge. Block validation gates LOCKTIME_VERIFY_SEQUENCE on
-        # DeploymentActiveAt(DEPLOYMENT_CSV) (validation.cpp), and CSV is
-        # NEVER_ACTIVE on the released node, so BIP68 is simply not a consensus
-        # rule there. It cannot reject the block whatever its mempool thinks of
-        # the transaction.
-        assert_equal(node0.getbestblockhash(), new_block_hash)
-        assert_equal(node1.getbestblockhash(), new_block_hash)
-
-        # Verbosity 1, not 2. Verbosity 2 makes TxToUniv compute a fee per
-        # transaction, and v4.22.9 asserts MoneyRange on it (core_write.cpp:268)
-        # without allowing for the negative fee a coinstake necessarily has. So
-        # getblock(hash, 2) fails on this node for any PoS block, which is every
-        # block past the PoW phase. develop guards that case; the released binary
-        # does not, and it is not this test's business to exercise it. Verbosity
-        # 1 gives the txid list with no fee computation.
-        node0_block_txids = node0.getblock(new_block_hash, 1)["tx"]
-        assert v2_txid in node0_block_txids, (
-            "node0 accepted the block but does not report the v2 unsat tx in it"
-        )
-        assert not self._csv_is_active(node0), (
-            "CSV became active on the old node; this phase assumes the released "
-            "node's NEVER_ACTIVE deployment state"
-        )
-
-        self.log.info(
-            "Phase D passed: node0 (v4.22.9) accepted the block and both nodes are at %s"
-            % new_block_hash
-        )
-        self.log.warning(
-            "Known divergence (RED-8) is relay-only, not consensus. v4.22.10 accepts v2 "
-            "unsatisfied-lock txs into its mempool (threshold >= 3 exempts v2); v4.22.9 rejects "
-            "them (threshold >= 2 enforces v2), so it will neither hold nor forward such a tx. "
-            "It still accepts any block containing one, because CSV is NEVER_ACTIVE in every "
-            "release up to v4.22.9 and BIP68 is gated on that deployment. A v4.22.9 node cannot "
-            "be made to enforce BIP68 by network signalling, so activating CSV on mainnet does "
-            "not split these two versions apart. The cost is propagation, not consensus."
-        )
-
-    # ------------------------------------------------------------------
-    # Phase E — v3 sequence-lock: convergent behaviour across versions
-    # ------------------------------------------------------------------
-
-    def phase_e_v3_convergence(self):
-        """v3 sequence-lock tests prove the v4.22.10 wallet default (after the
-        CTransaction::CURRENT_VERSION bump to 3) is divergence-free in normal
-        wallet activity.
-
-        v3 meets BOTH thresholds (v3 >= 2 on v4.22.9; v3 >= 3 on v4.22.10), so
-        BIP68 is enforced identically on both versions for v3 sends.
-        """
-        self.log.info("=== Phase E: v3 sequence-lock — convergent behaviour ===")
-        node0 = self.nodes[0]
-        node1 = self.nodes[1]
-
-        # --- v3 unsatisfied lock ---
-        # Fund and confirm with only 1 block (lock of 10 NOT satisfied)
-        txid_int, vout, value_sat = self._fund_and_confirm(node1, amount_rdd=10.0)
-        self.sync_blocks(timeout=60)
-
-        v3_unsat_hex = build_signed_tx(node1, txid_int, vout, value_sat,
-                                       nversion=3, nsequence=RELATIVE_LOCK_10_BLOCKS)
-
-        self.log.info("Broadcasting v3 unsatisfied-lock to both nodes (expect both reject)...")
-        assert_raises_rpc_error(-26, NOT_FINAL_ERROR,
-                                node1.sendrawtransaction, v3_unsat_hex)
-        assert_raises_rpc_error(-26, NOT_FINAL_ERROR,
-                                node0.sendrawtransaction, v3_unsat_hex)
-        self.log.info("v3 unsatisfied: both nodes reject (BIP68 enforced consistently — no divergence)")
-
-        # --- v3 satisfied lock ---
-        # Fund a fresh UTXO and mine enough blocks to satisfy the 10-block lock
-        txid_int2, vout2, value_sat2 = self._fund_and_confirm(node1, amount_rdd=10.0)
-        self.sync_blocks(timeout=60)
-        self._generate_pos_block(node1, count=10)
-        self.sync_blocks(timeout=60)
-
-        confs = node1.gettxout("%064x" % txid_int2, vout2, True)["confirmations"]
-        self.log.info("Parent UTXO has %d confirmations (lock of 10 satisfied)" % confs)
-
-        v3_sat_hex = build_signed_tx(node1, txid_int2, vout2, value_sat2,
-                                     nversion=3, nsequence=RELATIVE_LOCK_10_BLOCKS)
-
-        self.log.info("Broadcasting v3 satisfied-lock to node1 (expect both accept)...")
-        txid = node1.sendrawtransaction(v3_sat_hex)
+        txid = node1.sendtoaddress(node0.getnewaddress(), 5)
+        assert_equal(node1.getrawtransaction(txid, True)["version"], 2)
         self.sync_mempools(timeout=60)
-        assert txid in node0.getrawmempool(), "v3 satisfied tx not in old node mempool"
+        assert txid in node0.getrawmempool(), "wallet default tx not relayed to the old node"
 
         self._generate_pos_block(node1, count=1)
         self.sync_blocks(timeout=60)
         assert_equal(node0.getbestblockhash(), node1.getbestblockhash())
-
-        self.log.info("Phase E passed: v3 is divergence-free across versions — "
-                      "safe wallet default (height %d)" % node1.getblockcount())
+        self.log.info("Phase E passed: wallet default is v2 and relays to the old node (height %d)"
+                      % node1.getblockcount())
 
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
 
     def run_test(self):
-        self.log.info(
-            "CompatTxVersionsTest: BIP68/CSV transaction version "
-            "compatibility between v4.22.9 and v4.22.10"
-        )
+        self.log.info("node0: %s, node1: %s",
+                      self.nodes[0].getnetworkinfo()["subversion"],
+                      self.nodes[1].getnetworkinfo()["subversion"])
 
-        # Execution order: A, B, C, E, D. Phase D is last because it
-        # intentionally leaves the chains divergent (documented residual
-        # consensus split — see RED-8). Phase E (v3 convergence) runs before
-        # so the chain is still synced when its assertions fire.
         self.phase_a_pre_activation()
         self.phase_b_activate_csv()
         self.phase_c_v2_satisfied_lock()
-        self.phase_e_v3_convergence()
-        self.phase_d_v2_unsatisfied_lock_divergence()
+        self.phase_d_v2_unsatisfied_lock()
+        self.phase_e_v3_and_wallet_default()
 
         self.log.info("CompatTxVersionsTest: all phases passed")
 

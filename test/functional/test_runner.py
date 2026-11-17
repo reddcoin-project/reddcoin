@@ -408,14 +408,11 @@ KNOWN_FAILING_SCRIPTS = {
     'feature_reindex.py': 'RED-207: intermittent, no valid coinstake found',
     'rpc_getchaintips.py': 'RED-207: intermittent, no valid coinstake found',
     # Test side: the test relies on develop-only behaviour.
-    'feature_bip68_sequence.py': 'RED-167: test side, relies on develop\'s v3-transaction BIP68 rules',
-    'feature_compat_tx_versions.py': 'RED-200: test side, relies on develop\'s v3-transaction BIP68 rules',
     'feature_pos_tx_version_floor.py': 'RED-167: test side, develop-only transaction version floor',
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
     'wallet_createwallet.py --legacy-wallet': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
     'wallet_createwallet.py --usecli': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
     # Not yet examined.
-    'feature_csv_activation.py': 'RED-167: not yet examined',
     'p2p_compactblocks.py': 'RED-167: not yet examined (unexpected block type 2)',
     'p2p_eviction.py': 'RED-167: not yet examined',
     'p2p_leak.py': 'RED-167: not yet examined',
