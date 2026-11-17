@@ -1847,9 +1847,12 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
         flags |= SCRIPT_VERIFY_P2SH;
     }
 
-    // Enforce WITNESS rules whenever P2SH is in effect (and the segwit
-    // deployment is defined).
-    if (flags & SCRIPT_VERIFY_P2SH && DeploymentEnabled(consensusparams, Consensus::DEPLOYMENT_SEGWIT)) {
+    // Enforce WITNESS rules once the segwit deployment is active. Bitcoin
+    // buried segwit and could enforce it whenever the deployment was defined;
+    // here segwit is still a BIP9 deployment, so gating on "enabled" would
+    // enforce it before activation, on blocks from non-upgraded stakers and
+    // on history.
+    if (flags & SCRIPT_VERIFY_P2SH && DeploymentActiveAt(*pindex, consensusparams, Consensus::DEPLOYMENT_SEGWIT)) {
         flags |= SCRIPT_VERIFY_WITNESS;
     }
 
