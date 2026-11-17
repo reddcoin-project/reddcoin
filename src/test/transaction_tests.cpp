@@ -910,21 +910,16 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
     BOOST_CHECK_EQUAL(reason, "version");
 
-    // Reddcoin: TX_MAX_STANDARD_VERSION is 3 (to support BIP68), so version 3 is standard
-    // Test version 4 as non-standard instead
-    t.nVersion = 4;
+    t.nVersion = 3;
     reason.clear();
     BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
     BOOST_CHECK_EQUAL(reason, "version");
 
-    // Allowed nVersion (1, 2, and 3 are all standard in Reddcoin)
+    // Allowed nVersion
     t.nVersion = 1;
     BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
 
     t.nVersion = 2;
-    BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
-
-    t.nVersion = 3;
     BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
 
     // Check dust with odd relay fee to verify rounding:

@@ -6,9 +6,10 @@
 """Test BIP68 implementation.
 
 ReddCoin adaptation:
-- BIP68 enforces sequence locks for tx nVersion >= 3 (not >= 2 as in Bitcoin),
-  because nVersion 2 is used for PoS transactions with nTime field.
-- The "disable" version (below BIP68 enforcement) is 2 (not 1).
+- BIP68 applies from nVersion 2, as in Bitcoin. The mempool refuses v1 in the
+  PoS era (bad-txns-version-pos), so test_disable_flag cannot show a v1
+  transaction escaping the lock; feature_csv_activation and miner_tests cover
+  the v1 side of the boundary.
 - CSV activates via BIP9 at height 576 on regtest (not 432).
 - Reorg test uses PoS block generation (invalidateblock + generate) instead
   of create_block/submitblock since PoS blocks require valid coinstake.
@@ -89,16 +90,15 @@ class BIP68Test(BitcoinTestFramework):
         self.log.info("Activating BIP68 (and 112/113)")
         self.activateCSV()
 
-        self.log.info("Verifying nVersion=3 transactions are standard.")
-        self.log.info("Note that nVersion=3 transactions are always standard (independent of BIP68 activation status).")
+        self.log.info("Verifying nVersion=2 transactions are standard.")
+        self.log.info("Note that nVersion=2 transactions are always standard (independent of BIP68 activation status).")
         # Sync node1 before the relay test (node0 has generated many blocks)
         self.sync_blocks(timeout=120)
-        self.test_version3_relay()
+        self.test_version2_relay()
 
         self.log.info("Passed")
 
-    # Test that BIP68 is not in effect if tx version is < 3, or if
-    # the first sequence bit is set.
+    # Test that BIP68 is not in effect if the first sequence bit is set.
     def test_disable_flag(self):
         # Create some unconfirmed inputs
         new_addr = self.nodes[0].getnewaddress()
@@ -123,10 +123,10 @@ class BIP68Test(BitcoinTestFramework):
         tx1_id = self.nodes[0].sendrawtransaction(tx1_signed)
         tx1_id = int(tx1_id, 16)
 
-        # This transaction will enable sequence-locks (nVersion=3 enforces BIP68),
-        # so this transaction should fail
+        # This transaction will enable sequence-locks, so this transaction should
+        # fail
         tx2 = CTransaction()
-        tx2.nVersion = 3
+        tx2.nVersion = 2
         sequence_value = sequence_value & 0x7fffffff
         tx2.vin = [CTxIn(COutPoint(tx1_id, 0), nSequence=sequence_value)]
         tx2.vout = [CTxOut(int(value - self.relayfee * COIN), DUMMY_P2WPKH_SCRIPT)]
@@ -134,9 +134,10 @@ class BIP68Test(BitcoinTestFramework):
 
         assert_raises_rpc_error(-26, NOT_FINAL_ERROR, self.nodes[0].sendrawtransaction, tx2.serialize().hex())
 
-        # Setting the version back down to 2 should disable the sequence lock,
-        # so this should be accepted (ReddCoin: BIP68 enforces at version >= 3).
-        tx2.nVersion = 2
+        # Setting the disable flag again lifts the sequence lock, so this should
+        # be accepted. (Bitcoin lowers the version to 1 here instead; the mempool
+        # refuses v1 in the PoS era.)
+        tx2.vin[0].nSequence = sequence_value | SEQUENCE_LOCKTIME_DISABLE_FLAG
 
         self.nodes[0].sendrawtransaction(tx2.serialize().hex())
 
@@ -183,7 +184,7 @@ class BIP68Test(BitcoinTestFramework):
             using_sequence_locks = False
 
             tx = CTransaction()
-            tx.nVersion = 3  # ReddCoin: BIP68 enforced at version >= 3
+            tx.nVersion = 2
             value = 0
             for j in range(num_inputs):
                 sequence_value = 0xfffffffe # this disables sequence locks
@@ -251,7 +252,7 @@ class BIP68Test(BitcoinTestFramework):
         # Anyone-can-spend mempool tx.
         # Sequence lock of 0 should pass.
         tx2 = CTransaction()
-        tx2.nVersion = 3  # ReddCoin: BIP68 enforced at version >= 3
+        tx2.nVersion = 2
         tx2.vin = [CTxIn(COutPoint(tx1.sha256, 0), nSequence=0)]
         tx2.vout = [CTxOut(int(tx1.vout[0].nValue - self.relayfee*COIN), DUMMY_P2WPKH_SCRIPT)]
         tx2_raw = self.nodes[0].signrawtransactionwithwallet(tx2.serialize().hex())["hex"]
@@ -269,7 +270,7 @@ class BIP68Test(BitcoinTestFramework):
                 sequence_value |= SEQUENCE_LOCKTIME_TYPE_FLAG
 
             tx = CTransaction()
-            tx.nVersion = 3  # ReddCoin: BIP68 enforced at version >= 3
+            tx.nVersion = 2
             tx.vin = [CTxIn(COutPoint(orig_tx.sha256, 0), nSequence=sequence_value)]
             tx.vout = [CTxOut(int(orig_tx.vout[0].nValue - relayfee * COIN), DUMMY_P2WPKH_SCRIPT)]
             tx.rehash()
@@ -407,15 +408,14 @@ class BIP68Test(BitcoinTestFramework):
             self.nodes[0].generate(blocks_needed)
         assert softfork_active(self.nodes[0], 'csv')
 
-    # Use self.nodes[1] to test that version 3 transactions are standard.
-    # ReddCoin: TX_MAX_STANDARD_VERSION = 3 (not 2 as in Bitcoin)
-    def test_version3_relay(self):
+    # Use self.nodes[1] to test that version 2 transactions are standard.
+    def test_version2_relay(self):
         inputs = [ ]
         outputs = { self.nodes[1].getnewaddress() : 1.0 }
         rawtx = self.nodes[1].createrawtransaction(inputs, outputs)
         rawtxfund = self.nodes[1].fundrawtransaction(rawtx)['hex']
         tx = tx_from_hex(rawtxfund)
-        tx.nVersion = 3
+        tx.nVersion = 2
         tx_signed = self.nodes[1].signrawtransactionwithwallet(tx.serialize().hex())["hex"]
         self.nodes[1].sendrawtransaction(tx_signed)
 

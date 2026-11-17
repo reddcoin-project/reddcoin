@@ -292,7 +292,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
 
         self.log.info('Some nonstandard transactions')
         tx = tx_from_hex(raw_tx_reference)
-        tx.nVersion = 4  # A version currently non-standard
+        tx.nVersion = 3  # A version currently non-standard
         self.check_mempool_result(
             result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'version'}],
             rawtxs=[tx.serialize().hex()],
@@ -358,7 +358,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
 
         self.log.info('A transaction that is locked by BIP68 sequence logic')
         tx = tx_from_hex(raw_tx_reference)
-        tx.nVersion = 3 # BIP68 version
+        tx.nVersion = 2  # BIP68 version
         tx.vin[0].nSequence = 2  # We could include it in the second block mined from now, but not the very next one
         # Can skip re-signing the tx because of early rejection
         self.check_mempool_result(

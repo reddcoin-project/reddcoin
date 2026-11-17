@@ -1530,16 +1530,15 @@ class TaprootTest(BitcoinTestFramework):
                     tx.vin[i].scriptSig = input_data[i][i != fail_input][0]
                     tx.wit.vtxinwit[i].scriptWitness.stack = input_data[i][i != fail_input][1]
                 # Submit to mempool to check standardness
-                # ReddCoin: TX_MAX_STANDARD_VERSION is 3 (supports BIP68)
-                is_standard_tx = fail_input is None and all(utxo.spender.is_standard for utxo in input_utxos) and tx.nVersion >= 1 and tx.nVersion <= 3
+                is_standard_tx = fail_input is None and all(utxo.spender.is_standard for utxo in input_utxos) and tx.nVersion >= 1 and tx.nVersion <= 2
                 tx.rehash()
                 msg = ','.join(utxo.spender.comment + ("*" if n == fail_input else "") for n, utxo in enumerate(input_utxos))
                 if is_standard_tx:
                     node.sendrawtransaction(tx.serialize().hex(), 0)
                     assert node.getmempoolentry(tx.hash) is not None, "Failed to accept into mempool: " + msg
                 else:
-                    # ReddCoin: standardness rules differ from Bitcoin (e.g., annex handling,
-                    # TX_MAX_STANDARD_VERSION=3). Best-effort check — log but don't fail.
+                    # ReddCoin: standardness rules differ from Bitcoin (e.g., annex
+                    # handling). Best-effort check: log but don't fail.
                     try:
                         node.sendrawtransaction(tx.serialize().hex(), 0)
                         self.log.debug("Non-standard tx accepted (ReddCoin policy differs): %s" % msg)

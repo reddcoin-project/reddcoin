@@ -187,7 +187,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         *pfPoSCancel = true;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
         CMutableTransaction txCoinStake;
-        txCoinStake.nVersion = POSV_TX_VERSION;   // Explicit: PoS coinstake stays v2 (BIP68-exempt at consensus)
+        txCoinStake.nVersion = POSV_TX_VERSION;   // Explicit: PoS coinstake stays v2
         txCoinStake.nTime = GetAdjustedTime(); // Initialize to current time for stake search
         const auto accept_coinstake = [&]() {
             if (txCoinStake.nTime >= std::max(pindexPrev->GetMedianTimePast()+1, pindexPrev->GetBlockTime() - MAX_FUTURE_STAKE_TIME))

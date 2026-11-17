@@ -1765,9 +1765,7 @@ bool GenericTransactionSignatureChecker<T>::CheckSequence(const CScriptNum& nSeq
 
     // Fail if the transaction's version number is not set high
     // enough to trigger BIP 68 rules.
-    // ReddCoin: nVersion >= 3 required (matches BIP68 enforcement in tx_verify.cpp)
-    // nVersion=2 is PoS-aware tx with nTime field but does not enforce sequence locks
-    if (static_cast<uint32_t>(txTo->nVersion) < 3)
+    if (static_cast<uint32_t>(txTo->nVersion) < 2)
         return false;
 
     // Sequence numbers with their most significant bit set are not
