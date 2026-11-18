@@ -334,8 +334,13 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         # Need force_send because the block will get rejected without a getdata otherwise
         peer.send_blocks_and_test([block], node, force_send=True, success=False, reject_reason='time-too-new')
 
-        # Advance time so the block timestamp becomes valid
-        set_node_times([node], future_time + 1)
+        # One second is enough to bring the block inside MAX_FUTURE_BLOCK_TIME.
+        # Don't jump the clock further. node0 is still fetching block4 from
+        # this peer over and over: block4 failed CheckBlock, so its header is
+        # not marked invalid, and the noban peer is never dropped. A jump past
+        # the block download timeout can make node0 disconnect the peer for
+        # that pending request before the block below is sent.
+        set_node_times([node], t + 1)
         peer.send_blocks_and_test([block], node, success=True)
 
 
