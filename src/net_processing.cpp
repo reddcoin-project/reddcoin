@@ -3869,6 +3869,11 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             if (fRequested) {
                 LOCK(cs_main);
                 mapBlocksUnknownParent.insert(std::make_pair(pblock->hashPrevBlock, pblock));
+                // Re-request the parent as a full block. Only this handler
+                // processes the blocks kept in mapBlocksUnknownParent, so the
+                // parent must not finish arriving through a compact block.
+                // This block's own request stays open until it is processed
+                // below, so it is not downloaded again in the meantime.
                 RemoveBlockRequest(pblock->hashPrevBlock);
             }
         } else {
@@ -3914,6 +3919,11 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                         {
                             LOCK(cs_main);
                             forceProcessing = IsBlockRequested(recursiveHash);
+                            // The block arrived before its parent and has been
+                            // waiting here. Close its request now, or it stays
+                            // in flight until the download timeout disconnects
+                            // the peer that sent it.
+                            RemoveBlockRequest(recursiveHash);
                         }
                         m_chainman.ProcessNewBlock(m_chainparams, pblockrecursive, forceProcessing, &fNewBlock);
                         queue.push_back(recursiveHash);
