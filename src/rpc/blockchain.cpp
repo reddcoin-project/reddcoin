@@ -2257,6 +2257,9 @@ static RPCHelpMan getblockstats()
     int64_t total_size = 0;
     int64_t total_weight = 0;
     int64_t utxo_size_inc = 0;
+    // Transactions the averages cover: every one except the coinbase and,
+    // in a proof-of-stake block, the coinstake.
+    int64_t counted_txs = 0;
     std::vector<CAmount> fee_array;
     std::vector<std::pair<CAmount, int64_t>> feerate_array;
     std::vector<int64_t> txsize_array;
@@ -2277,6 +2280,7 @@ static RPCHelpMan getblockstats()
             continue;
         }
 
+        ++counted_txs;
         inputs += tx->vin.size(); // Don't count coinbase's fake input
         total_out += tx_total_out; // Don't count coinbase reward
 
@@ -2342,9 +2346,9 @@ static RPCHelpMan getblockstats()
     }
 
     UniValue ret_all(UniValue::VOBJ);
-    ret_all.pushKV("avgfee", (block.vtx.size() > 1) ? totalfee / (block.vtx.size() - 1) : 0);
+    ret_all.pushKV("avgfee", counted_txs ? totalfee / counted_txs : 0);
     ret_all.pushKV("avgfeerate", total_weight ? (totalfee * WITNESS_SCALE_FACTOR) / total_weight : 0); // Unit: sat/vbyte
-    ret_all.pushKV("avgtxsize", (block.vtx.size() > 1) ? total_size / (block.vtx.size() - 1) : 0);
+    ret_all.pushKV("avgtxsize", counted_txs ? total_size / counted_txs : 0);
     ret_all.pushKV("blockhash", pindex->GetBlockHash().GetHex());
     ret_all.pushKV("feerate_percentiles", feerates_res);
     ret_all.pushKV("height", (int64_t)pindex->nHeight);

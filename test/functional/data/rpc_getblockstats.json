@@ -208,9 +208,9 @@
   "start_height": 200,
   "stats": [
     {
-      "avgfee": 11450,
+      "avgfee": 22900,
       "avgfeerate": 100,
-      "avgtxsize": 114,
+      "avgtxsize": 229,
       "blockhash": "8eab4025fe482371399a0ac004f51e12a05c3ef1f5556eeb076ce307ff39eee5",
       "feerate_percentiles": [
         100,
@@ -245,9 +245,9 @@
       "utxo_size_inc": 345
     },
     {
-      "avgfee": 28625,
+      "avgfee": 38166,
       "avgfeerate": 166,
-      "avgtxsize": 171,
+      "avgtxsize": 229,
       "blockhash": "d950f8d9a2c97d0aef56e9c8ea7ca9c99024c6a6edf1084d9978d5e238bb8a8b",
       "feerate_percentiles": [
         100,
