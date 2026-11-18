@@ -166,6 +166,13 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
         bool needPoS = (nHeight >= consensusParams.nLastPowHeight);
 
         if (needPoS && pwallet) {
+            // Let the wallet catch up with the block this loop just connected
+            // before picking coins for the next one. Blocks reach the wallet
+            // asynchronously, and a coin view behind the tip can pick a kernel
+            // the previous block already spent, which fails the call, or miss
+            // a coin that has just matured.
+            pwallet->BlockUntilSyncedToCurrentChain();
+
             CBlockIndex* pindexPrev = chainman.ActiveChain().Tip();
             bool fPoSCancel = false;
             // For a PoS block the coinbase is emptied, so scriptPubKeyIn is unused.
@@ -1072,6 +1079,10 @@ static RPCHelpMan getblocktemplate()
             // Release cs_main before taking cs_wallet (lock order) and re-acquire after,
             // mirroring the longpoll wait above.
             LEAVE_CRITICAL_SECTION(cs_main);
+            // Pick coins against the tip, not against whatever the wallet has
+            // processed so far. Safe here only because cs_main is released:
+            // waiting for the wallet needs it.
+            wallet->BlockUntilSyncedToCurrentChain();
             {
                 LOCK(wallet->cs_wallet);
                 pblocktemplate = BlockAssembler(active_chainstate, mempool, Params()).CreateNewBlock(scriptDummy, wallet.get(), &fPoSCancel);
