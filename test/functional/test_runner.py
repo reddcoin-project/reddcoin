@@ -213,6 +213,7 @@ BASE_SCRIPTS = [
     'mining_prioritisetransaction.py',
     'p2p_invalid_locator.py',
     'p2p_invalid_block.py',
+    'p2p_out_of_order_block.py',
     'p2p_invalid_messages.py',
     'p2p_invalid_tx.py',
     'feature_assumevalid.py',
