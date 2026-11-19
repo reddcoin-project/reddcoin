@@ -751,6 +751,17 @@ BOOST_AUTO_TEST_CASE(failed_creation_writes_no_secret)
             BOOST_CHECK_MESSAGE(failed, "the wallet was created although a write failed");
             if (wallet) Unload(std::move(wallet));
         }
+        {
+            // The wallet that failed has been let go, its file closed: a file
+            // still open in this process could not be opened again.
+            SyncWithValidationInterfaceQueue();
+            DatabaseOptions options;
+            options.require_existing = true;
+            DatabaseStatus status;
+            bilingual_str error;
+            const std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+            BOOST_CHECK_MESSAGE(status != DatabaseStatus::FAILED_ALREADY_LOADED, strprintf("the wallet %s is still open after its creation failed", name));
+        }
         for (const auto& bytes : {secrets.phrase, secrets.phrase_passphrase, secrets.seed}) {
             for (fs::recursive_directory_iterator it(GetWalletDir() / name), end; it != end; ++it) {
                 if (!fs::is_regular_file(it->path())) continue;

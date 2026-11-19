@@ -314,6 +314,20 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
         status = DatabaseStatus::FAILED_CREATE;
         return nullptr;
     }
+    // The chain's notifications hold the wallet. If anything below fails, by
+    // an error or an exception, it is let go here, and locked: otherwise it
+    // would stay in memory until the program exits, with its files open and,
+    // after the unlock below, its keys decrypted.
+    struct ReleaseUnlessAdded {
+        const std::shared_ptr<CWallet>& wallet;
+        bool added{false};
+        ~ReleaseUnlessAdded()
+        {
+            if (added) return;
+            wallet->m_chain_notifications_handler.reset();
+            wallet->Lock();
+        }
+    } release{wallet};
 
     // Encrypt the wallet
     if (!passphrase.empty() && !(wallet_creation_flags & WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -351,6 +365,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
         }
     }
     AddWallet(wallet);
+    release.added = true;
     wallet->postInitProcess();
 
     // Write the wallet settings
