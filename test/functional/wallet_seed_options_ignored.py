@@ -9,6 +9,8 @@ and a mnemonic wallet it creates has a phrase of its own, no mnemonic
 passphrase, and a seed that is not the one given.
 """
 
+import os
+
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
@@ -45,7 +47,8 @@ class SeedOptionsIgnoredTest(BitcoinTestFramework):
             assert hd["hdseed"] != SEED_HEX
 
         self.log.info("The warnings are also on standard error")
-        self.stop_node(0, expected_stderr="\n".join(warnings))
+        # One line each, as the platform ends lines (\r\n on Windows).
+        self.stop_node(0, expected_stderr=os.linesep.join(warnings))
 
         self.log.info("Without the options there is no warning")
         with node.assert_debug_log([], unexpected_msgs=["is no longer used and is ignored"]):
