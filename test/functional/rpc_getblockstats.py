@@ -137,6 +137,16 @@ class GetblockstatsTest(BitcoinTestFramework):
             stats_by_hash = self.nodes[0].getblockstats(hash_or_height=blockhash)
             assert_equal(stats_by_hash, self.expected_stats[i])
 
+        # The averages cover every transaction except the coinbase and, in a
+        # proof-of-stake block, the coinstake. Every block checked here is
+        # proof-of-stake, so two transactions are left out. Checked against the
+        # block itself as well as the recorded data, which was once recorded
+        # with averages that left out only the coinbase.
+        for s in stats:
+            counted_txs = s['txs'] - 2
+            assert_equal(s['avgfee'], s['totalfee'] // counted_txs if counted_txs else 0)
+            assert_equal(s['avgtxsize'], s['total_size'] // counted_txs if counted_txs else 0)
+
         # Make sure each stat can be queried on its own
         for stat in expected_keys:
             for i in range(self.max_stat_pos+1):
