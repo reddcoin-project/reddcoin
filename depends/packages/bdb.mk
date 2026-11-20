@@ -5,6 +5,11 @@ $(package)_file_name=db-$($(package)_version).NC.tar.gz
 $(package)_sha256_hash=12edc0df75bf9abd7f82f821795bcee50f42cb2e5f76a6a281b85732798364ef
 $(package)_build_subdir=build_unix
 $(package)_patches=clang_cxx_11.patch
+# BDB_UMRW=1: build with UMRW defined, as --enable-umrw does. A patch rather
+# than a configure option, so that the choice is part of the package's build id.
+ifneq ($(BDB_UMRW),)
+$(package)_patches+=umrw.patch
+endif
 
 define $(package)_set_vars
 $(package)_config_opts=--disable-shared --enable-cxx --disable-replication --enable-option-checking
@@ -18,6 +23,7 @@ endef
 
 define $(package)_preprocess_cmds
   patch -p1 < $($(package)_patch_dir)/clang_cxx_11.patch && \
+  $(if $(BDB_UMRW),patch -p1 < $($(package)_patch_dir)/umrw.patch &&) \
   cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub dist
 endef
 

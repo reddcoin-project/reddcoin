@@ -18,6 +18,7 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/system.h>
+#include <util/translation.h>
 #include <util/ui_change_type.h>
 #include <validationinterface.h>
 #include <wallet/coinselection.h>
@@ -125,7 +126,8 @@ static constexpr uint64_t KNOWN_WALLET_FLAGS =
     |   WALLET_FLAG_LAST_HARDENED_XPUB_CACHED
     |   WALLET_FLAG_DISABLE_PRIVATE_KEYS
     |   WALLET_FLAG_DESCRIPTORS
-    |   WALLET_FLAG_EXTERNAL_SIGNER;
+    |   WALLET_FLAG_EXTERNAL_SIGNER
+    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED;
 
 static constexpr uint64_t MUTABLE_WALLET_FLAGS =
         WALLET_FLAG_AVOID_REUSE;
@@ -137,7 +139,8 @@ static const std::map<std::string,WalletFlags> WALLET_FLAG_MAP{
     {"last_hardened_xpub_cached", WALLET_FLAG_LAST_HARDENED_XPUB_CACHED},
     {"disable_private_keys", WALLET_FLAG_DISABLE_PRIVATE_KEYS},
     {"descriptor_wallet", WALLET_FLAG_DESCRIPTORS},
-    {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER}
+    {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER},
+    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED}
 };
 
 extern const std::map<uint64_t,std::string> WALLET_FLAG_CAVEATS;
@@ -234,6 +237,11 @@ private:
     CKeyingMaterial vMasterKey GUARDED_BY(cs_wallet);
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys = false);
+    /** Rewrite the database file after the seed of the HD chain was moved into
+     *  its encrypted record, and remove the note that it had to be. */
+    bool RewriteAfterHDSecretsMoved() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! What the owner is told once the seed has been moved and the file rewritten, kept for the GUI to show after the unlock that did it.
+    std::vector<bilingual_str> m_hd_secrets_moved_notices GUARDED_BY(cs_wallet);
 
     std::atomic<bool> fAbortRescan{false};
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver
@@ -344,6 +352,12 @@ private:
 
     //! Unset the blank wallet flag and saves it to disk
     void UnsetBlankWalletFlag(WalletBatch& batch) override;
+    /** Write the flags with this one added, through the batch, and leave the
+     *  flags in memory as they are until ConfirmWalletFlag. */
+    bool SetWalletFlagWithDB(WalletBatch& batch, uint64_t flag) override;
+    void ConfirmWalletFlag(uint64_t flag) override;
+    void AssertWalletLockHeld() const override EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) { AssertLockHeld(cs_wallet); }
+    bool IsReadOnlyLoad() const override { return m_read_only_load; }
 
     /** Interface for accessing chain state. */
     interfaces::Chain* m_chain;
@@ -911,9 +925,24 @@ public:
     //! Set by the wallet tool's commands that only show a wallet: loading it writes nothing of its own.
     bool m_read_only_load{false};
 
-    //! What the owner has to be told about the keys of the wallet's HD seed, if anything.
-    //! for_load: the form that follows "Wallet <name>: " in the notice given at load.
+    //! Write the record that says the file has been rewritten by this version (Berkeley DB only).
+    void MarkRewritten() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Rewrite the wallet file through memory of its own, and mark it so. False if it could not be.
+    bool RewriteWalletFile() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! At load: rewrite a Berkeley DB file once, if no rewrite by this version has marked it.
+    void RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_str>& warnings) LOCKS_EXCLUDED(cs_wallet);
+
+    //! What the owner has to be told about where the seed of the wallet is kept, and about
+    //! the keys of its seed, if anything.
+    //! for_load: the form given at load, with advice.
     std::vector<bilingual_str> GetHDWarnings(bool for_load = false) const;
+    //! Whether the wallet holds keys its seed (and its mnemonic phrase, if it has one) does not restore:
+    //! keys on BIP44 paths beside later ones on the ordinary paths, or keys of an earlier seed.
+    bool HasKeysSeedDoesNotRestore() const;
+    //! What the owner is to be told after the seed was moved and the file rewritten; given once, then forgotten.
+    std::vector<bilingual_str> TakeHDSecretsMovedNotices() EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);
+    //! Whether the next unlock moves the seed into its encrypted record or finishes a rewrite of the file: it takes a while.
+    bool HDSecretsRewriteOnUnlock() const EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet);
 
     /* Returns true if BIP39 is enabled */
     bool IsBip39Enabled() const;

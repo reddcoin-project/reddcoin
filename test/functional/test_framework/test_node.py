@@ -702,6 +702,7 @@ class TestNodeCLI():
         self.log.debug("Running bitcoin-cli {}".format(p_args[2:]))
         process = subprocess.Popen(p_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         cli_stdout, cli_stderr = process.communicate(input=self.input)
+        self.stdout, self.stderr = cli_stdout, cli_stderr
         returncode = process.poll()
         if returncode:
             match = re.match(r'error code: ([-0-9]+)\nerror message:\n(.*)', cli_stderr)

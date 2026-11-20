@@ -19,7 +19,10 @@ typedef std::pair<std::vector<unsigned char>, std::vector<unsigned char> > KeyVa
 
 static bool KeyFilter(const std::string& type)
 {
-    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN;
+    // The encrypted secrets of an HD chain belong with the chain: when they
+    // are kept in their own record the chain record has no seed in it, and a
+    // wallet salvaged without them could derive no key.
+    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN || type == DBKeys::HDSECRETS;
 }
 
 bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::vector<bilingual_str>& warnings)
@@ -119,21 +122,29 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         return false;
     }
 
-    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(env->dbenv.get(), 0);
+    // The new file is written through an environment of its own, whose cache
+    // never held a page of the old file: see BerkeleyScratchEnvironment.
+    BerkeleyScratchEnvironment scratch(env->Directory());
+    if (!scratch.IsOpen()) {
+        error = strprintf(Untranslated("Cannot create database file %s"), filename);
+        return false;
+    }
+    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(scratch.Get(), 0);
     int ret = pdbCopy->open(nullptr,               // Txn pointer
                             filename.c_str(),   // Filename
                             "main",             // Logical db name
                             DB_BTREE,           // Database type
                             DB_CREATE,          // Flags
                             0);
-    if (ret > 0) {
+    // Berkeley DB returns its own errors as negative numbers: any value but 0 is a failure.
+    if (ret != 0) {
         error = strprintf(Untranslated("Cannot create database file %s"), filename);
         pdbCopy->close(0);
         return false;
     }
 
-    DbTxn* ptxn = env->TxnBegin();
     CWallet dummyWallet(nullptr, "", CreateDummyWalletDatabase());
+    bool kept_hd_secrets{false};
     for (KeyValPair& row : salvagedData)
     {
         /* Filter for only private key type KV pairs to be added to the salvaged wallet */
@@ -156,12 +167,36 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         }
         Dbt datKey(row.first.data(), row.first.size());
         Dbt datValue(row.second.data(), row.second.size());
-        int ret2 = pdbCopy->put(ptxn, &datKey, &datValue, DB_NOOVERWRITE);
+        int ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
         if (ret2 > 0)
             fSuccess = false;
+        if (strType == DBKeys::HDSECRETS) kept_hd_secrets = true;
     }
-    ptxn->commit(0);
-    pdbCopy->close(0);
+
+    // The encrypted secrets of the chain are kept, and the flags are not: the
+    // flag that says the secrets are in their own record has to be written,
+    // or a version that does not know the record would load the wallet as
+    // one whose chain has no seed.
+    if (kept_hd_secrets) {
+        CDataStream key(SER_DISK, CLIENT_VERSION);
+        CDataStream value(SER_DISK, CLIENT_VERSION);
+        key << DBKeys::FLAGS;
+        value << uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED};
+        Dbt datKey(key.data(), key.size());
+        Dbt datValue(value.data(), value.size());
+        if (pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE) > 0) fSuccess = false;
+    }
+    if (pdbCopy->close(0) != 0) fSuccess = false;
+
+    // The original is still there under another name. If it is the file of an
+    // encrypted wallet that has its seed in the chain record, as earlier
+    // versions left it, that copy holds the seed without encryption.
+    if (LegacyScriptPubKeyMan* spk_man = dummyWallet.GetLegacyScriptPubKeyMan()) {
+        const CHDChain& chain = spk_man->GetHDChain();
+        if (dummyWallet.IsCrypted() && chain.nVersion == CHDChain::VERSION_HD_BIP39 && !chain.vchSeed.empty()) {
+            warnings.push_back(strprintf(Untranslated("WARNING: the original file was kept as %s. It holds the seed of this wallet without encryption, as does the salvaged file until the wallet is next unlocked. Destroy the copy once the salvaged wallet works."), newFilename));
+        }
+    }
 
     return fSuccess;
 }

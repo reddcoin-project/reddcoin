@@ -174,6 +174,7 @@ BITCOIN_TESTS += \
   wallet/test/init_tests.cpp \
   wallet/test/ismine_tests.cpp \
   wallet/test/scriptpubkeyman_tests.cpp \
+  wallet/test/hdsecrets_tests.cpp \
   wallet/test/hdseed_tests.cpp \
   wallet/test/walletload_tests.cpp
 
@@ -183,6 +184,8 @@ FUZZ_SUITE_LD_COMMON +=\
 
 if USE_BDB
 BITCOIN_TESTS += wallet/test/db_tests.cpp
+# The wallets of an HD chain are legacy wallets, in Berkeley DB files.
+BITCOIN_TESTS += wallet/test/hdchain_tests.cpp
 endif
 
 

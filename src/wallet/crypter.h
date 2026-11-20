@@ -8,6 +8,7 @@
 #include <serialize.h>
 #include <support/allocators/secure.h>
 #include <script/signingprovider.h>
+#include <uint256.h>
 
 
 const unsigned int WALLET_CRYPTO_KEY_SIZE = 32;
@@ -105,5 +106,45 @@ public:
 bool EncryptSecret(const CKeyingMaterial& vMasterKey, const CKeyingMaterial &vchPlaintext, const uint256& nIV, std::vector<unsigned char> &vchCiphertext);
 bool DecryptSecret(const CKeyingMaterial& vMasterKey, const std::vector<unsigned char>& vchCiphertext, const uint256& nIV, CKeyingMaterial& vchPlaintext);
 bool DecryptKey(const CKeyingMaterial& vMasterKey, const std::vector<unsigned char>& vchCryptedSecret, const CPubKey& vchPubKey, CKey& key);
+
+/** The secrets of an HD chain that holds its own seed: a chain made from a
+ *  mnemonic, or from a seed given outright. */
+struct CHDSecrets {
+    SecureVector vchMnemonic;           //!< may be empty
+    SecureVector vchMnemonicPassphrase; //!< may be empty
+    SecureVector vchSeed;               //!< never empty
+
+    bool IsNull() const { return vchSeed.empty(); }
+    void SetNull();
+    friend bool operator==(const CHDSecrets& a, const CHDSecrets& b)
+    {
+        return a.vchMnemonic == b.vchMnemonic && a.vchMnemonicPassphrase == b.vchMnemonicPassphrase && a.vchSeed == b.vchSeed;
+    }
+};
+
+/** The "hdsecrets" record: the secrets of the wallet's chain, encrypted with
+ *  the wallet's master key. */
+class CHDSecretsRecord
+{
+public:
+    static const uint32_t CURRENT_VERSION = 1;
+    uint32_t nVersion{CURRENT_VERSION};
+    //! Drawn anew for every write of the record. Encryption uses its first 16 bytes.
+    uint256 nIV;
+    std::vector<unsigned char> vchCrypted;
+
+    SERIALIZE_METHODS(CHDSecretsRecord, obj) { READWRITE(obj.nVersion, obj.nIV, obj.vchCrypted); }
+};
+
+/** Encrypt the secrets with the master key and the given IV. What is encrypted
+ *  is one byte string: each of the three as a compact size and its bytes, then
+ *  the double SHA-256 of all of that. The result is decrypted again and
+ *  compared before it is returned. False if the seed is empty or anything fails. */
+bool EncryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecrets& secrets, const uint256& nIV, CHDSecretsRecord& record);
+/** The same with a new random IV. */
+bool EncryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecrets& secrets, CHDSecretsRecord& record);
+/** Decrypt a record. True only if its version is known, it decrypts, it parses
+ *  with no byte left over, its check matches and its seed is not empty. */
+bool DecryptHDSecrets(const CKeyingMaterial& vMasterKey, const CHDSecretsRecord& record, CHDSecrets& secrets);
 
 #endif // BITCOIN_WALLET_CRYPTER_H

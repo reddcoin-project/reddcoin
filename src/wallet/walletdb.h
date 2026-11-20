@@ -9,12 +9,14 @@
 
 #include <amount.h>
 #include <script/sign.h>
+#include <wallet/crypter.h>
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
 #include <key.h>
 #include <util/bip39.h>
 
 #include <stdint.h>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -64,6 +66,10 @@ extern const std::string DEFAULTKEY;
 extern const std::string DESTDATA;
 extern const std::string FLAGS;
 extern const std::string HDCHAIN;
+extern const std::string HDSECRETS;
+extern const std::string HDSECRETSPENDING;
+//! Says that the file has been written anew by a version that leaves nothing of the memory of the process in it.
+extern const std::string REWRITTEN;
 extern const std::string KEY;
 extern const std::string KEYMETA;
 extern const std::string MASTER_KEY;
@@ -130,7 +136,6 @@ public:
     }
 
     void SetSeedFromSeedId();
-    void Debug();
 
     void SetNull()
     {
@@ -202,6 +207,12 @@ public:
         has_key_origin = false;
     }
 };
+
+/** For tests: asked before each write of the wallet flags, the HD chain, the
+ *  encrypted HD secrets and the rewrite marker, and before the rewrite that
+ *  follows a move of the secrets, with "flags", "hdchain", "hdsecrets",
+ *  "hdsecretspending" or "rewrite". The write fails when it answers true. */
+extern std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
 
 /** Access to the wallet database.
  * Opens the database and provides read and write access to it. Each read and write is its own transaction.
@@ -302,6 +313,18 @@ public:
 
     //! write the hdchain model (external chain child index counter)
     bool WriteHDChain(const CHDChain& chain);
+
+    //! The secrets of the wallet's HD chain, encrypted. One record for a wallet.
+    bool WriteHDSecrets(const CHDSecretsRecord& record);
+    bool EraseHDSecrets();
+    //! Marks that secrets were moved out of the chain record and the file has
+    //! not been rewritten since, so an old copy may still lie in it.
+    bool WriteHDSecretsPending();
+    bool EraseHDSecretsPending();
+    //! The marker that the file has been rewritten once by this version: an ordinary record that earlier versions skip.
+    bool WriteRewritten();
+    bool EraseRewritten();
+    bool HasRewritten();
 
     bool WriteWalletFlags(const uint64_t flags);
     //! Begin a new transaction
