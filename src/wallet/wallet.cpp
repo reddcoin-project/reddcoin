@@ -266,11 +266,6 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
 {
     uint64_t wallet_creation_flags = options.create_flags;
     const SecureString& passphrase = options.create_passphrase;
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-    // const int& type = walletoptions.walletType;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\nwaletType=%i\n", __func__, seed.c_str(), pass.c_str(), type);
 
     if (wallet_creation_flags & WALLET_FLAG_DESCRIPTORS) options.require_format = DatabaseFormat::SQLITE;
 
@@ -319,6 +314,20 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
         status = DatabaseStatus::FAILED_CREATE;
         return nullptr;
     }
+    // The chain's notifications hold the wallet. If anything below fails, by
+    // an error or an exception, it is let go here, and locked: otherwise it
+    // would stay in memory until the program exits, with its files open and,
+    // after the unlock below, its keys decrypted.
+    struct ReleaseUnlessAdded {
+        const std::shared_ptr<CWallet>& wallet;
+        bool added{false};
+        ~ReleaseUnlessAdded()
+        {
+            if (added) return;
+            wallet->m_chain_notifications_handler.reset();
+            wallet->Lock();
+        }
+    } release{wallet};
 
     // Encrypt the wallet
     if (!passphrase.empty() && !(wallet_creation_flags & WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -356,6 +365,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
         }
     }
     AddWallet(wallet);
+    release.added = true;
     wallet->postInitProcess();
 
     // Write the wallet settings
@@ -450,6 +460,7 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                 return false;
             if (Unlock(_vMasterKey))
             {
+                const CMasterKey old_master_key{pMasterKey.second};
                 int64_t nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
                 pMasterKey.second.nDeriveIterations = static_cast<unsigned int>(pMasterKey.second.nDeriveIterations * (100 / ((double)(GetTimeMillis() - nStartTime))));
@@ -463,11 +474,36 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
 
                 WalletLogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
 
-                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
+                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod) ||
+                    !crypter.Encrypt(_vMasterKey, pMasterKey.second.vchCryptedKey)) {
+                    pMasterKey.second = old_master_key;
                     return false;
-                if (!crypter.Encrypt(_vMasterKey, pMasterKey.second.vchCryptedKey))
+                }
+
+                // A record that is overwritten is not erased: the master key
+                // encrypted with the old passphrase stays in the file or its
+                // log, where the old passphrase still opens it, until the file
+                // is written anew. The marker of the rewrite at first load goes with the
+                // new key, so that a rewrite that fails or is cut short here
+                // is done at the next load.
+                bool written{false};
+                {
+                    // Closed before the rewrite, which waits for every batch of the file.
+                    WalletBatch batch(GetDatabase());
+                    if (batch.TxnBegin()) {
+                        written = batch.WriteMasterKey(pMasterKey.first, pMasterKey.second) &&
+                                  (GetDatabase().Format() != "bdb" || batch.EraseRewritten()) &&
+                                  batch.TxnCommit();
+                        if (!written) batch.TxnAbort();
+                    }
+                }
+                if (!written) {
+                    pMasterKey.second = old_master_key;
                     return false;
-                WalletBatch(GetDatabase()).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
+                if (!RewriteWalletFile()) {
+                    WalletLogPrintf("Error: the wallet file could not be rewritten after the passphrase was changed, and may still hold the master key encrypted with the old passphrase. It will be tried again when the wallet is next loaded\n");
+                }
                 if (fWasLocked)
                     Lock();
                 return true;
@@ -707,6 +743,12 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         delete encrypted_batch;
         encrypted_batch = nullptr;
 
+        // A mnemonic wallet's seed has just been moved into its encrypted
+        // record and the rewrite that removes the old chain record is owed:
+        // the unlock that follows does it, as any unlock does.
+        LegacyScriptPubKeyMan* const legacy_spk_man = GetLegacyScriptPubKeyMan();
+        const bool hd_rewrite_owed = legacy_spk_man && legacy_spk_man->IsHDSecretsRewritePending();
+
         Lock();
         Unlock(strWalletPassphrase);
 
@@ -725,12 +767,28 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
         // bits of the unencrypted private key in slack space in the database file.
-        GetDatabase().Rewrite();
-
-        // BDB seems to have a bad habit of writing old data into
-        // slack space in .dat files; that is bad if the old data is
-        // unencrypted private keys. So:
-        GetDatabase().ReloadDbEnv();
+        if (hd_rewrite_owed) {
+            // The seed was moved out of the chain record: the rewrite is
+            // owed, its result is checked, and it is retried if it fails.
+            // Done by the unlock above unless it failed there; once is enough.
+            if (legacy_spk_man->IsHDSecretsRewritePending()) RewriteAfterHDSecretsMoved();
+            // encryptwallet gives its own answer; those notices are for an unlock.
+            m_hd_secrets_moved_notices.clear();
+        } else {
+            try {
+                const bool rewritten{GetDatabase().Rewrite()};
+                if (!rewritten) {
+                    WalletLogPrintf("Error: the wallet file could not be rewritten after encryption, and may still hold the private keys as they were\n");
+                }
+                // BDB seems to have a bad habit of writing old data into
+                // slack space in .dat files; that is bad if the old data is
+                // unencrypted private keys. So:
+                GetDatabase().ReloadDbEnv();
+                if (rewritten) MarkRewritten();
+            } catch (const std::exception& e) {
+                WalletLogPrintf("Error: %s while the wallet file was being rewritten after encryption\n", e.what());
+            }
+        }
 
     }
     NotifyStatusChanged(this);
@@ -1546,6 +1604,20 @@ void CWallet::UnsetWalletFlagWithDB(WalletBatch& batch, uint64_t flag)
         throw std::runtime_error(std::string(__func__) + ": writing wallet flags failed");
 }
 
+bool CWallet::SetWalletFlagWithDB(WalletBatch& batch, uint64_t flag)
+{
+    LOCK(cs_wallet);
+    // We should never be writing unknown non-tolerable wallet flags
+    assert(((flag & KNOWN_WALLET_FLAGS) >> 32) == (flag >> 32));
+    return batch.WriteWalletFlags(m_wallet_flags | flag);
+}
+
+void CWallet::ConfirmWalletFlag(uint64_t flag)
+{
+    LOCK(cs_wallet);
+    m_wallet_flags |= flag;
+}
+
 void CWallet::UnsetBlankWalletFlag(WalletBatch& batch)
 {
     UnsetWalletFlagWithDB(batch, WALLET_FLAG_BLANK_WALLET);
@@ -2237,6 +2309,13 @@ DBErrors CWallet::LoadWallet()
     if (nLoadWalletRet != DBErrors::LOAD_OK)
         return nLoadWalletRet;
 
+    // The seed was moved into its encrypted record and the file was not
+    // rewritten afterwards: the node stopped in between, or the rewrite
+    // failed. It needs no passphrase, and nothing else has the wallet yet.
+    if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan(); spk_man && spk_man->IsHDSecretsRewritePending() && !m_read_only_load) {
+        RewriteAfterHDSecretsMoved();
+    }
+
     return DBErrors::LOAD_OK;
 }
 
@@ -2293,6 +2372,10 @@ bool CWallet::SetAddressBookWithDB(WalletBatch& batch, const CTxDestination& add
 
 bool CWallet::SetAddressBook(const CTxDestination& address, const std::string& strName, const std::string& strPurpose)
 {
+    // The lock first, then the batch. A rewrite of the database file holds
+    // the lock and waits until no batch is open: a batch opened here before
+    // the lock was taken would wait for the rewrite, which waits for it.
+    LOCK(cs_wallet);
     WalletBatch batch(GetDatabase());
     return SetAddressBookWithDB(batch, address, strName, strPurpose);
 }
@@ -2300,7 +2383,7 @@ bool CWallet::SetAddressBook(const CTxDestination& address, const std::string& s
 bool CWallet::DelAddressBook(const CTxDestination& address)
 {
     bool is_mine;
-    WalletBatch batch(GetDatabase());
+    bool erased;
     {
         LOCK(cs_wallet);
         // If we want to delete receiving addresses, we need to take care that DestData "used" (and possibly newer DestData) gets preserved (and the "deleted" address transformed into a change entry instead of actually being deleted)
@@ -2310,6 +2393,9 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
             WalletLogPrintf("%s called with IsMine address, NOT SUPPORTED. Please report this bug! %s\n", __func__, PACKAGE_BUGREPORT);
             return false;
         }
+        // The batch is opened with the lock held, and is gone before it is
+        // released: see SetAddressBook.
+        WalletBatch batch(GetDatabase());
         // Delete destdata tuples associated with address
         std::string strAddress = EncodeDestination(address);
         for (const std::pair<const std::string, std::string> &item : m_address_book[address].destdata)
@@ -2318,13 +2404,16 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
         }
         m_address_book.erase(address);
         is_mine = IsMine(address) != ISMINE_NO;
+
+        batch.ErasePurpose(strAddress);
+        erased = batch.EraseName(strAddress);
     }
 
     NotifyAddressBookChanged(address, "", is_mine, "", CT_DELETED);
 
-    batch.ErasePurpose(EncodeDestination(address));
-    return batch.EraseName(EncodeDestination(address));
+    return erased;
 }
+
 
 size_t CWallet::KeypoolCountExternalKeys() const
 {
@@ -2742,11 +2831,6 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
 {
     const std::string& walletFile = database->Filename();
 
-    // const SecureString& seed = walletoptions.ssMnemonic;
-    // const SecureString& pass = walletoptions.ssMnemonicPassphrase;
-
-    // LogPrintf("%s:\nssMnemonic=%s\nssPassPhrase=%s\n", __func__, seed.c_str(), pass.c_str());
-
     int64_t nStart = GetTimeMillis();
     // TODO: Can't use std::make_shared because we need a custom deleter but
     // should be possible to use std::allocate_shared.
@@ -2778,11 +2862,15 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         }
     }
 
-    // What the owner has to be told about the keys of the wallet's seed: in the
-    // log, and to whoever loaded the wallet.
+    // What the owner has to be told about where the seed of the wallet is
+    // kept, and about the keys of its seed: in the log, and to whoever loaded
+    // the wallet. The GUI shows them itself, once, in the box that can offer
+    // the unlock that some of them call for, so they are not also among the
+    // warnings of the load there.
+    const bool gui_shows_notices{gArgs.GetBoolArg("-guiwalletnotices", false)};
     for (const bilingual_str& notice : walletInstance->GetHDWarnings(/* for_load */ true)) {
         walletInstance->WalletLogPrintf("%s\n", notice.original);
-        warnings.push_back(strprintf(Untranslated("Wallet %s: "), name.empty() ? "default wallet" : name) + notice);
+        if (!gui_shows_notices) warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name.empty() ? "default wallet" : name) + notice);
     }
 
     // This wallet is in its first run if there are no ScriptPubKeyMans and it isn't blank or no privkeys
@@ -2833,6 +2921,14 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
                 break;
             }
         }
+    }
+
+    if (fFirstRun) {
+        // A file this version has just made holds nothing of earlier versions.
+        LOCK(walletInstance->cs_wallet);
+        walletInstance->MarkRewritten();
+    } else {
+        walletInstance->RewriteOnceIfOwed(chain, warnings);
     }
 
     if (!gArgs.GetArg("-addresstype", "").empty()) {
@@ -3225,6 +3321,8 @@ bool CWallet::Lock()
     {
         LOCK(cs_wallet);
         vMasterKey.clear();
+        // The decrypted seed goes with the key that decrypted it.
+        if (auto spk_man = GetLegacyScriptPubKeyMan()) spk_man->LockHDSecrets();
     }
 
     NotifyStatusChanged(this);
@@ -3241,6 +3339,16 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
             }
         }
         vMasterKey = vMasterKeyIn;
+
+        // Every way of unlocking ends here. The seed of a chain that holds it
+        // itself is decrypted now; and if it is still stored in clear in an
+        // encrypted wallet, as versions before this one left it, it is moved
+        // into its encrypted record now, the first time the key is at hand.
+        if (auto spk_man = GetLegacyScriptPubKeyMan()) {
+            bool need_rewrite{false};
+            spk_man->UnlockHDSecrets(vMasterKey, need_rewrite);
+            if (need_rewrite) RewriteAfterHDSecretsMoved();
+        }
     }
     NotifyStatusChanged(this);
     return true;
@@ -3248,14 +3356,138 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
 
 std::vector<bilingual_str> CWallet::GetHDWarnings(bool for_load) const
 {
-    std::vector<bilingual_str> notices;
-    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    std::vector<bilingual_str> notices = spk_man ? spk_man->GetHDSecretsNotices(for_load) : std::vector<bilingual_str>{};
     if (spk_man && spk_man->HasMixedKeyPaths()) {
-        notices.push_back(for_load ?
-            _("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it.") :
-            _("Some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: keep a backup of the file, or create a new wallet and move the funds to it."));
+        bilingual_str notice{_("Some of this wallet's addresses were made on BIP44 paths by an earlier version (4.22.7 to 4.22.9.3), and its later ones on the wallet's ordinary paths. Its HD seed restores only the later ones: if this wallet were restored from the seed alone, the funds on the earlier addresses would not be there. Only this wallet file holds the keys to all of its addresses.")};
+        // The advice is the same as for the keys of an earlier seed: given once.
+        if (for_load && !spk_man->HasEarlierSeedKeys()) notice = notice + Untranslated("\n\n") + SeedDoesNotRestoreAllAdvice();
+        notices.push_back(notice);
     }
     return notices;
+}
+
+bool CWallet::HasKeysSeedDoesNotRestore() const
+{
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man && (spk_man->HasMixedKeyPaths() || spk_man->HasEarlierSeedKeys());
+}
+
+void CWallet::MarkRewritten()
+{
+    AssertLockHeld(cs_wallet);
+    // Only a Berkeley DB file can hold what earlier versions left in it.
+    if (GetDatabase().Format() != "bdb") return;
+    if (!WalletBatch(GetDatabase()).WriteRewritten()) {
+        WalletLogPrintf("Error: the wallet file has been rewritten, but the record that says so could not be written; it will be rewritten again at the next load\n");
+    }
+}
+
+bool CWallet::RewriteWalletFile()
+{
+    AssertLockHeld(cs_wallet);
+    try {
+        if ((g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite-file")) || !GetDatabase().Rewrite()) return false;
+        GetDatabase().ReloadDbEnv();
+    } catch (const std::exception& e) {
+        WalletLogPrintf("Error: %s while the wallet file was being rewritten\n", e.what());
+        return false;
+    }
+    MarkRewritten();
+    return true;
+}
+
+void CWallet::RewriteOnceIfOwed(interfaces::Chain* chain, std::vector<bilingual_str>& warnings)
+{
+    // Every Berkeley DB wallet written by an earlier version may hold, in the
+    // unused parts of its pages, memory of the process that wrote it, and an
+    // encrypted wallet some of its own keys from before it was encrypted. A
+    // rewrite through memory of its own leaves none of that. It is done once,
+    // at the first load by this version, and a record says it was done. It
+    // needs no passphrase, and nothing else has the wallet yet.
+    LOCK(cs_wallet);
+    if (GetDatabase().Format() != "bdb" || m_read_only_load) return;
+    if (WalletBatch(GetDatabase()).HasRewritten()) return;
+    const std::string name{GetName().empty() ? "default wallet" : GetName()};
+    const bilingual_str doing{strprintf(_("Rewriting wallet file %s to remove data left by earlier versions. This is done once. Do not close the program."), name)};
+    WalletLogPrintf("%s\n", doing.original);
+    if (chain) chain->initMessage(doing.translated);
+    const int64_t start{GetTimeMillis()};
+    if (!RewriteWalletFile()) {
+        const bilingual_str failed{_("The wallet file could not be rewritten to remove data that earlier versions left in its unused space, which could include private keys without encryption. It will be tried again when the wallet is next loaded.")};
+        WalletLogPrintf("Error: %s\n", failed.original);
+        warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name) + failed);
+        return;
+    }
+    WalletLogPrintf("Wallet file rewritten in %d ms\n", GetTimeMillis() - start);
+    const bilingual_str done{_("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could include private keys without encryption, of this wallet or of other wallets the program had loaded. This is done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make a new backup and destroy old ones.")};
+    WalletLogPrintf("%s\n", done.original);
+    // A wallet whose seed is still to be moved out of its chain record, or
+    // whose file is still to be rewritten after the move, still holds its
+    // seed unencrypted: a backup made now would too. The unlock that moves it
+    // rewrites the file again and tells the owner what to do; nothing is
+    // said here that a new backup would help.
+    LegacyScriptPubKeyMan* const spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man && (spk_man->GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNMIGRATED || spk_man->IsHDSecretsRewritePending())) return;
+    warnings.push_back(strprintf(Untranslated("Wallet %s:\n"), name) + done);
+}
+
+bool CWallet::RewriteAfterHDSecretsMoved()
+{
+    AssertLockHeld(cs_wallet);
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man || !spk_man->IsHDSecretsRewritePending()) return true;
+
+    // A record that is overwritten is not erased: the old chain record, with
+    // the seed in it, is still in the file until the file is written anew.
+    // This is what encryption does for the private keys.
+    WalletLogPrintf("Rewriting the wallet file: the seed of this wallet has been encrypted and the file may still hold the old copy\n");
+    try {
+        if ((g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite")) || !GetDatabase().Rewrite()) {
+            WalletLogPrintf("Error: the wallet file could not be rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy. It will be tried again when the wallet is next loaded or unlocked\n");
+            return false;
+        }
+        GetDatabase().ReloadDbEnv();
+    } catch (const std::exception& e) {
+        WalletLogPrintf("Error: %s while the wallet file was being rewritten. The seed of this wallet is encrypted, but the file may still hold the old copy\n", e.what());
+        return false;
+    }
+    if (!WalletBatch(GetDatabase()).EraseHDSecretsPending()) {
+        WalletLogPrintf("Error: the wallet file has been rewritten, but the note that it had to be could not be removed\n");
+        return false;
+    }
+    MarkRewritten();
+    spk_man->HDSecretsRewritten();
+    std::vector<bilingual_str> notices{_("The seed of this wallet is now encrypted with the wallet passphrase, and the wallet file has been rewritten so that the old copy, without encryption, is no longer in it. This wallet can no longer be opened by earlier versions. Any copy of the wallet file made before now still holds the seed unencrypted.")};
+    CHDSecrets secrets;
+    const bool secrets_known{spk_man->GetHDSecrets(secrets)};
+    if (spk_man->HasEarlierSeedKeys() && secrets_known && secrets.vchMnemonic.empty()) {
+        notices.push_back(_("The HD seed of this wallet was replaced by an earlier version when it was encrypted. This wallet has no mnemonic phrase. Its seed restores only the addresses created after that. The safest course is to create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. Otherwise make a new backup of this wallet file now and keep it safe: it is the only backup that restores all of the wallet's addresses."));
+    } else if (spk_man->HasEarlierSeedKeys()) {
+        notices.push_back(_("This wallet was converted to a mnemonic wallet by an earlier version when it was encrypted, and you may never have been shown its phrase. Its phrase can now be read with gethdwalletinfo in the console while the wallet is unlocked, but it restores only the addresses created after the conversion. The safest course is to create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. Otherwise make a new backup of this wallet file now and keep it safe: it is the only backup that restores all of the wallet's addresses."));
+    } else if (secrets_known && !secrets.vchMnemonic.empty()) {
+        notices.push_back(_("This wallet has a mnemonic phrase. If you never wrote one down (wallets created with version 4.22.6 were given one without showing it), read it now with gethdwalletinfo while the wallet is unlocked, and keep it safe."));
+    }
+    for (const bilingual_str& notice : notices) {
+        WalletLogPrintf("%s\n", notice.original);
+    }
+    m_hd_secrets_moved_notices = std::move(notices);
+    return true;
+}
+
+std::vector<bilingual_str> CWallet::TakeHDSecretsMovedNotices()
+{
+    LOCK(cs_wallet);
+    std::vector<bilingual_str> notices;
+    notices.swap(m_hd_secrets_moved_notices);
+    return notices;
+}
+
+bool CWallet::HDSecretsRewriteOnUnlock() const
+{
+    LOCK(cs_wallet);
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man && (spk_man->GetHDSecretsState() == LegacyScriptPubKeyMan::HDSecretsState::UNMIGRATED || spk_man->IsHDSecretsRewritePending());
 }
 
 std::set<ScriptPubKeyMan*> CWallet::GetActiveScriptPubKeyMans() const

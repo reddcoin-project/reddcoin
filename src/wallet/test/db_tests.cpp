@@ -2,9 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <boost/test/unit_test.hpp>
 
@@ -13,6 +18,7 @@
 #include <tinyformat.h>
 #include <util/translation.h>
 #include <wallet/bdb.h>
+#include <wallet/walletdb.h>
 
 
 BOOST_FIXTURE_TEST_SUITE(db_tests, BasicTestingSetup)
@@ -207,6 +213,112 @@ BOOST_AUTO_TEST_CASE(periodic_flush_resets_changed_pages_only)
         BOOST_CHECK_EQUAL(value, "changed");
         BOOST_CHECK(batch->Read(strprintf("key%08d", 0), value));
     }
+}
+
+// The memory Berkeley DB is given is zero, whatever the heap held before.
+BOOST_AUTO_TEST_CASE(berkeley_allocator_gives_zeroed_memory)
+{
+    for (const size_t size : {size_t{1}, size_t{33}, size_t{4096}, size_t{70000}}) {
+        // Leave the heap dirty with blocks of this size, taken and given back with malloc itself.
+        std::vector<void*> dirty;
+        for (int i = 0; i < 16; ++i) {
+            dirty.push_back(std::malloc(size + 64));
+            BOOST_REQUIRE(dirty.back());
+            std::memset(dirty.back(), 0xA5, size + 64);
+        }
+        for (void* block : dirty) std::free(block);
+
+        std::vector<unsigned char*> blocks;
+        for (int i = 0; i < 16; ++i) {
+            unsigned char* block = static_cast<unsigned char*>(BerkeleyAllocator::Allocate(size));
+            BOOST_REQUIRE(block);
+            BOOST_CHECK(std::all_of(block, block + size, [](unsigned char byte) { return byte == 0; }));
+            BOOST_CHECK_EQUAL(reinterpret_cast<uintptr_t>(block) % alignof(std::max_align_t), 0U);
+            std::memset(block, 0x5A, size);
+            blocks.push_back(block);
+        }
+        for (unsigned char* block : blocks) BerkeleyAllocator::Release(block);
+    }
+    BerkeleyAllocator::Release(nullptr);
+    BOOST_CHECK(BerkeleyAllocator::Allocate(std::numeric_limits<size_t>::max()) == nullptr);
+}
+
+namespace {
+size_t g_released_blocks;
+size_t g_released_bytes;
+bool g_released_clean;
+void ObserveRelease(const void* ptr, size_t size)
+{
+    const unsigned char* bytes = static_cast<const unsigned char*>(ptr);
+    ++g_released_blocks;
+    g_released_bytes += size;
+    g_released_clean = g_released_clean && std::all_of(bytes, bytes + size, [](unsigned char byte) { return byte == 0; });
+}
+} // namespace
+
+// Memory given back is cleansed first, and a block that is resized keeps its
+// content, gains zeros, and leaves nothing behind where it was.
+BOOST_AUTO_TEST_CASE(berkeley_allocator_cleanses_what_it_releases)
+{
+    g_released_blocks = 0;
+    g_released_bytes = 0;
+    g_released_clean = true;
+    BerkeleyAllocator::g_release_observer = ObserveRelease;
+
+    unsigned char* block = static_cast<unsigned char*>(BerkeleyAllocator::Allocate(1000));
+    BOOST_REQUIRE(block);
+    std::memset(block, 0x5A, 1000);
+    BerkeleyAllocator::Release(block);
+    BOOST_CHECK_EQUAL(g_released_blocks, 1U);
+    BOOST_CHECK_EQUAL(g_released_bytes, 1000U);
+    BOOST_CHECK(g_released_clean);
+
+    // Grown: the old content, then zeros; the old block cleansed.
+    block = static_cast<unsigned char*>(BerkeleyAllocator::Reallocate(nullptr, 100));
+    BOOST_REQUIRE(block);
+    for (size_t i = 0; i < 100; ++i) block[i] = static_cast<unsigned char>(i + 1);
+    unsigned char* grown = static_cast<unsigned char*>(BerkeleyAllocator::Reallocate(block, 5000));
+    BOOST_REQUIRE(grown);
+    for (size_t i = 0; i < 100; ++i) BOOST_CHECK_EQUAL(grown[i], static_cast<unsigned char>(i + 1));
+    BOOST_CHECK(std::all_of(grown + 100, grown + 5000, [](unsigned char byte) { return byte == 0; }));
+    BOOST_CHECK_EQUAL(g_released_blocks, 2U);
+    BOOST_CHECK_EQUAL(g_released_bytes, 1100U);
+
+    // Shrunk: the content that fits; the whole old block cleansed.
+    std::memset(grown + 100, 0x77, 4900);
+    unsigned char* shrunk = static_cast<unsigned char*>(BerkeleyAllocator::Reallocate(grown, 10));
+    BOOST_REQUIRE(shrunk);
+    for (size_t i = 0; i < 10; ++i) BOOST_CHECK_EQUAL(shrunk[i], static_cast<unsigned char>(i + 1));
+    BOOST_CHECK_EQUAL(g_released_blocks, 3U);
+    BOOST_CHECK_EQUAL(g_released_bytes, 6100U);
+    BerkeleyAllocator::Release(shrunk);
+    BOOST_CHECK_EQUAL(g_released_blocks, 4U);
+    BOOST_CHECK(g_released_clean);
+
+    BerkeleyAllocator::g_release_observer = nullptr;
+}
+
+// Berkeley DB has the functions before its first environment exists, and what
+// it reads into memory for the wallet to release still comes from malloc.
+BOOST_AUTO_TEST_CASE(berkeley_allocator_is_installed_and_used)
+{
+    g_released_blocks = 0;
+    g_released_clean = true;
+    BerkeleyAllocator::g_release_observer = ObserveRelease;
+    {
+        std::unique_ptr<WalletDatabase> database = CreateMockWalletDatabase();
+        BOOST_CHECK(BerkeleyAllocator::IsInstalled());
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        const std::string value(3000, 'v');
+        for (int i = 0; i < 50; ++i) BOOST_REQUIRE(batch->Write(strprintf("key%d", i), value));
+        std::string read;
+        for (int i = 0; i < 50; ++i) BOOST_REQUIRE(batch->Read(strprintf("key%d", i), read));
+        BOOST_CHECK_EQUAL(read, value);
+    }
+    // The library released memory through the functions while it worked and when it closed.
+    BOOST_CHECK_GT(g_released_blocks, 0U);
+    BOOST_CHECK(g_released_clean);
+    BerkeleyAllocator::g_release_observer = nullptr;
 }
 
 BOOST_AUTO_TEST_SUITE_END()

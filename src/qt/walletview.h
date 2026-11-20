@@ -91,6 +91,8 @@ public Q_SLOTS:
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
+    /** Switch to send coins page, with all of the funds of the wallet to one address */
+    void sendAllTo(const QString& address, const QString& label);
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
@@ -112,6 +114,9 @@ public Q_SLOTS:
     void changePassphrase();
     /** Ask for passphrase to unlock wallet temporarily */
     void unlockWallet();
+    /** Tell the owner, once per session, where the seed of this wallet is kept when there is
+        something to say; offer to unlock it when that moves the seed into its encrypted record. */
+    void showHDNotices();
     void lockWallet(bool lock_wallet);
 
     /** Enable/Disable staking */
@@ -152,6 +157,8 @@ Q_SIGNALS:
     void incomingTransaction(const QString& date, int unit, const CAmount& amount, const QString& type, const QString& address, const QString& label, const QString& walletName);
     /** Notify that the out of sync warning icon has been pressed */
     void outOfSyncWarningClicked();
+    /** The owner asked to move the funds of this wallet to a new wallet */
+    void moveFundsToNewWallet(WalletModel* from);
 };
 
 #endif // BITCOIN_QT_WALLETVIEW_H

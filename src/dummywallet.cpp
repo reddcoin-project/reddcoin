@@ -33,6 +33,7 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
         "-disablewallet",
         "-discardfee=<amt>",
         "-fallbackfee=<amt>",
+        "-guiwalletnotices",
         "-hdseed=<seed>",
         "-keypool=<n>",
         "-maxapsfee=<n>",

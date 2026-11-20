@@ -31,6 +31,7 @@
 
 #include <boost/test/unit_test.hpp>
 #include <univalue.h>
+#include <support/allocators/secure.h>
 
 #include <map>
 #include <memory>
@@ -481,6 +482,55 @@ BOOST_AUTO_TEST_CASE(overlong_key_path_is_put_right_at_load)
             Unload(std::move(wallet));
         }
     }
+}
+
+// The seed of a wallet with a plain HD seed is one of its keys. A chain keeps
+// a copy of it when an unencrypted wallet is loaded. Once the wallet is
+// encrypted no chain holds that copy, neither the new one nor the one that was
+// replaced, and the replaced seed can still be derived from when unlocked.
+BOOST_AUTO_TEST_CASE(encrypted_wallet_holds_no_seed_copy_in_its_chains)
+{
+    const SecureString passphrase{"passphrase"};
+    std::shared_ptr<CWallet> wallet = Create("plain", walletType::bip32Wallet);
+    NewScript(*wallet);
+    Unload(std::move(wallet));
+
+    DatabaseOptions options;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    options.require_existing = true;
+    wallet = LoadWallet(*m_node.chain, "plain", /* load_on_start */ std::nullopt, options, status, error, warnings);
+    BOOST_REQUIRE_MESSAGE(wallet, error.original);
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    const CKeyID old_seed = spk_man.GetHDChain().seed_id;
+    // The state this is about: the copy is there.
+    BOOST_CHECK_EQUAL(spk_man.GetHDChain().vchSeed.size(), 32U);
+
+    const auto no_copy = [&spk_man] {
+        if (!spk_man.GetHDChain().vchSeed.empty()) return false;
+        for (const auto& chain_pair : spk_man.GetInactiveHDChains()) {
+            if (!chain_pair.second.vchSeed.empty()) return false;
+        }
+        return true;
+    };
+
+    BOOST_REQUIRE(wallet->EncryptWallet(passphrase));
+    BOOST_CHECK(wallet->IsLocked());
+    BOOST_CHECK(spk_man.GetHDChain().seed_id != old_seed);
+    BOOST_CHECK_EQUAL(spk_man.GetInactiveHDChains().count(old_seed), 1U);
+    BOOST_CHECK(no_copy());
+
+    // Unlocked, the replaced seed is derived from through the key itself.
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    const SeedKeys before = KeysOf(*wallet, old_seed);
+    WITH_LOCK(wallet->cs_wallet, spk_man.MarkUnusedAddresses(GetScriptForDestination(PKHash(before.last_external_key))));
+    BOOST_CHECK_EQUAL(KeysOf(*wallet, old_seed).last_external, before.last_external + 3);
+    NewScript(*wallet);
+    BOOST_CHECK(no_copy());
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_CHECK(no_copy());
+    Unload(std::move(wallet));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
