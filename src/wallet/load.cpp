@@ -17,6 +17,9 @@
 
 #include <univalue.h>
 
+#include <algorithm>
+#include <iterator>
+
 bool VerifyWallets(interfaces::Chain& chain)
 {
     if (gArgs.IsArgSet("-walletdir")) {
@@ -88,8 +91,68 @@ bool VerifyWallets(interfaces::Chain& chain)
     return true;
 }
 
+namespace {
+//! The warnings of the wallets loaded at startup, given together at the end.
+//! The GUI shows each warning in a box that has to be dismissed before the
+//! load goes on, and the first load by a new version can give the same
+//! warning for every wallet. A warning that several wallets give is given
+//! once, with their names.
+class StartupWarnings
+{
+    struct Group {
+        bilingual_str text;
+        std::vector<std::string> wallets; //!< empty for a warning not of a wallet
+    };
+    std::vector<Group> m_groups;
+
+public:
+    void Add(const std::string& name, const std::vector<bilingual_str>& warnings)
+    {
+        const std::string wallet{name.empty() ? "default wallet" : name};
+        const std::string prefix{strprintf("Wallet %s:\n", wallet)};
+        for (const bilingual_str& warning : warnings) {
+            // A warning of the wallet itself starts with its name (see
+            // CWallet::Create); anything else is kept as it is.
+            const bool named{warning.original.compare(0, prefix.size(), prefix) == 0 &&
+                             warning.translated.compare(0, prefix.size(), prefix) == 0};
+            if (!named) {
+                m_groups.push_back({warning, {}});
+                continue;
+            }
+            const bilingual_str text{warning.original.substr(prefix.size()), warning.translated.substr(prefix.size())};
+            const auto group{std::find_if(m_groups.begin(), m_groups.end(), [&](const Group& g) {
+                return !g.wallets.empty() && g.text.original == text.original;
+            })};
+            if (group == m_groups.end()) {
+                m_groups.push_back({text, {wallet}});
+            } else {
+                group->wallets.push_back(wallet);
+            }
+        }
+    }
+
+    void Give(interfaces::Chain& chain)
+    {
+        if (m_groups.empty()) return;
+        std::vector<bilingual_str> lines;
+        for (const Group& group : m_groups) {
+            if (group.wallets.empty()) {
+                lines.push_back(group.text);
+            } else if (group.wallets.size() == 1) {
+                lines.push_back(strprintf(Untranslated("Wallet %s:\n"), group.wallets.front()) + group.text);
+            } else {
+                lines.push_back(strprintf(Untranslated("Wallets %s:\n"), Join(group.wallets, ", ")) + group.text);
+            }
+        }
+        chain.initWarning(Join(lines, Untranslated("\n")));
+        m_groups.clear();
+    }
+};
+} // namespace
+
 bool LoadWallets(interfaces::Chain& chain)
 {
+    StartupWarnings startup_warnings;
     try {
         std::set<fs::path> wallet_paths;
         for (const std::string& name : gArgs.GetArgs("-wallet")) {
@@ -109,15 +172,18 @@ bool LoadWallets(interfaces::Chain& chain)
             }
             chain.initMessage(_("Loading wallet…").translated);
             std::shared_ptr<CWallet> pwallet = database ? CWallet::Create(&chain, name, std::move(database), options.create_flags, walletoptions, error, warnings) : nullptr;
-            if (!warnings.empty()) chain.initWarning(Join(warnings, Untranslated("\n")));
+            startup_warnings.Add(name, warnings);
             if (!pwallet) {
+                startup_warnings.Give(chain);
                 chain.initError(error);
                 return false;
             }
             AddWallet(pwallet);
         }
+        startup_warnings.Give(chain);
         return true;
     } catch (const std::runtime_error& e) {
+        startup_warnings.Give(chain);
         chain.initError(Untranslated(e.what()));
         return false;
     }

@@ -44,6 +44,8 @@ public Q_SLOTS:
 Q_SIGNALS:
     void transactionClicked(const QModelIndex &index);
     void outOfSyncWarningClicked();
+    void backupWalletClicked();
+    void moveFundsClicked();
 
 protected:
     void changeEvent(QEvent* e) override;
@@ -54,6 +56,8 @@ private:
     WalletModel *walletModel;
     interfaces::WalletBalances m_balances;
     bool m_privacy{false};
+    //! The owner hid the notice about keys the seed does not restore: until the wallet is next loaded.
+    bool m_keys_notice_hidden{false};
 
     const PlatformStyle* m_platform_style;
 
@@ -64,6 +68,7 @@ private Q_SLOTS:
     void updateDisplayUnit();
     void handleTransactionClicked(const QModelIndex &index);
     void updateAlerts(const QString &warnings);
+    void updateKeysNotice();
     void updateWatchOnlyLabels(bool showWatchOnly);
     void setMonospacedFont(bool use_embedded_font);
 };

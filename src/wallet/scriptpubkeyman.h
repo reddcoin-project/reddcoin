@@ -20,6 +20,7 @@
 
 #include <boost/signals2/signal.hpp>
 
+#include <optional>
 #include <unordered_map>
 
 enum class OutputType;
@@ -38,6 +39,17 @@ public:
     virtual WalletDatabase& GetDatabase() const = 0;
     virtual bool IsWalletFlagSet(uint64_t) const = 0;
     virtual void UnsetBlankWalletFlag(WalletBatch&) = 0;
+    //! Write the wallet's flags with this one added, through the batch. The
+    //! flags in memory are not changed: the batch may be part of a transaction
+    //! that fails. ConfirmWalletFlag follows once it is committed.
+    virtual bool SetWalletFlagWithDB(WalletBatch&, uint64_t) = 0;
+    virtual void ConfirmWalletFlag(uint64_t) = 0;
+    //! The wallet's own lock is held. Asserted where a key manager, holding its
+    //! key store lock, asks the wallet something that takes the wallet's lock:
+    //! called without it, the two locks would be taken in the wrong order.
+    virtual void AssertWalletLockHeld() const = 0;
+    //! Whether the wallet is being read only to be shown (the wallet tool's dump and info): nothing may be written.
+    virtual bool IsReadOnlyLoad() const = 0;
     virtual bool CanSupportFeature(enum WalletFeature) const = 0;
     virtual void SetMinVersion(enum WalletFeature, WalletBatch* = nullptr) = 0;
     virtual const CKeyingMaterial& GetEncryptionKey() const = 0;
@@ -265,8 +277,24 @@ static const std::unordered_set<OutputType> LEGACY_OUTPUT_TYPES {
     OutputType::BECH32,
 };
 
+//! What to do when the seed of a wallet does not restore all of its keys: the advice given at load.
+bilingual_str SeedDoesNotRestoreAllAdvice();
+
 class LegacyScriptPubKeyMan : public ScriptPubKeyMan, public FillableSigningProvider
 {
+public:
+    /** Where the secrets of the active chain are: its seed, and the mnemonic
+     *  and mnemonic passphrase the seed came from, if any. Decided once all
+     *  records of the wallet have been read, and changed only when the
+     *  secrets are moved. */
+    enum class HDSecretsState {
+        NOT_HELD,   //!< no HD chain, or its seed is a key of the wallet
+        IN_CHAIN,   //!< in the chain record, in a wallet that is not encrypted
+        UNMIGRATED, //!< in the chain record although the wallet is encrypted: moved at the next unlock
+        ENCRYPTED,  //!< in their own record, encrypted; in memory only while unlocked
+        UNREADABLE, //!< nowhere that can be read: the keys held go on working, none can be derived
+    };
+
 private:
     //! keeps track of whether Unlock has run a thorough check before
     bool fDecryptionThoroughlyChecked = true;
@@ -318,6 +346,36 @@ private:
     //! Keys of the active seed on BIP44 paths in a wallet whose chain derives on the ordinary ones.
     bool m_mixed_key_paths GUARDED_BY(cs_KeyStore){false};
     std::unordered_map<CKeyID, CHDChain, SaltedSipHasher> m_inactive_hd_chains;
+    HDSecretsState m_hd_secrets_state GUARDED_BY(cs_KeyStore){HDSecretsState::NOT_HELD};
+    //! The decrypted secrets, while the wallet is unlocked and they are kept encrypted.
+    CHDSecrets m_hd_secrets GUARDED_BY(cs_KeyStore);
+    //! The encrypted secrets as they are in the database.
+    std::optional<CHDSecretsRecord> m_hd_secrets_record GUARDED_BY(cs_KeyStore);
+    bool m_hd_secrets_pending GUARDED_BY(cs_KeyStore){false};
+    //! The answer to "does the chain hold its seed itself", which is what a
+    //! wallet made from a mnemonic is. See RefreshHDType.
+    bool m_seed_held_by_chain GUARDED_BY(cs_KeyStore){false};
+    bool m_no_seed_logged GUARDED_BY(cs_KeyStore){false};
+    bool m_earlier_seed_keys GUARDED_BY(cs_KeyStore){false};
+
+    //! Whether the record of this chain carries secrets: a chain of the mnemonic version with a seed in it.
+    static bool ChainHoldsSecrets(const CHDChain& chain);
+    //! This chain without its three secrets.
+    static CHDChain WithoutSecrets(const CHDChain& chain);
+    //! The one rule for the type of the wallet; called whenever the chain or the flag changes.
+    void RefreshHDType() EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Whether the wallet has a mnemonic phrase, when that can be known: secrets in the chain, or unlocked.
+    std::optional<bool> KnownToHavePhrase() const EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    bilingual_str EarlierSeedWarning(bool with_advice) const EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Write the chain record. Once the secrets are kept in their own record, it is written without them whatever the object holds.
+    bool WriteHDChain(WalletBatch& batch, const CHDChain& chain) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Whether a key can be derived from this chain now. Says once why not.
+    bool CanDeriveFrom(const CHDChain& chain) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    /** In one transaction of a batch of its own: the flag, the encrypted
+     *  secrets, the chain without them, and the rewrite marker if asked. On
+     *  failure nothing is written and nothing in memory has changed. */
+    bool WriteHDSecretsEncrypted(const CKeyingMaterial& master_key, const CHDSecrets& secrets, const CHDChain& chain, bool pending, CHDSecretsRecord& record) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+
     //! Inactive seeds found to have nothing to derive from, so that it is logged once for each.
     std::set<CKeyID> m_inactive_seeds_not_derivable GUARDED_BY(cs_KeyStore);
 
@@ -447,9 +505,45 @@ public:
 
     /* Set the HD chain model (chain child index counters) and writes it to the database */
     void AddHDChain(const CHDChain& chain);
+    //! The same, written through a batch the caller holds.
+    void AddHDChain(WalletBatch& batch, const CHDChain& chain);
     //! Load a HD chain model (used by LoadWallet)
     void LoadHDChain(const CHDChain& chain);
     const CHDChain& GetHDChain() const { return m_hd_chain; }
+
+    HDSecretsState GetHDSecretsState() const;
+    //! Whether secrets were moved out of the chain record and the file has not been rewritten since.
+    bool IsHDSecretsRewritePending() const;
+    //! The seed of a chain, if it is available now. Derivation asks here and nowhere else.
+    bool GetHDSeed(const CHDChain& chain, SecureVector& seed) const;
+    //! The secrets of the active chain, if it holds its seed itself and they are available now.
+    bool GetHDSecrets(CHDSecrets& secrets) const;
+    //! Take the encrypted secrets and the rewrite marker as they are read from the database.
+    void LoadHDSecrets(const CHDSecretsRecord& record);
+    void LoadHDSecretsPending();
+    //! Decide where the secrets are, once every record has been read.
+    void DecideHDSecretsState();
+    /** The wallet has been unlocked with this master key: decrypt the secrets,
+     *  or, if they are still in the chain record of an encrypted wallet, move
+     *  them. need_rewrite is set when the file has to be rewritten. Never throws. */
+    void UnlockHDSecrets(const CKeyingMaterial& master_key, bool& need_rewrite);
+    //! The wallet is being locked: forget the decrypted secrets.
+    void LockHDSecrets();
+    //! The file has been rewritten since the secrets were moved.
+    void HDSecretsRewritten();
+    /** Whether the chain holds its seed itself and the wallet also has keys of
+     *  another seed. A wallet made from a mnemonic has none: this is a wallet
+     *  with a plain seed that an earlier version turned into a mnemonic wallet
+     *  when it was encrypted. Its mnemonic does not restore the earlier keys. */
+    bool HasEarlierSeedKeys() const;
+    //! What the owner of the wallet has to be told about where its seed is, if anything.
+    //! What the owner has to be told about the seed. for_load: the form given at load, with advice
+    //! in the notice given when the wallet is loaded (the earlier-seed warning there carries the advice).
+    std::vector<bilingual_str> GetHDSecretsNotices(bool for_load) const;
+    //! The earlier-seed warning as the commands give it: W1 (a phrase), W2 (no phrase) or W3 (not known: moved and locked).
+    bilingual_str GetEarlierSeedWarning() const;
+    //! The chains of seeds that were replaced, by seed id.
+    const std::unordered_map<CKeyID, CHDChain, SaltedSipHasher>& GetInactiveHDChains() const { return m_inactive_hd_chains; }
     void AddInactiveHDChain(const CHDChain& chain);
 
     //! Adds a watch-only address to the store, without saving it to disk (used by LoadWallet)

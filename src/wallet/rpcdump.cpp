@@ -723,7 +723,9 @@ RPCHelpMan gethdwalletinfo()
                         {RPCResult::Type::STR, "accountextendedprivkey", /* optional */ true, "The extended private key at m/44'/coin_type'/account' (bip44 wallets only)"},
                         {RPCResult::Type::STR, "accountextendedpubkey", /* optional */ true, "The extended public key at m/44'/coin_type'/account' (bip44 wallets only)"},
                         {RPCResult::Type::STR, "extendedprivkey", "The bip32 extended private key"},
-                        {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"}
+                        {RPCResult::Type::STR, "extendedpubkey", "The bip32 extended public key"},
+                        {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet has keys of an earlier seed beside a chain with a seed of its own, which that seed (and its mnemonic, if it has one) does not restore"},
+                        {RPCResult::Type::STR, "warning", /* optional */ true, "said when earlier_seed_keys is true"},
                     }
                 },
                 RPCExamples{
@@ -757,25 +759,21 @@ RPCHelpMan gethdwalletinfo()
     CExtKey accountKey;
     CExtKey chainKey;
 
-    // A bip39/bip44 wallet stores the binary seed derived from its mnemonic in vchSeed.
-    // A plain bip32 wallet leaves vchSeed empty: its seed is an ordinary key held in the
-    // keystore and referenced by seed_id. Mirrors the lookup in DeriveNewChildKey().
-    SecureVector vchSeed = hd_chain.vchSeed;
-    if (vchSeed.empty()) {
-        CKey seed;
-        if (!spk_man.GetKey(hd_chain.seed_id, seed)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "HD seed not found in wallet");
-        }
-        vchSeed.assign(seed.begin(), seed.end());
+    // The seed derivation uses: of a wallet made from a mnemonic, the binary
+    // seed that came from it; of a plain HD wallet, the key that is its seed.
+    SecureVector vchSeed;
+    if (!spk_man.GetHDSeed(hd_chain, vchSeed)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "HD seed not found in wallet");
     }
     masterKey.SetSeed(vchSeed.data(), vchSeed.size());
 
     int nAccountIndex = 0;
     bool internal = false;
 
-    if (hd_chain.vchMnemonic.size() > 0) {
-        SecureString ssMnemonic(hd_chain.vchMnemonic.begin(), hd_chain.vchMnemonic.end());
-        SecureString ssMnemonicPassphrase(hd_chain.vchMnemonicPassphrase.begin(), hd_chain.vchMnemonicPassphrase.end());
+    CHDSecrets secrets;
+    if (spk_man.GetHDSecrets(secrets) && !secrets.vchMnemonic.empty()) {
+        SecureString ssMnemonic(secrets.vchMnemonic.begin(), secrets.vchMnemonic.end());
+        SecureString ssMnemonicPassphrase(secrets.vchMnemonicPassphrase.begin(), secrets.vchMnemonicPassphrase.end());
 
         result.pushKV("mnemonic", ssMnemonic.c_str());
         result.pushKV("mnemonicpassphrase", ssMnemonicPassphrase.c_str());
@@ -816,6 +814,11 @@ RPCHelpMan gethdwalletinfo()
 
     result.pushKV("extendedprivkey", EncodeExtKey(chainKey));
     result.pushKV("extendedpubkey", EncodeExtPubKey(chainpubKey));
+
+    result.pushKV("earlier_seed_keys", spk_man.HasEarlierSeedKeys());
+    if (spk_man.HasEarlierSeedKeys()) {
+        result.pushKV("warning", spk_man.GetEarlierSeedWarning().original);
+    }
 
     return result;
 },
@@ -915,20 +918,23 @@ RPCHelpMan dumpwallet()
             file << "# extended private masterkey: " << EncodeExtKey(masterKey) << "\n\n";
         }
 
-        if(spk_man.GetHDChain().vchMnemonic.size() > 0)
-        {
-                SecureString ssMnemonic(spk_man.GetHDChain().vchMnemonic.begin(), spk_man.GetHDChain().vchMnemonic.end());
-                SecureString ssMnemonicPassphrase(spk_man.GetHDChain().vchMnemonicPassphrase.begin(), spk_man.GetHDChain().vchMnemonicPassphrase.end());
+        // A chain that holds its seed itself: the seed, and the mnemonic it
+        // came from if there is one.
+        CHDSecrets secrets;
+        if (spk_man.GetHDSecrets(secrets)) {
+            CExtKey masterKey;
+            masterKey.SetSeed(secrets.vchSeed.data(), secrets.vchSeed.size());
 
-                CExtKey masterKey;
-                masterKey.SetSeed(seed.begin(), seed.size());
+            file << "# extended private masterkey: " << EncodeExtKey(masterKey) << "\n\n";
 
-                file << "# extended private masterkey: " << EncodeExtKey(masterKey) << "\n\n";
-
-                //hdChainCurrent.GetMnemonic(ssMnemonic, ssMnemonicPassphrase);
-                file << "# HD seed: " << HexStr(spk_man.GetHDChain().vchSeed) << "\n";
+            file << "# HD seed: " << HexStr(secrets.vchSeed) << "\n";
+            if (!secrets.vchMnemonic.empty()) {
+                SecureString ssMnemonic(secrets.vchMnemonic.begin(), secrets.vchMnemonic.end());
+                SecureString ssMnemonicPassphrase(secrets.vchMnemonicPassphrase.begin(), secrets.vchMnemonicPassphrase.end());
                 file << "# mnemonic: " << ssMnemonic << "\n";
-                file << "# mnemonic passphrase: " << ssMnemonicPassphrase << "\n\n";
+                file << "# mnemonic passphrase: " << ssMnemonicPassphrase << "\n";
+            }
+            file << "\n";
         }
     }
     for (std::vector<std::pair<int64_t, CKeyID> >::const_iterator it = vKeyBirth.begin(); it != vKeyBirth.end(); it++) {

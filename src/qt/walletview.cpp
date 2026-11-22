@@ -26,6 +26,7 @@
 #include <node/ui_interface.h>
 #include <psbt.h>
 #include <util/strencodings.h>
+#include <util/translation.h>
 
 #include <QAction>
 #include <QActionGroup>
@@ -33,10 +34,12 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QFileDialog>
+#include <QMessageBox>
 #include <QHBoxLayout>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
+
 
 WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     QStackedWidget(parent),
@@ -85,6 +88,8 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     connect(overviewPage, &OverviewPage::transactionClicked, transactionView, qOverload<const QModelIndex&>(&TransactionView::focusTransaction));
 
     connect(overviewPage, &OverviewPage::outOfSyncWarningClicked, this, &WalletView::outOfSyncWarningClicked);
+    connect(overviewPage, &OverviewPage::backupWalletClicked, this, &WalletView::backupWallet);
+    connect(overviewPage, &OverviewPage::moveFundsClicked, this, [this] { Q_EMIT moveFundsToNewWallet(walletModel); });
 
     connect(sendCoinsPage, &SendCoinsDialog::coinsSent, this, &WalletView::coinsSent);
     // Highlight transaction after send
@@ -203,6 +208,12 @@ void WalletView::gotoSendCoinsPage(QString addr)
 
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
+}
+
+void WalletView::sendAllTo(const QString& address, const QString& label)
+{
+    setCurrentWidget(sendCoinsPage);
+    sendCoinsPage->sendAllTo(address, label);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)
@@ -343,6 +354,29 @@ void WalletView::unlockWallet()
         dlg.setModel(walletModel);
         dlg.exec();
     }
+}
+
+void WalletView::showHDNotices()
+{
+    if (!walletModel) return;
+    // Each time the wallet is loaded: this is where the GUI shows them, and
+    // they are not among the warnings of the load (-guiwalletnotices).
+    const std::vector<bilingual_str> notices = walletModel->wallet().getHDWarnings(/* with_advice */ true);
+    if (notices.empty()) return;
+
+    QStringList lines;
+    // As in the notice given at load: "Wallet <name>:", and the text under it.
+    for (const bilingual_str& notice : notices) lines << tr("Wallet %1:").arg(walletModel->getDisplayName()).toHtmlEscaped() + "<br>" + QString::fromStdString(notice.translated).toHtmlEscaped().replace("\n", "<br>");
+    QMessageBox box(QMessageBox::Warning, tr("Wallet %1").arg(walletModel->getDisplayName()), "<qt>" + lines.join("<br><br>") + "</qt>", QMessageBox::NoButton, this);
+    QPushButton* unlock = nullptr;
+    if (walletModel->getEncryptionStatus() == WalletModel::Locked && walletModel->wallet().hdSecretsRewriteOnUnlock()) {
+        unlock = box.addButton(tr("Unlock now"), QMessageBox::AcceptRole);
+        box.addButton(tr("Later"), QMessageBox::RejectRole);
+    } else {
+        box.addButton(QMessageBox::Ok);
+    }
+    box.exec();
+    if (unlock && box.clickedButton() == unlock) unlockWallet();
 }
 
 void WalletView::lockWallet(bool lock_wallet)

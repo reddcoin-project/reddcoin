@@ -313,6 +313,24 @@ bool SQLiteDatabase::Backup(const std::string& dest) const
     return res == SQLITE_OK;
 }
 
+void SQLiteDatabase::ReloadDbEnv()
+{
+    // A database in memory has no journal file.
+    if (m_mock) return;
+
+    Close();
+    Open();
+
+    // The journal is gone once the connection that kept it is closed. If one
+    // is still there with anything in it, empty it.
+    const fs::path journal{m_file_path + "-journal"};
+    boost::system::error_code ec;
+    if (fs::exists(journal, ec) && fs::file_size(journal, ec) > 0) {
+        LogPrintf("SQLiteDatabase: the rollback journal of %s was left behind and is being emptied\n", m_file_path);
+        fs::resize_file(journal, 0, ec);
+    }
+}
+
 void SQLiteDatabase::Close()
 {
     int res = sqlite3_close(m_db);

@@ -7,11 +7,19 @@
 #include <wallet/bdb.h>
 #include <wallet/db.h>
 
+#include <support/cleanse.h>
 #include <util/strencodings.h>
 #include <util/translation.h>
 
 #include <boost/version.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <limits>
+#include <mutex>
 #include <stdint.h>
 
 #ifndef WIN32
@@ -195,9 +203,110 @@ void BerkeleyEnvironment::Close()
     UnlockDirectory(strPath, ".walletlock");
 }
 
+namespace BerkeleyAllocator {
+namespace {
+//! Room in front of each block for its size.
+constexpr size_t HEADER_SIZE{alignof(std::max_align_t) > sizeof(size_t) ? alignof(std::max_align_t) : sizeof(size_t)};
+std::once_flag g_install_once;
+std::atomic<bool> g_installed{false};
+
+size_t SizeOf(const void* ptr)
+{
+    size_t size;
+    std::memcpy(&size, static_cast<const unsigned char*>(ptr) - HEADER_SIZE, sizeof(size));
+    return size;
+}
+} // namespace
+
+void (*g_release_observer)(const void* ptr, size_t size){nullptr};
+
+void* Allocate(size_t size)
+{
+    if (size > std::numeric_limits<size_t>::max() - HEADER_SIZE) return nullptr;
+    unsigned char* raw = static_cast<unsigned char*>(std::calloc(1, HEADER_SIZE + size));
+    if (raw == nullptr) return nullptr;
+    std::memcpy(raw, &size, sizeof(size));
+    return raw + HEADER_SIZE;
+}
+
+void Release(void* ptr)
+{
+    if (ptr == nullptr) return;
+    const size_t size{SizeOf(ptr)};
+    memory_cleanse(ptr, size);
+    if (g_release_observer) g_release_observer(ptr, size);
+    std::free(static_cast<unsigned char*>(ptr) - HEADER_SIZE);
+}
+
+void* Reallocate(void* ptr, size_t size)
+{
+    if (ptr == nullptr) return Allocate(size);
+    // Never in place: what a shrinking block gives up has to be cleansed, and
+    // what a growing one gains has to be zero.
+    void* replacement = Allocate(size);
+    if (replacement == nullptr) return nullptr;
+    std::memcpy(replacement, ptr, std::min(size, SizeOf(ptr)));
+    Release(ptr);
+    return replacement;
+}
+
+void Install()
+{
+    std::call_once(g_install_once, [] {
+        const bool installed{db_env_set_func_malloc(Allocate) == 0 &&
+                             db_env_set_func_realloc(Reallocate) == 0 &&
+                             db_env_set_func_free(Release) == 0};
+        // With one or two of the three in place, memory would be released by
+        // a function that did not allocate it.
+        if (!installed) {
+            LogPrintf("BerkeleyAllocator: Berkeley DB did not accept the allocation functions\n");
+            std::abort();
+        }
+        g_installed = true;
+    });
+}
+
+bool IsInstalled()
+{
+    return g_installed;
+}
+} // namespace BerkeleyAllocator
+
+BerkeleyScratchEnvironment::BerkeleyScratchEnvironment(const fs::path& directory)
+{
+    BerkeleyAllocator::Install();
+    m_env = std::make_unique<DbEnv>(DB_CXX_NO_EXCEPTIONS);
+    if (m_env->set_alloc(std::malloc, std::realloc, std::free) != 0) {
+        LogPrintf("BerkeleyScratchEnvironment: Berkeley DB did not accept the allocation functions for returned data\n");
+        std::abort();
+    }
+    m_env->set_cachesize(0, 0x100000, 1);
+    const int ret = m_env->open(directory.string().c_str(), DB_CREATE | DB_INIT_MPOOL | DB_PRIVATE | DB_THREAD, S_IRUSR | S_IWUSR);
+    m_open = ret == 0;
+    if (!m_open) {
+        LogPrintf("BerkeleyScratchEnvironment: Error %d opening an environment in %s: %s\n", ret, directory.string(), DbEnv::strerror(ret));
+    }
+}
+
+BerkeleyScratchEnvironment::~BerkeleyScratchEnvironment()
+{
+    // An environment that failed to open is closed as well, to release the handle.
+    m_env->close(0);
+}
+
 void BerkeleyEnvironment::Reset()
 {
+    // Before the library is used at all: memory it took from one allocator
+    // must not be given back to another.
+    BerkeleyAllocator::Install();
     dbenv.reset(new DbEnv(DB_CXX_NO_EXCEPTIONS));
+    // What the library allocates for its caller to release (the data of a
+    // record that is read) comes from malloc, and SafeDbt cleanses and frees it.
+    // Without this, SafeDbt would free memory the library took from Allocate.
+    if (dbenv->set_alloc(std::malloc, std::realloc, std::free) != 0) {
+        LogPrintf("BerkeleyEnvironment: Berkeley DB did not accept the allocation functions for returned data\n");
+        std::abort();
+    }
     fDbEnvInit = false;
     fMockDb = false;
 }
@@ -555,6 +664,24 @@ void BerkeleyEnvironment::ReloadDbEnv()
     Open(open_err);
 }
 
+//! The wallet's test hook for writes that fail (walletdb.cpp); declared here to keep bdb.cpp free of walletdb.h.
+extern std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
+
+//! Remove the file a rewrite writes into, if it is there. False when it is there and cannot be removed.
+static bool RemoveRewriteLeftover(const fs::path& path)
+{
+    try {
+        if (fs::exists(path)) {
+            LogPrintf("BerkeleyBatch::Rewrite: Removing %s, left over from an earlier attempt\n", path.string());
+            fs::remove(path);
+        }
+        return true;
+    } catch (const fs::filesystem_error& e) {
+        LogPrintf("BerkeleyBatch::Rewrite: Error removing %s: %s\n", path.string(), fsbridge::get_filesystem_error_message(e));
+        return false;
+    }
+}
+
 bool BerkeleyDatabase::Rewrite(const char* pszSkip)
 {
     while (true) {
@@ -569,17 +696,32 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 bool fSuccess = true;
                 LogPrintf("BerkeleyBatch::Rewrite: Rewriting %s...\n", strFile);
                 std::string strFileRes = strFile + ".rewrite";
+                const fs::path pathRes = env->Directory() / strFileRes;
+                // A file of that name left by an earlier attempt, or put there by
+                // anyone, would be opened and added to, not replaced: its records
+                // would end up in the wallet. The wallet file is here, so it is not
+                // the result of a rewrite that got as far as removing it.
+                if (!RemoveRewriteLeftover(pathRes)) fSuccess = false;
+                bool original_removed{false};
                 { // surround usage of db with extra {}
                     BerkeleyBatch db(*this, true);
-                    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(env->dbenv.get(), 0);
+                    // The new file is written through an environment of its
+                    // own, whose cache never held a page of the old one.
+                    BerkeleyScratchEnvironment scratch(env->Directory());
+                    if (!scratch.IsOpen()) {
+                        fSuccess = false;
+                    }
+                    std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(scratch.Get(), 0);
 
-                    int ret = pdbCopy->open(nullptr,               // Txn pointer
-                                            strFileRes.c_str(), // Filename
-                                            "main",             // Logical db name
-                                            DB_BTREE,           // Database type
-                                            DB_CREATE,          // Flags
-                                            0);
-                    if (ret > 0) {
+                    // DB_EXCL: the file must be new. Berkeley DB returns its own
+                    // errors as negative numbers, so any value but 0 is a failure.
+                    int ret = fSuccess ? pdbCopy->open(nullptr,               // Txn pointer
+                                                       strFileRes.c_str(), // Filename
+                                                       "main",             // Logical db name
+                                                       DB_BTREE,           // Database type
+                                                       DB_CREATE | DB_EXCL, // Flags
+                                                       0) : 1;
+                    if (ret != 0) {
                         LogPrintf("BerkeleyBatch::Rewrite: Can't create database file %s\n", strFileRes);
                         fSuccess = false;
                     }
@@ -606,9 +748,17 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                             }
                             Dbt datKey(ssKey.data(), ssKey.size());
                             Dbt datValue(ssValue.data(), ssValue.size());
+                            // A key already in the new file (DB_KEYEXIST, a negative
+                            // value) means it did not start empty: a failure too.
                             int ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
-                            if (ret2 > 0)
+                            // Test hook: the same record twice, as if the file had not started empty.
+                            if (ret2 == 0 && g_wallet_hd_write_fault && g_wallet_hd_write_fault("rewrite-duplicate")) {
+                                ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
+                            }
+                            if (ret2 != 0) {
+                                LogPrintf("BerkeleyBatch::Rewrite: Error %d writing a record to %s: %s\n", ret2, strFileRes, DbEnv::strerror(ret2));
                                 fSuccess = false;
+                            }
                         }
                         db.CloseCursor();
                     }
@@ -623,14 +773,22 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 }
                 if (fSuccess) {
                     Db dbA(env->dbenv.get(), 0);
-                    if (dbA.remove(strFile.c_str(), nullptr, 0))
+                    if (dbA.remove(strFile.c_str(), nullptr, 0)) {
                         fSuccess = false;
+                    } else {
+                        original_removed = true;
+                    }
                     Db dbB(env->dbenv.get(), 0);
                     if (dbB.rename(strFileRes.c_str(), nullptr, strFile.c_str(), 0))
                         fSuccess = false;
                 }
-                if (!fSuccess)
+                if (!fSuccess) {
                     LogPrintf("BerkeleyBatch::Rewrite: Failed to rewrite database file %s\n", strFileRes);
+                    // The wallet file is as it was: what was written of the new
+                    // one is of no use and must not be taken up by the next try.
+                    // Once the wallet file is removed, the new one is the wallet.
+                    if (!original_removed) RemoveRewriteLeftover(pathRes);
+                }
                 return fSuccess;
             }
         }

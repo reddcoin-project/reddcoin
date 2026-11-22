@@ -37,9 +37,20 @@ from test_framework.util import (
 )
 
 UNLOCK_PHRASE = "the passphrase the wallet is encrypted with"
-NOTICE = ("some of this wallet's keys were derived on BIP44 paths by an earlier version, and its new keys are derived on the "
-          "wallet's ordinary paths. The HD seed alone does not restore the earlier keys. Only the wallet file holds all of its keys: "
-          "keep a backup of the file, or create a new wallet and move the funds to it.")
+NOTICE = ("Some of this wallet's addresses were made on BIP44 paths by an earlier version (4.22.7 to 4.22.9.3), and its later "
+          "ones on the wallet's ordinary paths. Its HD seed restores only the later ones: if this wallet were restored from the seed "
+          "alone, the funds on the earlier addresses would not be there. Only this wallet file holds the keys to all of its addresses.")
+# At load, with what to do.
+NOTICE_AT_LOAD = NOTICE + ("\n\nWhat to do:\n"
+    "1. Recommended: create a new wallet, write down its mnemonic phrase, and send all the funds of this wallet to it. "
+    "The new phrase then restores everything. Moved coins start their coin age for staking again.\n"
+    "2. Otherwise, back up this wallet file now and keep that backup safe: it is the only backup that restores all of "
+    "the wallet's addresses.")
+# Said after it at the first load of a wallet file an earlier version wrote.
+REWRITTEN = ("The wallet file has been rewritten to remove data that earlier versions left in its unused space, which could "
+             "include private keys without encryption, of this wallet or of other wallets the program had loaded. This is "
+             "done once. Backups and copies made with earlier versions are not changed and may still contain such data. Make "
+             "a new backup and destroy old ones.")
 HARDENED = 0x80000000
 RELEASES = ("4.22.7", "4.22.8", "4.22.9", "4.22.9.3")
 
@@ -140,15 +151,18 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
         self.wallet_tool('-wallet=' + name, '-dumpfile=' + built_dump, 'createfromdump')
         return addresses
 
-    def check_mixed(self, name, passphrase, held=None):
+    def check_mixed(self, name, passphrase, held=None, rewritten=False):
         node = self.nodes[0]
         self.log.info("%s: found and said without the passphrase" % name)
         loaded = node.loadwallet(name)
-        assert_equal(loaded["warning"], "Wallet %s: %s" % (name, NOTICE))
+        expected = "Wallet %s:\n%s" % (name, NOTICE_AT_LOAD)
+        if rewritten:
+            expected += "\nWallet %s:\n%s" % (name, REWRITTEN)
+        assert_equal(loaded["warning"], expected)
         wallet = node.get_wallet_rpc(name)
         info = wallet.getwalletinfo()
         assert_equal((info["mixed_key_paths"], info.get("hd_type", "bip32"), info["unlocked_until"]), (True, "bip32", 0))
-        assert_equal(info["hd_warnings"], NOTICE[0].upper() + NOTICE[1:])
+        assert_equal(info["hd_warnings"], NOTICE)
         with open(os.path.join(node.datadir, self.chain, "debug.log"), encoding="utf8") as f:
             assert any(("[%s] %s" % (name, NOTICE)) in line for line in f)
 
@@ -188,7 +202,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
                     facts = json.load(f)["wallets"]["wallet-created-with-passphrase"]
                 name = "release_" + version.replace(".", "_")
                 shutil.copytree(os.path.join(directory, "wallet-created-with-passphrase"), os.path.join(self.wallets_root(), name))
-                wallet = self.check_mixed(name, facts["wallet_passphrase"])
+                wallet = self.check_mixed(name, facts["wallet_passphrase"], rewritten=True)
                 wallet.walletpassphrase(facts["wallet_passphrase"], 60)
                 dump = os.path.join(self.options.tmpdir, name + ".txt")
                 wallet.dumpwallet(dump)
@@ -214,7 +228,7 @@ class WalletMixedKeyPathsTest(BitcoinTestFramework):
 
         self.log.info("Stays so across a reload")
         wallet.unloadwallet()
-        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed: %s" % NOTICE)
+        assert_equal(node.loadwallet("mixed")["warning"], "Wallet mixed:\n%s" % NOTICE_AT_LOAD)
         assert_equal(node.get_wallet_rpc("mixed").getwalletinfo()["mixed_key_paths"], True)
 
         self.log.info("Other wallets are not reported")
