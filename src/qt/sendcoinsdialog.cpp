@@ -640,6 +640,19 @@ void SendCoinsDialog::setAddress(const QString &address)
     entry->setAddress(address);
 }
 
+void SendCoinsDialog::sendAllTo(const QString& address, const QString& label)
+{
+    clear();
+    SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(0)->widget());
+    if (!entry) return;
+    // The address is the new wallet's, so this wallet's address book has no label for it.
+    SendCoinsRecipient recipient;
+    recipient.address = address;
+    recipient.label = label;
+    entry->setValue(recipient);
+    useAvailableBalance(entry);
+}
+
 void SendCoinsDialog::pasteEntry(const SendCoinsRecipient &rv)
 {
     if(!fNewRecipientAllowed)

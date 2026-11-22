@@ -30,6 +30,8 @@ static void WalletCreate(CWallet* wallet_instance, uint64_t wallet_creation_flag
 
     wallet_instance->SetMinVersion(FEATURE_HD_SPLIT);
     wallet_instance->AddWalletFlags(wallet_creation_flags);
+    // A file this version has just made holds nothing of earlier versions.
+    wallet_instance->MarkRewritten();
 
     if (!wallet_instance->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
         auto spk_man = wallet_instance->GetOrCreateLegacyScriptPubKeyMan();
@@ -152,13 +154,13 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
         bilingual_str error;
         std::vector<bilingual_str> warnings;
         bool ret = RecoverDatabaseFile(path, error, warnings);
-        if (!ret) {
-            for (const auto& warning : warnings) {
-                tfm::format(std::cerr, "%s\n", warning.original);
-            }
-            if (!error.empty()) {
-                tfm::format(std::cerr, "%s\n", error.original);
-            }
+        // What was skipped, and what the copy of the original holds, is
+        // worth knowing when the salvage worked too.
+        for (const auto& warning : warnings) {
+            tfm::format(std::cerr, "%s\n", warning.original);
+        }
+        if (!ret && !error.empty()) {
+            tfm::format(std::cerr, "%s\n", error.original);
         }
         return ret;
 #else

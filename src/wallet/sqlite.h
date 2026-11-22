@@ -95,12 +95,18 @@ public:
      * SQLite always flushes everything to the database file after each transaction
      * (each Read/Write/Erase that we do is its own transaction unless we called
      * TxnBegin) so there is no need to have Flush or Periodic Flush.
-     *
-     * There is no DB env to reload, so ReloadDbEnv has nothing to do
      */
     void Flush() override {}
     bool PeriodicFlush() override { return false; }
-    void ReloadDbEnv() override {}
+
+    /** Close the connection and open it again.
+     *
+     * The connection locks the file for itself, and for as long as it is open
+     * SQLite keeps the rollback journal beside the database. After a rewrite
+     * that journal holds what the rewrite was meant to remove. Closing the
+     * connection lets SQLite delete it. No batch may be open.
+     */
+    void ReloadDbEnv() override;
 
     void IncrementUpdateCounter() override { ++nUpdateCounter; }
 

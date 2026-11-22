@@ -339,7 +339,14 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   the only complete backup: back it up, or create a new wallet and move the
   funds to it.
   This version says so when it loads such a wallet, and `getwalletinfo` shows
-  `mixed_key_paths`. To check on an earlier version: `getaddressinfo` of the
+  `mixed_key_paths`. In the GUI the HD icon in the status bar becomes a
+  warning, with the notice in its tooltip, and the Overview page of the wallet
+  shows the notice with **Move funds to a new wallet...** and **Back up wallet
+  file...**. The same is shown for a wallet with `earlier_seed_keys` (below).
+  Moving the funds creates a new wallet, then opens the send page of the old
+  one with all of its funds to an address of the new one, to be checked and
+  sent. The notice can be hidden until the wallet is next loaded. To check on
+  an earlier version: `getaddressinfo` of the
   first address the wallet gave out shows an `hdkeypath` beginning with
   `m/44'`, in a wallet that was not created from a mnemonic phrase.
   The Windows and macOS builds of those versions contain the same defect in the
@@ -353,6 +360,100 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 
 - Encrypting a wallet in SQLite format (a descriptor wallet) while the node
   was writing its chain state to disk could stop the node. Fixed.
+
+- **The seed and mnemonic phrase of an encrypted wallet are now encrypted.**
+  In earlier versions, from v4.22.5 on, a wallet whose seed came from a
+  mnemonic phrase kept that phrase, its mnemonic passphrase and its seed
+  unencrypted in the wallet file, even when the wallet was encrypted with a
+  passphrase. Anyone able to read the file, or a copy of it, could take all
+  funds of the wallet without the passphrase.
+  This version stores them encrypted. An existing wallet is converted the
+  first time it is unlocked, and its file is rewritten.
+  - **A wallet that was encrypted with v4.22.5 to v4.22.9.3 may be such a
+    wallet without its owner knowing.** Because of a defect corrected in
+    v4.22.9.4, encrypting a plain HD wallet with those versions could give it
+    a new, generated mnemonic phrase that was never shown. This version says
+    so when it loads such a wallet, and `getwalletinfo` reports
+    `earlier_seed_keys`. For it, the phrase restores only the addresses
+    created after that encryption; the earlier addresses are in the wallet
+    file only. The safest course is to create a new wallet, write down its
+    phrase, and send all the funds to it (moved coins start their coin age
+    for staking again). Otherwise keep a backup of the wallet file, made after
+    this version has converted it: it is the only backup that restores every
+    address.
+  - Wallets that are not encrypted are not changed.
+  - In the GUI, opening a wallet that is still to be converted shows a notice
+    with **Unlock now** and **Later**. The unlock says beforehand that the
+    file will be rewritten, and why, and afterwards what to do. The notices
+    about a wallet's seed are shown in that one box, each time the wallet is
+    loaded. `reddcoind` and the RPC give them in the `warning` of
+    `loadwallet`, under a line `Wallet <name>:`; they are also in `debug.log`.
+  - The first unlock after upgrading rewrites the wallet file. On a large
+    wallet this can take a while. Do not stop the program during it.
+  - A converted wallet cannot be opened by earlier versions, nor read by an
+    earlier `reddcoin-wallet` tool, and neither can what this version's
+    `reddcoin-wallet salvage` recovers from one. They report "Wallet
+    corrupted". The wallet is not damaged.
+  - Backups and copies of the wallet file made with earlier versions still
+    contain the seed unencrypted. Conversion does not reach them.
+    `reddcoin-wallet salvage` leaves a `.bak` copy of the original beside the
+    wallet; it is such a copy.
+  - If the node stops during the rewrite of a Berkeley DB wallet and the
+    wallet is missing afterwards, a file `wallet.dat.rewrite` in the wallet's
+    directory is the complete new wallet.
+  - `encryptwallet` no longer says that a new HD seed was generated for such
+    a wallet. It keeps its seed and its keypool.
+  - `getwalletinfo` has three new fields: `hd_secrets_encrypted`,
+    `earlier_seed_keys` and, when there is something to say, `hd_warnings`.
+    `gethdwalletinfo` has `earlier_seed_keys` and a `warning` with it.
+  - `createwallet` for a new mnemonic wallet returns the phrase as before.
+    A wallet created with a passphrase never has its phrase on disk in clear.
+  - A phrase given with `-mnemonic` in a configuration file is still in that
+    file.
+
+- **Wallet files in Berkeley DB format no longer take up other memory of the
+  program.** Berkeley DB writes whole pages, and the unused part of a page
+  held whatever the program's memory had contained before: parts of RPC
+  replies and requests, of any wallet the node had loaded. A wallet file, and
+  the log files beside it, could contain another wallet's seed, private keys
+  or mnemonic passphrase, where `gethdwalletinfo`, `dumpprivkey` or similar
+  commands had been used. The memory given to Berkeley DB is now cleared,
+  and when a wallet file is rewritten (by `encryptwallet`, and at the
+  conversion above) the new file is written through memory of its own, so
+  that it keeps nothing of the old file or of other wallets.
+  In an encrypted wallet this could include a small number of the wallet's own
+  private keys from before it was encrypted, which the passphrase does not
+  protect.
+  **The first time this version opens a Berkeley DB wallet it rewrites the
+  file once**, which removes what earlier versions left, in the file and in
+  the log files beside it. It says so at start-up, and once afterwards with
+  the reason; the wallets opened at start-up are named together in one
+  notice. For a wallet whose seed is still to be encrypted (above), that
+  is left to the unlock that encrypts it, since a backup made before then
+  would still hold the seed. On a
+  large wallet this takes a while; do not stop the program during it. If it
+  cannot be done (for example on a full disk), the wallet is used as before
+  and the next start tries again. `rewritewallet` does it again on request.
+  The rewritten file can still be opened by earlier versions. Wallets in the
+  SQLite format are not changed.
+  Copies and backups made with earlier versions are not changed and may
+  contain such leftovers: make a new backup and destroy the old ones.
+
+- **Changing the passphrase of a wallet left the master key, encrypted with
+  the old passphrase, in the wallet file.** `walletpassphrasechange`, and the
+  change of passphrase in the GUI, wrote the master key encrypted with the new
+  passphrase over the old record, and the wallet file (SQLite) or its log
+  files (Berkeley DB) could keep the old one.
+  Anyone with the file and the old passphrase could decrypt every private key
+  of the wallet. The wallet file is now rewritten after a change of
+  passphrase. If that cannot be done, a Berkeley DB wallet is rewritten at its
+  next load. Copies and backups made before the change still open with the
+  old passphrase: if it was changed because the old one may be known, make a
+  new backup, destroy the old ones, and if a copy of the file may have been
+  taken, move the funds to a new wallet.
+
+- When a rewrite of the wallet file and a change to the address book came at
+  the same moment, both could wait for each other for ever. Fixed.
 
 GUI changes
 -----------

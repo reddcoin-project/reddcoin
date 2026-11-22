@@ -14,8 +14,11 @@
 #include <qt/guiutil.h>
 #include <qt/walletmodel.h>
 
+#include <interfaces/wallet.h>
 #include <support/allocators/secure.h>
+#include <util/translation.h>
 
+#include <QApplication>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QPushButton>
@@ -94,6 +97,33 @@ void AskPassphraseDialog::setModel(WalletModel *_model)
     this->model = _model;
 }
 
+namespace {
+//! The seed of the wallet is moved into its encrypted record at this unlock, or a rewrite of the
+//! file is still owed: the file is rewritten during the call, which takes a while. Say so first.
+bool WarnBeforeRewrite(QWidget* parent, WalletModel* model)
+{
+    if (!model || !model->wallet().hdSecretsRewriteOnUnlock()) return false;
+    QMessageBox::information(parent, QObject::tr("Rewriting the wallet file"),
+        QObject::tr("If the passphrase is correct, the seed of this wallet will now be encrypted with the wallet passphrase, and the wallet file rewritten. "
+                    "The rewrite is needed because replacing a record in the file does not erase it: without it, the old copy of the seed, "
+                    "without encryption, would stay in the file. This can take a while. Do not close the program."));
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    return true;
+}
+
+//! After the unlock: what the owner is to be told now that the seed has been moved, if it was.
+void ShowAfterRewrite(QWidget* parent, WalletModel* model, bool waiting)
+{
+    if (waiting) QApplication::restoreOverrideCursor();
+    if (!model) return;
+    const std::vector<bilingual_str> notices = model->wallet().takeHDSecretsMovedNotices();
+    if (notices.empty()) return;
+    QStringList lines;
+    for (const bilingual_str& notice : notices) lines << QString::fromStdString(notice.translated).toHtmlEscaped();
+    QMessageBox::warning(parent, QObject::tr("Wallet seed encrypted"), "<qt>" + lines.join("<br><br>") + "</qt>");
+}
+} // namespace
+
 void AskPassphraseDialog::accept()
 {
     SecureString oldpass, newpass1, newpass2;
@@ -164,9 +194,12 @@ void AskPassphraseDialog::accept()
             QDialog::reject(); // Cancelled
         }
         } break;
-    case UnlockStaking:
+    case UnlockStaking: {
+        const bool waiting = WarnBeforeRewrite(this, model);
         try {
-            if (!model->setWalletLocked(false, oldpass)) {
+            const bool unlocked = model->setWalletLocked(false, oldpass);
+            ShowAfterRewrite(this, model, waiting);
+            if (!unlocked) {
                 QMessageBox::critical(this, tr("Wallet unlock failed"),
                                       tr("The passphrase entered for the wallet decryption was incorrect."));
             } else {
@@ -174,25 +207,33 @@ void AskPassphraseDialog::accept()
                 QDialog::accept(); // Success
             }
         } catch (const std::runtime_error& e) {
+            if (waiting) QApplication::restoreOverrideCursor();
             QMessageBox::critical(this, tr("Wallet unlock failed"), e.what());
         }
-        break;
-    case Unlock:
+        } break;
+    case Unlock: {
+        const bool waiting = WarnBeforeRewrite(this, model);
         try {
-            if (!model->setWalletLocked(false, oldpass)) {
+            const bool unlocked = model->setWalletLocked(false, oldpass);
+            ShowAfterRewrite(this, model, waiting);
+            if (!unlocked) {
                 QMessageBox::critical(this, tr("Wallet unlock failed"),
                                       tr("The passphrase entered for the wallet decryption was incorrect."));
             } else {
                 QDialog::accept(); // Success
             }
         } catch (const std::runtime_error& e) {
+            if (waiting) QApplication::restoreOverrideCursor();
             QMessageBox::critical(this, tr("Wallet unlock failed"), e.what());
         }
-        break;
+        } break;
     case ChangePass:
         if(newpass1 == newpass2)
         {
-            if(model->changePassphrase(oldpass, newpass1))
+            const bool waiting = WarnBeforeRewrite(this, model);
+            const bool changed = model->changePassphrase(oldpass, newpass1);
+            ShowAfterRewrite(this, model, waiting);
+            if(changed)
             {
                 QMessageBox::information(this, tr("Wallet encrypted"),
                                      tr("Wallet passphrase was successfully changed."));

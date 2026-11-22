@@ -39,6 +39,9 @@ const std::string DEFAULTKEY{"defaultkey"};
 const std::string DESTDATA{"destdata"};
 const std::string FLAGS{"flags"};
 const std::string HDCHAIN{"hdchain"};
+const std::string HDSECRETS{"hdsecrets"};
+const std::string HDSECRETSPENDING{"hdsecretspending"};
+const std::string REWRITTEN{"rewritten"};
 const std::string KEYMETA{"keymeta"};
 const std::string KEY{"key"};
 const std::string MASTER_KEY{"mkey"};
@@ -78,11 +81,9 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
                 ssMnemonicTmp = CMnemonic::Generate(bits, language);
         }
 
-        // LogPrintf("mnemonic: %s\n", ssMnemonicTmp.c_str());
-
         // NOTE: default mnemonic passphrase is an empty string
         if (!CMnemonic::Check(ssMnemonicTmp)) {
-                throw std::runtime_error(std::string(__func__) + ": invalid mnemonic: `" + std::string(ssMnemonicTmp.c_str()) + "`");
+                throw std::runtime_error(std::string(__func__) + ": invalid mnemonic");
         }
 
         CMnemonic::ToSeed(ssMnemonicTmp, ssMnemonicPassphrase, vchSeed);
@@ -90,52 +91,8 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
         vchMnemonic = SecureVector(ssMnemonicTmp.begin(), ssMnemonicTmp.end());
         vchMnemonicPassphrase = SecureVector(ssMnemonicPassphrase.begin(), ssMnemonicPassphrase.end());
 
-        // Debug();
-
         return true;
 
-}
-
-void CHDChain::Debug()
-{
-        std::cout << "mnemonic: " << std::string(vchMnemonic.begin(), vchMnemonic.end()).c_str() << std::endl;
-        std::cout << "mnemonicpassphrase: " << std::string(vchMnemonicPassphrase.begin(), vchMnemonicPassphrase.end()).c_str() << std::endl;
-        std::cout << "seed: " << HexStr(vchSeed).c_str() << std::endl;
-        std::cout << "isBip44: " << (IsBip44()? "true" : "false") << std::endl;
-
-        CExtKey masterkey;
-
-        masterkey.SetSeed(&vchSeed[0], vchSeed.size());
-
-        std::cout << "bip32 root key: " << EncodeExtKey(masterkey) << std::endl;
-
-        // Derive new account keys
-        CExtKey purposeKey;
-        CExtKey coinTypeKey;
-        CExtKey accountkey;
-        CExtKey chainkey;
-
-        int nAccountIndex = 0;
-        bool internal = false;
-
-        if (IsBip44()) {
-            masterkey.Derive(purposeKey, 44 | 0x80000000);
-            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | 0x80000000);
-            coinTypeKey.Derive(accountkey, nAccountIndex | 0x80000000);
-            accountkey.Derive(chainkey, (internal ? 1 : 0));
-
-            CExtPubKey accountpubKey = accountkey.Neuter();
-            std::cout << "account extended private key: " << EncodeExtKey(accountkey) << std::endl;
-            std::cout << "account extended public key: " << EncodeExtPubKey(accountpubKey) << std::endl;
-
-        } else {
-            masterkey.Derive(accountkey, 0x80000000);
-            accountkey.Derive(chainkey, 0x80000000);
-        }
-
-        CExtPubKey chainpubkey = chainkey.Neuter();
-        std::cout << "bip32 extended private key: " << EncodeExtKey(chainkey) << std::endl;
-        std::cout << "bip32 extended public key: " << EncodeExtPubKey(chainpubkey) << std::endl;
 }
 
 void CHDChain::SetSeedFromSeedId()
@@ -730,6 +687,14 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             CHDChain chain(pwallet);
             ssValue >> chain;
             pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDChain(chain);
+        } else if (strType == DBKeys::HDSECRETS) {
+            CHDSecretsRecord record;
+            ssValue >> record;
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDSecrets(record);
+        } else if (strType == DBKeys::HDSECRETSPENDING) {
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDSecretsPending();
+        } else if (strType == DBKeys::REWRITTEN) {
+            // Asked for when the wallet is opened; nothing to load.
         } else if (strType == DBKeys::OLD_KEY) {
             strErr = "Found unsupported 'wkey' record, try loading with version 0.18";
             return false;
@@ -992,9 +957,11 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         pwallet->WalletLogPrintf("The derivation path of %u keys was longer than the key's own and has been put right from its text form (%u written)\n", wss.m_repaired_keymeta.size(), written);
     }
 
-    // The paths of the keys can be compared with the chain only now that every
-    // record has been read.
+    // Where the seed of the HD chain is kept, and the paths of the keys
+    // compared with the chain, can be told only now that every record has
+    // been read; the second needs the kind the first decides.
     if (LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan()) {
+        legacy_spkm->DecideHDSecretsState();
         legacy_spkm->DecideMixedKeyPaths();
     }
 
@@ -1198,13 +1165,60 @@ bool WalletBatch::EraseDestData(const std::string &address, const std::string &k
 }
 
 
+std::function<bool(const std::string& what)> g_wallet_hd_write_fault;
+
+static bool HDWriteFault(const std::string& what)
+{
+    return g_wallet_hd_write_fault && g_wallet_hd_write_fault(what);
+}
+
 bool WalletBatch::WriteHDChain(const CHDChain& chain)
 {
+    if (HDWriteFault(DBKeys::HDCHAIN)) return false;
     return WriteIC(DBKeys::HDCHAIN, chain);
+}
+
+bool WalletBatch::WriteHDSecrets(const CHDSecretsRecord& record)
+{
+    if (HDWriteFault(DBKeys::HDSECRETS)) return false;
+    return WriteIC(DBKeys::HDSECRETS, record);
+}
+
+bool WalletBatch::EraseHDSecrets()
+{
+    return EraseIC(DBKeys::HDSECRETS);
+}
+
+bool WalletBatch::WriteHDSecretsPending()
+{
+    if (HDWriteFault(DBKeys::HDSECRETSPENDING)) return false;
+    return WriteIC(DBKeys::HDSECRETSPENDING, uint8_t{1});
+}
+
+bool WalletBatch::EraseHDSecretsPending()
+{
+    return EraseIC(DBKeys::HDSECRETSPENDING);
+}
+
+bool WalletBatch::WriteRewritten()
+{
+    // The version of the rewrite, so that a later one can be asked for again.
+    return WriteIC(DBKeys::REWRITTEN, uint32_t{1});
+}
+
+bool WalletBatch::EraseRewritten()
+{
+    return EraseIC(DBKeys::REWRITTEN);
+}
+
+bool WalletBatch::HasRewritten()
+{
+    return m_batch->Exists(DBKeys::REWRITTEN);
 }
 
 bool WalletBatch::WriteWalletFlags(const uint64_t flags)
 {
+    if (HDWriteFault(DBKeys::FLAGS)) return false;
     return WriteIC(DBKeys::FLAGS, flags);
 }
 

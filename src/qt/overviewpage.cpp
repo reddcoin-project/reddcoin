@@ -17,6 +17,8 @@
 #include <qt/transactiontablemodel.h>
 #include <qt/walletmodel.h>
 
+#include <util/translation.h>
+
 #include <QAbstractItemDelegate>
 #include <QApplication>
 #include <QDateTime>
@@ -168,6 +170,13 @@ OverviewPage::OverviewPage(const PlatformStyle *platformStyle, QWidget *parent) 
     showOutOfSyncWarning(true);
     connect(ui->labelWalletStatus, &QPushButton::clicked, this, &OverviewPage::outOfSyncWarningClicked);
     connect(ui->labelTransactionsStatus, &QPushButton::clicked, this, &OverviewPage::outOfSyncWarningClicked);
+
+    connect(ui->buttonBackupWallet, &QPushButton::clicked, this, &OverviewPage::backupWalletClicked);
+    connect(ui->buttonMoveFunds, &QPushButton::clicked, this, &OverviewPage::moveFundsClicked);
+    connect(ui->buttonHideKeysNotice, &QPushButton::clicked, [this] {
+        m_keys_notice_hidden = true;
+        ui->frameKeysNotice->hide();
+    });
 }
 
 void OverviewPage::handleTransactionClicked(const QModelIndex &index)
@@ -200,6 +209,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
 {
     int unit = walletModel->getOptionsModel()->getDisplayUnit();
     m_balances = balances;
+    updateKeysNotice();
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
             ui->labelBalance->setText(BitcoinUnits::formatWithPrivacy(unit, balances.watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
@@ -289,7 +299,11 @@ void OverviewPage::setWalletModel(WalletModel *model)
         connect(model, &WalletModel::notifyWatchonlyChanged, [this](bool showWatchOnly) {
             updateWatchOnlyLabels(showWatchOnly && !walletModel->wallet().privateKeysDisabled());
         });
+
+        // An unlock that moves the seed into its encrypted record can change what there is to say.
+        connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateKeysNotice);
     }
+    updateKeysNotice();
 
     // update the display unit, to not use the default ("BTC")
     updateDisplayUnit();
@@ -325,6 +339,28 @@ void OverviewPage::updateAlerts(const QString &warnings)
 {
     this->ui->labelAlerts->setVisible(!warnings.isEmpty());
     this->ui->labelAlerts->setText(warnings);
+}
+
+void OverviewPage::updateKeysNotice()
+{
+    if (!walletModel || m_keys_notice_hidden || walletModel->wallet().privateKeysDisabled() || !walletModel->wallet().hasKeysSeedDoesNotRestore()) {
+        ui->frameKeysNotice->hide();
+        return;
+    }
+    // Until the balance is known, as if there were funds.
+    const bool has_funds{m_balances.balance != 0 || m_balances.stake != 0 || m_balances.unconfirmed_balance != 0 || m_balances.immature_balance != 0};
+    if (has_funds) {
+        ui->labelKeysNotice->setText(tr("The seed of this wallet does not restore all of its addresses: only this wallet file holds the keys to all of them. "
+                                        "Move the funds to a new wallet, whose mnemonic phrase then restores everything, or back up this wallet file and keep that backup safe."));
+    } else {
+        ui->labelKeysNotice->setText(tr("The seed of this wallet does not restore all of its addresses, and this wallet holds no funds now. "
+                                        "Payments made later to its earlier addresses can be spent only with this wallet file: keep a backup of it, or give out only addresses of a new wallet."));
+    }
+    QStringList lines;
+    for (const bilingual_str& notice : walletModel->wallet().getHDWarnings(/* with_advice */ false)) lines << QString::fromStdString(notice.translated).toHtmlEscaped().replace("\n", "<br>");
+    ui->labelKeysNotice->setToolTip("<qt>" + lines.join("<br><br>") + "</qt>");
+    ui->buttonMoveFunds->setVisible(has_funds);
+    ui->frameKeysNotice->show();
 }
 
 void OverviewPage::showOutOfSyncWarning(bool fShow)

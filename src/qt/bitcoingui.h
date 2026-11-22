@@ -305,9 +305,14 @@ private:
 
     /** Set the hd-enabled status as shown in the UI.
      @param[in] hdEnabled         current hd enabled status
+     @param[in] notices           what the owner has to be told about the seed of the wallet; shown instead, with a warning icon
      @see WalletModel::EncryptionStatus
      */
-    void setHDStatus(bool privkeyDisabled, int hdEnabled);
+    void setHDStatus(bool privkeyDisabled, int hdEnabled, const QStringList& notices = {});
+
+    /** Move the funds of a wallet whose seed does not restore all of its keys: create a new
+        wallet, then open the send page of this one with all its funds to an address of the new one. */
+    void moveFundsToNewWallet(WalletModel* from);
 
 public Q_SLOTS:
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);
