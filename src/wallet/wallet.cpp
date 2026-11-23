@@ -344,9 +344,19 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
                 return nullptr;
             }
 
+            // A wallet restored from a mnemonic phrase owes a scan of the
+            // whole chain once its seed is set up. Say so in the file first,
+            // so that a crash before the scan completes leaves it owed.
+            const bool restore_scan{walletoptions.importing && !wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)};
+
             // Set a seed for the wallet
             {
                 LOCK(wallet->cs_wallet);
+                if (restore_scan && !WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0)) {
+                    error = Untranslated("Error: Wallet was encrypted but could not be written to");
+                    status = DatabaseStatus::FAILED_CREATE;
+                    return nullptr;
+                }
                 if (wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
                     wallet->SetupDescriptorScriptPubKeyMans();
                 } else {
@@ -358,6 +368,12 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
                         }
                     }
                 }
+            }
+
+            // Scan while the wallet is unlocked, so that the key pool can be
+            // topped up as keys of the phrase are found used.
+            if (restore_scan && !wallet->ScanOwedRestore()) {
+                warnings.push_back(_("The scan of the chain for the transactions of the restored wallet did not complete. It continues when the wallet is next loaded."));
             }
 
             // Relock the wallet
@@ -2947,9 +2963,19 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
                       spk_man->IsBip44Enabled() ? "true" : "false");
         }
 
-        walletInstance->SetImporting(walletoptions.importing);
+        // A wallet restored from a mnemonic phrase is scanned from the start of
+        // the chain for the keys of the phrase, and says so in its file until
+        // that scan has completed, so that a scan cut short is done again at
+        // the next load. A wallet made blank to be encrypted has no keys yet:
+        // CreateWallet sets up its seed and then scans.
+        const bool restore_scan{walletoptions.importing && !(wallet_creation_flags & WALLET_FLAG_BLANK_WALLET)};
+        if (restore_scan && !WITH_LOCK(walletInstance->cs_wallet, return WalletBatch(walletInstance->GetDatabase()).WriteRestoreScan(0))) {
+            error = strprintf(_("Error creating %s: could not write to the wallet file"), walletFile);
+            return nullptr;
+        }
+        walletInstance->SetImporting(restore_scan);
 
-        if (chain && !walletInstance->GetImporting()) {
+        if (chain && !restore_scan) {
             walletInstance->chainStateFlushed(chain->getTipLocator());
         }
     } else if (wallet_creation_flags & WALLET_FLAG_DISABLE_PRIVATE_KEYS) {
@@ -3165,6 +3191,15 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
             }
         }
     }
+    // A restore scan that did not complete is owed from its height, whatever
+    // block the wallet last saw, and from there on: the keys of a restored
+    // wallet were made when it was restored, not when they were first used.
+    int owed_height;
+    const bool restore_scan_owed{WalletBatch(walletInstance->GetDatabase()).ReadRestoreScan(owed_height)};
+    if (restore_scan_owed) {
+        rescan_height = std::min(rescan_height, std::max(owed_height, 0));
+        walletInstance->WalletLogPrintf("A restore scan is owed from block %i\n", rescan_height);
+    }
 
     const std::optional<int> tip_height = chain.getHeight();
     if (tip_height) {
@@ -3203,8 +3238,8 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
         // our wallet birthday (as adjusted for block time variability)
         // If importing, then we need to go back to earliest possible key time.
         std::optional<int64_t> time_first_key;
-        if (walletInstance->fImporting) {
-            time_first_key = 0; //
+        if (walletInstance->fImporting || restore_scan_owed) {
+            time_first_key = 0;
         } else {
             for (auto spk_man : walletInstance->GetAllScriptPubKeyMans()) {
                 int64_t time = spk_man->GetTimeFirstKey();
@@ -3227,7 +3262,31 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
         walletInstance->chainStateFlushed(chain.getTipLocator());
         walletInstance->GetDatabase().IncrementUpdateCounter();
     }
+    if (restore_scan_owed && !WalletBatch(walletInstance->GetDatabase()).EraseRestoreScan()) {
+        walletInstance->WalletLogPrintf("Warning: the restore scan has completed, but the wallet file could not be updated to say so; it is done again at the next load\n");
+    }
 
+    return true;
+}
+
+bool CWallet::ScanOwedRestore()
+{
+    int from_height;
+    if (!WITH_LOCK(cs_wallet, return WalletBatch(GetDatabase()).ReadRestoreScan(from_height))) return true;
+    from_height = std::max(from_height, 0);
+    const std::optional<int> tip_height{chain().getHeight()};
+    if (tip_height && *tip_height >= from_height) {
+        WalletLogPrintf("Scanning for the transactions of the restored wallet from block %i\n", from_height);
+        WalletRescanReserver reserver(*this);
+        if (!reserver.reserve()) return false;
+        const ScanResult result{ScanForWalletTransactions(chain().getBlockHash(from_height), from_height, /* max_height */ {}, reserver, /* fUpdate */ true)};
+        if (result.status != ScanResult::SUCCESS) return false;
+    }
+    LOCK(cs_wallet);
+    chainStateFlushed(chain().getTipLocator());
+    if (!WalletBatch(GetDatabase()).EraseRestoreScan()) {
+        WalletLogPrintf("Warning: the restore scan has completed, but the wallet file could not be updated to say so; it is done again at the next load\n");
+    }
     return true;
 }
 

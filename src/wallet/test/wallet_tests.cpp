@@ -1533,4 +1533,146 @@ BOOST_FIXTURE_TEST_CASE(stake_candidates_searched_without_wallet_lock, TestChain
     BOOST_CHECK(staking_wallet->stakeCandidatesCurrent());
 }
 
+//! A restore scan that did not complete is done when the wallet is next
+//! loaded: from the height the wallet file holds, whatever block the wallet
+//! saw last, and not from the time its keys were made, which for a restored
+//! wallet is the time of the restore.
+BOOST_FIXTURE_TEST_CASE(restore_scan_owed_at_load, TestChain100Setup)
+{
+    const auto load = [&] {
+        DatabaseOptions options;
+        options.create_flags = WALLET_FLAG_BLANK_WALLET;
+        DatabaseStatus status;
+        WalletOptions walletoptions;
+        walletoptions.walletType = walletType::bip32Wallet;
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        auto database = MakeWalletDatabase("", options, status, error);
+        BOOST_REQUIRE(database);
+        auto wallet = CWallet::Create(m_node.chain.get(), "", std::move(database), options.create_flags, walletoptions, error, warnings);
+        BOOST_REQUIRE(wallet);
+        return wallet;
+    };
+    const auto tx_count = [](CWallet& wallet) { return WITH_LOCK(wallet.cs_wallet, return wallet.mapWallet.size()); };
+
+    // The key is made later than the first half of the chain, which pays it.
+    int64_t key_time;
+    uint256 genesis;
+    {
+        LOCK(cs_main);
+        const CChain& active = m_node.chainman->ActiveChain();
+        key_time = active[active.Height() / 2]->GetBlockTimeMax() + TIMESTAMP_WINDOW + 1;
+        genesis = active.Genesis()->GetBlockHash();
+    }
+
+    // What a scan of the whole chain finds.
+    size_t everything;
+    {
+        CWallet reference(m_node.chain.get(), "", CreateDummyWalletDatabase());
+        {
+            LOCK(reference.cs_wallet);
+            reference.SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        AddKey(reference, coinbaseKey);
+        WalletRescanReserver reserver(reference);
+        reserver.reserve();
+        BOOST_REQUIRE_EQUAL(reference.ScanForWalletTransactions(genesis, 0, {} /* max_height */, reserver, false /* update */).status, CWallet::ScanResult::SUCCESS);
+        everything = tx_count(reference);
+    }
+    BOOST_REQUIRE(everything > 0);
+
+    // A new wallet has seen the tip and scans nothing.
+    {
+        auto wallet = load();
+        {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(wallet->ImportPrivKeys({{coinbaseKey.GetPubKey().GetID(), coinbaseKey}}, key_time));
+        }
+        BOOST_CHECK_EQUAL(tx_count(*wallet), 0U);
+        TestUnloadWallet(std::move(wallet));
+    }
+
+    // A rescan with no scan owed starts at the time of the key, and misses
+    // what the first half of the chain paid it.
+    size_t from_key_time;
+    {
+        gArgs.ForceSetArg("-rescan", "1");
+        auto wallet = load();
+        gArgs.ForceSetArg("-rescan", "0");
+        from_key_time = tx_count(*wallet);
+        BOOST_CHECK(from_key_time > 0);
+        BOOST_CHECK(from_key_time < everything);
+
+        // As a restore leaves the file while its scan is owed.
+        {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0));
+        }
+        TestUnloadWallet(std::move(wallet));
+    }
+
+    // With the scan owed, the next load scans from the height the file holds,
+    // finds everything, and says in the file that nothing is owed any more.
+    {
+        auto wallet = load();
+        BOOST_CHECK_EQUAL(tx_count(*wallet), everything);
+        int height;
+        BOOST_CHECK(!WITH_LOCK(wallet->cs_wallet, return WalletBatch(wallet->GetDatabase()).ReadRestoreScan(height)));
+        TestUnloadWallet(std::move(wallet));
+    }
+}
+
+//! A wallet restored from its mnemonic phrase with a wallet passphrase finds
+//! the transactions of the phrase, as one restored without a passphrase does.
+//! This is CreateWallet as both createwallet and the GUI's wizard call it.
+BOOST_FIXTURE_TEST_CASE(restore_with_passphrase_finds_history, TestChain100Setup)
+{
+    const SecureString phrase{"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"};
+    const auto restore = [&](const std::string& name, const SecureString& passphrase) {
+        DatabaseOptions options;
+        options.require_create = true;
+        options.create_passphrase = passphrase;
+        WalletOptions walletoptions;
+        walletoptions.walletType = walletType::bip39Wallet;
+        walletoptions.bits = 128;
+        walletoptions.importing = true;
+        walletoptions.ssMnemonic = phrase;
+        DatabaseStatus status;
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        auto wallet = ::CreateWallet(*m_node.chain, name, /* load_on_start */ std::nullopt, options, walletoptions, status, error, warnings);
+        BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        for (const bilingual_str& warning : warnings) {
+            BOOST_CHECK_MESSAGE(warning.original.find("did not complete") == std::string::npos, warning.original);
+        }
+        return wallet;
+    };
+    const auto tx_count = [](CWallet& wallet) { return WITH_LOCK(wallet.cs_wallet, return wallet.mapWallet.size()); };
+    const auto release = [](std::shared_ptr<CWallet>&& wallet) {
+        RemoveWallet(wallet, /* load_on_start */ std::nullopt);
+        TestUnloadWallet(std::move(wallet));
+    };
+
+    // The first address of the phrase, paid in a block.
+    auto original = restore("original", "");
+    CTxDestination dest;
+    std::string error;
+    {
+        LOCK(original->cs_wallet);
+        BOOST_REQUIRE(original->GetNewDestination(OutputType::LEGACY, "", dest, error));
+    }
+    stakeBlocks(1);
+    SetMockTime(GetTime() + 60);
+    CreateAndProcessPoSBlock({TestSimpleSpend(*m_coinbase_txns[40], 0, coinbaseKey, GetScriptForDestination(dest))}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet);
+    original->BlockUntilSyncedToCurrentChain();
+    BOOST_REQUIRE_EQUAL(tx_count(*original), 1U);
+
+    auto restored = restore("restored", "the passphrase of the restored wallet");
+    BOOST_CHECK_EQUAL(tx_count(*restored), 1U);
+    BOOST_CHECK(restored->IsLocked());
+
+    release(std::move(restored));
+    release(std::move(original));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
