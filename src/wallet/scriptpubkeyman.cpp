@@ -508,8 +508,13 @@ bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, 
         SetHDSeed(GenerateNewSeed(walletoptions));
         break;
     }
-    default:
+    case walletType::bip39Wallet:
+    case walletType::bip44Wallet: {
         GenerateNewBip39Seed(walletoptions);
+        break;
+    }
+    default:
+        return false;
     }
 
     if (!NewKeyPool()) {
@@ -1698,7 +1703,7 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewBip39Seed(const WalletOptions& walleto
     // generated). -hdseed, -mnemonic and -mnemonicpassphrase are not read: see
     // WalletInit::ParameterInteraction.
     SecureVector& vchSeed = newHdChain.vchSeed;
-    if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed))
+    if (!newHdChain.SetMnemonic(seed0, pass0, vchSeed, walletoptions.bits, walletoptions.language))
 	    throw std::runtime_error(std::string(__func__) + ": SetMnemonic failed");
 
     CPubKey seed(vchSeed.begin(), vchSeed.end());

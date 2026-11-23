@@ -220,6 +220,7 @@ enum walletType {
 struct WalletOptions {
     int walletType = 0;  // bip32Wallet
     int bits = 256;
+    int language = 0;    // DEFAULT_LANG = english
     bool importing = false;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
