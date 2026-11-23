@@ -41,6 +41,7 @@ const std::string FLAGS{"flags"};
 const std::string HDCHAIN{"hdchain"};
 const std::string HDSECRETS{"hdsecrets"};
 const std::string HDSECRETSPENDING{"hdsecretspending"};
+const std::string HDRESTORESCAN{"hdrestorescan"};
 const std::string REWRITTEN{"rewritten"};
 const std::string KEYMETA{"keymeta"};
 const std::string KEY{"key"};
@@ -695,6 +696,8 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDSecretsPending();
         } else if (strType == DBKeys::REWRITTEN) {
             // Asked for when the wallet is opened; nothing to load.
+        } else if (strType == DBKeys::HDRESTORESCAN) {
+            // Read when the wallet is attached to the chain; nothing to load.
         } else if (strType == DBKeys::OLD_KEY) {
             strErr = "Found unsupported 'wkey' record, try loading with version 0.18";
             return false;
@@ -1214,6 +1217,24 @@ bool WalletBatch::EraseRewritten()
 bool WalletBatch::HasRewritten()
 {
     return m_batch->Exists(DBKeys::REWRITTEN);
+}
+
+bool WalletBatch::WriteRestoreScan(int height)
+{
+    return WriteIC(DBKeys::HDRESTORESCAN, int32_t{height});
+}
+
+bool WalletBatch::ReadRestoreScan(int& height)
+{
+    int32_t value;
+    if (!m_batch->Read(DBKeys::HDRESTORESCAN, value)) return false;
+    height = value;
+    return true;
+}
+
+bool WalletBatch::EraseRestoreScan()
+{
+    return EraseIC(DBKeys::HDRESTORESCAN);
 }
 
 bool WalletBatch::WriteWalletFlags(const uint64_t flags)

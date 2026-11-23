@@ -68,6 +68,9 @@ extern const std::string FLAGS;
 extern const std::string HDCHAIN;
 extern const std::string HDSECRETS;
 extern const std::string HDSECRETSPENDING;
+//! The height from which a restore scan is owed: a wallet restored from a
+//! mnemonic phrase holds it until a scan from that height has completed.
+extern const std::string HDRESTORESCAN;
 //! Says that the file has been written anew by a version that leaves nothing of the memory of the process in it.
 extern const std::string REWRITTEN;
 extern const std::string KEY;
@@ -325,6 +328,10 @@ public:
     bool WriteRewritten();
     bool EraseRewritten();
     bool HasRewritten();
+
+    bool WriteRestoreScan(int height);
+    bool ReadRestoreScan(int& height);
+    bool EraseRestoreScan();
 
     bool WriteWalletFlags(const uint64_t flags);
     //! Begin a new transaction
