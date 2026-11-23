@@ -445,6 +445,19 @@ New and Updated RPCs
   RPC be pointed at anything on the server, and the answer to "which
   release" belongs in one place.
 
+- `createwallet` can make and restore mnemonic wallets, which until now only
+  the wallet creation wizard could. Its new arguments are `wallet_type`
+  (`bip32`, the default, `bip39` or `bip44`), `mnemonic` (a phrase to
+  restore; it implies `bip39` unless `bip44` is given), `mnemonic_passphrase`
+  (the BIP39 passphrase, not the wallet passphrase), `language` and
+  `entropy_bits` (for a new phrase: 128, 160, 192, 224 or 256 bits, 12 to 24
+  words). Mnemonic wallets are legacy wallets only, and cannot be blank or
+  have private keys disabled. The result gains `wallet_type`, and `mnemonic`
+  for a new phrase, which is the time to write it down. A restored wallet is
+  scanned from the start of the chain.
+
+- `getwalletinfo` gains `hd_type`: `bip32`, `bip39`, `bip44`, or `none`.
+
 Release process
 ---------------
 
@@ -634,15 +647,15 @@ Wallet
   conflicting with an ordinary spend stays a real conflict and keeps the
   bare message.
 
-- `sethdseed` is refused on a wallet created from a mnemonic (one for which
-  `gethdwalletinfo` shows a `mnemonic`). All keys of such a wallet come from
+- `sethdseed` is refused on a wallet created from a mnemonic (`hd_type`
+  `bip39` or `bip44` in `getwalletinfo`). All keys of such a wallet come from
   its mnemonic phrase, and setting a seed replaced the phrase with a plain HD
   seed: the wallet no longer held its phrase, and could not derive any further
   key of the addresses it had given out. To use another seed, create another
   wallet. Wallets with a plain HD seed, and blank wallets, are not affected.
 
-- A wallet restored from its mnemonic phrase in the wallet creation wizard,
-  with a wallet passphrase set, now finds its transactions. It used to scan
+- A wallet restored from its mnemonic phrase, in the wallet creation wizard
+  or with `createwallet`, with a wallet passphrase set, now finds its transactions. It used to scan
   the chain before its seed was set up and then showed no transactions and no
   balance until a manual `rescanblockchain`. A wallet restored that way with an
   earlier version and still showing nothing needs `rescanblockchain` once. A
