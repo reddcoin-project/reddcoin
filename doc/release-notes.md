@@ -288,6 +288,15 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
   Wallets without a passphrase, or with an ASCII-only passphrase, are not
   affected.
 
+- A wallet restored from its mnemonic phrase with a wallet passphrase, in
+  `createwallet` (`mnemonic` together with `passphrase`) or in the GUI's wallet
+  creation wizard, now finds its transactions. It used to scan the chain before
+  its seed was set up and then showed no transactions and no balance until a
+  manual `rescanblockchain`. A wallet restored that way with an earlier version
+  and still showing nothing needs `rescanblockchain` once. A restore whose scan
+  is cut short, by a shutdown or a crash, now scans again from the start of the
+  chain the next time the wallet is loaded.
+
 - External signers such as hardware wallets can now be used through the new RPC methods `enumeratesigners` and `displayaddress`. Support is also added to the `send` RPC call. This feature is experimental. See [external-signer.md](https://github.com/reddcoin-project/reddcoin/blob/22.x/doc/external-signer.md) for details. (#16546)
 
 - A new `listdescriptors` RPC is available to inspect the contents of descriptor-enabled wallets.
