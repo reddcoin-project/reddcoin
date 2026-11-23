@@ -100,6 +100,7 @@ BASE_SCRIPTS = [
     'wallet_hd_secrets_migration.py --legacy-wallet',
     'wallet_hd_secrets_unreadable.py --legacy-wallet',
     'wallet_rewrite_once.py --legacy-wallet',
+    'wallet_restore_from_mnemonic.py --legacy-wallet',
     'wallet_passphrase_change_residue.py --legacy-wallet',
     'wallet_passphrase_change_residue.py --descriptors',
     'wallet_hd.py --descriptors',
@@ -420,6 +421,7 @@ KNOWN_FAILING_SCRIPTS = {
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
     'wallet_createwallet.py --legacy-wallet': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
     'wallet_createwallet.py --usecli': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
+    'wallet_restore_from_mnemonic.py --legacy-wallet': 'RED-257: test side, develop\'s BIP39 createwallet arguments',
     # Not yet examined.
     'p2p_compactblocks.py': 'RED-167: not yet examined (unexpected block type 2)',
     'p2p_eviction.py': 'RED-167: not yet examined',
