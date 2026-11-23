@@ -641,6 +641,14 @@ Wallet
   key of the addresses it had given out. To use another seed, create another
   wallet. Wallets with a plain HD seed, and blank wallets, are not affected.
 
+- A wallet restored from its mnemonic phrase in the wallet creation wizard,
+  with a wallet passphrase set, now finds its transactions. It used to scan
+  the chain before its seed was set up and then showed no transactions and no
+  balance until a manual `rescanblockchain`. A wallet restored that way with an
+  earlier version and still showing nothing needs `rescanblockchain` once. A
+  restore whose scan is cut short, by a shutdown or a crash, now scans again
+  from the start of the chain the next time the wallet is loaded.
+
 - A wallet on which `sethdseed` was run by an earlier version, although it had
   been created from a mnemonic, can be used again. Such a wallet failed to load
   with "DeriveNewChildKey: seed not found" once one of its earlier addresses
