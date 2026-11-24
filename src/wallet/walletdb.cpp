@@ -563,6 +563,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 // See https://github.com/bitcoin/bitcoin/pull/12924
                 bool internal = false;
                 uint32_t index = 0;
+                uint32_t account = 0;
                 if (keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m") {
                     std::vector<uint32_t> path;
                     if (keyMeta.has_key_origin) {
@@ -626,21 +627,28 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                         internal = path[3] == (1 | 0x00000000);
                         index = path[4];
                     }
+                    account = HDAccountOfKeyPath(path);
                 }
 
-                // Insert a new CHDChain, or get the one that already exists
-                auto ins = wss.m_hd_chains.emplace(keyMeta.hd_seed_id, CHDChain());
-                CHDChain& chain = ins.first->second;
-                if (ins.second) {
-                    // For new chains, we want to default to VERSION_HD_BASE until we see an internal
-                    chain.nVersion = CHDChain::VERSION_HD_BASE;
-                    chain.seed_id = keyMeta.hd_seed_id;
-                }
-                if (internal) {
-                    chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
-                    chain.nInternalChainCounter = std::max(chain.nInternalChainCounter, index);
-                } else {
-                    chain.nExternalChainCounter = std::max(chain.nExternalChainCounter, index);
+                // A chain record counts the keys of account 0 only: a key of
+                // another HD account is on a chain of its own, and counting it
+                // here would put the counters of account 0 past keys that
+                // were never derived.
+                if (account == 0) {
+                    // Insert a new CHDChain, or get the one that already exists
+                    auto ins = wss.m_hd_chains.emplace(keyMeta.hd_seed_id, CHDChain());
+                    CHDChain& chain = ins.first->second;
+                    if (ins.second) {
+                        // For new chains, we want to default to VERSION_HD_BASE until we see an internal
+                        chain.nVersion = CHDChain::VERSION_HD_BASE;
+                        chain.seed_id = keyMeta.hd_seed_id;
+                    }
+                    if (internal) {
+                        chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
+                        chain.nInternalChainCounter = std::max(chain.nInternalChainCounter, index);
+                    } else {
+                        chain.nExternalChainCounter = std::max(chain.nExternalChainCounter, index);
+                    }
                 }
             }
         } else if (strType == DBKeys::WATCHMETA) {
