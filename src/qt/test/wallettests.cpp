@@ -13,6 +13,7 @@
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
+#include <qt/hdaccountselector.h>
 #include <qt/hdaccountspage.h>
 #include <qt/hdaccounttablemodel.h>
 #include <qt/mintingfilterproxy.h>
@@ -51,6 +52,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QFrame>
 #include <QInputDialog>
@@ -845,7 +847,7 @@ void TestHDAccounts(interfaces::Node& node)
         QCOMPARE(sendCoinsDialog.findChild<QLabel*>("labelBalance")->text(), BitcoinUnits::formatWithUnit(unit, zero_amount));
 
         // What the messages of the send page and of Move funds add.
-        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, false).contains("in other HD accounts, which can be spent with the RPC interface"));
+        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, false).contains("in other HD accounts. Choose the account to spend from at the top of the send page."));
         QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, false).contains(BitcoinUnits::formatWithUnit(unit, one_amount)));
         QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, true).startsWith("This moves account 0 only."));
         QVERIFY(GUIUtil::OtherHDAccountsNote(unit, 0, false).isEmpty());
@@ -938,8 +940,9 @@ void PayInABlock(interfaces::Node& node, TestChain100Setup& test, const std::vec
     }
 }
 
-//! The usable GUI of HD accounts: the Accounts page and its actions, and the
-//! unlock prompt of the first account of an encrypted wallet.
+//! The usable GUI of HD accounts: the Accounts page and its actions, the
+//! account selectors of the send and receive pages, and the unlock prompt of
+//! the first account of an encrypted wallet.
 void TestHDAccountsGUI(interfaces::Node& node)
 {
     TestChain100Setup test;
@@ -977,6 +980,7 @@ void TestHDAccountsGUI(interfaces::Node& node)
     OptionsModel optionsModel;
     ClientModel clientModel(node, &optionsModel);
     WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    const int unit{optionsModel.getDisplayUnit()};
     std::vector<interfaces::WalletHDAccount> accounts{walletModel.wallet().listHDAccounts(/* with_balances */ true)};
     QCOMPARE(int(accounts.size()), 2);
     const CAmount zero_amount{accounts[0].trusted};
@@ -1052,6 +1056,60 @@ void TestHDAccountsGUI(interfaces::Node& node)
         AnswerQuestion();
         page.retireAccount();
         QVERIFY(walletModel.wallet().listHDAccounts(false)[2].retired);
+    }
+
+    {
+        // Send: spend from account 1. The balance is account 1's; changing
+        // the account clears the coins chosen; use available balance takes
+        // account 1's coins. A retired account can still be spent.
+        SendCoinsDialog sendCoinsDialog(platformStyle.get());
+        sendCoinsDialog.setModel(&walletModel);
+        HDAccountSelector* selector = sendCoinsDialog.hdAccountSelector();
+        QVERIFY(!selector->isHidden());
+        QCOMPARE(selector->comboBox()->count(), 3);
+        QVERIFY(selector->comboBox()->itemText(2).contains("retired"));
+        QCOMPARE(sendCoinsDialog.findChild<QLabel*>("labelBalance")->text(), BitcoinUnits::formatWithUnit(unit, zero_amount));
+        selector->setAccount(1);
+        QCOMPARE(selector->account(), 1U);
+        QCOMPARE(sendCoinsDialog.findChild<QLabel*>("labelBalance")->text(), BitcoinUnits::formatWithUnit(unit, one_amount));
+        QCOMPARE(sendCoinsDialog.coinControl().m_hd_account.value_or(99), 1U);
+        // A coin chosen by hand: cleared when the account changes.
+        sendCoinsDialog.coinControl().Select(COutPoint(uint256::ONE, 0));
+        selector->setAccount(0);
+        QVERIFY(!sendCoinsDialog.coinControl().HasSelected());
+        QCOMPARE(sendCoinsDialog.coinControl().m_hd_account.value_or(99), 0U);
+        selector->setAccount(1);
+        QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
+        SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
+        entry->findChild<QPushButton*>("useAvailableBalanceButton")->click();
+        QCOMPARE(entry->findChild<BitcoinAmountField*>("payAmount")->value(), one_amount);
+    }
+
+    {
+        // Receive: an address of account 1; the retired account is not offered.
+        ReceiveCoinsDialog receiveCoinsDialog(platformStyle.get());
+        receiveCoinsDialog.setModel(&walletModel);
+        HDAccountSelector* selector = receiveCoinsDialog.hdAccountSelector();
+        QVERIFY(!selector->isHidden());
+        QCOMPARE(selector->comboBox()->count(), 2);
+        selector->setAccount(1);
+        RecentRequestsTableModel* requests = walletModel.getRecentRequestsTableModel();
+        const int before{requests->rowCount({})};
+        receiveCoinsDialog.findChild<QPushButton*>("receiveButton")->click();
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (widget->inherits("ReceiveRequestDialog")) widget->close();
+        }
+        QCOMPARE(requests->rowCount({}), before + 1);
+        QTableView* view = receiveCoinsDialog.findChild<QTableView*>("recentRequestsView");
+        QVERIFY(!view->isColumnHidden(RecentRequestsTableModel::Account));
+        bool found{false};
+        for (int row = 0; row < requests->rowCount({}); ++row) {
+            const CTxDestination dest{DecodeDestination(requests->entry(row).recipient.address.toStdString())};
+            if (walletModel.wallet().getHDAccountOfScript(GetScriptForDestination(dest)) != 1) continue;
+            QCOMPARE(requests->index(row, RecentRequestsTableModel::Account).data().toUInt(), 1U);
+            found = true;
+        }
+        QVERIFY(found);
     }
 
     {

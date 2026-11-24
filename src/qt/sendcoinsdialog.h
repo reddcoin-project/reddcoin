@@ -14,6 +14,7 @@
 
 class CCoinControl;
 class ClientModel;
+class HDAccountSelector;
 class PlatformStyle;
 class SendCoinsEntry;
 class SendCoinsRecipient;
@@ -49,6 +50,10 @@ public:
     void pasteEntry(const SendCoinsRecipient &rv);
     bool handlePaymentRequest(const SendCoinsRecipient &recipient);
 
+    HDAccountSelector* hdAccountSelector() const { return m_account_selector; }
+    //! The coin control of the next payment (for the tests).
+    CCoinControl& coinControl() { return *m_coin_control; }
+
 public Q_SLOTS:
     void clear();
     void reject() override;
@@ -65,6 +70,7 @@ private:
     ClientModel *clientModel;
     WalletModel *model;
     std::unique_ptr<CCoinControl> m_coin_control;
+    HDAccountSelector* m_account_selector;
     std::unique_ptr<WalletModelTransaction> m_current_transaction;
     bool fNewRecipientAllowed;
     bool fFeeMinimized;
@@ -79,6 +85,10 @@ private:
     bool PrepareSendText(QString& question_string, QString& informative_text, QString& detailed_text);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
+    //! Put the HD account chosen into the coin control.
+    void applyHDAccount();
+    //! What the HD accounts other than the one chosen hold, trusted.
+    CAmount otherHDAccountsTrusted();
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);
