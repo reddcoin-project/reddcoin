@@ -32,6 +32,7 @@
 #include <util/moneystr.h>
 #include <util/rbf.h>
 #include <util/string.h>
+#include <util/thread.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/external_signer_scriptpubkeyman.h>
@@ -172,6 +173,8 @@ static void ReleaseWallet(CWallet* wallet)
 {
     const std::string name = wallet->GetName();
     wallet->WalletLogPrintf("Releasing wallet\n");
+    // Its worker writes to the wallet: stopped before the wallet is flushed.
+    wallet->StopHDAccountWorker();
     wallet->Flush();
     delete wallet;
     // Wallet is now released, notify UnloadWallet, if any.
@@ -3424,6 +3427,75 @@ bool CWallet::IsLocked() const
     return vMasterKey.empty();
 }
 
+void CWallet::ScheduleHDAccountWork()
+{
+    if (!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) return;
+    {
+        std::lock_guard<std::mutex> lock(m_hd_account_worker_mutex);
+        if (m_hd_account_worker_stop) return;
+        m_hd_account_work = true;
+        if (!m_hd_account_worker.joinable()) {
+            m_hd_account_worker = std::thread(&util::TraceThread, "hdaccounts", [this] { HDAccountWorkerLoop(); });
+        }
+    }
+    m_hd_account_worker_cv.notify_all();
+}
+
+void CWallet::HDAccountWorkerLoop()
+{
+    while (true) {
+        {
+            std::unique_lock<std::mutex> lock(m_hd_account_worker_mutex);
+            m_hd_account_worker_cv.wait(lock, [this] { return m_hd_account_work || m_hd_account_worker_stop; });
+            if (m_hd_account_worker_stop) return;
+            m_hd_account_work = false;
+            m_hd_account_worker_busy = true;
+        }
+        {
+            // Under the wallet's lock, which Lock() also takes: the work is
+            // done whole while the wallet is unlocked, or not at all.
+            LOCK(cs_wallet);
+            LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+            if (spk_man && !IsLocked()) spk_man->TopUpHDAccounts();
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_hd_account_worker_mutex);
+            m_hd_account_worker_busy = false;
+        }
+        m_hd_account_worker_cv.notify_all();
+    }
+}
+
+void CWallet::StopHDAccountWorker()
+{
+    {
+        std::unique_lock<std::mutex> lock(m_hd_account_worker_mutex);
+        m_hd_account_worker_stop = true;
+        m_hd_account_worker_cv.notify_all();
+        // A scan the worker is running is cut short, and what it owes stays
+        // owed: an unload does not wait for a scan of the whole chain. Asked
+        // again until the worker is done, since a scan resets the request
+        // when it starts.
+        while (m_hd_account_worker_busy) {
+            AbortRescan();
+            m_hd_account_worker_cv.wait_for(lock, std::chrono::milliseconds{100});
+        }
+    }
+    if (m_hd_account_worker.joinable()) m_hd_account_worker.join();
+}
+
+void CWallet::SyncWithHDAccountWorker()
+{
+    std::unique_lock<std::mutex> lock(m_hd_account_worker_mutex);
+    m_hd_account_worker_cv.wait(lock, [this] { return m_hd_account_worker_stop || (!m_hd_account_work && !m_hd_account_worker_busy); });
+}
+
+uint32_t CWallet::GetHDAccountOfScript(const CScript& script) const
+{
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man ? spk_man->GetHDAccountOfScript(script) : 0;
+}
+
 bool CWallet::Lock()
 {
     if (!IsCrypted())
@@ -3461,6 +3533,10 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool accept_no_keys)
             if (need_rewrite) RewriteAfterHDSecretsMoved();
         }
     }
+    // HD account look-ahead that could not be derived while the wallet was
+    // locked, for staking only included: on the wallet's worker, so that the
+    // unlock does not wait for it.
+    ScheduleHDAccountWork();
     NotifyStatusChanged(this);
     return true;
 }

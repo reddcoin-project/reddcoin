@@ -1020,6 +1020,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
                 pwallet->WalletLogPrintf("The records of %u HD accounts were missing and have been put together from the paths of their keys\n", rebuilt.size());
             }
         }
+        legacy_spkm->DecideHDAccounts();
     }
 
     if (fNoncriticalErrors && result == DBErrors::LOAD_OK)

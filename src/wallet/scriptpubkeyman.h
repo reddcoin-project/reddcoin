@@ -60,6 +60,11 @@ public:
 //! Default for -keypool
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 1000;
 
+//! How many keys of each chain of an HD account are kept derived beyond the
+//! next index to hand out: a payment to one of them is recognised, and a
+//! restore watches as many.
+static constexpr uint32_t HD_ACCOUNT_KEY_LOOKAHEAD{20};
+
 //! A key of an HD account and its derivation path, in numbers and as text.
 struct HDAccountKey {
     CKey key;
@@ -396,6 +401,32 @@ private:
     //! The HD accounts of the wallet by number, account 0 not among them.
     std::map<uint32_t, CHDAccount> m_hd_accounts GUARDED_BY(cs_KeyStore);
     std::optional<CHDAccountMeta> m_hd_account_meta GUARDED_BY(cs_KeyStore);
+    //! For each HD account above 0 of the active seed, the highest index
+    //! derived on its receive and its change chain, -1 for none.
+    std::map<uint32_t, std::pair<int64_t, int64_t>> m_hd_account_extent GUARDED_BY(cs_KeyStore);
+    //! The HD account of each form of each key of an account above 0 of the
+    //! active seed: P2PKH, P2PK, P2WPKH and P2SH-P2WPKH. A script not here is
+    //! of account 0.
+    std::map<CScript, uint32_t> m_hd_account_scripts GUARDED_BY(cs_KeyStore);
+    //! The key at each account, chain (true for change) and index.
+    std::map<std::tuple<uint32_t, bool, uint32_t>, CKeyID> m_hd_account_keys GUARDED_BY(cs_KeyStore);
+    //! Look-ahead the wallet could not derive for want of its seed, as when
+    //! an account is paid while the wallet is locked: owed at the next unlock.
+    bool m_hd_accounts_topup_owed GUARDED_BY(cs_KeyStore){false};
+    //! Keys of an HD account above 0 in a wallet without the flag that says it
+    //! holds accounts, as an earlier wallet tool's salvage leaves it.
+    bool m_hd_accounts_inconsistent GUARDED_BY(cs_KeyStore){false};
+
+    //! Count a key of an HD account in the extents and the script map.
+    void IndexHDAccountKey(const CPubKey& pubkey, const CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Derive and add keys of `account` on one chain up to index `last`.
+    bool ExtendHDAccountChain(WalletBatch& batch, uint32_t account, bool internal, int64_t last) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Whether the keys the look-ahead of accounts 1 to `highest` needs are
+    //! all derived already, so that nothing is owed while the seed cannot be read.
+    bool HDAccountsLookaheadHeld(uint32_t highest) const EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Note a payment to a key of an HD account above 0: the account is used,
+    //! its next index moves past the key, and the account after it is kept ahead.
+    void MarkHDAccountKeyUsed(const CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
 
     /* HD derive new child key (on internal or external chain) */
     void DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal = false) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
@@ -543,6 +574,34 @@ public:
     //! The accounts made, and whether the record of the whole changed, for the
     //! caller to write.
     std::pair<std::vector<uint32_t>, bool> RebuildHDAccounts(const std::map<std::pair<CKeyID, uint32_t>, std::pair<int64_t, int64_t>>& account_keys);
+
+    //! Whether the wallet holds HD accounts: the flag that also has every
+    //! version without accounts refuse the wallet.
+    bool HDAccountsEnabled() const;
+    //! Mark the wallet as holding HD accounts, in one transaction: the flag,
+    //! FEATURE_HD_ACCOUNTS, the record of the accounts as a whole, and the
+    //! account kept ahead, account 1, with its keys. Needs the seed (the
+    //! wallet unlocked) and the wallet's lock. False, and nothing changed,
+    //! when the wallet cannot hold accounts or its seed cannot be read.
+    bool SetupHDAccounts();
+    //! Keep the look-ahead: every account up to the one after the highest
+    //! used, or the highest handed out if that is higher, with
+    //! HD_ACCOUNT_KEY_LOOKAHEAD keys beyond the next index on each chain of
+    //! every account that is not retired. Needs the wallet's lock. False when
+    //! it is owed and cannot be done now for want of the seed.
+    bool TopUpHDAccounts();
+    //! Whether look-ahead is owed at the next unlock.
+    bool IsHDAccountsTopUpOwed() const;
+    //! The HD account of a script of the wallet: 0 for a script of account 0,
+    //! and for any script that is not an account key's.
+    uint32_t GetHDAccountOfScript(const CScript& script) const;
+    //! The highest index derived on each chain of an account, -1 for none.
+    std::pair<int64_t, int64_t> GetHDAccountExtent(uint32_t account) const;
+    //! Whether the wallet holds keys of an HD account above 0 without the flag.
+    bool HasHDAccountsInconsistency() const;
+    //! Count the keys of HD accounts and say whether the wallet is
+    //! consistent: once every record has been read (used by LoadWallet).
+    void DecideHDAccounts();
 
     //! Add a key DeriveHDAccountKey derived, with its metadata, written in
     //! `batch`, and the witness scripts of the key, so that a payment to any

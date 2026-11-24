@@ -32,13 +32,16 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -127,7 +130,8 @@ static constexpr uint64_t KNOWN_WALLET_FLAGS =
     |   WALLET_FLAG_DISABLE_PRIVATE_KEYS
     |   WALLET_FLAG_DESCRIPTORS
     |   WALLET_FLAG_EXTERNAL_SIGNER
-    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED;
+    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED
+    |   WALLET_FLAG_HD_ACCOUNTS;
 
 static constexpr uint64_t MUTABLE_WALLET_FLAGS =
         WALLET_FLAG_AVOID_REUSE;
@@ -140,7 +144,8 @@ static const std::map<std::string,WalletFlags> WALLET_FLAG_MAP{
     {"disable_private_keys", WALLET_FLAG_DISABLE_PRIVATE_KEYS},
     {"descriptor_wallet", WALLET_FLAG_DESCRIPTORS},
     {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER},
-    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED}
+    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED},
+    {"hd_accounts", WALLET_FLAG_HD_ACCOUNTS}
 };
 
 extern const std::map<uint64_t,std::string> WALLET_FLAG_CAVEATS;
@@ -267,6 +272,18 @@ private:
     std::atomic<bool> m_orphaned_coinstakes_swept{false};
     /** Set by UnloadWallet() before it fires NotifyUnload. See IsUnloading(). */
     std::atomic<bool> m_unloading{false};
+
+    /** The worker that does HD account work the wallet could not do while
+     *  locked, once it is unlocked: a thread of this wallet's own, not the
+     *  scheduler, which serves every wallet and the validation callbacks.
+     *  Started when first needed; stopped and joined when the wallet goes. */
+    std::thread m_hd_account_worker;
+    std::mutex m_hd_account_worker_mutex;
+    std::condition_variable m_hd_account_worker_cv;
+    bool m_hd_account_work{false};
+    bool m_hd_account_worker_busy{false};
+    bool m_hd_account_worker_stop{false};
+    void HDAccountWorkerLoop();
     friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
@@ -442,9 +459,21 @@ public:
 
     ~CWallet()
     {
+        StopHDAccountWorker();
         // Should not have slots connected at this point.
         assert(NotifyUnload.empty());
     }
+
+    /** Have the worker do the HD account work that is owed, if the wallet
+     *  holds accounts: the look-ahead it could not derive while locked. */
+    void ScheduleHDAccountWork();
+    /** Stop the worker and wait for it. */
+    void StopHDAccountWorker();
+    /** Wait until the worker has done the work scheduled so far. */
+    void SyncWithHDAccountWorker();
+    /** The HD account of a script of the wallet; 0 for every script that is
+     *  not a key of an account above 0. */
+    uint32_t GetHDAccountOfScript(const CScript& script) const;
 
     bool IsCrypted() const;
     bool IsLocked() const override;
