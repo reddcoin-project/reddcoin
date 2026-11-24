@@ -45,6 +45,9 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     if (!involvesWatchAddress && watchOnlyFilter == WatchOnlyFilter_Yes)
         return false;
 
+    if (m_hd_account && index.data(TransactionTableModel::AccountRole).toUInt() != *m_hd_account)
+        return false;
+
     QDateTime datetime = index.data(TransactionTableModel::DateRole).toDateTime();
     if (datetime < dateFrom || datetime > dateTo)
         return false;
@@ -100,6 +103,12 @@ void TransactionFilterProxy::setMinAmount(const CAmount& minimum)
 void TransactionFilterProxy::setWatchOnlyFilter(WatchOnlyFilter filter)
 {
     this->watchOnlyFilter = filter;
+    invalidateFilter();
+}
+
+void TransactionFilterProxy::setHDAccountFilter(std::optional<uint32_t> account)
+{
+    m_hd_account = account;
     invalidateFilter();
 }
 

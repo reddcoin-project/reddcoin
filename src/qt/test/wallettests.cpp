@@ -941,8 +941,9 @@ void PayInABlock(interfaces::Node& node, TestChain100Setup& test, const std::vec
 }
 
 //! The usable GUI of HD accounts: the Accounts page and its actions, the
-//! account selectors of the send and receive pages, and the unlock prompt of
-//! the first account of an encrypted wallet.
+//! account selectors of the send and receive pages, the Account column and
+//! filter of the transaction list, and the unlock prompt of the first account
+//! of an encrypted wallet.
 void TestHDAccountsGUI(interfaces::Node& node)
 {
     TestChain100Setup test;
@@ -1110,6 +1111,28 @@ void TestHDAccountsGUI(interfaces::Node& node)
             found = true;
         }
         QVERIFY(found);
+    }
+
+    {
+        // The transaction list: the Account column, and the filter.
+        TransactionView transactionView(platformStyle.get());
+        transactionView.setModel(&walletModel);
+        QTableView* table = transactionView.findChild<QTableView*>("transactionView");
+        QVERIFY(!table->isColumnHidden(TransactionTableModel::Account));
+        QCOMPARE(table->model()->rowCount(), 2);
+        QComboBox* filter{nullptr};
+        for (QComboBox* combo : transactionView.findChildren<QComboBox*>()) {
+            if (combo->itemText(0) == "All accounts") filter = combo;
+        }
+        QVERIFY(filter && !filter->isHidden());
+        const int index{filter->findData(1u)};
+        QVERIFY(index > 0);
+        filter->setCurrentIndex(index);
+        transactionView.chooseHDAccount(index);
+        QCOMPARE(table->model()->rowCount(), 1);
+        QCOMPARE(table->model()->index(0, TransactionTableModel::Account).data().toUInt(), 1U);
+        transactionView.chooseHDAccount(0);
+        QCOMPARE(table->model()->rowCount(), 2);
     }
 
     {
