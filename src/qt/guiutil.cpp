@@ -977,4 +977,17 @@ QString OtherHDAccountsNote(int unit, CAmount other_accounts, bool moving)
     return QObject::tr("This wallet holds %1 in other HD accounts. Choose the account to spend from at the top of the send page.").arg(amount);
 }
 
+QString HDAccountLabel(uint32_t number, const std::string& label)
+{
+    if (number == 0 && label.empty()) return QObject::tr("Default");
+    return QString::fromStdString(label);
+}
+
+QString HDAccountTitle(uint32_t number, const std::string& label)
+{
+    const QString name{HDAccountLabel(number, label)};
+    if (name.isEmpty()) return QObject::tr("Account %1").arg(number);
+    return QObject::tr("Account %1 (%2)").arg(number).arg(name);
+}
+
 } // namespace GUIUtil

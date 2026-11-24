@@ -5,6 +5,7 @@
 #include <qt/hdaccountselector.h>
 
 #include <interfaces/wallet.h>
+#include <qt/guiutil.h>
 #include <qt/walletmodel.h>
 
 #include <QComboBox>
@@ -67,11 +68,11 @@ void HDAccountSelector::refresh()
     m_combo->clear();
     for (const interfaces::WalletHDAccount& entry : accounts) {
         if (entry.retired && m_purpose == Purpose::Receive) continue;
-        QString text{entry.label.empty() ? tr("Account %1").arg(entry.number) : tr("Account %1 (%2)").arg(entry.number).arg(QString::fromStdString(entry.label))};
+        QString text{GUIUtil::HDAccountTitle(entry.number, entry.label)};
         if (entry.retired) text = tr("%1, retired").arg(text);
         m_combo->addItem(text, entry.number);
     }
-    if (m_combo->count() == 0) m_combo->addItem(tr("Account 0"), 0u);
+    if (m_combo->count() == 0) m_combo->addItem(GUIUtil::HDAccountTitle(0, {}), 0u);
     int index{m_combo->findData(before)};
     if (index < 0) index = 0;
     m_combo->setCurrentIndex(index);

@@ -407,6 +407,10 @@ public:
     using CanGetAddressesChangedFn = std::function<void()>;
     virtual std::unique_ptr<Handler> handleCanGetAddressesChanged(CanGetAddressesChangedFn fn) = 0;
 
+    //! Register handler for HD accounts changed messages.
+    using HDAccountsChangedFn = std::function<void()>;
+    virtual std::unique_ptr<Handler> handleHDAccountsChanged(HDAccountsChangedFn fn) = 0;
+
     //! Return pointer to internal wallet class, useful for testing.
     virtual CWallet* wallet() { return nullptr; }
 };

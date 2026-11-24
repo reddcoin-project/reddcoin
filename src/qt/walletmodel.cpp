@@ -485,6 +485,13 @@ static void NotifyCanGetAddressesChanged(WalletModel* walletmodel)
     assert(invoked);
 }
 
+static void NotifyHDAccountsChanged(WalletModel* walletmodel)
+{
+    // Queued: the wallet notifies with its locks held, and from any thread.
+    bool invoked = QMetaObject::invokeMethod(walletmodel, "hdAccountsChanged", Qt::QueuedConnection);
+    assert(invoked);
+}
+
 void WalletModel::subscribeToCoreSignals()
 {
     // Connect signals to wallet
@@ -496,6 +503,7 @@ void WalletModel::subscribeToCoreSignals()
     m_handler_show_progress = m_wallet->handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2));
     m_handler_watch_only_changed = m_wallet->handleWatchOnlyChanged(std::bind(NotifyWatchonlyChanged, this, std::placeholders::_1));
     m_handler_can_get_addrs_changed = m_wallet->handleCanGetAddressesChanged(std::bind(NotifyCanGetAddressesChanged, this));
+    m_handler_hd_accounts_changed = m_wallet->handleHDAccountsChanged(std::bind(NotifyHDAccountsChanged, this));
 }
 
 void WalletModel::unsubscribeFromCoreSignals()
@@ -509,6 +517,7 @@ void WalletModel::unsubscribeFromCoreSignals()
     m_handler_show_progress->disconnect();
     m_handler_watch_only_changed->disconnect();
     m_handler_can_get_addrs_changed->disconnect();
+    m_handler_hd_accounts_changed->disconnect();
 }
 
 // WalletModel::UnlockContext implementation
