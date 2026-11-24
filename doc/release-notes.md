@@ -464,6 +464,91 @@ Languages include [English (default), chinese_simplified, chinese_traditional, f
 - When a rewrite of the wallet file and a change to the address book came at
   the same moment, both could wait for each other for ever. Fixed.
 
+- **HD accounts.** A legacy HD wallet (`hd_type` `bip32`, `bip39` or `bip44`)
+  can hold several accounts, each with its own addresses and balance, all
+  from the wallet's one seed or mnemonic phrase. A payment spends the coins
+  of one account and returns its change to that account: coins of two
+  accounts are never spent in one transaction. Account 0 is the wallet as it
+  was before; a wallet without accounts is not changed.
+  - `newhdaccount ( "label" force )` creates the next account and returns its
+    number and first address. As BIP44 has it, account k is created only once
+    account k-1 has a confirmed payment, account 0 included, so that the
+    phrase or seed restores every account. `force` creates it anyway, and a
+    restore may then not find it (see `rescanhdaccounts` below). A restore
+    finds accounts by number, not by label: note the number.
+  - A `bip44` wallet derives account k at `m/44'/coin_type'/k'/chain/index`,
+    where other BIP44 wallets look for it. A `bip32` or `bip39` wallet derives
+    it at `m/k'/chain'/index'`.
+  - `listhdaccounts ( hd_account )` lists account 0 and the wallet's accounts
+    with their state and balances, and for one account the receive addresses
+    it has handed out that are unpaid. `sethdaccount hd_account ( "label"
+    retired )` changes the label of an account, or retires it (no new
+    address; still watched and spendable) or brings it back.
+  - `hd_account` is a new argument of `getnewaddress`, `getrawchangeaddress`,
+    `getbalance` (the whole wallet when it is not given), `sendtoaddress` and
+    `sendmany`, and an option of `fundrawtransaction`,
+    `walletcreatefundedpsbt` and `send`. Without it a payment spends account
+    0, or the account of the inputs given, which have to be of one account.
+    `getaddressinfo` and `listunspent` give the `hd_account` of an address and
+    a coin, `getbalances` the balances of each account (`hd_accounts`), and
+    `getwalletinfo` the number of accounts (`hd_accounts`),
+    `hd_accounts_inconsistent` and `hd_restore_scan_owed`.
+  - `getnewaddress` and `getrawchangeaddress` hand out the next address of an
+    account only while one of the last 20 they handed out has a confirmed
+    payment, since a restore looks no further; `force` hands one out beyond that gap.
+    A payment whose account has 20 unpaid change addresses takes the lowest
+    of them again.
+  - A fee bump spends the account of the original inputs and keeps the
+    original change. Staking stakes the coins of every account, and a stake
+    pays the account of its kernel.
+  - While the wallet is locked, each account hands out up to 20 addresses
+    derived ahead of use, `newhdaccount` hands out the one account kept
+    ahead, and payments to them are seen. Beyond that, and for the first
+    account, the wallet has to be unlocked.
+  - **The first account marks the wallet, and that cannot be undone.**
+    Versions without HD accounts, every v4.22.9.x release and Reddcoin 3.x
+    among them, and their `reddcoin-wallet` tool refuse to open it with
+    "Error loading wallet.dat: Wallet requires newer version of Reddcoin
+    Core". The wallet is not
+    damaged: open it with this version. A wallet created from a mnemonic
+    phrase is marked by a restore only when the restore finds an account above
+    0 that was used.
+  - A wallet that holds accounts keeps its seed: `sethdseed` is refused, and
+    `encryptwallet` keeps the seed and the keypool, where it gives a plain HD
+    wallet without accounts a new seed.
+  - **Restoring.** `createwallet` with `mnemonic` looks for the accounts of
+    the phrase, as BIP44's account discovery does, and reports in
+    `hd_restore` the type the phrase was restored as, its first path, how
+    many addresses of account 0 were found used, and the accounts found.
+    `hd_accounts=false` restores account 0 alone. A `bip32` wallet has no
+    phrase: create a blank wallet (`createwallet` with `blank=true`, and
+    `passphrase` to encrypt it), unlock it, give it the `hdseed=1` key of a
+    `dumpwallet` file with `sethdseed true "<key>" {"hd_accounts": true}`,
+    then run `rescanhdaccounts`.
+  - `rescanhdaccounts ( count )` scans the whole chain for the accounts of
+    the wallet's seed and for every other transaction of the wallet. It looks
+    at the account after the highest used one, and `count` (1 to 20) at more:
+    an account created with `force` after an account that had no payment is
+    found only if `count` reaches it. It also finds the accounts that a copy
+    of the wallet made before its first account has not seen. It is refused
+    while the wallet is locked or unlocked for staking only, and for a wallet
+    holding keys of a seed that encryption or `sethdseed` replaced, which
+    cannot reach the accounts of the earlier seed.
+  - `importwallet` imports the keys of accounts as keys of their own, spent
+    with account 0. To restore accounts, restore the phrase or the seed.
+  - **Never salvage a wallet that holds HD accounts with the wallet tool of an
+    earlier version.** It drops what marks the wallet, and an earlier version
+    then opens the result as an ordinary wallet and spends the coins of its
+    accounts together. This version's `reddcoin-wallet salvage` keeps them.
+    This version also puts right a wallet that an earlier tool salvaged: it
+    finds the account keys from the seed when the wallet is loaded, or at its
+    next unlock if it is encrypted, and marks the wallet again; the labels of
+    the accounts are lost. Until then `getwalletinfo` shows
+    `hd_accounts_inconsistent` and the Overview page a notice.
+  - Descriptor wallets keep account 0 only: `newhdaccount`, `sethdaccount` and
+    an `hd_account` above 0 are refused. Use a separate wallet to keep funds
+    apart.
+
 GUI changes
 -----------
 - Time interval lines added to the network data monitor
@@ -521,6 +606,13 @@ GUI changes
 - An updated `Wallet` type status icon in the statusbar area providing visual feedback on current wallet type (non-hd, bip32, bip39, bip44).
 
 - Improved dark theme on the staking tab
+
+- In a wallet that holds HD accounts (see Wallet above), the GUI pays from
+  account 0. The Overview page shows account 0's funds as Available, a line
+  with what the other accounts hold, and the whole wallet in Total. The send
+  page's balance is account 0's, and **Move funds to a new wallet...** moves
+  account 0 only. The other accounts are created and spent from with the
+  console.
 
 - External signers such as hardware wallets can now be used. These require an external tool such as [HWI](https://github.com/bitcoin-core/HWI) to be installed and configured under Options -> Wallet. When creating a new wallet a new option "External signer" will appear in the dialog. If the device is detected, its name is suggested as the wallet name. The watch-only keys are then automatically imported. Receive addresses can be verified on the device. The send dialog will automatically use the connected device. This feature is experimental and the UI may freeze for a few seconds when performing these actions.
 
