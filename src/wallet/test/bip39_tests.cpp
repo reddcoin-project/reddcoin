@@ -47,12 +47,12 @@ BOOST_AUTO_TEST_CASE(bip39_vectors)
 
 	// printf("Lang = %s (%i)\n", keys.at(i).c_str(), nLanguage);
 
-	// Skip keys that are not a supported language name (e.g. the
-	// "japanese_nfkd" vectors, which carry a per-vector passphrase and are
-	// exercised by the dedicated bip39_nfkd_passphrase test below).
-	if (nLanguage == -1) {
-	    continue;
-	}
+        // Skip keys that are not a supported language name (e.g. the
+        // "japanese_nfkd" vectors, which carry a per-vector passphrase and are
+        // exercised by the dedicated bip39_nfkd_passphrase test below).
+        if (nLanguage == -1) {
+            continue;
+        }
 
 	UniValue tests = find_value(json.get_obj(), keys.at(i).c_str()).get_array();
 	// printf("Number of tests %li\n", tests.size());
