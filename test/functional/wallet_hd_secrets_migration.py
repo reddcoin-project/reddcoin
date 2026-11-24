@@ -35,7 +35,7 @@ import os
 import shutil
 
 from test_framework.messages import hash256
-from test_framework.test_framework import BitcoinTestFramework, SkipTest
+from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -78,8 +78,6 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
                             help="Directory with the reddcoind of a version without this change, to show that it refuses a salvaged wallet")
 
     def skip_test_if_missing_module(self):
-        if not self.options.fixtures:
-            raise SkipTest("createwallet cannot make a mnemonic wallet on this line; run with --fixtures=<dir> --fixtureline=4.22.9")
         self.skip_if_no_wallet()
         self.skip_if_no_wallet_tool()
         self.skip_if_no_bdb()
@@ -212,12 +210,6 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
                 found += [(what, os.path.relpath(os.path.join(root, file), directory)) for what, secret in secrets.items() if secret and secret in content]
         return found
 
-    def hd_type(self, wallet, facts):
-        """The kind of a mnemonic wallet. getwalletinfo has no hd_type on this line: the path of
-        the wallet's first address tells it, BIP44 or not, and it is read without the passphrase."""
-        path = wallet.getaddressinfo(facts["addresses"][0])["hdkeypath"]
-        return "bip44" if path.startswith("m/44'") else "bip39"
-
     def flags(self, wallet):
         return ["hd_secrets_encrypted"] if wallet.getwalletinfo()["hd_secrets_encrypted"] else []
 
@@ -248,7 +240,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
                 assert_equal(self.log_lines("[%s] %s" % (name, REWRITTEN)), 1)
             wallet = node.get_wallet_rpc(name)
             info = wallet.getwalletinfo()
-            assert_equal((info["format"], self.hd_type(wallet, facts), info["unlocked_until"]), (facts["database"], facts["kind"], 0))
+            assert_equal((info["format"], info["hd_type"], info["unlocked_until"]), (facts["database"], facts["kind"], 0))
             assert_equal((info["hd_warnings"], info["earlier_seed_keys"]), (NOTICE_UNMIGRATED, False))
             assert "hd_secrets_encrypted" not in self.flags(wallet)
             seed_id = info["hdseedid"]
@@ -271,7 +263,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             # Moved, flagged, and still the wallet it was.
             info = wallet.getwalletinfo()
             assert "hd_secrets_encrypted" in self.flags(wallet)
-            assert_equal((self.hd_type(wallet, facts), info["hdseedid"]), (facts["kind"], seed_id))
+            assert_equal((info["hd_type"], info["hdseedid"]), (facts["kind"], seed_id))
             assert "hd_warnings" not in info
             if route == "staking only":
                 # The seed is not given out in this state, and the wallet was moved all the same.
@@ -284,7 +276,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             assert_equal(next_addresses, facts["addresses"][facts["given"]:facts["given"] + 4])
             wallet.walletlock()
             assert_raises_rpc_error(-4, "Cannot set a new HD seed on a wallet created from a mnemonic", wallet.sethdseed)
-            assert_equal(self.hd_type(wallet, facts), facts["kind"])
+            assert_equal(wallet.getwalletinfo()["hd_type"], facts["kind"])
 
             # Nothing in any file, with the wallet still loaded.
             assert_equal(self.find(name, facts["secrets"]), [])
@@ -318,7 +310,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
             wallet = node.get_wallet_rpc(name)
             assert "hd_secrets_encrypted" in self.flags(wallet)
             assert "hd_warnings" not in wallet.getwalletinfo()
-            assert_equal(self.hd_type(wallet, facts), facts["kind"])
+            assert_equal(wallet.getwalletinfo()["hd_type"], facts["kind"])
             # Locked: an address from the key pool, and nothing that needs the seed.
             wallet.getnewaddress("", "legacy")
             assert_raises_rpc_error(-13, "Please enter the wallet passphrase with walletpassphrase first", wallet.gethdwalletinfo)
@@ -397,9 +389,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         for name, facts in sorted(salvaged.items()):
             node._base_rpc.loadwallet(name)
             wallet = node.get_wallet_rpc(name)
-            # Salvage keeps no key metadata, so no path tells the kind here: the
-            # keys derived below, among the wallet's own addresses, do.
-            assert_equal(wallet.getwalletinfo()["hd_secrets_encrypted"], True)
+            assert_equal((wallet.getwalletinfo()["hd_secrets_encrypted"], wallet.getwalletinfo()["hd_type"]), (True, facts["kind"]))
             # Refused, here already because salvage keeps no version record and the wallet reads as older than HD.
             assert_raises_rpc_error(-4, None, wallet.sethdseed)
             wallet.walletpassphrase(facts["passphrase"], 60)
