@@ -1,0 +1,29 @@
+# Copyright (c) 2026 The Reddcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+LIBUTF8PROC_INT = utf8proc/libutf8proc.a
+
+EXTRA_LIBRARIES += $(LIBUTF8PROC_INT)
+
+LIBUTF8PROC = $(LIBUTF8PROC_INT)
+
+# utf8proc is a static-only subtree; UTF8PROC_STATIC disables the dllimport/
+# dllexport decorations in utf8proc.h. It must be defined both when compiling
+# utf8proc itself and in every translation unit that includes utf8proc.h.
+UTF8PROC_CPPFLAGS = -I$(srcdir)/utf8proc -DUTF8PROC_STATIC
+
+utf8proc_libutf8proc_a_CPPFLAGS = $(AM_CPPFLAGS) $(UTF8PROC_CPPFLAGS)
+utf8proc_libutf8proc_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
+
+# utf8proc.c #includes utf8proc_data.c, so only utf8proc.c is a translation
+# unit. utf8proc_data.c (the generated Unicode tables) and the license/readme
+# are distributed and tracked as build inputs but not compiled directly.
+utf8proc_libutf8proc_a_SOURCES = \
+  utf8proc/utf8proc.h \
+  utf8proc/utf8proc.c
+
+EXTRA_DIST += \
+  utf8proc/utf8proc_data.c \
+  utf8proc/LICENSE.md \
+  utf8proc/README.md
