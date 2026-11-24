@@ -243,6 +243,9 @@ Q_SIGNALS:
     // Notify that there are now keys in the keypool
     void canGetAddressesChanged();
 
+    // The HD accounts of the wallet changed: one was created, renamed, retired or found
+    void hdAccountsChanged();
+
     void timerTimeout();
 
 public Q_SLOTS:

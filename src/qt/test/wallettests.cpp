@@ -13,6 +13,8 @@
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
+#include <qt/hdaccountspage.h>
+#include <qt/hdaccounttablemodel.h>
 #include <qt/mintingfilterproxy.h>
 #include <qt/mintingtablemodel.h>
 #include <qt/optionsmodel.h>
@@ -40,6 +42,7 @@
 #include <qt/recentrequeststablemodel.h>
 #include <qt/receiverequestdialog.h>
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <utility>
@@ -50,12 +53,15 @@
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QFrame>
+#include <QInputDialog>
 #include <QLabel>
 #include <QPushButton>
+#include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QTextEdit>
 #include <QListView>
+#include <QMessageBox>
 #include <QDialogButtonBox>
 
 namespace
@@ -846,6 +852,230 @@ void TestHDAccounts(interfaces::Node& node)
     }
 }
 
+//! Answer the input dialog that opens next with `text` (a number for an
+//! integer input), then run `then`, for a dialog that follows it.
+void AnswerInput(const QString& text, std::function<void()> then = {})
+{
+    QTimer::singleShot(0, [text, then]() {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            QInputDialog* dialog = qobject_cast<QInputDialog*>(widget);
+            if (!dialog || !dialog->isVisible()) continue;
+            if (dialog->inputMode() == QInputDialog::IntInput) {
+                dialog->setIntValue(text.toInt());
+            } else {
+                dialog->setTextValue(text);
+            }
+            dialog->accept();
+        }
+        if (then) QTimer::singleShot(0, then);
+    });
+}
+
+//! Answer Yes to the question that opens next, keeping its text.
+void AnswerQuestion(QString* text = nullptr)
+{
+    QTimer::singleShot(0, [text]() {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            QMessageBox* box = qobject_cast<QMessageBox*>(widget);
+            if (!box || !box->isVisible()) continue;
+            if (text) *text = box->text();
+            if (QAbstractButton* yes = box->button(QMessageBox::Yes)) yes->click();
+        }
+    });
+}
+
+//! A bip39 wallet on a mock database, at the fixture's tip.
+std::shared_ptr<CWallet> MakeBip39Wallet(interfaces::Node& node)
+{
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    LegacyScriptPubKeyMan& spk_man = *wallet->GetOrCreateLegacyScriptPubKeyMan();
+    LOCK2(wallet->cs_wallet, ::cs_main);
+    wallet->SetMinVersion(FEATURE_LATEST);
+    WalletOptions walletoptions;
+    walletoptions.walletType = walletType::bip39Wallet;
+    if (!spk_man.SetupGeneration(walletoptions)) return nullptr;
+    wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+    return wallet;
+}
+
+//! Pay each script a coin of the fixture's wallet, in one staked block, and
+//! have each wallet scan the chain for it.
+void PayInABlock(interfaces::Node& node, TestChain100Setup& test, const std::vector<CScript>& scripts, const std::vector<std::shared_ptr<CWallet>>& wallets)
+{
+    std::vector<CMutableTransaction> txs;
+    {
+        LOCK(test.m_wallet->cs_wallet);
+        std::vector<COutput> coins;
+        test.m_wallet->AvailableCoins(coins);
+        auto coin = coins.begin();
+        for (const CScript& script : scripts) {
+            while (coin != coins.end() && (!coin->fSpendable || coin->nDepth < 20)) ++coin;
+            QVERIFY(coin != coins.end());
+            test.m_wallet->LockCoin(COutPoint(coin->tx->GetHash(), coin->i));
+            CMutableTransaction mtx;
+            const CTxOut& prev = coin->tx->tx->vout[coin->i];
+            mtx.vout.push_back({prev.nValue - DEFAULT_TRANSACTION_MAXFEE, script});
+            mtx.vin.push_back({CTxIn{coin->tx->GetHash(), static_cast<uint32_t>(coin->i)}});
+            FillableSigningProvider keystore;
+            keystore.AddKey(test.coinbaseKey);
+            std::map<COutPoint, Coin> spent;
+            spent[mtx.vin[0].prevout].out = prev;
+            std::map<int, std::string> input_errors;
+            QVERIFY(SignTransaction(mtx, &keystore, spent, SIGHASH_ALL, input_errors));
+            txs.push_back(mtx);
+            ++coin;
+        }
+    }
+    SetMockTime(GetTime() + 60);
+    test.CreateAndProcessPoSBlock(txs, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()), test.m_wallet);
+    for (const std::shared_ptr<CWallet>& wallet : wallets) {
+        WalletRescanReserver reserver(*wallet);
+        QVERIFY(reserver.reserve());
+        QVERIFY(wallet->ScanForWalletTransactions(Params().GetConsensus().hashGenesisBlock, 0, {}, reserver, /* fUpdate */ true).status == CWallet::ScanResult::SUCCESS);
+        LOCK2(wallet->cs_wallet, ::cs_main);
+        wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+}
+
+//! The usable GUI of HD accounts: the Accounts page and its actions, and the
+//! unlock prompt of the first account of an encrypted wallet.
+void TestHDAccountsGUI(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    test.stakeBlocks(1);
+
+    // A wallet with account 1, "savings", paid as account 0 is.
+    std::shared_ptr<CWallet> wallet = MakeBip39Wallet(node);
+    QVERIFY(wallet);
+    CTxDestination account_zero, account_one;
+    {
+        std::string dest_error;
+        QVERIFY(wallet->GetNewDestination(OutputType::LEGACY, "", account_zero, dest_error));
+        LOCK(wallet->cs_wallet);
+        uint32_t account{0};
+        std::vector<bilingual_str> warnings;
+        bilingual_str error;
+        QVERIFY(wallet->NewHDAccount("savings", /* force */ true, account, account_one, warnings, error));
+        QCOMPARE(account, 1U);
+    }
+    // An encrypted wallet without accounts, whose account 0 is paid.
+    std::shared_ptr<CWallet> encrypted = MakeBip39Wallet(node);
+    QVERIFY(encrypted);
+    CTxDestination encrypted_zero;
+    {
+        std::string dest_error;
+        QVERIFY(encrypted->GetNewDestination(OutputType::LEGACY, "", encrypted_zero, dest_error));
+    }
+    PayInABlock(node, test, {GetScriptForDestination(account_zero), GetScriptForDestination(account_one), GetScriptForDestination(encrypted_zero)}, {wallet, encrypted});
+    const SecureString passphrase{"accounts"};
+    QVERIFY(encrypted->EncryptWallet(passphrase));
+    QVERIFY(encrypted->Lock());
+
+    std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    OptionsModel optionsModel;
+    ClientModel clientModel(node, &optionsModel);
+    WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+    std::vector<interfaces::WalletHDAccount> accounts{walletModel.wallet().listHDAccounts(/* with_balances */ true)};
+    QCOMPARE(int(accounts.size()), 2);
+    const CAmount zero_amount{accounts[0].trusted};
+    const CAmount one_amount{accounts[1].trusted};
+    QVERIFY(zero_amount > 0 && one_amount > 0);
+
+    {
+        // The Accounts page: account 0 and account 1, with what each holds.
+        HDAccountsPage page(platformStyle.get());
+        page.setModel(&walletModel);
+        HDAccountTableModel* model = page.tableModel();
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(model->index(1, HDAccountTableModel::Number).data().toUInt(), 1U);
+        QCOMPARE(model->index(1, HDAccountTableModel::Label).data().toString(), QString("savings"));
+        QCOMPARE(model->index(1, HDAccountTableModel::State).data().toString(), QString("Active"));
+        QCOMPARE(model->index(1, HDAccountTableModel::Available).data(Qt::EditRole).toLongLong(), qint64(one_amount));
+        QCOMPARE(model->index(0, HDAccountTableModel::Available).data(Qt::EditRole).toLongLong(), qint64(zero_amount));
+        QCOMPARE(model->index(1, HDAccountTableModel::Used).data().toString(), QString("Yes"));
+        // Account 1 is paid: the next can be created.
+        QVERIFY(page.newAccountButton()->isEnabled());
+        QVERIFY(page.newAccountRefusalLabel()->isHidden());
+        QVERIFY(page.noticeLabel()->isHidden());
+        // Nothing selected: nothing to rename or retire. Account 0 has no label or state of its own.
+        QVERIFY(!page.renameButton()->isEnabled());
+        page.tableView()->selectRow(0);
+        QVERIFY(!page.renameButton()->isEnabled());
+        QVERIFY(!page.retireButton()->isEnabled());
+
+        // Rename account 1.
+        page.tableView()->selectRow(1);
+        QVERIFY(page.renameButton()->isEnabled());
+        AnswerInput("rainy day");
+        page.renameAccount();
+        QCOMPARE(walletModel.wallet().listHDAccounts(false)[1].label, std::string{"rainy day"});
+
+        // New account: account 2, "travel". Its first address is handed out
+        // and not yet paid; the next account is refused until it is paid.
+        QString created;
+        QObject::connect(&page, &HDAccountsPage::message, [&](const QString&, const QString& text, unsigned int) { created = text; });
+        AnswerInput("travel");
+        page.newAccount();
+        QVERIFY(created.startsWith("HD account 2 was created."));
+        page.refresh();
+        QCOMPARE(model->rowCount(), 3);
+        QCOMPARE(model->index(2, HDAccountTableModel::Label).data().toString(), QString("travel"));
+        QVERIFY(!page.newAccountButton()->isEnabled());
+        QVERIFY(!page.newAccountRefusalLabel()->isHidden());
+        QVERIFY(page.newAccountRefusalLabel()->text().contains("Account 2 has not received a confirmed payment"));
+
+        // Its unpaid address.
+        page.tableView()->selectRow(2);
+        const std::vector<CTxDestination> unpaid{walletModel.wallet().getUnpaidHDAccountAddresses(2)};
+        QCOMPARE(int(unpaid.size()), 1);
+        QString text;
+        ConfirmMessage(&text);
+        page.showUnpaidAddresses();
+        QVERIFY(text.contains(QString::fromStdString(EncodeDestination(unpaid[0]))));
+
+        // Retire account 2, then bring it back, and retire it again.
+        QCOMPARE(page.retireButton()->text(), QString("Re&tire"));
+        AnswerQuestion();
+        page.retireAccount();
+        QVERIFY(walletModel.wallet().listHDAccounts(false)[2].retired);
+        page.refresh();
+        page.tableView()->selectRow(2);
+        QCOMPARE(page.retireButton()->text(), QString("Bring &back"));
+        page.retireAccount();
+        QVERIFY(!walletModel.wallet().listHDAccounts(false)[2].retired);
+        // The page reads the wallet again when it is in view; this one is not.
+        page.refresh();
+        page.tableView()->selectRow(2);
+        QCOMPARE(page.retireButton()->text(), QString("Re&tire"));
+        AnswerQuestion();
+        page.retireAccount();
+        QVERIFY(walletModel.wallet().listHDAccounts(false)[2].retired);
+    }
+
+    {
+        // The first account of an encrypted, locked wallet: the passphrase
+        // is asked for, the account is made, and the wallet is locked again.
+        WalletModel encryptedModel(interfaces::MakeWallet(encrypted), clientModel, platformStyle.get());
+        int asked{0};
+        QObject::connect(&encryptedModel, &WalletModel::requireUnlock, [&] {
+            ++asked;
+            QVERIFY(encryptedModel.setWalletLocked(false, passphrase));
+        });
+        HDAccountsPage page(platformStyle.get());
+        page.setModel(&encryptedModel);
+        QVERIFY(page.newAccountButton()->isEnabled());
+        QString confirm;
+        AnswerInput("first", [&confirm] { AnswerQuestion(&confirm); });
+        page.newAccount();
+        QCOMPARE(asked, 1);
+        QVERIFY(confirm.contains("marks this wallet"));
+        QCOMPARE(int(encryptedModel.wallet().listHDAccounts(false).size()), 2);
+        QCOMPARE(encryptedModel.getEncryptionStatus(), WalletModel::Locked);
+    }
+}
+
 //! Qt on macOS crashes inside the framework on the "minimal" platform when it
 //! looks up unimplemented cocoa functions (https://bugreports.qt.io/browse/QTBUG-49686).
 bool SkipOnMacMinimalPlatform(const char* test_name)
@@ -898,4 +1128,10 @@ void WalletTests::hdAccountsTests()
 {
     if (SkipOnMacMinimalPlatform("hdAccountsTests")) return;
     TestHDAccounts(m_node);
+}
+
+void WalletTests::hdAccountsGUITests()
+{
+    if (SkipOnMacMinimalPlatform("hdAccountsGUITests")) return;
+    TestHDAccountsGUI(m_node);
 }
