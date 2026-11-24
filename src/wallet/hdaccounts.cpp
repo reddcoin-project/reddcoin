@@ -6,8 +6,10 @@
 // addresses, and what the wallet holds in each.
 
 #include <chainparams.h>
+#include <interfaces/chain.h>
 #include <key_io.h>
 #include <outputtype.h>
+#include <util/check.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <wallet/receive.h>
@@ -15,6 +17,24 @@
 #include <wallet/wallet.h>
 
 const std::string HD_ACCOUNTS_LEGACY_ONLY{"HD accounts are available in legacy wallets only. Use a separate wallet to keep funds apart."};
+
+namespace {
+//! The highest account above 0 handed out, 0 for none.
+uint32_t HighestHandedOutHDAccount(const LegacyScriptPubKeyMan& spk_man)
+{
+    uint32_t highest{0};
+    for (const auto& [number, record] : spk_man.GetHDAccounts()) {
+        if (record.state != CHDAccount::State::POOL) highest = std::max(highest, number);
+    }
+    return highest;
+}
+
+//! BIP44's account rule, for an account `before` the next one with no confirmed payment.
+bilingual_str HDAccountRule(uint32_t before)
+{
+    return strprintf(_("Account %u has not received a confirmed payment. A new account is created only after the one before it has been paid, so that the phrase of the wallet restores every account, in this wallet and in other BIP44 wallets. Pay account %u first, or pass force; an account created before that may not be found when the wallet is restored."), before, before);
+}
+} // namespace
 
 bool CWallet::IsHDAccountUsed(uint32_t account, bool confirmed_only) const
 {
@@ -112,10 +132,7 @@ bool CWallet::NewHDAccount(const std::string& label, bool force, uint32_t& accou
     }
 
     // The next account is the one after the highest handed out.
-    uint32_t highest{0};
-    for (const auto& [number, record] : spk_man->GetHDAccounts()) {
-        if (record.state != CHDAccount::State::POOL) highest = std::max(highest, number);
-    }
+    const uint32_t highest{HighestHandedOutHDAccount(*spk_man)};
     if (highest + 1 >= 0x80000000) {
         error = _("This wallet has as many HD accounts as there can be.");
         return false;
@@ -123,7 +140,7 @@ bool CWallet::NewHDAccount(const std::string& label, bool force, uint32_t& accou
     account = highest + 1;
     // BIP44's account rule: the account before it has a confirmed payment.
     if (!IsHDAccountUsed(account - 1, /* confirmed_only */ true)) {
-        const bilingual_str rule{strprintf(_("Account %u has not received a confirmed payment. A new account is created only after the one before it has been paid, so that the phrase of the wallet restores every account, in this wallet and in other BIP44 wallets. Pay account %u first, or pass force; an account created before that may not be found when the wallet is restored."), account - 1, account - 1)};
+        const bilingual_str rule{HDAccountRule(account - 1)};
         if (!force) {
             error = rule;
             return false;
@@ -289,6 +306,97 @@ CWallet::HDRestoreReport CWallet::GetHDRestoreReport() const
         if (record.state == CHDAccount::State::ACTIVE) report.accounts_found.push_back(account);
     }
     return report;
+}
+
+bilingual_str CWallet::NewHDAccountRefusal() const
+{
+    AssertLockHeld(cs_wallet);
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) || !spk_man) return Untranslated(HD_ACCOUNTS_LEGACY_ONLY);
+    if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !spk_man->IsHDEnabled()) return _("HD accounts need an HD wallet with private keys.");
+    const uint32_t highest{HighestHandedOutHDAccount(*spk_man)};
+    if (highest + 1 >= 0x80000000) return _("This wallet has as many HD accounts as there can be.");
+    if (!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS) && spk_man->IsHDAccountDiscoveryPending()) {
+        return _("This wallet is looking for its HD accounts in the block chain. Try again once that scan has finished.");
+    }
+    if (!IsHDAccountUsed(highest, /* confirmed_only */ true)) return HDAccountRule(highest);
+    return {};
+}
+
+bilingual_str CWallet::HDAccountScanRefusal() const
+{
+    AssertLockHeld(cs_wallet);
+    if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) return Untranslated(HD_ACCOUNTS_LEGACY_ONLY);
+    if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return _("This wallet has no private keys: it has no seed to derive accounts from");
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man || !spk_man->IsHDEnabled()) return _("This wallet is not an HD wallet: it has no seed to derive accounts from");
+    if (!CanSupportFeature(FEATURE_HD_SPLIT)) return _("Cannot hold HD accounts in a wallet without HD chain split. Use the upgradewallet RPC first");
+    // Accounts of the seed the wallet has now: of no use for the keys of the
+    // one it had before.
+    if (spk_man->HoldsInactiveSeedKeys() && !IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
+        return _("The seed of this wallet was replaced after keys were made (by encryption or by sethdseed). Accounts of the earlier seed cannot be reached from this wallet. Restore the earlier seed into a new blank wallet.");
+    }
+    return {};
+}
+
+CWallet::HDAccountScan CWallet::ScanForHDAccounts(uint32_t count, const WalletRescanReserver& reserver)
+{
+    HDAccountScan scan;
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man) {
+        scan.status = HDAccountScan::Status::CANNOT_DERIVE;
+        return scan;
+    }
+    std::set<uint32_t> before;
+    uint256 start_block;
+    {
+        LOCK(cs_wallet);
+        if (!chain().hasBlocks(GetLastBlockHash(), 0, {})) {
+            scan.status = HDAccountScan::Status::PRUNED;
+            return scan;
+        }
+        CHECK_NONFATAL(chain().findAncestorByHeight(GetLastBlockHash(), 0, interfaces::FoundBlock().hash(start_block)));
+        if (spk_man->IsHDAccountDiscoveryPending()) {
+            scan.status = HDAccountScan::Status::BUSY;
+            return scan;
+        }
+        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
+            if (record.state != CHDAccount::State::POOL) before.insert(account);
+        }
+        if (!spk_man->BeginHDAccountDiscovery(count)) {
+            scan.status = HDAccountScan::Status::CANNOT_DERIVE;
+            return scan;
+        }
+    }
+
+    const ScanResult result{ScanForWalletTransactions(start_block, 0, /* max_height */ {}, reserver, /* fUpdate */ true)};
+    {
+        LOCK(cs_wallet);
+        spk_man->EndHDAccountDiscovery();
+        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
+            if (record.state == CHDAccount::State::POOL) continue;
+            scan.accounts.push_back(account);
+            if (!before.count(account)) scan.found.push_back(account);
+        }
+    }
+    scan.stop_height = result.last_scanned_height;
+    switch (result.status) {
+    case ScanResult::SUCCESS:
+        break;
+    case ScanResult::FAILURE:
+        scan.status = HDAccountScan::Status::FAILURE;
+        break;
+    case ScanResult::USER_ABORT:
+        scan.status = HDAccountScan::Status::USER_ABORT;
+        break;
+    }
+    return scan;
+}
+
+int CWallet::CountKeysOfEarlierSeed() const
+{
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man ? spk_man->CountInactiveSeedKeys() : 0;
 }
 
 bool CWallet::RepairHDAccounts()

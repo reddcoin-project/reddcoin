@@ -669,6 +669,8 @@ public:
     //! Whether the wallet holds keys of an HD seed other than its active one,
     //! as a plain HD wallet does once encryption or sethdseed replaced its seed.
     bool HoldsInactiveSeedKeys() const;
+    //! The number of those keys.
+    int CountInactiveSeedKeys() const;
     //! Whether keys may be of HD accounts that the wallet does not know as such.
     bool IsHDAccountRepairOwed() const;
     //! Match the keys of the wallet against the accounts of its seed, account
