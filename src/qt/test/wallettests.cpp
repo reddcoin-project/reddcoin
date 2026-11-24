@@ -13,6 +13,7 @@
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
+#include <qt/hdaccountmove.h>
 #include <qt/hdaccountselector.h>
 #include <qt/hdaccountspage.h>
 #include <qt/hdaccounttablemodel.h>
@@ -942,8 +943,8 @@ void PayInABlock(interfaces::Node& node, TestChain100Setup& test, const std::vec
 
 //! The usable GUI of HD accounts: the Accounts page and its actions, the
 //! account selectors of the send and receive pages, the Account column and
-//! filter of the transaction list, and the unlock prompt of the first account
-//! of an encrypted wallet.
+//! filter of the transaction list, the unlock prompt of the first account of
+//! an encrypted wallet, and Move funds an account at a time.
 void TestHDAccountsGUI(interfaces::Node& node)
 {
     TestChain100Setup test;
@@ -1084,6 +1085,11 @@ void TestHDAccountsGUI(interfaces::Node& node)
         SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
         entry->findChild<QPushButton*>("useAvailableBalanceButton")->click();
         QCOMPARE(entry->findChild<BitcoinAmountField*>("payAmount")->value(), one_amount);
+        // Move funds sends account 0.
+        sendCoinsDialog.sendAllTo(QString::fromStdString(EncodeDestination(PKHash(test.coinbaseKey.GetPubKey()))), "To wallet new");
+        QCOMPARE(selector->account(), 0U);
+        entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
+        QCOMPARE(entry->findChild<BitcoinAmountField*>("payAmount")->value(), zero_amount);
     }
 
     {
@@ -1154,6 +1160,49 @@ void TestHDAccountsGUI(interfaces::Node& node)
         QVERIFY(confirm.contains("marks this wallet"));
         QCOMPARE(int(encryptedModel.wallet().listHDAccounts(false).size()), 2);
         QCOMPARE(encryptedModel.getEncryptionStatus(), WalletModel::Locked);
+    }
+
+    {
+        // Move funds: account 0 to account 0 of the new wallet, account 1 to
+        // its account 1, each in its own transaction; account 2 holds nothing.
+        const std::vector<HDAccountMove> plan{PlanHDAccountMove(walletModel.wallet().listHDAccounts(true))};
+        QCOMPARE(int(plan.size()), 2);
+        QCOMPARE(plan[1].from, 1U);
+        QCOMPARE(plan[1].to, 1U);
+        QVERIFY(MovesHDAccounts(plan));
+        QVERIFY(DescribeHDAccountMove(plan, unit).contains("account 1 (rainy day) to account 1 of the new wallet"));
+        // Funds in account 2 alone would go to account 0 of the new wallet.
+        std::vector<interfaces::WalletHDAccount> only_two(1);
+        only_two[0].number = 2;
+        only_two[0].trusted = 5;
+        QCOMPARE(PlanHDAccountMove(only_two)[0].to, 0U);
+        QVERIFY(MovesHDAccounts(PlanHDAccountMove(only_two)));
+        QVERIFY(!MovesHDAccounts(PlanHDAccountMove({accounts[0]})));
+
+        std::shared_ptr<CWallet> target = MakeBip39Wallet(node);
+        QVERIFY(target);
+        // As a wallet loaded by the node does: its payments go to the mempool.
+        wallet->SetBroadcastTransactions(true);
+        WalletModel targetModel(interfaces::MakeWallet(target), clientModel, platformStyle.get());
+        QString question;
+        AnswerQuestion(&question);
+        QString result;
+        QVERIFY2(MoveHDAccounts(walletModel, targetModel, plan, nullptr, result), result.toStdString().c_str());
+        QVERIFY(result.startsWith("Moved:"));
+        // Two transactions, each spending one account, to the account of the new wallet planned.
+        int moved{0};
+        for (const interfaces::WalletTx& wtx : walletModel.wallet().getWalletTxs()) {
+            for (size_t i = 0; i < wtx.tx->vout.size(); ++i) {
+                const CScript& script = wtx.tx->vout[i].scriptPubKey;
+                if (!WITH_LOCK(target->cs_wallet, return target->IsMine(script))) continue;
+                QCOMPARE(target->GetHDAccountOfScript(script), wtx.txin_account.at(0));
+                ++moved;
+            }
+        }
+        QCOMPARE(moved, 2);
+        const std::vector<interfaces::WalletHDAccount> target_accounts{targetModel.wallet().listHDAccounts(false)};
+        QCOMPARE(int(target_accounts.size()), 2);
+        QCOMPARE(target_accounts[1].label, std::string{"rainy day"});
     }
 }
 

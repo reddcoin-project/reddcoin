@@ -134,6 +134,7 @@ BITCOIN_QT_H = \
   qt/editaddressdialog.h \
   qt/guiconstants.h \
   qt/guiutil.h \
+  qt/hdaccountmove.h \
   qt/hdaccountselector.h \
   qt/hdaccountspage.h \
   qt/hdaccounttablemodel.h \
@@ -290,6 +291,7 @@ BITCOIN_QT_WALLET_CPP = \
   qt/createwalletdialog.cpp \
   qt/createwalletwizard.cpp \
   qt/editaddressdialog.cpp \
+  qt/hdaccountmove.cpp \
   qt/hdaccountselector.cpp \
   qt/hdaccountspage.cpp \
   qt/hdaccounttablemodel.cpp \
