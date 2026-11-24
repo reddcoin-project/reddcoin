@@ -176,6 +176,7 @@ BITCOIN_TESTS += \
   wallet/test/scriptpubkeyman_tests.cpp \
   wallet/test/hdsecrets_tests.cpp \
   wallet/test/hdaccount_tests.cpp \
+  wallet/test/hdaccount_spend_tests.cpp \
   wallet/test/hdseed_tests.cpp \
   wallet/test/walletload_tests.cpp
 

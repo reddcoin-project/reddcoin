@@ -1869,6 +1869,36 @@ std::pair<int64_t, int64_t> LegacyScriptPubKeyMan::GetHDAccountExtent(uint32_t a
     return it == m_hd_account_extent.end() ? std::make_pair(int64_t{-1}, int64_t{-1}) : it->second;
 }
 
+bool LegacyScriptPubKeyMan::HasHDAccountKeys() const
+{
+    LOCK(cs_KeyStore);
+    return !m_hd_account_scripts.empty();
+}
+
+bool LegacyScriptPubKeyMan::GetHDAccountPubKey(uint32_t account, bool internal, uint32_t index, CPubKey& pubkey) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_keys.find(std::make_tuple(account, internal, index));
+    return it != m_hd_account_keys.end() && GetPubKey(it->second, pubkey);
+}
+
+bool LegacyScriptPubKeyMan::HandOutHDAccountChange(uint32_t account, uint32_t index)
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    auto it = m_hd_accounts.find(account);
+    if (it == m_hd_accounts.end()) return false;
+    if (index >= it->second.next_change) {
+        CHDAccount record{it->second};
+        record.next_change = index + 1;
+        WalletBatch batch(m_storage.GetDatabase());
+        if (!WriteHDAccount(batch, account, record)) return false;
+    }
+    // Owed at the next unlock when the wallet is locked.
+    TopUpHDAccounts();
+    return true;
+}
+
 bool LegacyScriptPubKeyMan::HasHDAccountsInconsistency() const
 {
     LOCK(cs_KeyStore);

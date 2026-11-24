@@ -4,11 +4,13 @@
 
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
+#include <policy/feerate.h>
 #include <policy/policy.h>
 #include <util/check.h>
 #include <util/fees.h>
 #include <util/moneystr.h>
 #include <util/rbf.h>
+#include <util/string.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
@@ -76,6 +78,9 @@ void CWallet::AvailableCoins(std::vector<COutput>& vCoins, const CCoinControl* c
     const int min_depth = {coinControl ? coinControl->m_min_depth : DEFAULT_MIN_DEPTH};
     const int max_depth = {coinControl ? coinControl->m_max_depth : DEFAULT_MAX_DEPTH};
     const bool only_safe = {coinControl ? !coinControl->m_include_unsafe_inputs : true};
+    // The coins of one HD account only, account 0 unless another is named.
+    const bool one_account{!(coinControl && coinControl->m_hd_all_accounts) && HoldsHDAccountKeys()};
+    const uint32_t account{coinControl && coinControl->m_hd_account ? *coinControl->m_hd_account : 0};
 
     std::set<uint256> trusted_parents;
     for (const auto& entry : mapWallet)
@@ -168,6 +173,10 @@ void CWallet::AvailableCoins(std::vector<COutput>& vCoins, const CCoinControl* c
                 continue;
             }
 
+            if (one_account && GetHDAccountOfScript(wtx.tx->vout[i].scriptPubKey) != account) {
+                continue;
+            }
+
             std::unique_ptr<SigningProvider> provider = GetSolvingProvider(wtx.tx->vout[i].scriptPubKey);
 
             bool solvable = provider ? IsSolvable(*provider, wtx.tx->vout[i].scriptPubKey) : false;
@@ -225,14 +234,130 @@ const CTxOut& CWallet::FindNonChangeParentOutput(const CTransaction& tx, int out
     return ptx->vout[n];
 }
 
-std::map<CTxDestination, std::vector<COutput>> CWallet::ListCoins() const
+bool CWallet::HoldsHDAccountKeys() const
+{
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    return spk_man && spk_man->HasHDAccountKeys();
+}
+
+bool CWallet::ResolveHDAccount(CCoinControl& coin_control, bilingual_str& error) const
+{
+    AssertLockHeld(cs_wallet);
+    if (coin_control.m_hd_all_accounts) {
+        error = Untranslated("A transaction cannot be funded from every HD account at once");
+        return false;
+    }
+    if (!HoldsHDAccountKeys()) {
+        if (coin_control.m_hd_account.value_or(0) != 0) {
+            error = strprintf(_("This wallet has no HD account %u."), *coin_control.m_hd_account);
+            return false;
+        }
+        coin_control.m_hd_account = 0;
+        return true;
+    }
+
+    std::vector<COutPoint> selected;
+    coin_control.ListSelected(selected);
+    std::set<uint32_t> input_accounts;
+    for (const COutPoint& outpoint : selected) {
+        const auto it = mapWallet.find(outpoint.hash);
+        if (it == mapWallet.end() || outpoint.n >= it->second.tx->vout.size()) continue;
+        const CTxOut& txout = it->second.tx->vout[outpoint.n];
+        if (IsMine(txout) == ISMINE_NO) continue;
+        input_accounts.insert(GetHDAccountOfScript(txout.scriptPubKey));
+    }
+    if (!coin_control.m_hd_account) {
+        if (input_accounts.size() > 1) {
+            std::vector<std::string> names;
+            for (const uint32_t a : input_accounts) names.push_back(strprintf("%u", a));
+            error = strprintf(_("The selected inputs are of HD accounts %s. A transaction spends the coins of one HD account only."), Join(names, ", "));
+            return false;
+        }
+        coin_control.m_hd_account = input_accounts.empty() ? 0 : *input_accounts.begin();
+    } else {
+        for (const uint32_t a : input_accounts) {
+            if (a == *coin_control.m_hd_account) continue;
+            error = strprintf(_("A selected input is of HD account %u. This transaction spends HD account %u, and the coins of that account only."), a, *coin_control.m_hd_account);
+            return false;
+        }
+    }
+
+    if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
+        const CScript script{GetScriptForDestination(coin_control.destChange)};
+        const bool mine{IsMine(script) != ISMINE_NO};
+        if ((mine && GetHDAccountOfScript(script) != *coin_control.m_hd_account) || (!mine && *coin_control.m_hd_account != 0)) {
+            error = strprintf(_("The change address is not of HD account %u, which this transaction spends. The change of a payment goes back to the account it is paid from."), *coin_control.m_hd_account);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CWallet::GetHDAccountChangeDestination(uint32_t account, OutputType type, CTxDestination& dest, bilingual_str& error)
+{
+    AssertLockHeld(cs_wallet);
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    const std::map<uint32_t, CHDAccount> accounts{spk_man ? spk_man->GetHDAccounts() : std::map<uint32_t, CHDAccount>{}};
+    const auto record = accounts.find(account);
+    if (record == accounts.end()) {
+        error = strprintf(_("This wallet has no HD account %u."), account);
+        return false;
+    }
+    // A legacy key has no taproot form.
+    if (type == OutputType::BECH32M) type = OutputType::BECH32;
+    const uint32_t next{record->second.next_change};
+    uint32_t index{next};
+    if (next >= HD_ACCOUNT_KEY_LOOKAHEAD) {
+        // The last change addresses handed out, unpaid if no transaction that
+        // is neither conflicted nor abandoned pays them, confirmed or not.
+        std::set<CScript> recent;
+        for (uint32_t i = next - HD_ACCOUNT_KEY_LOOKAHEAD; i < next; ++i) {
+            CPubKey pubkey;
+            if (!spk_man->GetHDAccountPubKey(account, true, i, pubkey)) continue;
+            for (const OutputType form : {OutputType::LEGACY, OutputType::P2SH_SEGWIT, OutputType::BECH32}) {
+                recent.insert(GetScriptForDestination(GetDestinationForKey(pubkey, form)));
+            }
+            recent.insert(GetScriptForRawPubKey(pubkey));
+        }
+        bool any_paid{false};
+        for (const auto& entry : mapWallet) {
+            const auto& wtx = entry.second;
+            if (wtx.isAbandoned() || wtx.GetDepthInMainChain() < 0) continue;
+            for (const CTxOut& txout : wtx.tx->vout) {
+                if (recent.count(txout.scriptPubKey)) {
+                    any_paid = true;
+                    break;
+                }
+            }
+            if (any_paid) break;
+        }
+        if (!any_paid) index = next - HD_ACCOUNT_KEY_LOOKAHEAD;
+    }
+    CPubKey pubkey;
+    if (!spk_man->GetHDAccountPubKey(account, true, index, pubkey)) {
+        error = _("Unlock the wallet to derive further addresses for this account.");
+        return false;
+    }
+    dest = GetDestinationForKey(pubkey, type);
+    if (!spk_man->HandOutHDAccountChange(account, index)) {
+        error = strprintf(_("The change address of HD account %u could not be written to the wallet."), account);
+        return false;
+    }
+    return true;
+}
+
+std::map<CTxDestination, std::vector<COutput>> CWallet::ListCoins(uint32_t account) const
 {
     AssertLockHeld(cs_wallet);
 
     std::map<CTxDestination, std::vector<COutput>> result;
     std::vector<COutput> availableCoins;
 
-    AvailableCoins(availableCoins);
+    // As with no coin control, but of the one HD account.
+    CCoinControl coin_control;
+    coin_control.m_avoid_address_reuse = IsWalletFlagSet(WALLET_FLAG_AVOID_REUSE);
+    coin_control.m_hd_account = account;
+    AvailableCoins(availableCoins, &coin_control);
 
     for (const COutput& coin : availableCoins) {
         CTxDestination address;
@@ -252,7 +377,8 @@ std::map<CTxDestination, std::vector<COutput>> CWallet::ListCoins() const
         if (it != mapWallet.end()) {
             int depth = it->second.GetDepthInMainChain();
             if (depth >= 0 && output.n < it->second.tx->vout.size() &&
-                IsMine(it->second.tx->vout[output.n]) == is_mine_filter
+                IsMine(it->second.tx->vout[output.n]) == is_mine_filter &&
+                (!HoldsHDAccountKeys() || GetHDAccountOfScript(it->second.tx->vout[output.n].scriptPubKey) == account)
             ) {
                 CTxDestination address;
                 if (ExtractDestination(FindNonChangeParentOutput(*it->second.tx, output.n).scriptPubKey, address)) {
@@ -707,6 +833,26 @@ bool CWallet::CreateTransactionInternal(
     if (!SelectCoins(vAvailableCoins, /* nTargetValue */ selection_target, setCoins, inputs_sum, coin_control, coin_selection_params))
     {
         error = _("Insufficient funds");
+        // What the other HD accounts hold, which this payment may not spend.
+        if (HoldsHDAccountKeys() && coin_control.m_hd_account) {
+            CCoinControl every_account{coin_control};
+            every_account.m_hd_all_accounts = true;
+            every_account.UnSelectAll();
+            // The inputs given are not all that is counted, whatever the payment allows.
+            every_account.m_add_inputs = true;
+            std::vector<COutput> all_coins;
+            AvailableCoins(all_coins, &every_account);
+            CAmount elsewhere{0};
+            for (const COutput& out : all_coins) {
+                if (out.fSpendable && GetHDAccountOfScript(out.tx->tx->vout[out.i].scriptPubKey) != *coin_control.m_hd_account) {
+                    elsewhere += out.tx->tx->vout[out.i].nValue;
+                }
+            }
+            if (elsewhere > 0) {
+                error = strprintf(_("Insufficient funds in HD account %u. This wallet holds %s in other HD accounts, which a payment from HD account %u does not spend."),
+                                  *coin_control.m_hd_account, FormatMoney(elsewhere) + " " + CURRENCY_UNIT, *coin_control.m_hd_account);
+            }
+        }
         return false;
     }
 
@@ -896,12 +1042,24 @@ bool CWallet::CreateTransaction(
 
     LOCK(cs_wallet);
 
+    // The HD account the transaction spends is decided once, with its change
+    // address, before the two attempts below: an account's change address is
+    // handed out by the funding call, whether or not it is used.
+    CCoinControl account_coin_control{coin_control};
+    if (!ResolveHDAccount(account_coin_control, error)) return false;
+    if (*account_coin_control.m_hd_account != 0 && std::get_if<CNoDestination>(&account_coin_control.destChange)) {
+        const OutputType change_type = TransactionChangeType(account_coin_control.m_change_type ? *account_coin_control.m_change_type : m_default_change_type, vecSend);
+        CTxDestination change;
+        if (!GetHDAccountChangeDestination(*account_coin_control.m_hd_account, change_type, change, error)) return false;
+        account_coin_control.destChange = change;
+    }
+
     int nChangePosIn = nChangePosInOut;
     Assert(!tx); // tx is an out-param. TODO change the return type from bool to tx (or nullptr)
-    bool res = CreateTransactionInternal(vecSend, tx, nFeeRet, nChangePosInOut, error, coin_control, fee_calc_out, sign);
+    bool res = CreateTransactionInternal(vecSend, tx, nFeeRet, nChangePosInOut, error, account_coin_control, fee_calc_out, sign);
     // try with avoidpartialspends unless it's enabled already
     if (res && nFeeRet > 0 /* 0 means non-functional fee rate estimation */ && m_max_aps_fee > -1 && !coin_control.m_avoid_partial_spends) {
-        CCoinControl tmp_cc = coin_control;
+        CCoinControl tmp_cc = account_coin_control;
         tmp_cc.m_avoid_partial_spends = true;
         CAmount nFeeRet2;
         CTransactionRef tx2;
