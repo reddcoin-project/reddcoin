@@ -19,6 +19,7 @@
 
 #include <key_io.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <QAction>
@@ -92,6 +93,14 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
         QTableView* tableView = ui->recentRequestsView;
         tableView->setModel(_model->getRecentRequestsTableModel());
         tableView->sortByColumn(RecentRequestsTableModel::Date, Qt::DescendingOrder);
+        // The HD account, the last column, needs room for its number only:
+        // Amount takes the room left, as it did as the last column. Also
+        // over a layout saved before the Account column, whose last
+        // section stretched.
+        tableView->horizontalHeader()->setMinimumSectionSize(std::min<int>(tableView->horizontalHeader()->minimumSectionSize(), ACCOUNT_COLUMN_WIDTH));
+        tableView->horizontalHeader()->setStretchLastSection(false);
+        tableView->horizontalHeader()->setSectionResizeMode(RecentRequestsTableModel::Amount, QHeaderView::Stretch);
+        tableView->setColumnWidth(RecentRequestsTableModel::Account, ACCOUNT_COLUMN_WIDTH);
 
         connect(tableView->selectionModel(),
             &QItemSelectionModel::selectionChanged, this,

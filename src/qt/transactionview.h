@@ -57,6 +57,7 @@ public:
         DATE_COLUMN_WIDTH = 120,
         TYPE_COLUMN_WIDTH = 113,
         AMOUNT_MINIMUM_COLUMN_WIDTH = 120,
+        ACCOUNT_COLUMN_WIDTH = 80,
         MINIMUM_COLUMN_WIDTH = 23
     };
 
