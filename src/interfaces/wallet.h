@@ -12,11 +12,13 @@
 #include <script/standard.h>           // For CTxDestination
 #include <support/allocators/secure.h> // For SecureString
 #include <util/message.h>
+#include <util/translation.h>
 #include <util/ui_change_type.h>
 
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdint.h>
 #include <string>
 #include <tuple>
@@ -42,6 +44,9 @@ namespace interfaces {
 class Handler;
 struct WalletAddress;
 struct WalletBalances;
+struct WalletHDAccount;
+struct WalletHDAccountsState;
+struct WalletRestoreReport;
 struct WalletTx;
 struct WalletMintingOutput;
 struct WalletTxOut;
@@ -87,6 +92,43 @@ public:
 
     //! Whether the scan of a wallet restored from its seed is still owed.
     virtual bool hdRestoreScanOwed() = 0;
+
+    //! Whether the wallet is locked with addresses of its HD accounts still to
+    //! be derived or found (WalletHDAccountsState::unlock_owed), cheaply.
+    virtual bool hdAccountsUnlockOwed() = 0;
+
+    //! What the GUI shows and allows for the HD accounts of the wallet.
+    virtual WalletHDAccountsState getHDAccountsState() = 0;
+
+    //! Account 0 and the accounts handed out, active and retired; not the
+    //! accounts kept ahead. Balances and use only if asked: they take a pass
+    //! over the wallet's transactions.
+    virtual std::vector<WalletHDAccount> listHDAccounts(bool with_balances) = 0;
+
+    //! Create the next HD account (newhdaccount).
+    virtual bool newHDAccount(const std::string& label, bool force, uint32_t& account, CTxDestination& first,
+        std::vector<bilingual_str>& warnings, bilingual_str& error) = 0;
+
+    //! Change the label of an HD account, or retire it or bring it back (sethdaccount).
+    virtual bool setHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired,
+        bilingual_str& error) = 0;
+
+    //! The receive addresses of an HD account above 0 handed out and not yet paid.
+    virtual std::vector<CTxDestination> getUnpaidHDAccountAddresses(uint32_t account) = 0;
+
+    //! Scan the whole block chain for the HD accounts of the seed (rescanhdaccounts).
+    //! found: the accounts this scan found.
+    virtual bool rescanHDAccounts(int count, std::vector<uint32_t>& found, bilingual_str& error) = 0;
+
+    //! A new receive address of an HD account; account 0 is getNewDestination's.
+    virtual bool getNewHDAccountDestination(uint32_t account, OutputType type, const std::string& label,
+        CTxDestination& dest, bilingual_str& error) = 0;
+
+    //! The HD account of a script of the wallet; 0 for any other script.
+    virtual uint32_t getHDAccountOfScript(const CScript& script) = 0;
+
+    //! What a restore from a phrase found, for the report after the wizard.
+    virtual WalletRestoreReport getRestoreReport() = 0;
 
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
@@ -269,10 +311,10 @@ public:
     //! Return credit amount if transaction input belongs to wallet.
     virtual CAmount getCredit(const CTxOut& txout, isminefilter filter) = 0;
 
-    //! Return AvailableCoins + LockedCoins grouped by wallet address.
-    //! (put change in one group with wallet address)
+    //! Return AvailableCoins + LockedCoins of one HD account grouped by wallet
+    //! address (put change in one group with wallet address).
     using CoinsList = std::map<CTxDestination, std::vector<std::tuple<COutPoint, WalletTxOut>>>;
-    virtual CoinsList listCoins() = 0;
+    virtual CoinsList listCoins(uint32_t account) = 0;
 
     //! Return wallet transaction output information.
     virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) = 0;
@@ -435,6 +477,59 @@ struct WalletBalances
     }
 };
 
+//! An HD account as the GUI lists it.
+struct WalletHDAccount
+{
+    uint32_t number = 0;
+    std::string label;
+    bool retired = false;
+    CAmount trusted = 0;
+    CAmount untrusted_pending = 0;
+    CAmount immature = 0;
+    //! Whether a transaction of the wallet pays it.
+    bool used = false;
+};
+
+//! What the GUI shows and allows for the HD accounts of a wallet.
+struct WalletHDAccountsState
+{
+    //! A legacy HD wallet with private keys: the only kind with accounts.
+    bool supported = false;
+    //! The wallet holds an account above 0.
+    bool holds_accounts = false;
+    //! Keys of accounts without the flag (an earlier wallet tool's salvage).
+    bool inconsistent = false;
+    //! The scan of a restored wallet is owed.
+    bool scan_owed = false;
+    //! The wallet is locked, and addresses of its accounts are still to be
+    //! derived or found: after a payment seen while locked, a repair, or a
+    //! scan that looks for accounts.
+    bool unlock_owed = false;
+    //! The wallet is looking for its accounts in the block chain.
+    bool discovery_pending = false;
+    //! Keys of a seed the wallet no longer has, which its phrase does not restore.
+    int earlier_seed_keys = 0;
+    //! Why New account would be refused without force; empty when it would not.
+    bilingual_str new_account_refusal;
+};
+
+//! What a restore from a phrase found.
+struct WalletRestoreReport
+{
+    //! bip32, bip39 or bip44.
+    std::string hd_type;
+    //! The path of the first receive address.
+    std::string first_path;
+    //! Receive and change addresses of account 0 found paid.
+    int used_addresses = 0;
+    //! The accounts above 0 found.
+    std::vector<uint32_t> accounts_found;
+    //! Whether the wallet holds any transaction.
+    bool history = false;
+    //! Whether the scan is still owed.
+    bool scan_owed = false;
+};
+
 // Wallet transaction information.
 struct WalletTx
 {
@@ -443,6 +538,10 @@ struct WalletTx
     std::vector<isminetype> txout_is_mine;
     std::vector<CTxDestination> txout_address;
     std::vector<isminetype> txout_address_is_mine;
+    //! The HD account of each input and output of the wallet; empty when the
+    //! wallet holds no keys of an account above 0.
+    std::vector<uint32_t> txin_account;
+    std::vector<uint32_t> txout_account;
     CAmount credit;
     CAmount debit;
     CAmount change;
