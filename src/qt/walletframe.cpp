@@ -164,6 +164,13 @@ void WalletFrame::gotoMintingPage()
         i.value()->gotoMintingPage();
 }
 
+void WalletFrame::gotoHDAccountsPage()
+{
+    QMap<WalletModel*, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoHDAccountsPage();
+}
+
 void WalletFrame::gotoReceiveCoinsPage()
 {
     QMap<WalletModel*, WalletView*>::const_iterator i;

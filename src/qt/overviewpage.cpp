@@ -345,6 +345,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
 
         // An unlock that moves the seed into its encrypted record can change what there is to say.
         connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateKeysNotice);
+        connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateHDAccountsNotice);
     }
     updateKeysNotice();
 
@@ -416,6 +417,8 @@ void OverviewPage::updateHDAccountsNotice()
     }
     if (walletModel && walletModel->wallet().hdRestoreScanOwed()) {
         lines << tr("The scan of the chain for this restored wallet has not completed. It continues when the wallet is next loaded.");
+    } else if (walletModel && walletModel->wallet().hdAccountsUnlockOwed()) {
+        lines << tr("Unlock the wallet to finish finding addresses of your HD accounts.");
     }
     m_label_hd_accounts_notice->setText(lines.join("\n\n"));
     m_label_hd_accounts_notice->setVisible(!lines.isEmpty());
