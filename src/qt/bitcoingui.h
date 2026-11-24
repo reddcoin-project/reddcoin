@@ -30,8 +30,10 @@
 #endif
 
 #include <memory>
+#include <vector>
 
 class ClientModel;
+struct HDAccountMove;
 class NetworkStyle;
 class Notificator;
 class OptionsModel;
@@ -325,6 +327,8 @@ private:
     /** Move the funds of a wallet whose seed does not restore all of its keys: create a new
         wallet, then open the send page of this one with all its funds to an address of the new one. */
     void moveFundsToNewWallet(WalletModel* from);
+    /** Move funds for a wallet whose HD accounts hold funds: an account at a time */
+    void moveHDAccountsToNewWallet(WalletModel* from, const std::vector<HDAccountMove>& plan);
 
 public Q_SLOTS:
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);

@@ -24,6 +24,7 @@
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
+#include <qt/hdaccountmove.h>
 #include <qt/walletcontroller.h>
 #include <qt/walletframe.h>
 #include <qt/walletmodel.h>
@@ -1626,6 +1627,13 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled, const QStringL
 void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
 {
     if (!from || !m_wallet_controller) return;
+    // A wallet whose HD accounts hold funds moves each account in its own
+    // transaction, to an account of the new wallet.
+    const std::vector<HDAccountMove> plan{PlanHDAccountMove(from->wallet().listHDAccounts(/* with_balances */ true))};
+    if (MovesHDAccounts(plan)) {
+        moveHDAccountsToNewWallet(from, plan);
+        return;
+    }
     const QString name = from->getDisplayName().toHtmlEscaped();
     QMessageBox box(QMessageBox::Information, tr("Move funds to a new wallet"),
         "<qt>" + tr("To move the funds of wallet %1 to a new wallet:").arg(name) + "<ol>" +
@@ -1654,6 +1662,39 @@ void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
         }
         setCurrentWallet(source);
         if (WalletView* view = walletFrame->currentWalletView()) view->sendAllTo(QString::fromStdString(EncodeDestination(dest)), tr("To wallet %1").arg(to->getDisplayName()));
+    });
+    connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
+    activity->create();
+}
+
+void BitcoinGUI::moveHDAccountsToNewWallet(WalletModel* from, const std::vector<HDAccountMove>& plan)
+{
+    const QString name = from->getDisplayName().toHtmlEscaped();
+    const int unit{from->getOptionsModel()->getDisplayUnit()};
+    QMessageBox box(QMessageBox::Information, tr("Move funds to a new wallet"),
+        "<qt>" + tr("To move the funds of wallet %1 to a new wallet:").arg(name) + "<ol>" +
+        "<li>" + tr("Create the new wallet. Choose a legacy mnemonic wallet (bip39 or bip44), and write down its mnemonic phrase: it is the backup of the new wallet.") + "</li>" +
+        "<li>" + tr("Each HD account of wallet %1 that holds funds then moves in its own transaction, to an account of the new wallet; you confirm the transactions first:").arg(name) +
+        "<br>" + DescribeHDAccountMove(plan, unit).toHtmlEscaped().replace("\n", "<br>") + "</li>" +
+        "</ol>" + tr("Coins that are not mature yet, and payments not yet confirmed, stay in wallet %1: move them the same way once they are.").arg(name) + "<br><br>" +
+        tr("Moved coins start their coin age for staking again. Keep the file of wallet %1 until the payments are confirmed.").arg(name) + "</qt>",
+        QMessageBox::Ok | QMessageBox::Cancel, this);
+    if (box.exec() != QMessageBox::Ok) return;
+
+    QPointer<WalletModel> source{from};
+    auto activity = new CreateWalletWizardActivity(m_wallet_controller, this);
+    connect(activity, &CreateWalletWizardActivity::created, this, [this, source, plan](WalletModel* to) {
+        if (!source || !to) return;
+        // Accounts need a legacy wallet whose phrase restores them.
+        if (!to->wallet().isLegacy() || !to->wallet().bip39Enabled() || !to->wallet().getHDAccountsState().supported) {
+            message(tr("Move funds to a new wallet"),
+                tr("The new wallet %1 cannot hold HD accounts: it is not a legacy mnemonic wallet. Nothing was moved. Create a bip39 or bip44 wallet, and use Move funds again.").arg(to->getDisplayName()),
+                CClientUIInterface::MSG_WARNING);
+            return;
+        }
+        QString result;
+        const bool moved{MoveHDAccounts(*source, *to, plan, this, result)};
+        message(tr("Move funds to a new wallet"), result, moved ? CClientUIInterface::MSG_INFORMATION : CClientUIInterface::MSG_WARNING);
     });
     connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
     activity->create();

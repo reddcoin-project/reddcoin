@@ -656,6 +656,10 @@ void SendCoinsDialog::setAddress(const QString &address)
 void SendCoinsDialog::sendAllTo(const QString& address, const QString& label)
 {
     clear();
+    // Move funds sends account 0: a wallet whose other accounts hold funds
+    // moves them an account at a time (MoveHDAccounts).
+    m_account_selector->setAccount(0);
+    applyHDAccount();
     SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(0)->widget());
     if (!entry) return;
     // The address is the new wallet's, so this wallet's address book has no label for it.
