@@ -343,7 +343,7 @@ void TransactionView::updateHDAccounts()
     m_account_widget->clear();
     m_account_widget->addItem(tr("All accounts"));
     for (const interfaces::WalletHDAccount& entry : accounts) {
-        m_account_widget->addItem(entry.label.empty() ? tr("Account %1").arg(entry.number) : tr("Account %1 (%2)").arg(entry.number).arg(QString::fromStdString(entry.label)), entry.number);
+        m_account_widget->addItem(GUIUtil::HDAccountTitle(entry.number, entry.label), entry.number);
     }
     const int index{before.isValid() ? m_account_widget->findData(before) : 0};
     m_account_widget->setCurrentIndex(std::max(index, 0));

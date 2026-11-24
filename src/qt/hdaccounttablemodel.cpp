@@ -5,6 +5,7 @@
 #include <qt/hdaccounttablemodel.h>
 
 #include <qt/bitcoinunits.h>
+#include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/walletmodel.h>
 
@@ -68,7 +69,7 @@ QVariant HDAccountTableModel::data(const QModelIndex& index, int role) const
     case Number:
         return entry->number;
     case Label:
-        if (entry->number == 0 && role == Qt::DisplayRole) return tr("(the wallet's own)");
+        if (role == Qt::DisplayRole) return GUIUtil::HDAccountLabel(entry->number, entry->label);
         return QString::fromStdString(entry->label);
     case State:
         return entry->retired ? tr("Retired") : tr("Active");

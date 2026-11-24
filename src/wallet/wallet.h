@@ -953,6 +953,9 @@ public:
     /** Keypool has new keys */
     boost::signals2::signal<void ()> NotifyCanGetAddressesChanged;
 
+    /** An HD account was handed out, renamed, retired or brought back */
+    boost::signals2::signal<void ()> NotifyHDAccountsChanged;
+
     /**
      * Wallet status (encrypted, locked) changed.
      * Note: Called without locks held.

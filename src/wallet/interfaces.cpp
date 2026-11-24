@@ -751,6 +751,10 @@ public:
     {
         return MakeHandler(m_wallet->NotifyCanGetAddressesChanged.connect(fn));
     }
+    std::unique_ptr<Handler> handleHDAccountsChanged(HDAccountsChangedFn fn) override
+    {
+        return MakeHandler(m_wallet->NotifyHDAccountsChanged.connect(fn));
+    }
     CWallet* wallet() override { return m_wallet.get(); }
 
     std::shared_ptr<CWallet> m_wallet;

@@ -996,6 +996,7 @@ void TestHDAccountsGUI(interfaces::Node& node)
         page.setModel(&walletModel);
         HDAccountTableModel* model = page.tableModel();
         QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(model->index(0, HDAccountTableModel::Label).data().toString(), QString("Default"));
         QCOMPARE(model->index(1, HDAccountTableModel::Number).data().toUInt(), 1U);
         QCOMPARE(model->index(1, HDAccountTableModel::Label).data().toString(), QString("savings"));
         QCOMPARE(model->index(1, HDAccountTableModel::State).data().toString(), QString("Active"));
@@ -1070,6 +1071,7 @@ void TestHDAccountsGUI(interfaces::Node& node)
         HDAccountSelector* selector = sendCoinsDialog.hdAccountSelector();
         QVERIFY(!selector->isHidden());
         QCOMPARE(selector->comboBox()->count(), 3);
+        QCOMPARE(selector->comboBox()->itemText(0), QString("Account 0 (Default)"));
         QVERIFY(selector->comboBox()->itemText(2).contains("retired"));
         QCOMPARE(sendCoinsDialog.findChild<QLabel*>("labelBalance")->text(), BitcoinUnits::formatWithUnit(unit, zero_amount));
         selector->setAccount(1);
@@ -1161,6 +1163,63 @@ void TestHDAccountsGUI(interfaces::Node& node)
         QVERIFY(confirm.contains("marks this wallet"));
         QCOMPARE(int(encryptedModel.wallet().listHDAccounts(false).size()), 2);
         QCOMPARE(encryptedModel.getEncryptionStatus(), WalletModel::Locked);
+    }
+
+    {
+        // An account created outside the GUI, as by the RPC console: the
+        // receive and transaction pages show the Account column and the
+        // account once the wallet tells the GUI. A new address of an account
+        // changes nothing listed, and tells nothing.
+        std::shared_ptr<CWallet> plain = MakeBip39Wallet(node);
+        QVERIFY(plain);
+        // As loading a wallet does (AddWallet).
+        plain->ConnectScriptPubKeyManNotifiers();
+        WalletModel plainModel(interfaces::MakeWallet(plain), clientModel, platformStyle.get());
+        ReceiveCoinsDialog receiveCoinsDialog(platformStyle.get());
+        receiveCoinsDialog.setModel(&plainModel);
+        TransactionView transactionView(platformStyle.get());
+        transactionView.setModel(&plainModel);
+        QTableView* requests = receiveCoinsDialog.findChild<QTableView*>("recentRequestsView");
+        QTableView* table = transactionView.findChild<QTableView*>("transactionView");
+        QVERIFY(requests->isColumnHidden(RecentRequestsTableModel::Account));
+        QVERIFY(table->isColumnHidden(TransactionTableModel::Account));
+
+        int told{0};
+        QObject::connect(&plainModel, &WalletModel::hdAccountsChanged, [&told] { ++told; });
+        {
+            LOCK(plain->cs_wallet);
+            uint32_t account{0};
+            CTxDestination first;
+            std::vector<bilingual_str> warnings;
+            bilingual_str error;
+            QVERIFY(plain->NewHDAccount("outside", /* force */ true, account, first, warnings, error));
+            QCOMPARE(account, 1U);
+        }
+        QCoreApplication::processEvents();
+        QVERIFY(told > 0);
+        QVERIFY(!requests->isColumnHidden(RecentRequestsTableModel::Account));
+        QVERIFY(!table->isColumnHidden(TransactionTableModel::Account));
+        QComboBox* filter{nullptr};
+        for (QComboBox* combo : transactionView.findChildren<QComboBox*>()) {
+            if (combo->itemText(0) == "All accounts") filter = combo;
+        }
+        QVERIFY(filter);
+        QCOMPARE(filter->itemText(1), QString("Account 0 (Default)"));
+        QCOMPARE(filter->itemText(2), QString("Account 1 (outside)"));
+
+        told = 0;
+        CTxDestination dest;
+        bilingual_str error;
+        QVERIFY(plainModel.wallet().getNewHDAccountDestination(1, OutputType::LEGACY, "", dest, error));
+        QCoreApplication::processEvents();
+        QCOMPARE(told, 0);
+        {
+            LOCK(plain->cs_wallet);
+            QVERIFY(plain->SetHDAccount(1, std::string{"renamed"}, std::nullopt, error));
+        }
+        QCoreApplication::processEvents();
+        QVERIFY(told > 0);
+        QCOMPARE(filter->itemText(2), QString("Account 1 (renamed)"));
     }
 
     {

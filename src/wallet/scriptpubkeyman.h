@@ -287,6 +287,9 @@ public:
 
     /** Keypool has new keys */
     boost::signals2::signal<void ()> NotifyCanGetAddressesChanged;
+
+    /** An HD account was handed out, renamed, retired or brought back */
+    boost::signals2::signal<void ()> NotifyHDAccountsChanged;
 };
 
 /** OutputTypes supported by the LegacyScriptPubKeyMan */
