@@ -419,9 +419,6 @@ KNOWN_FAILING_SCRIPTS = {
     # Test side: the test relies on develop-only behaviour.
     'feature_pos_tx_version_floor.py': 'RED-167: test side, develop-only transaction version floor',
     'rpc_help.py': 'RED-167: test side, RPC client conversion table differs from develop\'s',
-    'wallet_createwallet.py --legacy-wallet': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
-    'wallet_createwallet.py --usecli': 'RED-167: test side, develop\'s BIP39 createwallet arguments',
-    'wallet_restore_from_mnemonic.py --legacy-wallet': 'RED-257: test side, develop\'s BIP39 createwallet arguments',
     # Not yet examined.
     'p2p_compactblocks.py': 'RED-167: not yet examined (unexpected block type 2)',
     'p2p_eviction.py': 'RED-167: not yet examined',
@@ -481,7 +478,6 @@ EXPECTED_UNCOVERED_RPCS = {
 # have to leave this map too and count for coverage again.
 KNOWN_FAILING_COVERED_RPCS = {
     'generateblock': ['rpc_generateblock.py', 'wallet_bumpfee.py --legacy-wallet', 'wallet_bumpfee.py --descriptors'],
-    'gethdwalletinfo': ['wallet_createwallet.py --legacy-wallet'],
     'getinterest': ['wallet_interest.py'],
     'getstakinginfo': ['rpc_staking.py', 'wallet_staking_thread.py'],
     'psbtbumpfee': ['wallet_bumpfee.py --legacy-wallet'],
