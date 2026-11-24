@@ -989,6 +989,8 @@ BOOST_AUTO_TEST_CASE(gui_interface)
     BOOST_CHECK_EQUAL(state.earlier_seed_keys, 0);
     // Account 0 has no confirmed payment: New account would be refused.
     BOOST_CHECK_MESSAGE(state.new_account_refusal.original.rfind("Account 0 has not received a confirmed payment", 0) == 0, state.new_account_refusal.original);
+    // That is the account rule alone, which force overrides.
+    BOOST_CHECK(state.new_account_forceable);
 
     uint32_t account{0};
     CTxDestination first;
@@ -1015,6 +1017,7 @@ BOOST_AUTO_TEST_CASE(gui_interface)
     BOOST_CHECK_EQUAL(gui->listHDAccounts(false)[1].trusted, 0);
     // Account 1 is paid: the next can be created.
     BOOST_CHECK(gui->getHDAccountsState().new_account_refusal.empty());
+    BOOST_CHECK(!gui->getHDAccountsState().new_account_forceable);
 
     // The coins of one account.
     size_t listed{0};

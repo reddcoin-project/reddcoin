@@ -187,7 +187,7 @@ public:
         state.earlier_seed_keys = m_wallet->CountKeysOfEarlierSeed();
         if (state.supported) {
             LOCK(m_wallet->cs_wallet);
-            state.new_account_refusal = m_wallet->NewHDAccountRefusal();
+            state.new_account_refusal = m_wallet->NewHDAccountRefusal(&state.new_account_forceable);
         }
         return state;
     }

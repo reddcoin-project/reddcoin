@@ -7,19 +7,49 @@
 
 #include <qt/walletmodel.h>
 
+#include <QDialog>
 #include <QWidget>
 
 #include <memory>
+#include <optional>
 #include <thread>
 
 class HDAccountTableModel;
 class PlatformStyle;
 
 QT_BEGIN_NAMESPACE
+class QCheckBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QTableView;
 QT_END_NAMESPACE
+
+/** Asks for the label of a new HD account. When the account before it has no
+ *  confirmed payment, it says what that means for a restore, and creates the
+ *  account only once "Create anyway" is ticked (force). */
+class NewHDAccountDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    //! unpaid: the account before, when it has no confirmed payment.
+    NewHDAccountDialog(uint32_t account, std::optional<uint32_t> unpaid, QWidget* parent = nullptr);
+
+    QString label() const;
+    //! Whether the account is created despite the account rule.
+    bool force() const;
+
+    QLineEdit* labelEdit() const { return m_label; }
+    //! Null when the account rule is met.
+    QCheckBox* forceCheckBox() const { return m_force; }
+    QPushButton* createButton() const { return m_create; }
+
+private:
+    QLineEdit* m_label;
+    QCheckBox* m_force{nullptr};
+    QPushButton* m_create;
+};
 
 /** The HD accounts of a legacy HD wallet: what each holds, and creating,
  *  renaming, retiring and finding them. */
@@ -66,6 +96,8 @@ protected:
 private:
     //! The account of the selected row, if a row is selected.
     const interfaces::WalletHDAccount* selectedAccount() const;
+    //! The highest account listed: the one the next account follows.
+    uint32_t highestAccount() const;
     void updateButtons();
     //! Stop a running scan and wait for its thread.
     void stopScan();

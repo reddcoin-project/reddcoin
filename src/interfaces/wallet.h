@@ -515,6 +515,9 @@ struct WalletHDAccountsState
     int earlier_seed_keys = 0;
     //! Why New account would be refused without force; empty when it would not.
     bilingual_str new_account_refusal;
+    //! The refusal is the account rule alone (the account before has no
+    //! confirmed payment), which force overrides.
+    bool new_account_forceable = false;
 };
 
 //! What a restore from a phrase found.
