@@ -14,17 +14,59 @@
 #include <qt/hdaccounttablemodel.h>
 #include <qt/platformstyle.h>
 
+#include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTableView>
 #include <QVBoxLayout>
 
 #include <optional>
+
+NewHDAccountDialog::NewHDAccountDialog(uint32_t account, std::optional<uint32_t> unpaid, QWidget* parent)
+    : QDialog(parent),
+      m_label(new QLineEdit(this))
+{
+    setWindowTitle(tr("New HD account"));
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    QLabel* prompt = new QLabel(tr("A label for account %1, and for its first address (optional):").arg(account), this);
+    prompt->setWordWrap(true);
+    layout->addWidget(prompt);
+    layout->addWidget(m_label);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
+    m_create = buttons->addButton(tr("&Create"), QDialogButtonBox::AcceptRole);
+    if (unpaid) {
+        QLabel* rule = new QLabel(tr("Account %1 has not received a confirmed payment. A restore from the phrase, in %2 or in another BIP44 wallet, looks for an account only after the one before it was paid: until account %1 is paid, a restore may not find account %3 and its coins.").arg(*unpaid).arg(PACKAGE_NAME).arg(account), this);
+        rule->setObjectName("ruleLabel");
+        rule->setWordWrap(true);
+        layout->addWidget(rule);
+        m_force = new QCheckBox(tr("Create account %1 anyway").arg(account), this);
+        layout->addWidget(m_force);
+        m_create->setEnabled(false);
+        connect(m_force, &QCheckBox::toggled, m_create, &QPushButton::setEnabled);
+    }
+    m_create->setDefault(true);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+}
+
+QString NewHDAccountDialog::label() const
+{
+    return m_label->text();
+}
+
+bool NewHDAccountDialog::force() const
+{
+    return m_force && m_force->isChecked();
+}
 
 HDAccountsPage::HDAccountsPage(const PlatformStyle* platform_style, QWidget* parent)
     : QWidget(parent),
@@ -178,6 +220,12 @@ void HDAccountsPage::refresh()
     updateButtons();
 }
 
+uint32_t HDAccountsPage::highestAccount() const
+{
+    if (!m_table_model || m_table_model->rowCount() == 0) return 0;
+    return m_table_model->account(m_table_model->rowCount() - 1)->number;
+}
+
 const interfaces::WalletHDAccount* HDAccountsPage::selectedAccount() const
 {
     if (!m_table_model || !m_view->selectionModel()) return nullptr;
@@ -192,8 +240,15 @@ void HDAccountsPage::updateButtons()
     const bool above_zero{selected && selected->number > 0};
 
     const QString refusal{QString::fromStdString(m_state.new_account_refusal.translated)};
-    m_new_button->setEnabled(usable && refusal.isEmpty());
-    m_new_refusal->setText(refusal.isEmpty() ? QString() : tr("New account is not available: %1").arg(refusal));
+    // The account rule alone can be overridden: New account says what that means.
+    m_new_button->setEnabled(usable && (refusal.isEmpty() || m_state.new_account_forceable));
+    if (refusal.isEmpty()) {
+        m_new_refusal->clear();
+    } else if (m_state.new_account_forceable) {
+        m_new_refusal->setText(tr("Account %1 has not received a confirmed payment: a restore from the phrase may not find an account created before it is paid.").arg(highestAccount()));
+    } else {
+        m_new_refusal->setText(tr("New account is not available: %1").arg(refusal));
+    }
     m_new_refusal->setVisible(usable && !refusal.isEmpty());
 
     m_rename_button->setEnabled(usable && above_zero);
@@ -210,14 +265,16 @@ void HDAccountsPage::newAccount()
 {
     if (!m_model) return;
     refresh();
-    if (!m_state.new_account_refusal.empty()) {
+    if (!m_state.new_account_refusal.empty() && !m_state.new_account_forceable) {
         Q_EMIT message(tr("New HD account"), QString::fromStdString(m_state.new_account_refusal.translated), CClientUIInterface::MSG_WARNING);
         return;
     }
-    bool ok{false};
-    const QString label = QInputDialog::getText(this, tr("New HD account"),
-        tr("A label for the account, and for its first address (optional):"), QLineEdit::Normal, QString(), &ok);
-    if (!ok) return;
+    const uint32_t highest{highestAccount()};
+    const std::optional<uint32_t> unpaid{m_state.new_account_forceable ? std::optional<uint32_t>{highest} : std::nullopt};
+    NewHDAccountDialog dialog(highest + 1, unpaid, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    const QString label{dialog.label()};
+    const bool force{dialog.force()};
 
     if (!m_state.holds_accounts) {
         // The first account marks the wallet, and it keeps its seed from then on.
@@ -237,7 +294,7 @@ void HDAccountsPage::newAccount()
     std::vector<bilingual_str> warnings;
     bilingual_str error;
     std::optional<WalletModel::UnlockContext> unlock;
-    bool created = m_model->wallet().newHDAccount(label.toStdString(), /* force */ false, account, first, warnings, error);
+    bool created = m_model->wallet().newHDAccount(label.toStdString(), force, account, first, warnings, error);
     if (!created && m_model->getEncryptionStatus() == WalletModel::Locked) {
         // The first account, and an account whose keys are not yet derived,
         // need the seed: ask for the passphrase, and try again.
@@ -245,7 +302,7 @@ void HDAccountsPage::newAccount()
         if (!unlock->isValid()) return;
         warnings.clear();
         error = {};
-        created = m_model->wallet().newHDAccount(label.toStdString(), /* force */ false, account, first, warnings, error);
+        created = m_model->wallet().newHDAccount(label.toStdString(), force, account, first, warnings, error);
     }
     if (!created) {
         Q_EMIT message(tr("New HD account"), QString::fromStdString(error.translated), CClientUIInterface::MSG_ERROR);
@@ -256,7 +313,12 @@ void HDAccountsPage::newAccount()
 
     QString text{tr("HD account %1 was created. Its first address is %2.").arg(account).arg(QString::fromStdString(EncodeDestination(first)))};
     text += "\n\n" + tr("A restore finds accounts by number, not by label: note the number.");
-    for (const bilingual_str& warning : warnings) text += "\n\n" + QString::fromStdString(warning.translated);
+    if (force) text += "\n\n" + tr("Pay account %1, so that a restore from the phrase finds account %2.").arg(highest).arg(account);
+    for (const bilingual_str& warning : warnings) {
+        // The account rule, said above in the words of this page.
+        if (force && warning.original == m_state.new_account_refusal.original) continue;
+        text += "\n\n" + QString::fromStdString(warning.translated);
+    }
     Q_EMIT message(tr("New HD account"), text, CClientUIInterface::MSG_INFORMATION);
 }
 

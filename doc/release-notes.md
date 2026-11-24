@@ -951,13 +951,15 @@ GUI
 - HD accounts in the GUI (see Wallet above), for legacy HD wallets with
   private keys:
   - An **Accounts** tab, beside Receive, lists account 0 and the wallet's
-    accounts with their label, state and balances. It creates the next
-    account, renames, retires or brings back an account, lists the unpaid
-    receive addresses of an account, and looks for accounts in the block
-    chain (**Find accounts**, as `rescanhdaccounts`). New account is
-    disabled, with the reason, until the account before the next one has a
-    confirmed payment, and the first account asks for confirmation, since it
-    marks the wallet.
+    accounts with their label, state and balances; account 0 is shown as
+    "Default". It creates the next account, renames, retires or brings back
+    an account, lists the unpaid receive addresses of an account, and looks
+    for accounts in the block chain (**Find accounts**, as
+    `rescanhdaccounts`). While the account before the next one has no
+    confirmed payment, New account explains that a restore may not find the
+    new account, and creates it only when **Create anyway** is ticked (as
+    `force`). The first account asks for confirmation, since it marks the
+    wallet.
   - The Send page has a **Spend from** selector at the top. The balance,
     Use available balance, coin control and the payment follow the account
     chosen; changing it clears the coins chosen in coin control.

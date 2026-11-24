@@ -308,9 +308,10 @@ CWallet::HDRestoreReport CWallet::GetHDRestoreReport() const
     return report;
 }
 
-bilingual_str CWallet::NewHDAccountRefusal() const
+bilingual_str CWallet::NewHDAccountRefusal(bool* forceable) const
 {
     AssertLockHeld(cs_wallet);
+    if (forceable) *forceable = false;
     const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
     if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) || !spk_man) return Untranslated(HD_ACCOUNTS_LEGACY_ONLY);
     if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !spk_man->IsHDEnabled()) return _("HD accounts need an HD wallet with private keys.");
@@ -319,7 +320,10 @@ bilingual_str CWallet::NewHDAccountRefusal() const
     if (!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS) && spk_man->IsHDAccountDiscoveryPending()) {
         return _("This wallet is looking for its HD accounts in the block chain. Try again once that scan has finished.");
     }
-    if (!IsHDAccountUsed(highest, /* confirmed_only */ true)) return HDAccountRule(highest);
+    if (!IsHDAccountUsed(highest, /* confirmed_only */ true)) {
+        if (forceable) *forceable = true;
+        return HDAccountRule(highest);
+    }
     return {};
 }
 

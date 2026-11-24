@@ -598,7 +598,7 @@ public:
     //! The number of keys of a seed the wallet no longer has.
     int CountKeysOfEarlierSeed() const;
     //! Why NewHDAccount would refuse without force, if it would.
-    bilingual_str NewHDAccountRefusal() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bilingual_str NewHDAccountRefusal(bool* forceable = nullptr) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     //! Change the label of an HD account, or retire it or bring it back.
     bool SetHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 

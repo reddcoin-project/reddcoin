@@ -888,6 +888,37 @@ void AnswerQuestion(QString* text = nullptr)
     });
 }
 
+//! What the New account dialog showed when it was answered.
+struct NewAccountAnswer {
+    bool asked{false};
+    bool create_enabled{false}; //!< before Create anyway is ticked
+    QString rule;               //!< the account rule, when it was shown
+};
+
+//! Answer the New account dialog that opens next: give the label, and tick
+//! Create anyway when the dialog has it and force is set. Without force, a
+//! dialog whose Create is disabled is cancelled.
+void AnswerNewAccount(const QString& label, bool force, NewAccountAnswer* answer, std::function<void()> then = {})
+{
+    QTimer::singleShot(0, [label, force, answer, then]() {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            NewHDAccountDialog* dialog = qobject_cast<NewHDAccountDialog*>(widget);
+            if (!dialog || !dialog->isVisible()) continue;
+            answer->asked = true;
+            answer->create_enabled = dialog->createButton()->isEnabled();
+            if (QLabel* rule = dialog->findChild<QLabel*>("ruleLabel")) answer->rule = rule->text();
+            dialog->labelEdit()->setText(label);
+            if (force && dialog->forceCheckBox()) dialog->forceCheckBox()->setChecked(true);
+            if (dialog->createButton()->isEnabled()) {
+                dialog->createButton()->click();
+            } else {
+                dialog->reject();
+            }
+        }
+        if (then) QTimer::singleShot(0, then);
+    });
+}
+
 //! A bip39 wallet on a mock database, at the fixture's tip.
 std::shared_ptr<CWallet> MakeBip39Wallet(interfaces::Node& node)
 {
@@ -1024,15 +1055,25 @@ void TestHDAccountsGUI(interfaces::Node& node)
         // and not yet paid; the next account is refused until it is paid.
         QString created;
         QObject::connect(&page, &HDAccountsPage::message, [&](const QString&, const QString& text, unsigned int) { created = text; });
-        AnswerInput("travel");
+        NewAccountAnswer answer;
+        AnswerNewAccount("travel", /* force */ false, &answer);
         page.newAccount();
+        QVERIFY(answer.asked && answer.create_enabled && answer.rule.isEmpty());
         QVERIFY(created.startsWith("HD account 2 was created."));
         page.refresh();
         QCOMPARE(model->rowCount(), 3);
         QCOMPARE(model->index(2, HDAccountTableModel::Label).data().toString(), QString("travel"));
-        QVERIFY(!page.newAccountButton()->isEnabled());
+        // The rule can be overridden: the button stays, and says why it asks.
+        QVERIFY(page.newAccountButton()->isEnabled());
         QVERIFY(!page.newAccountRefusalLabel()->isHidden());
         QVERIFY(page.newAccountRefusalLabel()->text().contains("Account 2 has not received a confirmed payment"));
+        // Without Create anyway, nothing is created.
+        answer = {};
+        AnswerNewAccount("not yet", /* force */ false, &answer);
+        page.newAccount();
+        QVERIFY(answer.asked && !answer.create_enabled);
+        QVERIFY(answer.rule.contains("until account 2 is paid, a restore may not find account 3"));
+        QCOMPARE(int(walletModel.wallet().listHDAccounts(false).size()), 3);
 
         // Its unpaid address.
         page.tableView()->selectRow(2);
@@ -1157,11 +1198,30 @@ void TestHDAccountsGUI(interfaces::Node& node)
         page.setModel(&encryptedModel);
         QVERIFY(page.newAccountButton()->isEnabled());
         QString confirm;
-        AnswerInput("first", [&confirm] { AnswerQuestion(&confirm); });
+        NewAccountAnswer answer;
+        AnswerNewAccount("first", /* force */ false, &answer, [&confirm] { AnswerQuestion(&confirm); });
         page.newAccount();
         QCOMPARE(asked, 1);
         QVERIFY(confirm.contains("marks this wallet"));
         QCOMPARE(int(encryptedModel.wallet().listHDAccounts(false).size()), 2);
+        QCOMPARE(encryptedModel.getEncryptionStatus(), WalletModel::Locked);
+
+        // Account 1 is not paid: account 2 is created only with Create anyway.
+        page.refresh();
+        QVERIFY(page.newAccountButton()->isEnabled());
+        QVERIFY(page.newAccountRefusalLabel()->text().contains("Account 1 has not received a confirmed payment"));
+        QString created;
+        QObject::connect(&page, &HDAccountsPage::message, [&](const QString&, const QString& text, unsigned int) { created = text; });
+        answer = {};
+        AnswerNewAccount("second", /* force */ true, &answer);
+        page.newAccount();
+        QVERIFY(answer.asked && !answer.create_enabled);
+        QVERIFY(created.startsWith("HD account 2 was created."));
+        QVERIFY(created.contains("Pay account 1, so that a restore from the phrase finds account 2."));
+        QVERIFY(!created.contains("pass force"));
+        const std::vector<interfaces::WalletHDAccount> encrypted_accounts{encryptedModel.wallet().listHDAccounts(false)};
+        QCOMPARE(int(encrypted_accounts.size()), 3);
+        QCOMPARE(encrypted_accounts[2].label, std::string{"second"});
         QCOMPARE(encryptedModel.getEncryptionStatus(), WalletModel::Locked);
     }
 
