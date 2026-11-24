@@ -429,6 +429,21 @@ private:
     //! is written to a wallet until one is found used, so a wallet that has
     //! none is left as it was. Empty when no restore is looking for accounts.
     std::vector<DiscoveryKey> m_hd_discovery_keys GUARDED_BY(cs_KeyStore);
+    //! The accounts whose keys are all in m_hd_discovery_keys.
+    std::set<uint32_t> m_hd_discovery_accounts GUARDED_BY(cs_KeyStore);
+    //! How many accounts past the highest used the scan looks at.
+    uint32_t m_hd_discovery_count GUARDED_BY(cs_KeyStore){1};
+    //! Keys of the active seed whose metadata was lost, as an earlier wallet
+    //! tool's salvage leaves them, or keys of accounts without the flag: to
+    //! be matched against the seed's accounts when the seed can be read.
+    bool m_hd_account_repair_owed GUARDED_BY(cs_KeyStore){false};
+
+    //! Derive the keys of `account` into the key store, in memory only.
+    bool KeepHDAccountInMemory(uint32_t account) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Write the keys kept in memory of `accounts`, with their witness scripts.
+    bool WriteHDDiscoveryKeys(WalletBatch& batch, const std::set<uint32_t>& accounts) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! `accounts`, written, are the wallet's: no longer kept in memory only.
+    void KeepHDDiscoveryAccounts(const std::set<uint32_t>& accounts) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
 
     //! Count a key of an HD account in the extents and the script map.
     void IndexHDAccountKey(const CPubKey& pubkey, const CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
@@ -628,19 +643,42 @@ public:
     //! consistent: once every record has been read (used by LoadWallet).
     void DecideHDAccounts();
 
-    //! A restore from a mnemonic phrase: keep account 1 ahead, in memory only,
-    //! so that the scan that follows recognises payments to it. False when
-    //! the wallet holds accounts already, is not HD or cannot derive now.
-    bool BeginHDAccountDiscovery();
-    //! Whether a restore is looking for HD accounts.
+    //! A restore, or rescanhdaccounts: keep the accounts past the highest
+    //! used, up to `count` of them, ahead in memory only, so that the scan
+    //! that follows recognises payments to them. An account the wallet holds
+    //! already is not kept again. False when no account is to be kept, the
+    //! wallet is not HD or cannot derive now.
+    bool BeginHDAccountDiscovery(uint32_t count = 1);
+    //! Whether a scan is looking for HD accounts.
     bool IsHDAccountDiscoveryPending() const;
-    //! A transaction the scan found pays an HD account above 0: write the
-    //! keys kept in memory, the account records, the flag and
-    //! FEATURE_HD_ACCOUNTS in one transaction. Needs the wallet's lock.
-    bool CommitHDAccountDiscovery();
-    //! The scan has ended: forget the keys kept in memory if no account was
-    //! found used. The wallet is then as if it had not looked.
+    //! A transaction the scan found pays HD account `paid`, above 0: keep
+    //! `count` accounts past it ahead in memory, and write the keys kept in
+    //! memory of the accounts up to the one after it, their records, and,
+    //! in a wallet without accounts yet, the flag and FEATURE_HD_ACCOUNTS,
+    //! in one transaction. Needs the wallet's lock.
+    bool CommitHDAccountDiscovery(uint32_t paid);
+    //! The scan has ended: forget the keys still kept in memory, of accounts
+    //! not found used. A wallet in which none was found is then as if it had
+    //! not looked.
     void EndHDAccountDiscovery();
+
+    //! Whether the seed has to stay: the wallet holds HD accounts, or keys of
+    //! them not yet marked, or a scan holds accounts of the seed in memory.
+    bool KeepsHDSeed() const;
+
+    //! Whether the wallet holds keys of an HD seed other than its active one,
+    //! as a plain HD wallet does once encryption or sethdseed replaced its seed.
+    bool HoldsInactiveSeedKeys() const;
+    //! Whether keys may be of HD accounts that the wallet does not know as such.
+    bool IsHDAccountRepairOwed() const;
+    //! Match the keys of the wallet against the accounts of its seed, account
+    //! 1 and the account after each one it holds keys of, with a gap of
+    //! HD_ACCOUNT_KEY_LOOKAHEAD keys on each chain; write the metadata of the
+    //! keys that lost it, a record of each account found, and, if any was,
+    //! the flag and FEATURE_HD_ACCOUNTS, in one
+    //! transaction. `found` gets the accounts found. False, and still owed,
+    //! when the seed cannot be read now.
+    bool RepairHDAccountKeys(std::vector<uint32_t>& found);
 
     //! Add a key DeriveHDAccountKey derived, with its metadata, written in
     //! `batch`, and the witness scripts of the key, so that a payment to any

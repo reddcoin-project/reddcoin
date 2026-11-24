@@ -78,8 +78,8 @@ struct HDAccountSpendSetup : public TestChain100Setup {
     std::optional<CAmount> m_coin_value;
 
     //! Pay each script a coinbase of the chain, in one staked block, and
-    //! wait for the wallet to see it.
-    void Fund(const std::vector<CScript>& scripts)
+    //! wait for the wallet to see it, unless it is not to: `seen` false.
+    void Fund(const std::vector<CScript>& scripts, bool seen = true)
     {
         std::vector<CMutableTransaction> txs;
         {
@@ -104,6 +104,7 @@ struct HDAccountSpendSetup : public TestChain100Setup {
         SetMockTime(GetTime() + 60);
         CreateAndProcessPoSBlock(txs, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_wallet);
         wallet->BlockUntilSyncedToCurrentChain();
+        if (!seen) return;
         LOCK(wallet->cs_wallet);
         for (const CMutableTransaction& tx : txs) {
             BOOST_REQUIRE(wallet->mapWallet.count(tx.GetHash()));
@@ -232,6 +233,77 @@ struct HDAccountSpendSetup : public TestChain100Setup {
     {
         int height;
         return WITH_LOCK(restored.cs_wallet, return WalletBatch(restored.GetDatabase()).ReadRestoreScan(height));
+    }
+
+    //! The bytes of a record's key, written as they are.
+    struct RawKey {
+        std::vector<unsigned char> bytes;
+        template <typename Stream>
+        void Serialize(Stream& s) const { s.write(reinterpret_cast<const char*>(bytes.data()), bytes.size()); }
+    };
+
+    //! What the wallet tool of a version before HD accounts makes of a
+    //! wallet's file when it salvages it: the keys, the master keys, the
+    //! chain and its secrets, and a flags record holding the bit that says
+    //! the secrets are encrypted. The metadata and witness scripts of the
+    //! keys, the version, the other flags, the account records and the
+    //! transactions are gone. The wallet is loaded again from the result:
+    //! without a chain if `attach` is false, so that its worker does not run.
+    std::shared_ptr<CWallet> OldSalvage(std::shared_ptr<CWallet>&& salvaged, bool attach = true)
+    {
+        const std::string name{salvaged->GetName()};
+        Release(std::move(salvaged));
+        {
+            DatabaseOptions options;
+            options.require_existing = true;
+            DatabaseStatus status;
+            bilingual_str error;
+            std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+            BOOST_REQUIRE_MESSAGE(database, error.original);
+            std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+            uint64_t flags{0};
+            BOOST_REQUIRE(batch->Read(DBKeys::FLAGS, flags));
+            const std::set<std::string> kept{DBKeys::KEY, "wkey", DBKeys::MASTER_KEY, DBKeys::CRYPTED_KEY, DBKeys::HDCHAIN, DBKeys::HDSECRETS};
+            std::vector<RawKey> erased;
+            bool secrets{false};
+            BOOST_REQUIRE(batch->StartCursor());
+            while (true) {
+                CDataStream key(SER_DISK, CLIENT_VERSION);
+                CDataStream value(SER_DISK, CLIENT_VERSION);
+                bool complete;
+                const bool read{batch->ReadAtCursor(key, value, complete)};
+                if (complete) break;
+                BOOST_REQUIRE(read);
+                RawKey raw{std::vector<unsigned char>(key.begin(), key.end())};
+                std::string type;
+                key >> type;
+                secrets |= type == DBKeys::HDSECRETS;
+                if (!kept.count(type)) erased.push_back(std::move(raw));
+            }
+            batch->CloseCursor();
+            for (const RawKey& raw : erased) BOOST_REQUIRE(batch->Erase(raw));
+            if (secrets) BOOST_REQUIRE(batch->Write(DBKeys::FLAGS, flags & WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        }
+        if (!attach) {
+            DatabaseOptions options;
+            options.require_existing = true;
+            DatabaseStatus status;
+            bilingual_str error;
+            std::vector<bilingual_str> warnings;
+            std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+            BOOST_REQUIRE_MESSAGE(database, error.original);
+            std::shared_ptr<CWallet> loaded = CWallet::Create(/* chain */ nullptr, name, std::move(database), 0, WalletOptions{}, error, warnings);
+            BOOST_REQUIRE_MESSAGE(loaded, error.original);
+            return loaded;
+        }
+        DatabaseOptions options;
+        options.require_existing = true;
+        DatabaseStatus status;
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        std::shared_ptr<CWallet> loaded = LoadWallet(*m_node.chain, name, std::nullopt, options, status, error, warnings);
+        BOOST_REQUIRE_MESSAGE(loaded, error.original);
+        return loaded;
     }
 
     static CScript Elsewhere()
@@ -531,14 +603,15 @@ BOOST_AUTO_TEST_CASE(restore_without_accounts_keeps_nothing_of_them)
 
 // A restore cut short leaves its scan owed, and the scan at the next load
 // looks for the accounts again. One that had not looked is made here with
-// hd_accounts false and the record of the scan owed written back.
+// hd_accounts false and the records of the scan owed written back as a
+// restore that looks leaves them.
 BOOST_AUTO_TEST_CASE(restore_scan_owed_finds_accounts_at_the_next_load)
 {
     Fund({AccountScript(1, false, 0), AccountScript(1, false, 1, OutputType::BECH32)});
     std::shared_ptr<CWallet> restored = Restore("cut_short", /* hd_accounts */ false);
     BOOST_CHECK(!restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
     BOOST_CHECK_EQUAL(AccountCoins(*restored, 1), 0U);
-    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
+    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).EraseRestoreScan() && WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
 
     restored = Reload(std::move(restored));
     BOOST_CHECK(restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
@@ -547,6 +620,31 @@ BOOST_AUTO_TEST_CASE(restore_scan_owed_finds_accounts_at_the_next_load)
     BOOST_CHECK_EQUAL(AccountCoins(*restored, 1), 2U);
     BOOST_CHECK(!ScanOwed(*restored));
     Release(std::move(restored));
+}
+
+// A restore asked not to look for HD accounts and cut short does not look at
+// the next load either, nor at the unlock of an encrypted wallet: the choice
+// is in the file until the scan has completed.
+BOOST_AUTO_TEST_CASE(declined_restore_does_not_look_when_done_again)
+{
+    const SecureString passphrase{"passphrase"};
+    Fund({AccountScript(1, false, 0)});
+    for (const bool encrypted : {false, true}) {
+        std::shared_ptr<CWallet> restored = Restore(strprintf("declined_%d", encrypted), /* hd_accounts */ false, encrypted ? passphrase : SecureString{});
+        // Cut short: the scan is owed again, and the choice is still in the file.
+        BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).WriteRestoreScan(0) && WalletBatch(restored->GetDatabase()).WriteHDAccountsDeclined()));
+        restored = Reload(std::move(restored));
+        if (encrypted) {
+            BOOST_REQUIRE(restored->Unlock(passphrase));
+            restored->SyncWithHDAccountWorker();
+        }
+        BOOST_CHECK(!restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+        BOOST_CHECK_EQUAL(restored->GetVersion(), FEATURE_LATEST);
+        BOOST_CHECK_EQUAL(AccountCoins(*restored, 1), 0U);
+        BOOST_CHECK(!ScanOwed(*restored));
+        if (encrypted) BOOST_REQUIRE(restored->Lock());
+        Release(std::move(restored));
+    }
 }
 
 // An encrypted wallet whose restore was cut short cannot derive at load, so
@@ -558,7 +656,7 @@ BOOST_AUTO_TEST_CASE(encrypted_restore_scan_owed_finds_accounts_at_unlock)
     Fund({AccountScript(1, false, 0)});
     std::shared_ptr<CWallet> restored = Restore("cut_short_encrypted", /* hd_accounts */ false, passphrase);
     BOOST_REQUIRE(restored->IsLocked());
-    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
+    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).EraseRestoreScan() && WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
 
     restored = Reload(std::move(restored));
     BOOST_REQUIRE(restored->IsLocked());
@@ -572,6 +670,304 @@ BOOST_AUTO_TEST_CASE(encrypted_restore_scan_owed_finds_accounts_at_unlock)
     BOOST_CHECK(!ScanOwed(*restored));
     BOOST_REQUIRE(restored->Lock());
     Release(std::move(restored));
+}
+
+// An account that a scan holds in memory only and that is made the wallet's
+// during the scan, here handed out with force while rescanhdaccounts looks
+// two accounts ahead, keeps every key when the scan ends: the keys held in
+// memory are written before those derived after them.
+BOOST_AUTO_TEST_CASE(account_made_during_a_scan_keeps_its_keys)
+{
+    {
+        LOCK(wallet->cs_wallet);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_REQUIRE(spk_man.BeginHDAccountDiscovery(/* count */ 3));
+        uint32_t account;
+        CTxDestination dest;
+        std::vector<bilingual_str> warnings;
+        bilingual_str error;
+        for (const uint32_t expected : {1U, 2U}) {
+            BOOST_REQUIRE_MESSAGE(wallet->NewHDAccount("", /* force */ true, account, dest, warnings, error), error.original);
+            BOOST_REQUIRE_EQUAL(account, expected);
+        }
+        spk_man.EndHDAccountDiscovery();
+    }
+    for (int load = 0; load < 2; ++load) {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDAccounts().at(2).state == CHDAccount::State::ACTIVE);
+        BOOST_CHECK(spk_man.GetHDAccountExtent(2) == std::make_pair(int64_t{HD_ACCOUNT_KEY_LOOKAHEAD}, int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+        for (const bool internal : {false, true}) {
+            CPubKey pubkey;
+            BOOST_CHECK(spk_man.GetHDAccountPubKey(2, internal, 0, pubkey));
+            BOOST_CHECK_EQUAL(wallet->GetHDAccountOfScript(GetScriptForDestination(PKHash(pubkey))), 2U);
+        }
+        // Account 3 was looked at only.
+        BOOST_CHECK(spk_man.GetHDAccountExtent(3) == std::make_pair(int64_t{-1}, int64_t{-1}));
+        if (load == 0) wallet = Reload(std::move(wallet));
+    }
+}
+
+// The keys kept ahead are written one by one: a crash during a refill leaves
+// fewer. The wallet refills them when it is loaded.
+BOOST_AUTO_TEST_CASE(short_lookahead_is_refilled_at_load)
+{
+    LegacyScriptPubKeyMan* spk_man = Assert(wallet->GetLegacyScriptPubKeyMan());
+    WITH_LOCK(wallet->cs_wallet, spk_man->MarkUnusedAddresses(AccountScript(1, false, 5)));
+    BOOST_REQUIRE_EQUAL(spk_man->GetHDAccountExtent(1).first, int64_t{5 + HD_ACCOUNT_KEY_LOOKAHEAD});
+    std::vector<CPubKey> lost;
+    for (uint32_t index = HD_ACCOUNT_KEY_LOOKAHEAD + 1; index <= 5 + HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+        CPubKey pubkey;
+        BOOST_REQUIRE(spk_man->GetHDAccountPubKey(1, false, index, pubkey));
+        lost.push_back(pubkey);
+    }
+    const std::string name{wallet->GetName()};
+    Release(std::move(wallet));
+    {
+        DatabaseOptions options;
+        options.require_existing = true;
+        DatabaseStatus status;
+        bilingual_str error;
+        std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+        BOOST_REQUIRE_MESSAGE(database, error.original);
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        for (const CPubKey& pubkey : lost) {
+            const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(pubkey.GetID()))};
+            BOOST_REQUIRE(batch->Erase(std::make_pair(DBKeys::KEY, pubkey)));
+            BOOST_REQUIRE(batch->Erase(std::make_pair(DBKeys::KEYMETA, pubkey)));
+            BOOST_REQUIRE(batch->Erase(std::make_pair(DBKeys::CSCRIPT, uint160(Hash160(witprog)))));
+        }
+    }
+    DatabaseOptions options;
+    options.require_existing = true;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    wallet = LoadWallet(*m_node.chain, name, std::nullopt, options, status, error, warnings);
+    BOOST_REQUIRE_MESSAGE(wallet, error.original);
+    wallet->SyncWithHDAccountWorker();
+    spk_man = Assert(wallet->GetLegacyScriptPubKeyMan());
+    BOOST_CHECK_EQUAL(spk_man->GetHDAccountExtent(1).first, int64_t{5 + HD_ACCOUNT_KEY_LOOKAHEAD});
+    for (const CPubKey& pubkey : lost) {
+        BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(GetScriptForDestination(PKHash(pubkey)))));
+    }
+}
+
+// A scan that finds a payment to the last key derived ahead of an account
+// while the wallet is locked, as when an unlock with a timeout ends during a
+// long scan, cannot derive the keys after it: the scan from that block stays
+// owed, and the worker does it at the next unlock, which finds a payment to a
+// key beyond those the wallet had.
+BOOST_AUTO_TEST_CASE(scan_owed_survives_a_relock)
+{
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    const CScript last_ahead{AccountScript(1, false, HD_ACCOUNT_KEY_LOOKAHEAD - 1)};
+    CKey key;
+    CKeyMetadata meta;
+    BOOST_REQUIRE(WITH_LOCK(spk_man.cs_KeyStore, return spk_man.DeriveHDAccountKey(1, false, HD_ACCOUNT_KEY_LOOKAHEAD + 5, key, meta)));
+    const CScript beyond{GetScriptForDestination(PKHash(key.GetPubKey()))};
+    const SecureString passphrase{"passphrase"};
+    BOOST_REQUIRE(wallet->EncryptWallet(passphrase));
+    wallet->Lock();
+    BOOST_REQUIRE(wallet->IsLocked());
+    // A scan is owed from the start of the chain, as a restore leaves it.
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0)));
+    Fund({last_ahead});
+    const int due_height{WITH_LOCK(wallet->cs_wallet, return wallet->GetLastBlockHeight())};
+    Fund({beyond}, /* seen */ false);
+    BOOST_REQUIRE_EQUAL(AccountCoins(*wallet, 1), 1U);
+
+    // The scan, run while locked.
+    BOOST_REQUIRE(wallet->ScanOwedRestore());
+    int owed_height{-1};
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return WalletBatch(wallet->GetDatabase()).ReadRestoreScan(owed_height)));
+    BOOST_CHECK_EQUAL(owed_height, due_height);
+
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    wallet->SyncWithHDAccountWorker();
+    BOOST_CHECK_EQUAL(AccountCoins(*wallet, 1), 2U);
+    BOOST_CHECK(!ScanOwed(*wallet));
+    BOOST_REQUIRE(wallet->Lock());
+}
+
+// A plain HD (bip32) wallet whose keys of HD accounts an earlier wallet tool's
+// salvage left unmarked keeps its seed when it is encrypted before the repair
+// has run, as a marked one does: with a new seed, its account keys would be
+// keys of account 0 for good.
+BOOST_AUTO_TEST_CASE(unmarked_account_keys_keep_the_seed)
+{
+    DatabaseOptions options;
+    options.require_create = true;
+    WalletOptions walletoptions;
+    walletoptions.walletType = walletType::bip32Wallet;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    std::shared_ptr<CWallet> plain = CreateWallet(*m_node.chain, "plain_accounts", std::nullopt, options, walletoptions, status, error, warnings);
+    BOOST_REQUIRE_MESSAGE(plain, error.original);
+    LegacyScriptPubKeyMan* spk_man = Assert(plain->GetLegacyScriptPubKeyMan());
+    BOOST_REQUIRE(WITH_LOCK(plain->cs_wallet, return spk_man->SetupHDAccounts()));
+    const auto key_of = [&](uint32_t account) {
+        CKey key;
+        CKeyMetadata meta;
+        BOOST_REQUIRE(WITH_LOCK(spk_man->cs_KeyStore, return spk_man->DeriveHDAccountKey(account, false, 0, key, meta)));
+        return key.GetPubKey();
+    };
+    const CPubKey zero_before{key_of(0)};
+    const CPubKey one_before{key_of(1)};
+
+    plain = OldSalvage(std::move(plain), /* attach */ false);
+    spk_man = Assert(plain->GetLegacyScriptPubKeyMan());
+    BOOST_REQUIRE(!plain->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_REQUIRE(spk_man->IsHDAccountRepairOwed());
+    BOOST_CHECK(spk_man->KeepsHDSeed());
+    const SecureString passphrase{"passphrase"};
+    BOOST_REQUIRE(plain->EncryptWallet(passphrase));
+    BOOST_REQUIRE(plain->Unlock(passphrase));
+    BOOST_CHECK(key_of(0) == zero_before);
+    BOOST_CHECK(key_of(1) == one_before);
+    plain->SyncWithHDAccountWorker();
+    BOOST_CHECK(plain->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK_EQUAL(plain->GetHDAccountOfScript(GetScriptForDestination(PKHash(one_before))), 1U);
+}
+
+// A scan looking for HD accounts holds keys in memory that are not the
+// wallet's: the wallet is not encrypted meanwhile, which would write them,
+// and its first account is not created, which the scan does if it finds one.
+BOOST_AUTO_TEST_CASE(no_encryption_or_first_account_during_a_scan)
+{
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return spk_man.BeginHDAccountDiscovery(/* count */ 2)));
+    BOOST_REQUIRE(spk_man.IsHDAccountDiscoveryPending());
+    BOOST_CHECK(!wallet->EncryptWallet("passphrase"));
+    BOOST_CHECK(!wallet->IsCrypted());
+    WITH_LOCK(wallet->cs_wallet, spk_man.EndHDAccountDiscovery());
+    BOOST_CHECK(spk_man.GetHDAccountExtent(2) == std::make_pair(int64_t{-1}, int64_t{-1}));
+
+    std::shared_ptr<CWallet> restored = Restore("first_during_scan", /* hd_accounts */ false);
+    LegacyScriptPubKeyMan& restored_spk_man = *Assert(restored->GetLegacyScriptPubKeyMan());
+    {
+        LOCK(restored->cs_wallet);
+        BOOST_REQUIRE(restored_spk_man.BeginHDAccountDiscovery(/* count */ 1));
+        uint32_t account;
+        CTxDestination dest;
+        std::vector<bilingual_str> warnings;
+        bilingual_str error;
+        BOOST_CHECK(!restored->NewHDAccount("", /* force */ true, account, dest, warnings, error));
+        BOOST_CHECK_MESSAGE(error.original.find("looking for its HD accounts") != std::string::npos, error.original);
+        restored_spk_man.EndHDAccountDiscovery();
+    }
+    BOOST_CHECK(!restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    Release(std::move(restored));
+}
+
+// A wallet with HD accounts salvaged by the wallet tool of an earlier version
+// has its account keys without their metadata, and would spend them as
+// account 0's. Once the seed can be read, the wallet's worker matches them
+// against the seed's accounts: it writes their metadata back, the account
+// records, the flag and the version, and notes the payments the wallet holds
+// to them, as when they were received.
+BOOST_AUTO_TEST_CASE(repair_after_an_old_salvage)
+{
+    for (const bool encrypted : {false, true}) {
+        const SecureString passphrase{"passphrase"};
+        if (encrypted) {
+            // A fresh wallet for the second pass: the first one is salvaged.
+            DatabaseOptions options;
+            options.require_create = true;
+            options.create_passphrase = passphrase;
+            WalletOptions walletoptions;
+            walletoptions.walletType = walletType::bip39Wallet;
+            DatabaseStatus status;
+            bilingual_str error;
+            std::vector<bilingual_str> warnings;
+            Release(std::move(wallet));
+            wallet = CreateWallet(*m_node.chain, "accounts_encrypted", std::nullopt, options, walletoptions, status, error, warnings);
+            BOOST_REQUIRE_MESSAGE(wallet, error.original);
+            BOOST_REQUIRE(wallet->Unlock(passphrase));
+            BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return Assert(wallet->GetLegacyScriptPubKeyMan())->SetupHDAccounts()));
+        }
+        Fund({AccountZeroScript(), AccountScript(1, false, 2), AccountScript(1, false, 3, OutputType::BECH32)});
+        Fund({AccountScript(2, true, 0, OutputType::P2SH_SEGWIT)});
+        BOOST_REQUIRE_EQUAL(AccountCoins(*wallet, 1), 2U);
+        BOOST_REQUIRE_EQUAL(AccountCoins(*wallet, 2), 1U);
+        const std::map<uint32_t, CHDAccount> accounts_before{Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDAccounts()};
+        if (encrypted) BOOST_REQUIRE(wallet->Lock());
+
+        wallet = OldSalvage(std::move(wallet));
+        LegacyScriptPubKeyMan* spk_man = Assert(wallet->GetLegacyScriptPubKeyMan());
+        if (encrypted) {
+            // Locked: the account keys are taken for account 0's until the
+            // unlock. The scan at the load found every coin: a witness script
+            // is learned with its key. (A plain wallet's worker may have
+            // repaired it already: the load hands it the repair at once.)
+            BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+            BOOST_CHECK(spk_man->IsHDAccountRepairOwed());
+            wallet->SyncWithHDAccountWorker();
+            BOOST_CHECK(spk_man->IsHDAccountRepairOwed());
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 1), 0U);
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 2), 0U);
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 0), 4U);
+            BOOST_REQUIRE(wallet->Unlock(passphrase));
+        }
+        wallet->SyncWithHDAccountWorker();
+        for (int load = 0; load < 2; ++load) {
+            spk_man = Assert(wallet->GetLegacyScriptPubKeyMan());
+            BOOST_CHECK(!spk_man->IsHDAccountRepairOwed());
+            BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+            BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 0), 1U);
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 1), 2U);
+            BOOST_CHECK_EQUAL(AccountCoins(*wallet, 2), 1U);
+            const std::map<uint32_t, CHDAccount> accounts{spk_man->GetHDAccounts()};
+            BOOST_REQUIRE_EQUAL(accounts.size(), accounts_before.size());
+            for (const auto& [account, record] : accounts_before) {
+                BOOST_CHECK(accounts.at(account).state == record.state);
+                BOOST_CHECK_EQUAL(accounts.at(account).next_receive, record.next_receive);
+                BOOST_CHECK_EQUAL(accounts.at(account).next_change, record.next_change);
+            }
+            BOOST_CHECK_EQUAL(spk_man->GetHDAccountMeta()->highest_used, 2U);
+            BOOST_CHECK(!ScanOwed(*wallet));
+            if (load == 0) wallet = Reload(std::move(wallet));
+            if (encrypted && load == 0) {
+                BOOST_REQUIRE(wallet->IsLocked());
+                // Nothing is owed: the repair was written.
+                BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->IsHDAccountRepairOwed());
+            }
+        }
+    }
+}
+
+// The repair matches the seed's accounts, not any key: a salvaged wallet
+// that never had an account is left unmarked, and is not asked again.
+BOOST_AUTO_TEST_CASE(repair_without_accounts_leaves_the_wallet_unmarked)
+{
+    DatabaseOptions options;
+    options.require_create = true;
+    WalletOptions walletoptions;
+    walletoptions.walletType = walletType::bip39Wallet;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    std::shared_ptr<CWallet> plain = CreateWallet(*m_node.chain, "plain", std::nullopt, options, walletoptions, status, error, warnings);
+    BOOST_REQUIRE_MESSAGE(plain, error.original);
+    CTxDestination dest;
+    std::string dest_error;
+    BOOST_REQUIRE(plain->GetNewDestination(OutputType::LEGACY, "", dest, dest_error));
+    plain = OldSalvage(std::move(plain));
+    plain->SyncWithHDAccountWorker();
+    LegacyScriptPubKeyMan& spk_man = *Assert(plain->GetLegacyScriptPubKeyMan());
+    BOOST_CHECK(!spk_man.IsHDAccountRepairOwed());
+    BOOST_CHECK(!plain->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK(spk_man.GetHDAccounts().empty());
+    BOOST_CHECK(!spk_man.HasHDAccountKeys());
+    BOOST_CHECK(WITH_LOCK(plain->cs_wallet, return plain->IsMine(dest)));
+    // Its keys were given metadata: nothing is owed at the next load.
+    plain = Reload(std::move(plain));
+    BOOST_CHECK(!Assert(plain->GetLegacyScriptPubKeyMan())->IsHDAccountRepairOwed());
+    BOOST_CHECK(!plain->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK_LT(plain->GetVersion(), int{FEATURE_HD_ACCOUNTS});
+    BOOST_CHECK(WITH_LOCK(plain->cs_wallet, return plain->IsMine(dest)));
+    Release(std::move(plain));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

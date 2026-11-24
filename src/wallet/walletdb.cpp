@@ -42,6 +42,7 @@ const std::string HDCHAIN{"hdchain"};
 const std::string HDSECRETS{"hdsecrets"};
 const std::string HDSECRETSPENDING{"hdsecretspending"};
 const std::string HDRESTORESCAN{"hdrestorescan"};
+const std::string HDACCOUNTSDECLINED{"hdaccountsdeclined"};
 const std::string HDACCOUNT{"hdaccount"};
 const std::string HDACCOUNTMETA{"hdaccountmeta"};
 const std::string REWRITTEN{"rewritten"};
@@ -718,6 +719,8 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             // Asked for when the wallet is opened; nothing to load.
         } else if (strType == DBKeys::HDRESTORESCAN) {
             // Read when the wallet is attached to the chain; nothing to load.
+        } else if (strType == DBKeys::HDACCOUNTSDECLINED) {
+            pwallet->LoadHDAccountsDeclined();
         } else if (strType == DBKeys::HDACCOUNT) {
             uint32_t account;
             ssKey >> account;
@@ -1291,7 +1294,13 @@ bool WalletBatch::ReadRestoreScan(int& height)
 
 bool WalletBatch::EraseRestoreScan()
 {
-    return EraseIC(DBKeys::HDRESTORESCAN);
+    // Declining to look for HD accounts is a choice of the restore.
+    return EraseIC(DBKeys::HDACCOUNTSDECLINED) && EraseIC(DBKeys::HDRESTORESCAN);
+}
+
+bool WalletBatch::WriteHDAccountsDeclined()
+{
+    return WriteIC(DBKeys::HDACCOUNTSDECLINED, true);
 }
 
 bool WalletBatch::WriteHDAccount(uint32_t account, const CHDAccount& record)
