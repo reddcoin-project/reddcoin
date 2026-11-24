@@ -1929,6 +1929,107 @@ bool LegacyScriptPubKeyMan::HasHDAccountsInconsistency() const
     return m_hd_accounts_inconsistent;
 }
 
+bool LegacyScriptPubKeyMan::BeginHDAccountDiscovery()
+{
+    LOCK(cs_KeyStore);
+    if (HDAccountsEnabled() || !m_hd_discovery_keys.empty()) return false;
+    if (!IsHDEnabled() || m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !m_storage.CanSupportFeature(FEATURE_HD_SPLIT)) return false;
+    if (!CanDeriveFrom(m_hd_chain)) return false;
+    std::vector<DiscoveryKey> keys;
+    for (const bool internal : {false, true}) {
+        for (uint32_t index = 0; index < HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+            DiscoveryKey entry;
+            if (!DeriveHDAccountKey(1, internal, index, entry.key, entry.metadata)) return false;
+            entry.pubkey = entry.key.GetPubKey();
+            if (m_storage.HasEncryptionKeys()) {
+                const CKeyingMaterial secret(entry.key.begin(), entry.key.end());
+                if (!EncryptSecret(m_storage.GetEncryptionKey(), secret, entry.pubkey.GetHash(), entry.crypted)) return false;
+            }
+            keys.push_back(std::move(entry));
+        }
+    }
+    // Into the key store, as the loader adds keys: nothing is written.
+    for (const DiscoveryKey& entry : keys) {
+        if (HaveKey(entry.pubkey.GetID())) continue;
+        const bool added{m_storage.HasEncryptionKeys() ? AddCryptedKeyInner(entry.pubkey, entry.crypted) : FillableSigningProvider::AddKeyPubKey(entry.key, entry.pubkey)};
+        if (!added) return false;
+        mapKeyMetadata[entry.pubkey.GetID()] = entry.metadata;
+        if (entry.pubkey.IsCompressed()) FillableSigningProvider::AddCScript(GetScriptForDestination(WitnessV0KeyHash(entry.pubkey.GetID())));
+        IndexHDAccountKey(entry.pubkey, entry.metadata);
+        m_hd_discovery_keys.push_back(entry);
+    }
+    WalletLogPrintf("Looking for HD accounts of the restored wallet: account 1 is kept ahead in memory\n");
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::IsHDAccountDiscoveryPending() const
+{
+    LOCK(cs_KeyStore);
+    return !m_hd_discovery_keys.empty();
+}
+
+bool LegacyScriptPubKeyMan::CommitHDAccountDiscovery()
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    if (m_hd_discovery_keys.empty()) return true;
+    WalletBatch batch(m_storage.GetDatabase());
+    if (!batch.TxnBegin()) return false;
+    bool ok{true};
+    for (const DiscoveryKey& entry : m_hd_discovery_keys) {
+        if (m_storage.HasEncryptionKeys()) {
+            ok = ok && batch.WriteCryptedKey(entry.pubkey, entry.crypted, entry.metadata);
+        } else {
+            ok = ok && batch.WriteKey(entry.pubkey, entry.key.GetPrivKey(), entry.metadata);
+        }
+        if (entry.pubkey.IsCompressed()) {
+            const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(entry.pubkey.GetID()))};
+            ok = ok && batch.WriteCScript(Hash160(witprog), witprog);
+        }
+    }
+    CHDAccount pool;
+    pool.state = CHDAccount::State::POOL;
+    pool.nCreateTime = GetTime();
+    CHDAccountMeta meta;
+    meta.highest_derived = 1;
+    ok = ok && batch.WriteHDAccount(1, pool) && batch.WriteHDAccountMeta(meta);
+    ok = ok && m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_ACCOUNTS);
+    if (ok) m_storage.SetMinVersion(FEATURE_HD_ACCOUNTS, &batch);
+    if (!ok || !batch.TxnCommit()) {
+        batch.TxnAbort();
+        WalletLogPrintf("%s: the HD accounts found could not be written to the wallet; they are looked for again at the next restore scan\n", __func__);
+        return false;
+    }
+    m_hd_accounts[1] = pool;
+    m_hd_account_meta = meta;
+    m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_ACCOUNTS);
+    for (const DiscoveryKey& entry : m_hd_discovery_keys) UpdateTimeFirstKey(entry.metadata.nCreateTime);
+    m_hd_discovery_keys.clear();
+    WalletLogPrintf("The restored wallet holds HD accounts: an account above 0 was found used\n");
+    return true;
+}
+
+void LegacyScriptPubKeyMan::EndHDAccountDiscovery()
+{
+    LOCK(cs_KeyStore);
+    if (m_hd_discovery_keys.empty()) return;
+    for (const DiscoveryKey& entry : m_hd_discovery_keys) {
+        const CKeyID id{entry.pubkey.GetID()};
+        mapKeys.erase(id);
+        mapCryptedKeys.erase(id);
+        mapKeyMetadata.erase(id);
+        const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(id))};
+        mapScripts.erase(CScriptID(witprog));
+        for (const CScript& script : {GetScriptForDestination(PKHash(entry.pubkey)), GetScriptForRawPubKey(entry.pubkey), witprog, GetScriptForDestination(ScriptHash(witprog))}) {
+            m_hd_account_scripts.erase(script);
+        }
+    }
+    m_hd_account_keys.clear();
+    m_hd_account_extent.erase(1);
+    m_hd_discovery_keys.clear();
+    WalletLogPrintf("No HD account of the restored wallet was found used: the wallet holds account 0 only\n");
+}
+
 void LegacyScriptPubKeyMan::DecideHDAccounts()
 {
     LOCK(cs_KeyStore);

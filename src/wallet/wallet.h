@@ -287,6 +287,11 @@ private:
     bool m_hd_account_worker_busy{false};
     bool m_hd_account_worker_stop{false};
     void HDAccountWorkerLoop();
+    //! Set while CreateWallet scans a wallet it restores: the worker, woken by
+    //! the unlock, leaves that scan to it.
+    std::atomic<bool> m_restoring{false};
+    //! A restore asked not to look for HD accounts: its scan does not look.
+    bool m_hd_accounts_declined{false};
     friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
@@ -474,6 +479,10 @@ public:
     void StopHDAccountWorker();
     /** Wait until the worker has done the work scheduled so far. */
     void SyncWithHDAccountWorker();
+    /** Begin looking for the HD accounts of a wallet restored from a mnemonic
+     *  phrase, if it can look now: see LegacyScriptPubKeyMan::BeginHDAccountDiscovery. */
+    void BeginHDAccountDiscovery();
+    void SetRestoring(bool restoring) { m_restoring = restoring; }
     /** The HD account of a script of the wallet; 0 for every script that is
      *  not a key of an account above 0. */
     uint32_t GetHDAccountOfScript(const CScript& script) const;
@@ -556,6 +565,14 @@ public:
     bool GetNewHDAccountDestination(uint32_t account, bool internal, OutputType type, const std::string& label, bool force, CTxDestination& dest, std::vector<bilingual_str>& warnings, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     //! The receive addresses of an HD account handed out and not yet paid.
     std::vector<CTxDestination> GetUnpaidHDAccountAddresses(uint32_t account) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! What a restore from a mnemonic phrase found.
+    struct HDRestoreReport {
+        std::string first_path;
+        int used_addresses{0};
+        std::vector<uint32_t> accounts_found;
+        bool history{false};
+    };
+    HDRestoreReport GetHDRestoreReport() const;
     //! Change the label of an HD account, or retire it or bring it back.
     bool SetHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
