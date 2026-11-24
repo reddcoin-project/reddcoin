@@ -60,6 +60,20 @@ public:
 //! Default for -keypool
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 1000;
 
+//! A key of an HD account and its derivation path, in numbers and as text.
+struct HDAccountKey {
+    CKey key;
+    std::vector<uint32_t> path;
+    std::string path_text;
+};
+
+//! The key at `index` on the receive chain (`internal` false) or the change
+//! chain of HD account `account`, derived from `master`. A BIP44 chain puts
+//! it at m/44'/coin_type'/account'/chain/index, hardened down to the account;
+//! a plain or BIP39 chain at m/account'/chain'/index', hardened at every
+//! level. Account 0 is the chain every wallet has always had.
+HDAccountKey DeriveHDAccountKeyFromMaster(const CExtKey& master, bool bip44, uint32_t coin_type, uint32_t account, bool internal, uint32_t index);
+
 std::vector<CKeyID> GetAffectedKeys(const CScript& spk, const SigningProvider& provider);
 
 /** A key from a CWallet's keypool
@@ -502,6 +516,17 @@ public:
     void LoadScriptMetadata(const CScriptID& script_id, const CKeyMetadata &metadata);
     //! Generate a new key
     CPubKey GenerateNewKey(WalletBatch& batch, CHDChain& hd_chain, bool internal = false) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+
+    //! Derive key `index` of the receive or change chain of HD account
+    //! `account` of the active seed, with its metadata, in the layout of the
+    //! wallet's chain. The seed is taken through GetHDSeed only. False, and
+    //! nothing derived, when the wallet is not HD or its chain cannot derive
+    //! now: locked, or the seed not held. Nothing is added to the wallet.
+    bool DeriveHDAccountKey(uint32_t account, bool internal, uint32_t index, CKey& key, CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Add a key DeriveHDAccountKey derived, with its metadata, written in
+    //! `batch`, and the witness scripts of the key, so that a payment to any
+    //! form of it is recognised. A key the wallet holds already is left as it is.
+    bool AddHDAccountKey(WalletBatch& batch, const CKey& key, const CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
 
     /* Set the HD chain model (chain child index counters) and writes it to the database */
     void AddHDChain(const CHDChain& chain);
