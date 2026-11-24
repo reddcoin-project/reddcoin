@@ -780,8 +780,10 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
                                 spk_man->IsHDEnabled() ? "true" : "false",
                                 spk_man->IsBip39Enabled() ? "true" : "false",
                                 spk_man->IsBip44Enabled() ? "true" : "false");
-            // if we are using HD, replace the HD seed with a new one if not using mnemonic
-            if (spk_man->IsHDEnabled() && !spk_man->IsBip39Enabled()) {
+            // if we are using HD, replace the HD seed with a new one if not using mnemonic.
+            // A wallet that holds HD accounts keeps its seed, whatever its
+            // type: the keys of its accounts come from it.
+            if (spk_man->IsHDEnabled() && !spk_man->IsBip39Enabled() && !IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
                 if (!spk_man->SetupGeneration(walletoptions, true)) {
                     return false;
                 }
