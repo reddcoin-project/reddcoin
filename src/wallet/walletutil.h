@@ -82,6 +82,12 @@ enum WalletFlags : uint64_t {
 //! Get the path of the wallet directory.
 fs::path GetWalletDir();
 
+//! The HD account of a key, read from its derivation path by the length of
+//! the path, never from the type of the wallet: the third element of a path of
+//! five (m/44'/coin'/account'/chain/index), the first of a path of three
+//! (m/account'/chain'/index'), and account 0 for a path of any other length.
+uint32_t HDAccountOfKeyPath(const std::vector<uint32_t>& path);
+
 /** Descriptor with some wallet metadata */
 class WalletDescriptor
 {

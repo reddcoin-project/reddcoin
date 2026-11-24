@@ -438,7 +438,9 @@ void LegacyScriptPubKeyMan::MarkUnusedAddresses(const CScript& script)
         auto it = mapKeyMetadata.find(keyid);
         if (it != mapKeyMetadata.end()){
             CKeyMetadata meta = it->second;
-            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
+            // An inactive chain is topped up for keys of account 0 only: a
+            // key of another HD account says nothing of where account 0 is.
+            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id && HDAccountOfKeyPath(meta.key_origin.path) == 0) {
                 // Which chain the key is on and where: m/0'/chain'/index' for
                 // a plain HD seed, m/44'/coin'/account'/chain/index for a
                 // BIP44 one, where the second and third elements are the coin

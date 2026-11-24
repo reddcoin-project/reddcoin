@@ -42,3 +42,11 @@ WalletFeature GetClosestWalletFeature(int version)
     }
     return static_cast<WalletFeature>(0);
 }
+
+uint32_t HDAccountOfKeyPath(const std::vector<uint32_t>& path)
+{
+    constexpr uint32_t hardened{0x80000000};
+    if (path.size() == 5) return path[2] & ~hardened;
+    if (path.size() == 3) return path[0] & ~hardened;
+    return 0;
+}
