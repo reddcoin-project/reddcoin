@@ -507,6 +507,13 @@ void LegacyScriptPubKeyMan::UpgradeKeyMetadata()
 
 bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, bool force)
 {
+    // A new seed in the place of the seed of a wallet that holds HD accounts
+    // would leave its accounts behind.
+    if (force && HDAccountsEnabled()) {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: refused, the wallet holds HD accounts and keeps its seed\n");
+        return false;
+    }
+
     if ((CanGenerateKeys() && !force) || m_storage.IsLocked()) {
         return false;
     }

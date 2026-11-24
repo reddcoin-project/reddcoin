@@ -2272,8 +2272,10 @@ static RPCHelpMan encryptwallet()
     }
 
     // A wallet created from a mnemonic keeps its seed and its keypool when it
-    // is encrypted: its phrase has to go on restoring it.
-    if (pwallet->IsBip39Enabled()) {
+    // is encrypted: its phrase has to go on restoring it. So does a wallet
+    // that holds HD accounts, whatever its type: the keys of its accounts
+    // come from its seed.
+    if (pwallet->IsBip39Enabled() || pwallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
         return "wallet encrypted; this wallet keeps its seed and its keypool. Any copy of the wallet file made before now holds the seed unencrypted; destroy such copies. You need to make a new backup.";
     }
 
@@ -4532,6 +4534,7 @@ static RPCHelpMan sethdseed()
                 "HD will have a new HD seed set so that new keys added to the keypool will be derived from this new seed.\n"
                 "\nA wallet created from a mnemonic (\"hd_type\" bip39 or bip44 in getwalletinfo) is refused: all its keys come\n"
                 "from its mnemonic phrase, and a new seed would discard the phrase. To use another seed, create another wallet.\n"
+                "\nA wallet that holds HD accounts is refused as well: the keys of its accounts come from its seed.\n"
                 "\nNote that you will need to MAKE A NEW BACKUP of your wallet after setting the HD wallet seed." +
         HELP_REQUIRING_PASSPHRASE,
                 {
@@ -4573,6 +4576,13 @@ static RPCHelpMan sethdseed()
     // key of the addresses it has given out.
     if (spk_man.IsBip39Enabled() || spk_man.IsBip44Enabled()) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet created from a mnemonic: its keys come from the mnemonic phrase, which a new seed would discard. Create a new wallet to use another seed");
+    }
+
+    // The keys of every HD account come from the seed. With another seed,
+    // the accounts would get no further key, and a restore from the new seed
+    // would find none of them.
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet that holds HD accounts: the keys of its accounts come from its seed, which a new seed would leave behind. Create a new wallet to use another seed");
     }
 
     EnsureWalletIsUnlocked(*pwallet);

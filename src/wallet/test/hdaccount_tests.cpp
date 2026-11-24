@@ -824,4 +824,47 @@ BOOST_AUTO_TEST_CASE(account_keys_without_the_flag_are_inconsistent)
     Unload(std::move(wallet));
 }
 
+// A wallet that holds HD accounts keeps its seed when it is encrypted, a plain
+// HD (bip32) wallet included, which is given a new seed otherwise; and a new
+// seed cannot be forced on it. The seed is compared through the keys it
+// derives: the seed id of every wallet made from a mnemonic is the same.
+BOOST_AUTO_TEST_CASE(account_wallet_keeps_its_seed)
+{
+    const SecureString passphrase{"passphrase"};
+    for (const bool accounts : {false, true}) {
+        for (const int wallet_type : WALLET_TYPES) {
+            std::shared_ptr<CWallet> wallet = Create(strprintf("keeps_%d_%d", accounts, wallet_type), wallet_type);
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            if (accounts) BOOST_REQUIRE(Setup(*wallet));
+            const auto key_of = [&](uint32_t account) {
+                CKey key;
+                CKeyMetadata meta;
+                BOOST_REQUIRE(WITH_LOCK(spk_man.cs_KeyStore, return spk_man.DeriveHDAccountKey(account, false, 0, key, meta)));
+                return key.GetPubKey();
+            };
+            const CPubKey zero_before{key_of(0)};
+            const CPubKey one_before{key_of(1)};
+
+            BOOST_REQUIRE(wallet->EncryptWallet(passphrase));
+            BOOST_REQUIRE(wallet->Unlock(passphrase));
+            const bool keeps{accounts || wallet_type != walletType::bip32Wallet};
+            BOOST_CHECK_EQUAL(key_of(0) == zero_before, keeps);
+            if (accounts) {
+                BOOST_CHECK(key_of(1) == one_before);
+                CPubKey account_key;
+                BOOST_CHECK(spk_man.GetHDAccountPubKey(1, false, 0, account_key) && account_key == one_before);
+
+                // A new seed forced on it, as encryption would have done, is refused.
+                WalletOptions walletoptions;
+                walletoptions.walletType = wallet_type;
+                BOOST_CHECK(!WITH_LOCK(wallet->cs_wallet, return spk_man.SetupGeneration(walletoptions, /* force */ true)));
+                BOOST_CHECK(key_of(0) == zero_before);
+                BOOST_CHECK(key_of(1) == one_before);
+            }
+            BOOST_REQUIRE(wallet->Lock());
+            Unload(std::move(wallet));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
