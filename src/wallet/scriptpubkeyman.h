@@ -393,6 +393,10 @@ private:
     //! Inactive seeds found to have nothing to derive from, so that it is logged once for each.
     std::set<CKeyID> m_inactive_seeds_not_derivable GUARDED_BY(cs_KeyStore);
 
+    //! The HD accounts of the wallet by number, account 0 not among them.
+    std::map<uint32_t, CHDAccount> m_hd_accounts GUARDED_BY(cs_KeyStore);
+    std::optional<CHDAccountMeta> m_hd_account_meta GUARDED_BY(cs_KeyStore);
+
     /* HD derive new child key (on internal or external chain) */
     void DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal = false) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
 
@@ -523,6 +527,23 @@ public:
     //! nothing derived, when the wallet is not HD or its chain cannot derive
     //! now: locked, or the seed not held. Nothing is added to the wallet.
     bool DeriveHDAccountKey(uint32_t account, bool internal, uint32_t index, CKey& key, CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
+    //! Load an HD account record (used by LoadWallet).
+    void LoadHDAccount(uint32_t account, const CHDAccount& record);
+    void LoadHDAccountMeta(const CHDAccountMeta& meta);
+    std::map<uint32_t, CHDAccount> GetHDAccounts() const;
+    std::optional<CHDAccountMeta> GetHDAccountMeta() const;
+    //! Keep and write an HD account record, or the record of the accounts as a whole.
+    bool WriteHDAccount(WalletBatch& batch, uint32_t account, const CHDAccount& record);
+    bool WriteHDAccountMeta(WalletBatch& batch, const CHDAccountMeta& meta);
+    //! Put together the record of each HD account of the active seed that has
+    //! keys in the wallet and no record, from the highest index of its keys on
+    //! each chain (`account_keys`, by seed and account, -1 for none), and bring
+    //! the record of the accounts as a whole up to them. Such an account is
+    //! taken as handed out, its next index past its last key on each chain.
+    //! The accounts made, and whether the record of the whole changed, for the
+    //! caller to write.
+    std::pair<std::vector<uint32_t>, bool> RebuildHDAccounts(const std::map<std::pair<CKeyID, uint32_t>, std::pair<int64_t, int64_t>>& account_keys);
+
     //! Add a key DeriveHDAccountKey derived, with its metadata, written in
     //! `batch`, and the witness scripts of the key, so that a payment to any
     //! form of it is recognised. A key the wallet holds already is left as it is.

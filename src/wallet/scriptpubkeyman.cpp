@@ -1647,6 +1647,77 @@ bool LegacyScriptPubKeyMan::AddHDAccountKey(WalletBatch& batch, const CKey& key,
     return true;
 }
 
+void LegacyScriptPubKeyMan::LoadHDAccount(uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    m_hd_accounts[account] = record;
+}
+
+void LegacyScriptPubKeyMan::LoadHDAccountMeta(const CHDAccountMeta& meta)
+{
+    LOCK(cs_KeyStore);
+    m_hd_account_meta = meta;
+}
+
+std::map<uint32_t, CHDAccount> LegacyScriptPubKeyMan::GetHDAccounts() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_accounts;
+}
+
+std::optional<CHDAccountMeta> LegacyScriptPubKeyMan::GetHDAccountMeta() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_account_meta;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDAccount(WalletBatch& batch, uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    if (!batch.WriteHDAccount(account, record)) return false;
+    m_hd_accounts[account] = record;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDAccountMeta(WalletBatch& batch, const CHDAccountMeta& meta)
+{
+    LOCK(cs_KeyStore);
+    if (!batch.WriteHDAccountMeta(meta)) return false;
+    m_hd_account_meta = meta;
+    return true;
+}
+
+std::pair<std::vector<uint32_t>, bool> LegacyScriptPubKeyMan::RebuildHDAccounts(const std::map<std::pair<CKeyID, uint32_t>, std::pair<int64_t, int64_t>>& account_keys)
+{
+    LOCK(cs_KeyStore);
+    std::vector<uint32_t> rebuilt;
+    if (m_hd_chain.seed_id.IsNull()) return {rebuilt, false};
+    uint32_t highest{0};
+    for (const auto& [seed_account, last] : account_keys) {
+        const auto& [seed_id, account] = seed_account;
+        if (seed_id != m_hd_chain.seed_id) continue;
+        highest = std::max(highest, account);
+        if (m_hd_accounts.count(account)) continue;
+        CHDAccount record;
+        record.state = CHDAccount::State::ACTIVE;
+        record.nCreateTime = GetTime();
+        record.next_receive = static_cast<uint32_t>(last.first + 1);
+        record.next_change = static_cast<uint32_t>(last.second + 1);
+        m_hd_accounts[account] = record;
+        rebuilt.push_back(account);
+    }
+    if (highest == 0) return {rebuilt, false};
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    const CHDAccountMeta before{meta};
+    meta.highest_derived = std::max(meta.highest_derived, highest);
+    // An account put together from its keys may have been used: the accounts
+    // kept ahead of use reach past it.
+    for (const uint32_t account : rebuilt) meta.highest_used = std::max(meta.highest_used, account);
+    const bool meta_changed{!m_hd_account_meta || !(meta == before)};
+    m_hd_account_meta = meta;
+    return {rebuilt, meta_changed};
+}
+
 void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal)
 {
     // for now we use a fixed keypath scheme of m/0'/0'/k

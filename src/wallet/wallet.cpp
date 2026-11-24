@@ -3303,6 +3303,13 @@ const CAddressBookData* CWallet::FindAddressBookEntry(const CTxDestination& dest
 bool CWallet::UpgradeWallet(int version, bilingual_str& error)
 {
     int prev_version = GetVersion();
+    // A wallet that holds HD accounts requires a version above the one new
+    // wallets are written with, and has every feature below it: it is
+    // already current, not to be downgraded to FEATURE_LATEST.
+    if (prev_version >= FEATURE_HD_ACCOUNTS && (version == 0 || version >= FEATURE_LATEST)) {
+        WalletLogPrintf("The wallet holds HD accounts and is at version %i, which is current\n", prev_version);
+        return true;
+    }
     if (version == 0) {
         WalletLogPrintf("Performing wallet upgrade to %i\n", FEATURE_LATEST);
         version = FEATURE_LATEST;

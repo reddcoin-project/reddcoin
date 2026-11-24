@@ -26,7 +26,14 @@ enum WalletFeature
 
     FEATURE_PRE_SPLIT_KEYPOOL = 169900, // Upgraded to HD SPLIT and can have a pre-split keypool
 
-    FEATURE_LATEST = FEATURE_PRE_SPLIT_KEYPOOL
+    FEATURE_LATEST = FEATURE_PRE_SPLIT_KEYPOOL,
+
+    //! A legacy wallet that holds HD accounts. Written with
+    //! WALLET_FLAG_HD_ACCOUNTS, so that a version that does not know accounts
+    //! refuses the wallet as too new before it reads anything else, Reddcoin
+    //! 3.x included. Above FEATURE_LATEST: new wallets do not get it, and it
+    //! is the highest version a wallet may require of this one.
+    FEATURE_HD_ACCOUNTS = 4220000,
 };
 
 bool IsFeatureSupported(int wallet_version, int feature_version);

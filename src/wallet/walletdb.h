@@ -71,6 +71,10 @@ extern const std::string HDSECRETSPENDING;
 //! The height from which a restore scan is owed: a wallet restored from a
 //! mnemonic phrase holds it until a scan from that height has completed.
 extern const std::string HDRESTORESCAN;
+//! An HD account of a legacy wallet, by its number.
+extern const std::string HDACCOUNT;
+//! What the wallet knows of its HD accounts as a whole.
+extern const std::string HDACCOUNTMETA;
 //! Says that the file has been written anew by a version that leaves nothing of the memory of the process in it.
 extern const std::string REWRITTEN;
 extern const std::string KEY;
@@ -211,6 +215,64 @@ public:
     }
 };
 
+/** An HD account of a legacy wallet: what the paths of its keys cannot tell.
+ *  The keys themselves are ordinary key records. Holds no secret. */
+class CHDAccount
+{
+public:
+    static const int CURRENT_VERSION = 1;
+    enum class State : uint8_t {
+        POOL = 0,    //!< derived ahead of use, not yet handed out
+        ACTIVE = 1,  //!< handed out
+        RETIRED = 2, //!< gives no new address, still watched and spendable
+    };
+    int nVersion{CURRENT_VERSION};
+    State state{State::POOL};
+    int64_t nCreateTime{0};
+    std::string label;
+    //! The next index to hand out on each chain. The keys of an account are
+    //! derived ahead of these, so the keys alone do not say where they are.
+    uint32_t next_receive{0};
+    uint32_t next_change{0};
+
+    SERIALIZE_METHODS(CHDAccount, obj)
+    {
+        uint8_t state;
+        SER_WRITE(obj, state = static_cast<uint8_t>(obj.state));
+        READWRITE(obj.nVersion, state, obj.nCreateTime, obj.label, obj.next_receive, obj.next_change);
+        SER_READ(obj, obj.state = static_cast<State>(state));
+    }
+
+    bool operator==(const CHDAccount& other) const
+    {
+        return nVersion == other.nVersion && state == other.state && nCreateTime == other.nCreateTime &&
+               label == other.label &&
+               next_receive == other.next_receive && next_change == other.next_change;
+    }
+};
+
+/** What a legacy wallet knows of its HD accounts as a whole. */
+class CHDAccountMeta
+{
+public:
+    static const int CURRENT_VERSION = 1;
+    int nVersion{CURRENT_VERSION};
+    //! The highest account whose keys have been derived.
+    uint32_t highest_derived{0};
+    //! The highest account found used; 0 when no account above 0 is.
+    uint32_t highest_used{0};
+
+    SERIALIZE_METHODS(CHDAccountMeta, obj)
+    {
+        READWRITE(obj.nVersion, obj.highest_derived, obj.highest_used);
+    }
+
+    bool operator==(const CHDAccountMeta& other) const
+    {
+        return nVersion == other.nVersion && highest_derived == other.highest_derived && highest_used == other.highest_used;
+    }
+};
+
 /** For tests: asked before each write of the wallet flags, the HD chain, the
  *  encrypted HD secrets and the rewrite marker, and before the rewrite that
  *  follows a move of the secrets, with "flags", "hdchain", "hdsecrets",
@@ -332,6 +394,9 @@ public:
     bool WriteRestoreScan(int height);
     bool ReadRestoreScan(int& height);
     bool EraseRestoreScan();
+
+    bool WriteHDAccount(uint32_t account, const CHDAccount& record);
+    bool WriteHDAccountMeta(const CHDAccountMeta& meta);
 
     bool WriteWalletFlags(const uint64_t flags);
     //! Begin a new transaction
