@@ -417,6 +417,19 @@ private:
     //! holds accounts, as an earlier wallet tool's salvage leaves it.
     bool m_hd_accounts_inconsistent GUARDED_BY(cs_KeyStore){false};
 
+    //! A key of the account a restore keeps ahead in memory, and what is
+    //! written of it once an account is found used.
+    struct DiscoveryKey {
+        CPubKey pubkey;
+        CKey key;
+        std::vector<unsigned char> crypted;
+        CKeyMetadata metadata;
+    };
+    //! The keys a restore keeps ahead, in memory only: nothing of an account
+    //! is written to a wallet until one is found used, so a wallet that has
+    //! none is left as it was. Empty when no restore is looking for accounts.
+    std::vector<DiscoveryKey> m_hd_discovery_keys GUARDED_BY(cs_KeyStore);
+
     //! Count a key of an HD account in the extents and the script map.
     void IndexHDAccountKey(const CPubKey& pubkey, const CKeyMetadata& metadata) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore);
     //! Derive and add keys of `account` on one chain up to index `last`.
@@ -614,6 +627,20 @@ public:
     //! Count the keys of HD accounts and say whether the wallet is
     //! consistent: once every record has been read (used by LoadWallet).
     void DecideHDAccounts();
+
+    //! A restore from a mnemonic phrase: keep account 1 ahead, in memory only,
+    //! so that the scan that follows recognises payments to it. False when
+    //! the wallet holds accounts already, is not HD or cannot derive now.
+    bool BeginHDAccountDiscovery();
+    //! Whether a restore is looking for HD accounts.
+    bool IsHDAccountDiscoveryPending() const;
+    //! A transaction the scan found pays an HD account above 0: write the
+    //! keys kept in memory, the account records, the flag and
+    //! FEATURE_HD_ACCOUNTS in one transaction. Needs the wallet's lock.
+    bool CommitHDAccountDiscovery();
+    //! The scan has ended: forget the keys kept in memory if no account was
+    //! found used. The wallet is then as if it had not looked.
+    void EndHDAccountDiscovery();
 
     //! Add a key DeriveHDAccountKey derived, with its metadata, written in
     //! `batch`, and the witness scripts of the key, so that a payment to any

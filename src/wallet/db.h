@@ -222,6 +222,9 @@ struct WalletOptions {
     int bits = 256;
     int language = 0;    // DEFAULT_LANG = english
     bool importing = false;
+    //! For a restore from a mnemonic phrase: look for the HD accounts of the
+    //! phrase as well, and mark the wallet if one of them is found used.
+    bool hd_accounts = true;
     SecureString ssMnemonic;
     SecureString ssMnemonicPassphrase;
     SecureString ssMasterKey;

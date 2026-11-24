@@ -734,10 +734,10 @@ class RPCOverloadWrapper():
     def __truediv__(self, relative_uri):
         return self.rpc / relative_uri
 
-    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase=None, avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None, wallet_type=None, mnemonic=None, mnemonic_passphrase=None, language=None, entropy_bits=None):
+    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase=None, avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None, wallet_type=None, mnemonic=None, mnemonic_passphrase=None, language=None, entropy_bits=None, hd_accounts=None):
         if descriptors is None:
             descriptors = self.descriptors
-        bip39_args = [wallet_type, mnemonic, mnemonic_passphrase, language, entropy_bits]
+        bip39_args = [wallet_type, mnemonic, mnemonic_passphrase, language, entropy_bits, hd_accounts]
         has_bip39 = any(a is not None for a in bip39_args)
         if not has_bip39:
             # Original positional call for backward compatibility. Pass an empty
@@ -764,6 +764,8 @@ class RPCOverloadWrapper():
             params['wallet_type'] = wallet_type
         if mnemonic is not None:
             params['mnemonic'] = mnemonic
+        if hd_accounts is not None:
+            params['hd_accounts'] = hd_accounts
         if mnemonic_passphrase is not None:
             params['mnemonic_passphrase'] = mnemonic_passphrase
         if language is not None:

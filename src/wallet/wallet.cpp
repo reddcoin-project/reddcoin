@@ -340,6 +340,8 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
             return nullptr;
         }
         if (!create_blank) {
+            // The scan of a restore is this function's, not the worker's.
+            wallet->SetRestoring(true);
             // Unlock the wallet
             if (!wallet->Unlock(passphrase)) {
                 error = Untranslated("Error: Wallet was encrypted but could not be unlocked");
@@ -371,6 +373,8 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
                         }
                     }
                 }
+                // The HD accounts of the phrase are looked for too, unless asked not to.
+                if (restore_scan && walletoptions.hd_accounts) wallet->BeginHDAccountDiscovery();
             }
 
             // Scan while the wallet is unlocked, so that the key pool can be
@@ -379,6 +383,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
                 warnings.push_back(_("The scan of the chain for the transactions of the restored wallet did not complete. It continues when the wallet is next loaded."));
             }
 
+            wallet->SetRestoring(false);
             // Relock the wallet
             wallet->Lock();
         }
@@ -1199,10 +1204,33 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, CWalletTx::Co
              * the mostly recently created transactions from newer versions of the wallet.
              */
 
+            // A restore looking for HD accounts: the first transaction that
+            // pays an account above 0 marks the wallet, before it is written.
+            LegacyScriptPubKeyMan* legacy_spk_man = GetLegacyScriptPubKeyMan();
+            if (legacy_spk_man && legacy_spk_man->IsHDAccountDiscoveryPending()) {
+                for (const CTxOut& txout : tx.vout) {
+                    if (GetHDAccountOfScript(txout.scriptPubKey) != 0) {
+                        legacy_spk_man->CommitHDAccountDiscovery();
+                        break;
+                    }
+                }
+            }
+
             // loop though all outputs
             for (const CTxOut& txout: tx.vout) {
                 for (const auto& spk_man_pair : m_spk_managers) {
                     spk_man_pair.second->MarkUnusedAddresses(txout.scriptPubKey);
+                }
+            }
+
+            // An account paid while the wallet is locked: the keys beyond
+            // those it had are derived at the next unlock, and the chain is
+            // scanned again from here for payments to them.
+            if (legacy_spk_man && legacy_spk_man->IsHDAccountsTopUpOwed() && confirm.block_height >= 0) {
+                WalletBatch batch(GetDatabase());
+                int owed_height;
+                if (!batch.ReadRestoreScan(owed_height) || confirm.block_height < owed_height) {
+                    batch.WriteRestoreScan(confirm.block_height);
                 }
             }
 
@@ -2937,6 +2965,13 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
             return nullptr;
         }
         walletInstance->SetImporting(restore_scan);
+        // A restore from a mnemonic phrase looks for the HD accounts of the
+        // phrase, unless asked not to.
+        if (restore_scan && walletoptions.hd_accounts) {
+            LOCK(walletInstance->cs_wallet);
+            walletInstance->BeginHDAccountDiscovery();
+        }
+        walletInstance->m_hd_accounts_declined = restore_scan && !walletoptions.hd_accounts;
 
         if (chain && !restore_scan) {
             walletInstance->chainStateFlushed(chain->getTipLocator());
@@ -3161,9 +3196,18 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
     // wallet were made when it was restored, not when they were first used.
     int owed_height;
     const bool restore_scan_owed{WalletBatch(walletInstance->GetDatabase()).ReadRestoreScan(owed_height)};
+    // A wallet that cannot derive now, an encrypted one, cannot look for the
+    // keys of its HD accounts either: the scan owed is done for what it holds,
+    // and done again at the next unlock.
+    bool keep_owed_scan{false};
     if (restore_scan_owed) {
         rescan_height = std::min(rescan_height, std::max(owed_height, 0));
         walletInstance->WalletLogPrintf("A restore scan is owed from block %i\n", rescan_height);
+        // The wallet's lock is held here.
+        if (!walletInstance->m_hd_accounts_declined) walletInstance->BeginHDAccountDiscovery();
+        const LegacyScriptPubKeyMan* spk_man = walletInstance->GetLegacyScriptPubKeyMan();
+        keep_owed_scan = walletInstance->IsLocked() && spk_man &&
+                         (spk_man->IsBip39Enabled() || walletInstance->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
     }
 
     const std::optional<int> tip_height = chain.getHeight();
@@ -3227,7 +3271,10 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
         walletInstance->chainStateFlushed(chain.getTipLocator());
         walletInstance->GetDatabase().IncrementUpdateCounter();
     }
-    if (restore_scan_owed && !WalletBatch(walletInstance->GetDatabase()).EraseRestoreScan()) {
+    if (LegacyScriptPubKeyMan* spk_man = walletInstance->GetLegacyScriptPubKeyMan()) spk_man->EndHDAccountDiscovery();
+    if (keep_owed_scan) {
+        walletInstance->WalletLogPrintf("The owed scan is done again at the next unlock, when the keys of the wallet's HD accounts can be derived\n");
+    } else if (restore_scan_owed && !WalletBatch(walletInstance->GetDatabase()).EraseRestoreScan()) {
         walletInstance->WalletLogPrintf("Warning: the restore scan has completed, but the wallet file could not be updated to say so; it is done again at the next load\n");
     }
 
@@ -3243,11 +3290,16 @@ bool CWallet::ScanOwedRestore()
     if (tip_height && *tip_height >= from_height) {
         WalletLogPrintf("Scanning for the transactions of the restored wallet from block %i\n", from_height);
         WalletRescanReserver reserver(*this);
-        if (!reserver.reserve()) return false;
-        const ScanResult result{ScanForWalletTransactions(chain().getBlockHash(from_height), from_height, /* max_height */ {}, reserver, /* fUpdate */ true)};
-        if (result.status != ScanResult::SUCCESS) return false;
+        const bool scanned{reserver.reserve() &&
+                           ScanForWalletTransactions(chain().getBlockHash(from_height), from_height, /* max_height */ {}, reserver, /* fUpdate */ true).status == ScanResult::SUCCESS};
+        if (!scanned) {
+            // Looked for again when the scan is done again.
+            if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan()) WITH_LOCK(cs_wallet, spk_man->EndHDAccountDiscovery());
+            return false;
+        }
     }
     LOCK(cs_wallet);
+    if (LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan()) spk_man->EndHDAccountDiscovery();
     chainStateFlushed(chain().getTipLocator());
     if (!WalletBatch(GetDatabase()).EraseRestoreScan()) {
         WalletLogPrintf("Warning: the restore scan has completed, but the wallet file could not be updated to say so; it is done again at the next load\n");
@@ -3384,9 +3436,18 @@ bool CWallet::IsLocked() const
     return vMasterKey.empty();
 }
 
+void CWallet::BeginHDAccountDiscovery()
+{
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man || IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) || !spk_man->IsBip39Enabled()) return;
+    if (spk_man->IsHDAccountDiscoveryPending() || IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) return;
+    spk_man->BeginHDAccountDiscovery();
+}
+
 void CWallet::ScheduleHDAccountWork()
 {
-    if (!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) return;
+    int owed_height;
+    if (!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS) && !WalletBatch(GetDatabase()).ReadRestoreScan(owed_height)) return;
     {
         std::lock_guard<std::mutex> lock(m_hd_account_worker_mutex);
         if (m_hd_account_worker_stop) return;
@@ -3408,12 +3469,24 @@ void CWallet::HDAccountWorkerLoop()
             m_hd_account_work = false;
             m_hd_account_worker_busy = true;
         }
+        bool scan_owed{false};
         {
             // Under the wallet's lock, which Lock() also takes: the work is
             // done whole while the wallet is unlocked, or not at all.
             LOCK(cs_wallet);
             LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
-            if (spk_man && !IsLocked()) spk_man->TopUpHDAccounts();
+            if (spk_man && !IsLocked()) {
+                spk_man->TopUpHDAccounts();
+                // A scan owed from a height: a restore cut short, or payments
+                // to accounts while the wallet was locked, beyond the keys it
+                // had. Looked for again now that the seed can be read.
+                int owed_height;
+                scan_owed = !m_restoring && WalletBatch(GetDatabase()).ReadRestoreScan(owed_height);
+                if (scan_owed) BeginHDAccountDiscovery();
+            }
+        }
+        if (scan_owed && !ScanOwedRestore()) {
+            WalletLogPrintf("The owed scan did not complete; it is done again at the next unlock or load\n");
         }
         {
             std::lock_guard<std::mutex> lock(m_hd_account_worker_mutex);

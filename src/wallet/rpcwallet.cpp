@@ -3008,6 +3008,8 @@ static RPCHelpMan createwallet()
             {"mnemonic_passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "BIP39 mnemonic passphrase (NOT the wallet encryption passphrase). Used as additional entropy for seed derivation."},
             {"language", RPCArg::Type::STR, RPCArg::Default{"english"}, "Language for mnemonic generation. Options: english, japanese, spanish, chinese_simplified, chinese_traditional, french, italian, korean."},
             {"entropy_bits", RPCArg::Type::NUM, RPCArg::Default{256}, "Entropy bits for mnemonic generation: 128 (12 words), 160 (15 words), 192 (18 words), 224 (21 words), or 256 (24 words)."},
+            {"hd_accounts", RPCArg::Type::BOOL, RPCArg::Default{true}, "With a mnemonic to restore: look for the HD accounts of the phrase too. The wallet is marked as holding\n"
+             "accounts only if one above 0 is found used."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -3016,6 +3018,14 @@ static RPCHelpMan createwallet()
                 {RPCResult::Type::STR, "warning", "Warning message if wallet was not loaded cleanly."},
                 {RPCResult::Type::STR, "wallet_type", "HD wallet type: bip32, bip39, or bip44"},
                 {RPCResult::Type::STR, "mnemonic", /* optional */ true, "The generated BIP39 mnemonic phrase (only for newly generated bip39/bip44 wallets)"},
+                {RPCResult::Type::OBJ, "hd_restore", /* optional */ true, "What the restore from a mnemonic found (only when a mnemonic is given)",
+                {
+                    {RPCResult::Type::STR, "wallet_type", "The HD type the phrase was restored as"},
+                    {RPCResult::Type::STR, "first_path", "The derivation path of its first address"},
+                    {RPCResult::Type::NUM, "used_addresses", "How many addresses of account 0 were found used"},
+                    {RPCResult::Type::ARR, "hd_accounts", "The HD accounts above 0 found used", {{RPCResult::Type::NUM, "", ""}}},
+                    {RPCResult::Type::STR, "warning", /* optional */ true, "Said when no history was found"},
+                }},
             }
         },
         RPCExamples{
@@ -3137,6 +3147,11 @@ static RPCHelpMan createwallet()
         walletoptions.bits = bits;
     }
 
+    // Parse hd_accounts (param 13)
+    if (!request.params[13].isNull()) {
+        walletoptions.hd_accounts = request.params[13].get_bool();
+    }
+
     // Validation: BIP39/BIP44 requires legacy wallet
     if (is_bip39_or_bip44) {
         if (flags & WALLET_FLAG_DESCRIPTORS) {
@@ -3188,6 +3203,23 @@ static RPCHelpMan createwallet()
     // Return mnemonic only for newly generated bip39/bip44 wallets (not imports)
     if (!generated_mnemonic.empty()) {
         obj.pushKV("mnemonic", std::string(generated_mnemonic.begin(), generated_mnemonic.end()));
+    }
+
+    // The type is not in the phrase: a wrong type or mnemonic passphrase
+    // gives an empty wallet and no error. Say what was found.
+    if (mnemonic_provided && spk_man) {
+        const CWallet::HDRestoreReport report{wallet->GetHDRestoreReport()};
+        UniValue restore{UniValue::VOBJ};
+        restore.pushKV("wallet_type", response_type);
+        restore.pushKV("first_path", report.first_path);
+        restore.pushKV("used_addresses", report.used_addresses);
+        UniValue accounts{UniValue::VARR};
+        for (const uint32_t account : report.accounts_found) accounts.push_back(static_cast<int64_t>(account));
+        restore.pushKV("hd_accounts", accounts);
+        if (!report.history) {
+            restore.pushKV("warning", "No history was found. Check the wallet type (bip39 or bip44) and the mnemonic passphrase: either being wrong gives an empty wallet.");
+        }
+        obj.pushKV("hd_restore", restore);
     }
 
     return obj;

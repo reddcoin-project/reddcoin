@@ -5,6 +5,7 @@
 // HD accounts of legacy wallets: creating an account, handing out its
 // addresses, and what the wallet holds in each.
 
+#include <chainparams.h>
 #include <key_io.h>
 #include <outputtype.h>
 #include <util/time.h>
@@ -261,4 +262,27 @@ bool CWallet::SetHDAccount(uint32_t account, const std::optional<std::string>& l
     // An account brought back gets its look-ahead again.
     spk_man->TopUpHDAccounts();
     return true;
+}
+
+CWallet::HDRestoreReport CWallet::GetHDRestoreReport() const
+{
+    HDRestoreReport report;
+    LOCK(cs_wallet);
+    const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man) return report;
+    report.first_path = spk_man->GetHDChain().IsBip44() ? strprintf("m/44'/%d'/0'/0/0", Params().ExtCoinType()) : "m/0'/0'/0'";
+    report.history = !mapWallet.empty();
+    std::set<CScript> used;
+    for (const auto& entry : mapWallet) {
+        const auto& wtx = entry.second;
+        if (wtx.isAbandoned() || wtx.GetDepthInMainChain() < 0) continue;
+        for (const CTxOut& txout : wtx.tx->vout) {
+            if (IsMine(txout) != ISMINE_NO && GetHDAccountOfScript(txout.scriptPubKey) == 0) used.insert(txout.scriptPubKey);
+        }
+    }
+    report.used_addresses = static_cast<int>(used.size());
+    for (const auto& [account, record] : spk_man->GetHDAccounts()) {
+        if (record.state == CHDAccount::State::ACTIVE) report.accounts_found.push_back(account);
+    }
+    return report;
 }
