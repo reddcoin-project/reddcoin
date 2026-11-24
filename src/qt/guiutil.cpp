@@ -969,4 +969,12 @@ void PrintSlotException(
     PrintExceptionContinue(exception, description.c_str());
 }
 
+QString OtherHDAccountsNote(int unit, CAmount other_accounts, bool moving)
+{
+    if (other_accounts <= 0) return {};
+    const QString amount{BitcoinUnits::formatWithUnit(unit, other_accounts)};
+    if (moving) return QObject::tr("This moves account 0 only. %1 is held in other HD accounts.").arg(amount);
+    return QObject::tr("This wallet holds %1 in other HD accounts, which can be spent with the RPC interface.").arg(amount);
+}
+
 } // namespace GUIUtil

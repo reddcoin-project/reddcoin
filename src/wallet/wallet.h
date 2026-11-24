@@ -684,7 +684,9 @@ public:
     };
     Balance GetBalance(int min_depth = 0, bool avoid_reuse = true) const;
     //! What the wallet can spend in each HD account, account 0 included.
-    std::map<uint32_t, Balance> GetHDAccountBalances(int min_depth = 0, bool avoid_reuse = true) const;
+    std::map<uint32_t, Balance> GetHDAccountBalances(int min_depth = 0, bool avoid_reuse = true, bool other_accounts_only = false) const;
+    //! The trusted funds of the HD accounts above 0, as GetBalance counts them.
+    CAmount GetOtherHDAccountsTrusted() const;
     CAmount GetAvailableBalance(const CCoinControl* coinControl = nullptr) const;
 
     OutputType TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const;

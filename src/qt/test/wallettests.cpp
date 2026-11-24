@@ -10,7 +10,9 @@
 #include <interfaces/node.h>
 #include <qt/addresstablemodel.h>
 #include <qt/bitcoinamountfield.h>
+#include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
+#include <qt/guiutil.h>
 #include <qt/mintingfilterproxy.h>
 #include <qt/mintingtablemodel.h>
 #include <qt/optionsmodel.h>
@@ -24,10 +26,15 @@
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <key_io.h>
+#include <policy/policy.h>
+#include <script/sign.h>
+#include <script/signingprovider.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
+#include <wallet/walletdb.h>
 #include <qt/overviewpage.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/recentrequeststablemodel.h>
@@ -722,6 +729,123 @@ void TestKeysNotice(interfaces::Node& node)
     QVERIFY(entry->findChild<QCheckBox*>("checkboxSubtractFeeFromAmount")->isChecked());
 }
 
+//! A wallet that holds HD accounts: the overview gives account 0's Available,
+//! what the other accounts hold on a line of its own, and the whole wallet in
+//! Total; a change of that amount alone is a change of balance. The messages
+//! of the send page and of Move funds say what the other accounts hold.
+void TestHDAccounts(interfaces::Node& node)
+{
+    TestChain100Setup test;
+    node.setContext(&test.m_node);
+    test.stakeBlocks(1);
+    // A bip39 wallet on a mock database, as the other tests here make theirs:
+    // CreateWallet would tell wallet controllers of earlier tests about it.
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    LegacyScriptPubKeyMan& spk_man = *wallet->GetOrCreateLegacyScriptPubKeyMan();
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetMinVersion(FEATURE_LATEST);
+        WalletOptions walletoptions;
+        walletoptions.walletType = walletType::bip39Wallet;
+        QVERIFY(spk_man.SetupGeneration(walletoptions));
+        QVERIFY(spk_man.SetupHDAccounts());
+        wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+    CTxDestination account_zero;
+    std::string dest_error;
+    QVERIFY(wallet->GetNewDestination(OutputType::LEGACY, "", account_zero, dest_error));
+    CPubKey account_one;
+    QVERIFY(spk_man.GetHDAccountPubKey(1, false, 0, account_one));
+
+    // Each paid a coin of the fixture's wallet, in a staked block.
+    std::vector<CMutableTransaction> txs;
+    {
+        LOCK(test.m_wallet->cs_wallet);
+        std::vector<COutput> coins;
+        test.m_wallet->AvailableCoins(coins);
+        auto coin = coins.begin();
+        for (const CScript& script : {GetScriptForDestination(account_zero), GetScriptForDestination(PKHash(account_one))}) {
+            while (coin != coins.end() && (!coin->fSpendable || coin->nDepth < 20)) ++coin;
+            QVERIFY(coin != coins.end());
+            test.m_wallet->LockCoin(COutPoint(coin->tx->GetHash(), coin->i));
+            CMutableTransaction mtx;
+            const CTxOut& prev = coin->tx->tx->vout[coin->i];
+            mtx.vout.push_back({prev.nValue - DEFAULT_TRANSACTION_MAXFEE, script});
+            mtx.vin.push_back({CTxIn{coin->tx->GetHash(), static_cast<uint32_t>(coin->i)}});
+            FillableSigningProvider keystore;
+            keystore.AddKey(test.coinbaseKey);
+            std::map<COutPoint, Coin> spent;
+            spent[mtx.vin[0].prevout].out = prev;
+            std::map<int, std::string> input_errors;
+            QVERIFY(SignTransaction(mtx, &keystore, spent, SIGHASH_ALL, input_errors));
+            txs.push_back(mtx);
+            ++coin;
+        }
+    }
+    SetMockTime(GetTime() + 60);
+    test.CreateAndProcessPoSBlock(txs, GetScriptForRawPubKey(test.coinbaseKey.GetPubKey()), test.m_wallet);
+    {
+        WalletRescanReserver reserver(*wallet);
+        QVERIFY(reserver.reserve());
+        QVERIFY(wallet->ScanForWalletTransactions(Params().GetConsensus().hashGenesisBlock, 0, {}, reserver, /* fUpdate */ true).status == CWallet::ScanResult::SUCCESS);
+        LOCK2(wallet->cs_wallet, ::cs_main);
+        wallet->SetLastBlockProcessed(node.context()->chainman->ActiveChain().Height(), node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+    const CAmount zero_amount{txs[0].vout[0].nValue};
+    const CAmount one_amount{txs[1].vout[0].nValue};
+
+    {
+        std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+        OptionsModel optionsModel;
+        ClientModel clientModel(node, &optionsModel);
+        WalletModel walletModel(interfaces::MakeWallet(wallet), clientModel, platformStyle.get());
+        const int unit{optionsModel.getDisplayUnit()};
+
+        const interfaces::WalletBalances balances{walletModel.wallet().getBalances()};
+        QCOMPARE(balances.balance, zero_amount);
+        QCOMPARE(balances.other_accounts, one_amount);
+        interfaces::WalletBalances changed{balances};
+        changed.other_accounts += 1;
+        QVERIFY(changed.balanceChanged(balances));
+        QVERIFY(!balances.balanceChanged(balances));
+
+        OverviewPage overviewPage(platformStyle.get());
+        overviewPage.setWalletModel(&walletModel);
+        overviewPage.setBalance(balances);
+        const auto format = [&](CAmount amount) { return BitcoinUnits::formatWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, false); };
+        QCOMPARE(overviewPage.findChild<QLabel*>("labelBalance")->text(), format(zero_amount));
+        QLabel* other = overviewPage.findChild<QLabel*>("labelOtherAccounts");
+        QVERIFY(other && !other->isHidden());
+        QCOMPARE(other->text(), format(one_amount));
+        QVERIFY(!overviewPage.findChild<QLabel*>("labelOtherAccountsText")->isHidden());
+        QCOMPARE(overviewPage.findChild<QLabel*>("labelTotal")->text(), format(zero_amount + one_amount));
+        // Nothing in the other accounts: no line.
+        overviewPage.setBalance(interfaces::WalletBalances{});
+        QVERIFY(other->isHidden());
+
+        // The notice: none for a consistent wallet that owes no scan; one for a restore scan owed.
+        QLabel* notice = overviewPage.findChild<QLabel*>("labelHDAccountsNotice");
+        QVERIFY(notice && notice->isHidden());
+        QVERIFY(WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0));
+        overviewPage.setBalance(balances);
+        QVERIFY(!notice->isHidden());
+        QVERIFY(notice->text().contains("has not completed"));
+        QVERIFY(WalletBatch(wallet->GetDatabase()).EraseRestoreScan());
+
+        // The send page's balance is account 0's.
+        SendCoinsDialog sendCoinsDialog(platformStyle.get());
+        sendCoinsDialog.setModel(&walletModel);
+        QCOMPARE(sendCoinsDialog.findChild<QLabel*>("labelBalance")->text(), BitcoinUnits::formatWithUnit(unit, zero_amount));
+
+        // What the messages of the send page and of Move funds add.
+        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, false).contains("in other HD accounts, which can be spent with the RPC interface"));
+        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, false).contains(BitcoinUnits::formatWithUnit(unit, one_amount)));
+        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, one_amount, true).startsWith("This moves account 0 only."));
+        QVERIFY(GUIUtil::OtherHDAccountsNote(unit, 0, false).isEmpty());
+    }
+}
+
 //! Qt on macOS crashes inside the framework on the "minimal" platform when it
 //! looks up unimplemented cocoa functions (https://bugreports.qt.io/browse/QTBUG-49686).
 bool SkipOnMacMinimalPlatform(const char* test_name)
@@ -768,4 +892,10 @@ void WalletTests::keysNoticeTests()
 {
     if (SkipOnMacMinimalPlatform("keysNoticeTests")) return;
     TestKeysNotice(m_node);
+}
+
+void WalletTests::hdAccountsTests()
+{
+    if (SkipOnMacMinimalPlatform("hdAccountsTests")) return;
+    TestHDAccounts(m_node);
 }

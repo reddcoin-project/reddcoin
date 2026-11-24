@@ -199,6 +199,10 @@ BOOST_AUTO_TEST_CASE(payment_spends_one_account)
     const CAmount coin{Coins(nullptr).front().tx->tx->vout[Coins(nullptr).front().i].nValue};
     BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), 2 * coin);
     BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(&account_one), 2 * coin);
+    // What the GUI shows apart, counted without looking at account 0's outputs.
+    BOOST_CHECK_EQUAL(wallet->GetOtherHDAccountsTrusted(), 2 * coin);
+    BOOST_CHECK_EQUAL(wallet->GetHDAccountBalances().at(1).m_mine_trusted, 2 * coin);
+    BOOST_CHECK_EQUAL(wallet->GetHDAccountBalances(0, true, /* other_accounts_only */ true).count(0), 0U);
     {
         LOCK(wallet->cs_wallet);
         size_t listed{0};
