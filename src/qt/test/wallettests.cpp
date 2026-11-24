@@ -57,6 +57,7 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QFrame>
+#include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QPushButton>
@@ -1153,6 +1154,10 @@ void TestHDAccountsGUI(interfaces::Node& node)
         QCOMPARE(requests->rowCount({}), before + 1);
         QTableView* view = receiveCoinsDialog.findChild<QTableView*>("recentRequestsView");
         QVERIFY(!view->isColumnHidden(RecentRequestsTableModel::Account));
+        // The Account column is narrow; Amount takes the room left.
+        QCOMPARE(view->columnWidth(RecentRequestsTableModel::Account), int(ReceiveCoinsDialog::ACCOUNT_COLUMN_WIDTH));
+        QVERIFY(!view->horizontalHeader()->stretchLastSection());
+        QCOMPARE(view->horizontalHeader()->sectionResizeMode(RecentRequestsTableModel::Amount), QHeaderView::Stretch);
         bool found{false};
         for (int row = 0; row < requests->rowCount({}); ++row) {
             const CTxDestination dest{DecodeDestination(requests->entry(row).recipient.address.toStdString())};
@@ -1169,6 +1174,10 @@ void TestHDAccountsGUI(interfaces::Node& node)
         transactionView.setModel(&walletModel);
         QTableView* table = transactionView.findChild<QTableView*>("transactionView");
         QVERIFY(!table->isColumnHidden(TransactionTableModel::Account));
+        // The Account column is narrow; Amount takes the room left.
+        QCOMPARE(table->columnWidth(TransactionTableModel::Account), int(TransactionView::ACCOUNT_COLUMN_WIDTH));
+        QVERIFY(!table->horizontalHeader()->stretchLastSection());
+        QCOMPARE(table->horizontalHeader()->sectionResizeMode(TransactionTableModel::Amount), QHeaderView::Stretch);
         QCOMPARE(table->model()->rowCount(), 2);
         QComboBox* filter{nullptr};
         for (QComboBox* combo : transactionView.findChildren<QComboBox*>()) {

@@ -226,6 +226,13 @@ void TransactionView::setModel(WalletModel *_model)
         transactionProxyModel->setSortRole(Qt::EditRole);
         transactionView->setModel(transactionProxyModel);
         transactionView->sortByColumn(TransactionTableModel::Date, Qt::DescendingOrder);
+        // The HD account, the last column, needs room for its number only:
+        // Amount takes the room left, as it did as the last column. Also
+        // over a layout saved before the Account column, whose last
+        // section stretched.
+        transactionView->horizontalHeader()->setStretchLastSection(false);
+        transactionView->horizontalHeader()->setSectionResizeMode(TransactionTableModel::Amount, QHeaderView::Stretch);
+        transactionView->setColumnWidth(TransactionTableModel::Account, ACCOUNT_COLUMN_WIDTH);
 
         if (_model->getOptionsModel())
         {
