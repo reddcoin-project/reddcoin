@@ -1653,12 +1653,13 @@ void LegacyScriptPubKeyMan::IndexHDAccountKey(const CPubKey& pubkey, const CKeyM
     int64_t& last = internal ? last_change : last_receive;
     last = std::max(last, index);
     m_hd_account_keys[std::make_tuple(account, internal, static_cast<uint32_t>(index))] = pubkey.GetID();
-    m_hd_account_scripts[GetScriptForDestination(PKHash(pubkey))] = account;
-    m_hd_account_scripts[GetScriptForRawPubKey(pubkey)] = account;
+    const auto where = std::make_tuple(account, internal, static_cast<uint32_t>(index));
+    m_hd_account_scripts[GetScriptForDestination(PKHash(pubkey))] = where;
+    m_hd_account_scripts[GetScriptForRawPubKey(pubkey)] = where;
     if (pubkey.IsCompressed()) {
         const CScript witprog = GetScriptForDestination(WitnessV0KeyHash(pubkey.GetID()));
-        m_hd_account_scripts[witprog] = account;
-        m_hd_account_scripts[GetScriptForDestination(ScriptHash(witprog))] = account;
+        m_hd_account_scripts[witprog] = where;
+        m_hd_account_scripts[GetScriptForDestination(ScriptHash(witprog))] = where;
     }
 }
 
@@ -1844,7 +1845,23 @@ uint32_t LegacyScriptPubKeyMan::GetHDAccountOfScript(const CScript& script) cons
 {
     LOCK(cs_KeyStore);
     const auto it = m_hd_account_scripts.find(script);
-    return it == m_hd_account_scripts.end() ? 0 : it->second;
+    return it == m_hd_account_scripts.end() ? 0 : std::get<0>(it->second);
+}
+
+bool LegacyScriptPubKeyMan::GetHDAccountKeyOfScript(const CScript& script, uint32_t& account, bool& internal, uint32_t& index) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_scripts.find(script);
+    if (it == m_hd_account_scripts.end()) return false;
+    std::tie(account, internal, index) = it->second;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::UpdateHDAccount(uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    WalletBatch batch(m_storage.GetDatabase());
+    return WriteHDAccount(batch, account, record);
 }
 
 std::pair<int64_t, int64_t> LegacyScriptPubKeyMan::GetHDAccountExtent(uint32_t account) const
@@ -1867,15 +1884,15 @@ bool LegacyScriptPubKeyMan::GetHDAccountPubKey(uint32_t account, bool internal, 
     return it != m_hd_account_keys.end() && GetPubKey(it->second, pubkey);
 }
 
-bool LegacyScriptPubKeyMan::HandOutHDAccountChange(uint32_t account, uint32_t index)
+bool LegacyScriptPubKeyMan::HandOutHDAccountKey(uint32_t account, bool internal, uint32_t index)
 {
     m_storage.AssertWalletLockHeld();
     LOCK(cs_KeyStore);
     auto it = m_hd_accounts.find(account);
     if (it == m_hd_accounts.end()) return false;
-    if (index >= it->second.next_change) {
+    if (index >= (internal ? it->second.next_change : it->second.next_receive)) {
         CHDAccount record{it->second};
-        record.next_change = index + 1;
+        (internal ? record.next_change : record.next_receive) = index + 1;
         WalletBatch batch(m_storage.GetDatabase());
         if (!WriteHDAccount(batch, account, record)) return false;
     }

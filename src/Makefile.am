@@ -443,6 +443,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/external_signer_scriptpubkeyman.cpp \
   wallet/feebumper.cpp \
   wallet/fees.cpp \
+  wallet/hdaccounts.cpp \
   wallet/interfaces.cpp \
   wallet/load.cpp \
   wallet/receive.cpp \

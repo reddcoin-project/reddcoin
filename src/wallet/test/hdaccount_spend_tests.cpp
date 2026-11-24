@@ -327,6 +327,29 @@ BOOST_AUTO_TEST_CASE(selected_inputs_and_change)
     BOOST_CHECK_MESSAGE(allowed.ok, allowed.error.original);
 }
 
+// The receive gap counts confirmed payments only, as a restore finds them: an
+// unconfirmed payment to the last of 20 addresses handed out does not let a
+// 21st be handed out.
+BOOST_AUTO_TEST_CASE(receive_gap_counts_confirmed_payments)
+{
+    uint32_t account;
+    CTxDestination dest;
+    std::vector<bilingual_str> warnings;
+    bilingual_str error;
+    LOCK(wallet->cs_wallet);
+    BOOST_REQUIRE_MESSAGE(wallet->NewHDAccount("", /* force */ true, account, dest, warnings, error), error.original);
+    BOOST_REQUIRE_EQUAL(account, 1U);
+    for (uint32_t index = 1; index < HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+        BOOST_REQUIRE_MESSAGE(wallet->GetNewHDAccountDestination(1, /* internal */ false, OutputType::LEGACY, "", /* force */ false, dest, warnings, error), error.original);
+    }
+    CMutableTransaction unconfirmed;
+    unconfirmed.vin.emplace_back(COutPoint(uint256::ONE, 0));
+    unconfirmed.vout.emplace_back(COIN, GetScriptForDestination(dest));
+    wallet->AddToWallet(MakeTransactionRef(unconfirmed), CWalletTx::Confirmation{});
+    BOOST_CHECK(!wallet->GetNewHDAccountDestination(1, /* internal */ false, OutputType::LEGACY, "", /* force */ false, dest, warnings, error));
+    BOOST_CHECK_MESSAGE(error.original.find("have not been paid") != std::string::npos, error.original);
+}
+
 // Every funding call of an account takes a change index, sent or not. When
 // the last 20 handed out are all unpaid, the lowest of them is handed out
 // again, so that a restore, which watches 20, still finds change.
