@@ -28,6 +28,7 @@
 #include <qt/transactionrecord.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
+#include <qt/walletcontroller.h>
 #include <qt/walletmodel.h>
 #include <key_io.h>
 #include <policy/policy.h>
@@ -944,7 +945,7 @@ void PayInABlock(interfaces::Node& node, TestChain100Setup& test, const std::vec
 //! The usable GUI of HD accounts: the Accounts page and its actions, the
 //! account selectors of the send and receive pages, the Account column and
 //! filter of the transaction list, the unlock prompt of the first account of
-//! an encrypted wallet, and Move funds an account at a time.
+//! an encrypted wallet, Move funds an account at a time, and the restore report.
 void TestHDAccountsGUI(interfaces::Node& node)
 {
     TestChain100Setup test;
@@ -1204,6 +1205,30 @@ void TestHDAccountsGUI(interfaces::Node& node)
         QCOMPARE(int(target_accounts.size()), 2);
         QCOMPARE(target_accounts[1].label, std::string{"rainy day"});
     }
+
+    // The restore report.
+    interfaces::WalletRestoreReport report;
+    report.hd_type = "bip44";
+    report.first_path = "m/44'/4'/0'/0/0";
+    report.used_addresses = 3;
+    report.accounts_found = {1, 2};
+    report.history = true;
+    bool no_history{true};
+    QString text{RestoreReportText(report, "restored", no_history)};
+    QVERIFY(!no_history);
+    QVERIFY(text.contains("restored as a bip44 wallet. Its first address is at m/44'/4'/0'/0/0."));
+    QVERIFY(text.contains("HD accounts found: 1, 2."));
+    report = {};
+    report.hd_type = "bip39";
+    text = RestoreReportText(report, "restored", no_history);
+    QVERIFY(no_history);
+    QVERIFY(text.contains("No HD account above 0 was found."));
+    QVERIFY(text.contains("No history was found."));
+    // A scan not finished is not a restore without history.
+    report.scan_owed = true;
+    text = RestoreReportText(report, "restored", no_history);
+    QVERIFY(!no_history);
+    QVERIFY(text.contains("has not finished"));
 }
 
 //! Qt on macOS crashes inside the framework on the "minimal" platform when it
