@@ -70,6 +70,7 @@ private:
 
     QComboBox *dateWidget;
     QComboBox *typeWidget;
+    QComboBox* m_account_widget;
     QComboBox *watchOnlyWidget;
     QLineEdit *search_widget;
     QLineEdit *amountWidget;
@@ -103,6 +104,8 @@ private Q_SLOTS:
     void copyTxPlainText();
     void openThirdPartyTxUrl(QString url);
     void updateWatchOnlyColumn(bool fHaveWatchOnly);
+    /** Fill the HD account filter, and show it and the Account column for a wallet that holds accounts */
+    void updateHDAccounts();
     void abandonTx();
     void bumpFee(bool checked);
 
@@ -117,6 +120,7 @@ Q_SIGNALS:
 public Q_SLOTS:
     void chooseDate(int idx);
     void chooseType(int idx);
+    void chooseHDAccount(int idx);
     void chooseWatchonly(int idx);
     void changedAmount();
     void changedSearch();

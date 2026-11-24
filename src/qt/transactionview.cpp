@@ -96,6 +96,14 @@ TransactionView::TransactionView(const PlatformStyle *platformStyle, QWidget *pa
 
     hlayout->addWidget(typeWidget);
 
+    // The HD account filter: for a wallet that holds accounts.
+    m_account_widget = new QComboBox(this);
+    m_account_widget->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_account_widget->setToolTip(tr("Show the transactions of one HD account"));
+    m_account_widget->addItem(tr("All accounts"));
+    m_account_widget->setVisible(false);
+    hlayout->addWidget(m_account_widget);
+
     search_widget = new QLineEdit(this);
     search_widget->setPlaceholderText(tr("Enter address, transaction id, or label to search"));
     hlayout->addWidget(search_widget);
@@ -181,6 +189,7 @@ TransactionView::TransactionView(const PlatformStyle *platformStyle, QWidget *pa
 
     connect(dateWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseDate);
     connect(typeWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseType);
+    connect(m_account_widget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseHDAccount);
     connect(watchOnlyWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseWatchonly);
     connect(amountWidget, &QLineEdit::textChanged, amount_typing_delay, qOverload<>(&QTimer::start));
     connect(amount_typing_delay, &QTimer::timeout, this, &TransactionView::changedAmount);
@@ -242,6 +251,10 @@ void TransactionView::setModel(WalletModel *_model)
 
         // Watch-only signal
         connect(_model, &WalletModel::notifyWatchonlyChanged, this, &TransactionView::updateWatchOnlyColumn);
+
+        // HD accounts: the filter and the Account column
+        updateHDAccounts();
+        connect(_model, &WalletModel::hdAccountsChanged, this, &TransactionView::updateHDAccounts);
     }
 }
 
@@ -312,6 +325,31 @@ void TransactionView::chooseType(int idx)
         return;
     transactionProxyModel->setTypeFilter(
         typeWidget->itemData(idx).toInt());
+}
+
+void TransactionView::chooseHDAccount(int idx)
+{
+    if (!transactionProxyModel) return;
+    const QVariant account{m_account_widget->itemData(idx)};
+    transactionProxyModel->setHDAccountFilter(account.isValid() ? std::optional<uint32_t>{account.toUInt()} : std::nullopt);
+}
+
+void TransactionView::updateHDAccounts()
+{
+    if (!model) return;
+    const std::vector<interfaces::WalletHDAccount> accounts{model->wallet().listHDAccounts(/* with_balances */ false)};
+    const bool shown{accounts.size() > 1};
+    const QVariant before{m_account_widget->currentData()};
+    m_account_widget->clear();
+    m_account_widget->addItem(tr("All accounts"));
+    for (const interfaces::WalletHDAccount& entry : accounts) {
+        m_account_widget->addItem(entry.label.empty() ? tr("Account %1").arg(entry.number) : tr("Account %1 (%2)").arg(entry.number).arg(QString::fromStdString(entry.label)), entry.number);
+    }
+    const int index{before.isValid() ? m_account_widget->findData(before) : 0};
+    m_account_widget->setCurrentIndex(std::max(index, 0));
+    chooseHDAccount(m_account_widget->currentIndex());
+    m_account_widget->setVisible(shown);
+    transactionView->setColumnHidden(TransactionTableModel::Account, !shown);
 }
 
 void TransactionView::chooseWatchonly(int idx)
