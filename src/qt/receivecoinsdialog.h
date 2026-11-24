@@ -16,6 +16,7 @@
 #include <QPoint>
 #include <QVariant>
 
+class HDAccountSelector;
 class PlatformStyle;
 class WalletModel;
 
@@ -45,6 +46,8 @@ public:
 
     void setModel(WalletModel *model);
 
+    HDAccountSelector* hdAccountSelector() const { return m_account_selector; }
+
 public Q_SLOTS:
     void clear();
     void reject() override;
@@ -57,6 +60,11 @@ protected:
 private:
     Ui::ReceiveCoinsDialog *ui;
     WalletModel *model;
+    HDAccountSelector* m_account_selector;
+    //! Show the request for a new address, and keep it.
+    void showNewRequest(const QString& address, const QString& label);
+    //! Show the Account column of the requests for a wallet that holds HD accounts.
+    void updateAccountColumn();
     QMenu *contextMenu;
     QAction* copyLabelAction;
     QAction* copyMessageAction;
