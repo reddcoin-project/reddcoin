@@ -19,6 +19,9 @@
 
 #include <util/translation.h>
 
+#include <QBoxLayout>
+#include <QGridLayout>
+#include <QLabel>
 #include <QAbstractItemDelegate>
 #include <QApplication>
 #include <QDateTime>
@@ -151,6 +154,39 @@ OverviewPage::OverviewPage(const PlatformStyle *platformStyle, QWidget *parent) 
 {
     ui->setupUi(this);
 
+    // What the HD accounts above 0 hold, in the grid of balances below Total.
+    QGridLayout* grid{nullptr};
+    for (QGridLayout* layout : ui->labelTotal->parentWidget()->findChildren<QGridLayout*>()) {
+        if (layout->indexOf(ui->labelTotal) >= 0) grid = layout;
+    }
+    if (grid) {
+        m_label_other_accounts_text = new QLabel(tr("In other HD accounts (Pending and Immature above include them):"), this);
+        m_label_other_accounts_text->setObjectName("labelOtherAccountsText");
+        m_label_other_accounts = new QLabel(this);
+        m_label_other_accounts->setObjectName("labelOtherAccounts");
+        m_label_other_accounts->setFont(ui->labelTotal->font());
+        m_label_other_accounts->setCursor(ui->labelTotal->cursor());
+        m_label_other_accounts->setToolTip(tr("Confirmed funds of the HD accounts of this wallet other than account 0. Available above, and the send page, are account 0's."));
+        m_label_other_accounts->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+        const int row{grid->rowCount()};
+        grid->addWidget(m_label_other_accounts_text, row, 0);
+        grid->addWidget(m_label_other_accounts, row, 1);
+        m_label_other_accounts_text->hide();
+        m_label_other_accounts->hide();
+    }
+    QBoxLayout* box{nullptr};
+    for (QBoxLayout* layout : ui->frameKeysNotice->parentWidget()->findChildren<QBoxLayout*>()) {
+        if (layout->indexOf(ui->frameKeysNotice) >= 0) box = layout;
+    }
+    if (box) {
+        m_label_hd_accounts_notice = new QLabel(this);
+        m_label_hd_accounts_notice->setObjectName("labelHDAccountsNotice");
+        m_label_hd_accounts_notice->setWordWrap(true);
+        m_label_hd_accounts_notice->setStyleSheet("QLabel { background-color: #ffd5a1; color: black; padding: 5px; border: 1px solid #ffac44; }");
+        box->insertWidget(box->indexOf(ui->frameKeysNotice) + 1, m_label_hd_accounts_notice);
+        m_label_hd_accounts_notice->hide();
+    }
+
     m_balances.balance = -1;
 
     // use a SingleColorIcon for the "out of sync warning" icon
@@ -210,6 +246,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
     int unit = walletModel->getOptionsModel()->getDisplayUnit();
     m_balances = balances;
     updateKeysNotice();
+    updateHDAccountsNotice();
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
             ui->labelBalance->setText(BitcoinUnits::formatWithPrivacy(unit, balances.watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
@@ -220,7 +257,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
             ui->labelBalance->setText(BitcoinUnits::formatWithPrivacy(unit, balances.balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
             ui->labelUnconfirmed->setText(BitcoinUnits::formatWithPrivacy(unit, balances.unconfirmed_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
             ui->labelImmature->setText(BitcoinUnits::formatWithPrivacy(unit, balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelTotal->setText(BitcoinUnits::formatWithPrivacy(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
+            ui->labelTotal->setText(BitcoinUnits::formatWithPrivacy(unit, balances.balance + balances.other_accounts + balances.unconfirmed_balance + balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
             ui->labelWatchAvailable->setText(BitcoinUnits::formatWithPrivacy(unit, balances.watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
             ui->labelWatchPending->setText(BitcoinUnits::formatWithPrivacy(unit, balances.unconfirmed_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
             ui->labelWatchImmature->setText(BitcoinUnits::formatWithPrivacy(unit, balances.immature_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
@@ -232,6 +269,12 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
         ui->labelImmature->setText(BitcoinUnits::formatWithPrivacy(unit, balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
         ui->labelTotal->setText(BitcoinUnits::formatWithPrivacy(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
     }
+    if (m_label_other_accounts) {
+        m_label_other_accounts->setText(BitcoinUnits::formatWithPrivacy(unit, balances.other_accounts, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
+        m_label_other_accounts->setVisible(balances.other_accounts != 0);
+        m_label_other_accounts_text->setVisible(balances.other_accounts != 0);
+    }
+
     // only show immature (newly mined) balance if it's non-zero, so as not to complicate things
     // for the non-mining users
     bool showImmature = balances.immature_balance != 0;
@@ -348,7 +391,7 @@ void OverviewPage::updateKeysNotice()
         return;
     }
     // Until the balance is known, as if there were funds.
-    const bool has_funds{m_balances.balance != 0 || m_balances.stake != 0 || m_balances.unconfirmed_balance != 0 || m_balances.immature_balance != 0};
+    const bool has_funds{m_balances.balance != 0 || m_balances.stake != 0 || m_balances.unconfirmed_balance != 0 || m_balances.immature_balance != 0 || m_balances.other_accounts != 0};
     if (has_funds) {
         ui->labelKeysNotice->setText(tr("The seed of this wallet does not restore all of its addresses: only this wallet file holds the keys to all of them. "
                                         "Move the funds to a new wallet, whose mnemonic phrase then restores everything, or back up this wallet file and keep that backup safe."));
@@ -361,6 +404,21 @@ void OverviewPage::updateKeysNotice()
     ui->labelKeysNotice->setToolTip("<qt>" + lines.join("<br><br>") + "</qt>");
     ui->buttonMoveFunds->setVisible(has_funds);
     ui->frameKeysNotice->show();
+}
+
+void OverviewPage::updateHDAccountsNotice()
+{
+    if (!m_label_hd_accounts_notice) return;
+    QStringList lines;
+    if (walletModel && walletModel->wallet().hdAccountsInconsistent()) {
+        lines << tr("This wallet holds keys of HD accounts but is not marked as holding accounts, as the salvage of an earlier wallet tool leaves it. "
+                    "Do not open it with a version without HD accounts: it would spend the coins of its accounts together.");
+    }
+    if (walletModel && walletModel->wallet().hdRestoreScanOwed()) {
+        lines << tr("The scan of the chain for this restored wallet has not completed. It continues when the wallet is next loaded.");
+    }
+    m_label_hd_accounts_notice->setText(lines.join("\n\n"));
+    m_label_hd_accounts_notice->setVisible(!lines.isEmpty());
 }
 
 void OverviewPage::showOutOfSyncWarning(bool fShow)

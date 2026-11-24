@@ -1619,7 +1619,11 @@ void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
         "<li>" + tr("Create the new wallet. Choose a mnemonic wallet, and write down its mnemonic phrase: it is the backup of the new wallet.") + "</li>" +
         "<li>" + tr("The send page of wallet %1 then opens with all of its funds to an address of the new wallet. Check it and press Send.").arg(name) + "</li>" +
         "</ol>" + tr("Coins that are not mature yet stay in wallet %1: move them the same way once they are.").arg(name) + "<br><br>" +
-        tr("Moved coins start their coin age for staking again. Keep the file of wallet %1 until the payment is confirmed.").arg(name) + "</qt>",
+        tr("Moved coins start their coin age for staking again. Keep the file of wallet %1 until the payment is confirmed.").arg(name) +
+        [&] {
+            const QString other{GUIUtil::OtherHDAccountsNote(from->getOptionsModel()->getDisplayUnit(), from->wallet().getBalances().other_accounts, /* moving */ true)};
+            return other.isEmpty() ? QString{} : "<br><br>" + other.toHtmlEscaped();
+        }() + "</qt>",
         QMessageBox::Ok | QMessageBox::Cancel, this);
     if (box.exec() != QMessageBox::Ok) return;
 

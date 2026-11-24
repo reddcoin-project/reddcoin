@@ -422,6 +422,11 @@ namespace GUIUtil
             type);
     }
 
+    /** What the wallet holds in HD accounts above 0, for the messages of the
+     *  send page and of Move funds, which act on account 0 only. Empty when
+     *  the other accounts hold nothing. `moving` gives the Move funds wording. */
+    QString OtherHDAccountsNote(int unit, CAmount other_accounts, bool moving);
+
 } // namespace GUIUtil
 
 #endif // BITCOIN_QT_GUIUTIL_H

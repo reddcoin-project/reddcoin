@@ -21,6 +21,7 @@ namespace Ui {
 }
 
 QT_BEGIN_NAMESPACE
+class QLabel;
 class QModelIndex;
 QT_END_NAMESPACE
 
@@ -58,6 +59,12 @@ private:
     bool m_privacy{false};
     //! The owner hid the notice about keys the seed does not restore: until the wallet is next loaded.
     bool m_keys_notice_hidden{false};
+    //! What the HD accounts above 0 hold, below the balances; and the notice
+    //! of an inconsistent wallet or of a restore scan owed.
+    QLabel* m_label_other_accounts_text{nullptr};
+    QLabel* m_label_other_accounts{nullptr};
+    QLabel* m_label_hd_accounts_notice{nullptr};
+    void updateHDAccountsNotice();
 
     const PlatformStyle* m_platform_style;
 

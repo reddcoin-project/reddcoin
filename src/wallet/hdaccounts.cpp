@@ -169,10 +169,10 @@ bool CWallet::NewHDAccount(const std::string& label, bool force, uint32_t& accou
     return GetNewHDAccountDestination(account, /* internal */ false, type, label, /* force */ false, first, warnings, error);
 }
 
-std::map<uint32_t, CWallet::Balance> CWallet::GetHDAccountBalances(int min_depth, bool avoid_reuse) const
+std::map<uint32_t, CWallet::Balance> CWallet::GetHDAccountBalances(int min_depth, bool avoid_reuse, bool other_accounts_only) const
 {
     std::map<uint32_t, Balance> balances;
-    balances[0];
+    if (!other_accounts_only) balances[0];
     if (const LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan()) {
         for (const auto& entry : spk_man->GetHDAccounts()) balances[entry.first];
     }
@@ -180,24 +180,41 @@ std::map<uint32_t, CWallet::Balance> CWallet::GetHDAccountBalances(int min_depth
     const bool skip_used{avoid_reuse && IsWalletFlagSet(WALLET_FLAG_AVOID_REUSE)};
     std::set<uint256> trusted_parents;
     for (const auto& [txid, wtx] : mapWallet) {
-        const bool is_trusted{IsTrusted(wtx, trusted_parents)};
-        const int depth{wtx.GetDepthInMainChain()};
-        const bool immature{wtx.IsImmatureCoinBase()};
+        // Worked out for a transaction with an output counted, and only
+        // then: a wallet's outputs are mostly of account 0.
+        std::optional<bool> is_trusted;
+        std::optional<int> depth;
         for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
             const CTxOut& txout = wtx.tx->vout[i];
+            const uint32_t account{GetHDAccountOfScript(txout.scriptPubKey)};
+            if (other_accounts_only && account == 0) continue;
             if ((IsMine(txout) & ISMINE_SPENDABLE) == ISMINE_NO || IsSpent(txid, i)) continue;
             if (skip_used && IsSpentKey(txid, i)) continue;
-            Balance& balance = balances[GetHDAccountOfScript(txout.scriptPubKey)];
-            if (immature) {
-                if (depth > 0) balance.m_mine_immature += txout.nValue;
-            } else if (is_trusted && depth >= min_depth) {
+            if (!is_trusted) {
+                is_trusted = IsTrusted(wtx, trusted_parents);
+                depth = wtx.GetDepthInMainChain();
+            }
+            Balance& balance = balances[account];
+            if (wtx.IsImmatureCoinBase()) {
+                if (*depth > 0) balance.m_mine_immature += txout.nValue;
+            } else if (*is_trusted && *depth >= min_depth) {
                 balance.m_mine_trusted += txout.nValue;
-            } else if (!is_trusted && depth == 0 && wtx.InMempool()) {
+            } else if (!*is_trusted && *depth == 0 && wtx.InMempool()) {
                 balance.m_mine_untrusted_pending += txout.nValue;
             }
         }
     }
     return balances;
+}
+
+CAmount CWallet::GetOtherHDAccountsTrusted() const
+{
+    CAmount trusted{0};
+    for (const auto& entry : GetHDAccountBalances(/* min_depth */ 0, /* avoid_reuse */ true, /* other_accounts_only */ true)) {
+        const auto& balance = entry.second;
+        trusted += balance.m_mine_trusted;
+    }
+    return trusted;
 }
 
 std::vector<CTxDestination> CWallet::GetUnpaidHDAccountAddresses(uint32_t account) const
