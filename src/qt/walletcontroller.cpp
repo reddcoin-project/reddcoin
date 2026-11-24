@@ -381,6 +381,28 @@ void CreateWalletWizardActivity::createWallet()
     });
 }
 
+QString RestoreReportText(const interfaces::WalletRestoreReport& report, const QString& wallet_name, bool& no_history)
+{
+    QStringList lines;
+    lines << QObject::tr("Wallet %1 was restored as a %2 wallet. Its first address is at %3.").arg(wallet_name, QString::fromStdString(report.hd_type), QString::fromStdString(report.first_path));
+    lines << QObject::tr("Addresses of account 0 found paid: %1.").arg(report.used_addresses);
+    if (report.accounts_found.empty()) {
+        lines << QObject::tr("No HD account above 0 was found.");
+    } else {
+        QStringList numbers;
+        for (const uint32_t account : report.accounts_found) numbers << QString::number(account);
+        lines << QObject::tr("HD accounts found: %1.").arg(numbers.join(", "));
+    }
+    if (report.scan_owed) {
+        lines << QObject::tr("The scan of the block chain has not finished. It continues when the wallet is unlocked or next loaded; what it has found so far is listed above.");
+    }
+    no_history = !report.history && !report.scan_owed;
+    if (no_history) {
+        lines << QObject::tr("No history was found. Check the wallet type (bip39 or bip44) and the mnemonic passphrase: either being wrong gives an empty wallet, with no error.");
+    }
+    return lines.join("\n\n");
+}
+
 void CreateWalletWizardActivity::finish()
 {
     destroyProgressDialog();
@@ -389,6 +411,18 @@ void CreateWalletWizardActivity::finish()
         QMessageBox::critical(m_parent_widget, tr("Create wallet failed"), QString::fromStdString(m_error_message.translated));
     } else if (!m_warning_message.empty()) {
         QMessageBox::warning(m_parent_widget, tr("Create wallet warning"), QString::fromStdString(Join(m_warning_message, Untranslated("\n")).translated));
+    }
+
+    // A restore from a phrase: the type is not in the phrase, and a wrong
+    // type or mnemonic passphrase gives an empty wallet. Say what was found.
+    if (m_wallet_model && m_importing && m_wallet_model->wallet().isLegacy() && m_wallet_model->wallet().bip39Enabled()) {
+        bool no_history{false};
+        const QString text{RestoreReportText(m_wallet_model->wallet().getRestoreReport(), m_wallet_model->getDisplayName(), no_history)};
+        if (no_history) {
+            QMessageBox::warning(m_parent_widget, tr("Restore report"), text);
+        } else {
+            QMessageBox::information(m_parent_widget, tr("Restore report"), text);
+        }
     }
 
     if (m_wallet_model) Q_EMIT created(m_wallet_model);
