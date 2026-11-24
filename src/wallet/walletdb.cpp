@@ -42,6 +42,8 @@ const std::string HDCHAIN{"hdchain"};
 const std::string HDSECRETS{"hdsecrets"};
 const std::string HDSECRETSPENDING{"hdsecretspending"};
 const std::string HDRESTORESCAN{"hdrestorescan"};
+const std::string HDACCOUNT{"hdaccount"};
+const std::string HDACCOUNTMETA{"hdaccountmeta"};
 const std::string REWRITTEN{"rewritten"};
 const std::string KEYMETA{"keymeta"};
 const std::string KEY{"key"};
@@ -355,6 +357,9 @@ public:
     std::map<uint160, CHDChain> m_hd_chains;
     //! Key metadata whose path was put right from its text form while loading, to be written back.
     std::vector<std::pair<CPubKey, CKeyMetadata>> m_repaired_keymeta;
+    //! For each seed and HD account above 0, the highest index of its keys on
+    //! the receive and the change chain, -1 for none.
+    std::map<std::pair<CKeyID, uint32_t>, std::pair<int64_t, int64_t>> m_hd_account_keys;
 
     CWalletScanState() {
     }
@@ -587,8 +592,10 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     }
 
                     if (path.size() == 3) {
-                        if (path[0] != 0x80000000) {
-                            strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
+                        // m/account'/chain'/index': the first element is the
+                        // HD account, 0 for every key that is not of one.
+                        if ((path[0] & 0x80000000) == 0) {
+                            strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000) for the element at index 0", path[0]);
                             return false;
                         }
                         if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000)) {
@@ -633,8 +640,13 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 // A chain record counts the keys of account 0 only: a key of
                 // another HD account is on a chain of its own, and counting it
                 // here would put the counters of account 0 past keys that
-                // were never derived.
-                if (account == 0) {
+                // were never derived. Where the chains of the other accounts
+                // reach is kept, to put together an account record that is lost.
+                if (account != 0) {
+                    auto& [last_receive, last_change] = wss.m_hd_account_keys.emplace(std::make_pair(keyMeta.hd_seed_id, account), std::make_pair(int64_t{-1}, int64_t{-1})).first->second;
+                    int64_t& last = internal ? last_change : last_receive;
+                    last = std::max(last, int64_t{index});
+                } else {
                     // Insert a new CHDChain, or get the one that already exists
                     auto ins = wss.m_hd_chains.emplace(keyMeta.hd_seed_id, CHDChain());
                     CHDChain& chain = ins.first->second;
@@ -706,6 +718,22 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             // Asked for when the wallet is opened; nothing to load.
         } else if (strType == DBKeys::HDRESTORESCAN) {
             // Read when the wallet is attached to the chain; nothing to load.
+        } else if (strType == DBKeys::HDACCOUNT) {
+            uint32_t account;
+            ssKey >> account;
+            CHDAccount record;
+            ssValue >> record;
+            // Account 0 has no record, an account has 31 bits, and a record
+            // in a state this version does not know is not one it can act on.
+            if (account == 0 || account >= 0x80000000 || record.state > CHDAccount::State::RETIRED) {
+                strErr = strprintf("Error reading wallet database: HD account record %u is invalid", account);
+                return false;
+            }
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDAccount(account, record);
+        } else if (strType == DBKeys::HDACCOUNTMETA) {
+            CHDAccountMeta meta;
+            ssValue >> meta;
+            pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDAccountMeta(meta);
         } else if (strType == DBKeys::OLD_KEY) {
             strErr = "Found unsupported 'wkey' record, try loading with version 0.18";
             return false;
@@ -862,7 +890,9 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     try {
         int nMinVersion = 0;
         if (m_batch->Read(DBKeys::MINVERSION, nMinVersion)) {
-            if (nMinVersion > FEATURE_LATEST)
+            // A wallet with HD accounts requires FEATURE_HD_ACCOUNTS, above
+            // the version new wallets are written with.
+            if (nMinVersion > FEATURE_HD_ACCOUNTS)
                 return DBErrors::TOO_NEW;
             pwallet->LoadMinVersion(nMinVersion);
         }
@@ -974,6 +1004,22 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     if (LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan()) {
         legacy_spkm->DecideHDSecretsState();
         legacy_spkm->DecideMixedKeyPaths();
+
+        // An account whose keys are in the wallet and whose record is not, as
+        // after its records were lost, gets its record back from the paths of
+        // its keys. Its label is not recoverable.
+        if (result == DBErrors::LOAD_OK) {
+            const auto [rebuilt, meta_changed] = legacy_spkm->RebuildHDAccounts(wss.m_hd_account_keys);
+            if ((!rebuilt.empty() || meta_changed) && !pwallet->m_read_only_load) {
+                for (const uint32_t account : rebuilt) {
+                    WriteHDAccount(account, legacy_spkm->GetHDAccounts().at(account));
+                }
+                if (meta_changed) WriteHDAccountMeta(*legacy_spkm->GetHDAccountMeta());
+            }
+            if (!rebuilt.empty()) {
+                pwallet->WalletLogPrintf("The records of %u HD accounts were missing and have been put together from the paths of their keys\n", rebuilt.size());
+            }
+        }
     }
 
     if (fNoncriticalErrors && result == DBErrors::LOAD_OK)
@@ -1056,7 +1102,9 @@ DBErrors WalletBatch::FindWalletTx(std::vector<uint256>& vTxHash, std::list<CWal
     try {
         int nMinVersion = 0;
         if (m_batch->Read(DBKeys::MINVERSION, nMinVersion)) {
-            if (nMinVersion > FEATURE_LATEST)
+            // A wallet with HD accounts requires FEATURE_HD_ACCOUNTS, above
+            // the version new wallets are written with.
+            if (nMinVersion > FEATURE_HD_ACCOUNTS)
                 return DBErrors::TOO_NEW;
         }
 
@@ -1243,6 +1291,16 @@ bool WalletBatch::ReadRestoreScan(int& height)
 bool WalletBatch::EraseRestoreScan()
 {
     return EraseIC(DBKeys::HDRESTORESCAN);
+}
+
+bool WalletBatch::WriteHDAccount(uint32_t account, const CHDAccount& record)
+{
+    return WriteIC(std::make_pair(DBKeys::HDACCOUNT, account), record);
+}
+
+bool WalletBatch::WriteHDAccountMeta(const CHDAccountMeta& meta)
+{
+    return WriteIC(DBKeys::HDACCOUNTMETA, meta);
 }
 
 bool WalletBatch::WriteWalletFlags(const uint64_t flags)

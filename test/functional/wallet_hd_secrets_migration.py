@@ -351,7 +351,7 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
         assert PENDING.decode() in [record_type(key) for key, _ in after]
         assert not any(int.from_bytes(bytes.fromhex(value), "little") & FLAG_HD_SECRETS_ENCRYPTED for key, value in after if record_type(key) == "flags")
 
-        self.log.info("The wallet tool: salvage keeps the encrypted secrets, and writes their flag")
+        self.log.info("The wallet tool: salvage keeps the encrypted secrets, and the flags with theirs")
         salvaged = {name: facts for name, facts in wallets.items() if facts["database"] == "bdb"}
         for name in sorted(salvaged):
             _, before = self.dump(name)
@@ -364,13 +364,19 @@ class HDSecretsMigrationTest(BitcoinTestFramework):
                 assert line.startswith("WARNING: WalletBatch::Recover skipping ckey: "), stderr
             _, records = self.dump(name)
             assert_equal(sorted(key for key, _ in records if record_type(key) == "ckey"), sorted(key for key, _ in before if record_type(key) == "ckey"))
-            # What salvage keeps: keys, the master key, the chain, and the
-            # encrypted secrets with the flag that says they are kept so.
-            # The dump writes nothing, so the flag is salvage's own.
-            types = sorted({record_type(r[0]) for r in records} - {"version"})
-            assert_equal(types, ["ckey", "flags", "hdchain", "hdsecrets", "mkey"])
+            # What salvage keeps: keys, the master key, the chain, the
+            # encrypted secrets, the metadata of the keys (which says which HD
+            # account a key is of), witness scripts if the wallet has any, and
+            # the version the wallet requires. The flags of the wallet are
+            # kept, with the flag that says the secrets are kept apart.
+            types = sorted({record_type(r[0]) for r in records} - {"version", "cscript"})
+            assert_equal(types, ["ckey", "flags", "hdchain", "hdsecrets", "keymeta", "minversion", "mkey"])
+            flags_before = [int.from_bytes(bytes.fromhex(value), "little") for key, value in before if record_type(key) == "flags"]
+            assert_equal(len(flags_before), 1)
             flags = [int.from_bytes(bytes.fromhex(value), "little") for key, value in records if record_type(key) == "flags"]
-            assert_equal(flags, [FLAG_HD_SECRETS_ENCRYPTED])
+            assert_equal(flags, [flags_before[0] | FLAG_HD_SECRETS_ENCRYPTED])
+            assert_equal([value for key, value in records if record_type(key) == "minversion"],
+                         [value for key, value in before if record_type(key) == "minversion"])
         if self.options.unfixed_bindir:
             self.log.info("A salvaged wallet is refused by a version without the change")
             self.nodes[0].args[0] = os.path.join(self.options.unfixed_bindir, "reddcoind")

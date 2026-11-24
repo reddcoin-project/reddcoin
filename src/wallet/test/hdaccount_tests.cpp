@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
 #include <chainparams.h>
 #include <interfaces/chain.h>
 #include <key.h>
@@ -13,6 +17,7 @@
 #include <util/system.h>
 #include <util/translation.h>
 #include <validationinterface.h>
+#include <wallet/salvage.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
@@ -92,6 +97,9 @@ struct HDAccountTestingSetup : public TestChain100Setup {
         options.require_existing = true;
         std::shared_ptr<CWallet> wallet = LoadWallet(*m_node.chain, name, /* load_on_start */ std::nullopt, options, status, error, warnings);
         BOOST_REQUIRE_MESSAGE(wallet, error.original);
+        // A record the loader could not read is a warning, not a failure.
+        const std::string warning{warnings.empty() ? "" : warnings.front().original};
+        BOOST_CHECK_MESSAGE(warnings.empty(), warning);
         return wallet;
     }
 
@@ -100,6 +108,31 @@ struct HDAccountTestingSetup : public TestChain100Setup {
         SyncWithValidationInterfaceQueue();
         BOOST_CHECK(RemoveWallet(wallet, /* load_on_start */ std::nullopt));
         UnloadWallet(std::move(wallet));
+    }
+
+    //! Add key `index` of a chain of HD account `account` to an unlocked wallet; its public key.
+    static CPubKey AddAccountKey(CWallet& wallet, uint32_t account, bool internal, uint32_t index)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        LOCK2(wallet.cs_wallet, spk_man.cs_KeyStore);
+        CKey key;
+        CKeyMetadata meta;
+        BOOST_REQUIRE(spk_man.DeriveHDAccountKey(account, internal, index, key, meta));
+        WalletBatch batch(wallet.GetDatabase());
+        BOOST_REQUIRE(spk_man.AddHDAccountKey(batch, key, meta));
+        return key.GetPubKey();
+    }
+
+    //! The database of a wallet that is not loaded.
+    static std::unique_ptr<WalletDatabase> Database(const std::string& name)
+    {
+        DatabaseOptions options;
+        DatabaseStatus status;
+        bilingual_str error;
+        options.require_existing = true;
+        std::unique_ptr<WalletDatabase> database = MakeWalletDatabase(name, options, status, error);
+        BOOST_REQUIRE_MESSAGE(database, error.original);
+        return database;
     }
 
     //! Every form a payment to `pubkey` can take.
@@ -113,6 +146,17 @@ struct HDAccountTestingSetup : public TestChain100Setup {
             GetScriptForDestination(ScriptHash(witprog)),
         };
     }
+};
+
+//! An account record as CHDAccount lays it out, in a state no version knows.
+struct UnknownStateRecord {
+    int nVersion{CHDAccount::CURRENT_VERSION};
+    uint8_t state{7};
+    int64_t nCreateTime{0};
+    std::string label;
+    uint32_t next_receive{0};
+    uint32_t next_change{0};
+    SERIALIZE_METHODS(UnknownStateRecord, obj) { READWRITE(obj.nVersion, obj.state, obj.nCreateTime, obj.label, obj.next_receive, obj.next_change); }
 };
 
 const int WALLET_TYPES[]{walletType::bip44Wallet, walletType::bip39Wallet, walletType::bip32Wallet};
@@ -250,10 +294,8 @@ BOOST_AUTO_TEST_CASE(added_account_key_is_mine_in_every_form)
             if (encrypted) BOOST_REQUIRE(wallet->Lock());
             Unload(std::move(wallet));
 
-            // A five-element path of any account is read back by the loader as
-            // it is today; a three-element one only once the loader accepts an
-            // account other than 0 there.
-            if (wallet_type != walletType::bip44Wallet) continue;
+            // Read back with its path, in both forms: m/44'/coin'/account'/chain/index
+            // and m/account'/chain'/index'.
             wallet = Load(name);
             LegacyScriptPubKeyMan& loaded = *Assert(wallet->GetLegacyScriptPubKeyMan());
             for (const CScript& script : ScriptsOf(pubkey)) {
@@ -264,5 +306,240 @@ BOOST_AUTO_TEST_CASE(added_account_key_is_mine_in_every_form)
         }
     }
 }
+
+// The records of HD accounts are read back as they were written, and the
+// wallet loads without counting them as records it does not know.
+BOOST_AUTO_TEST_CASE(account_records_round_trip)
+{
+    std::shared_ptr<CWallet> wallet = Create("records", walletType::bip39Wallet);
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    CHDAccount savings;
+    savings.state = CHDAccount::State::ACTIVE;
+    savings.nCreateTime = 1700000000;
+    savings.label = "savings";
+    savings.next_receive = 7;
+    savings.next_change = 2;
+    CHDAccount pooled;
+    pooled.state = CHDAccount::State::POOL;
+    CHDAccount retired;
+    retired.state = CHDAccount::State::RETIRED;
+    retired.label = "old";
+    retired.next_receive = 1;
+    CHDAccountMeta meta;
+    meta.highest_derived = 22;
+    meta.highest_used = 2;
+    {
+        WalletBatch batch(wallet->GetDatabase());
+        BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 1, savings));
+        BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 2, retired));
+        BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 22, pooled));
+        BOOST_REQUIRE(spk_man.WriteHDAccountMeta(batch, meta));
+    }
+    Unload(std::move(wallet));
+
+    wallet = Load("records");
+    LegacyScriptPubKeyMan& loaded = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    const std::map<uint32_t, CHDAccount> accounts{loaded.GetHDAccounts()};
+    BOOST_REQUIRE_EQUAL(accounts.size(), 3U);
+    BOOST_CHECK(accounts.at(1) == savings);
+    BOOST_CHECK(accounts.at(2) == retired);
+    BOOST_CHECK(accounts.at(22) == pooled);
+    BOOST_REQUIRE(loaded.GetHDAccountMeta());
+    BOOST_CHECK(*loaded.GetHDAccountMeta() == meta);
+    Unload(std::move(wallet));
+
+    // A record no version writes, for account 0, an account past 31 bits, or
+    // in a state not known, is not taken: the load says data may be missing.
+    {
+        std::unique_ptr<WalletDatabase> database = Database("records");
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        BOOST_REQUIRE(batch->Write(std::make_pair(DBKeys::HDACCOUNT, uint32_t{0}), savings));
+        BOOST_REQUIRE(batch->Write(std::make_pair(DBKeys::HDACCOUNT, uint32_t{0x80000003}), savings));
+        BOOST_REQUIRE(batch->Write(std::make_pair(DBKeys::HDACCOUNT, uint32_t{4}), UnknownStateRecord{}));
+    }
+    DatabaseOptions options;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    options.require_existing = true;
+    wallet = LoadWallet(*m_node.chain, "records", std::nullopt, options, status, error, warnings);
+    BOOST_REQUIRE_MESSAGE(wallet, error.original);
+    BOOST_CHECK(!warnings.empty());
+    const std::map<uint32_t, CHDAccount> checked{Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDAccounts()};
+    BOOST_CHECK_EQUAL(checked.size(), 3U);
+    BOOST_CHECK_EQUAL(checked.count(0), 0U);
+    BOOST_CHECK_EQUAL(checked.count(4), 0U);
+    BOOST_CHECK_EQUAL(checked.count(0x80000003), 0U);
+    Unload(std::move(wallet));
+}
+
+// The record of an account whose keys are in the wallet and whose record is
+// not, as after it was lost, is put together from the paths of its keys and
+// written: the account is taken as handed out, its next indexes past its last
+// keys. A record that is there is left as it is, and keys of account 0 make no
+// record.
+BOOST_AUTO_TEST_CASE(lost_account_records_are_rebuilt)
+{
+    for (const int wallet_type : WALLET_TYPES) {
+        const std::string name{strprintf("rebuild_%d", wallet_type)};
+        std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
+        for (uint32_t i = 0; i < 3; ++i) AddAccountKey(*wallet, 1, false, i);
+        AddAccountKey(*wallet, 1, true, 0);
+        AddAccountKey(*wallet, 3, false, 4);
+        AddAccountKey(*wallet, 5, true, 6);
+        CHDAccount kept;
+        kept.state = CHDAccount::State::POOL;
+        kept.label = "kept";
+        kept.next_receive = 1;
+        {
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            WalletBatch batch(wallet->GetDatabase());
+            BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 5, kept));
+        }
+        Unload(std::move(wallet));
+
+        for (int load = 0; load < 2; ++load) {
+            wallet = Load(name);
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            const std::map<uint32_t, CHDAccount> accounts{spk_man.GetHDAccounts()};
+            BOOST_REQUIRE_EQUAL(accounts.size(), 3U);
+            BOOST_CHECK(accounts.at(1).state == CHDAccount::State::ACTIVE);
+            BOOST_CHECK_EQUAL(accounts.at(1).next_receive, 3U);
+            BOOST_CHECK_EQUAL(accounts.at(1).next_change, 1U);
+            BOOST_CHECK_EQUAL(accounts.at(3).next_receive, 5U);
+            BOOST_CHECK_EQUAL(accounts.at(3).next_change, 0U);
+            BOOST_CHECK(accounts.at(5) == kept);
+            BOOST_REQUIRE(spk_man.GetHDAccountMeta());
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_derived, 5U);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_used, 3U);
+            // Account 0 is the chain record, not an account record.
+            BOOST_CHECK_EQUAL(accounts.count(0), 0U);
+            Unload(std::move(wallet));
+        }
+
+        // Written: the file holds the records without the wallet being loaded.
+        std::unique_ptr<WalletDatabase> database = Database(name);
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        CHDAccount record;
+        BOOST_CHECK(batch->Read(std::make_pair(DBKeys::HDACCOUNT, uint32_t{1}), record));
+        BOOST_CHECK_EQUAL(record.next_receive, 3U);
+        CHDAccountMeta meta;
+        BOOST_CHECK(batch->Read(DBKeys::HDACCOUNTMETA, meta));
+    }
+
+    std::shared_ptr<CWallet> wallet = Create("account_zero_only", walletType::bip44Wallet);
+    for (uint32_t i = 0; i < 3; ++i) AddAccountKey(*wallet, 0, false, 100 + i);
+    Unload(std::move(wallet));
+    wallet = Load("account_zero_only");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDAccounts().empty());
+    BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->GetHDAccountMeta());
+    Unload(std::move(wallet));
+}
+
+// A wallet with HD accounts requires FEATURE_HD_ACCOUNTS, above the version new
+// wallets are written with. This version loads it, refuses a wallet that
+// requires more, and takes it as current: upgradewallet does not try to
+// downgrade it to FEATURE_LATEST.
+BOOST_AUTO_TEST_CASE(account_wallet_version)
+{
+    BOOST_CHECK_GT(FEATURE_HD_ACCOUNTS, FEATURE_LATEST);
+    BOOST_CHECK_EQUAL(GetClosestWalletFeature(FEATURE_HD_ACCOUNTS), FEATURE_HD_ACCOUNTS);
+    BOOST_CHECK_EQUAL(GetClosestWalletFeature(FEATURE_HD_ACCOUNTS - 1), FEATURE_LATEST);
+
+    std::shared_ptr<CWallet> wallet = Create("version", walletType::bip39Wallet);
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_LATEST);
+    wallet->SetMinVersion(FEATURE_HD_ACCOUNTS);
+    Unload(std::move(wallet));
+
+    wallet = Load("version");
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+    for (const int asked : {0, int{FEATURE_LATEST}, int{FEATURE_HD_ACCOUNTS}}) {
+        bilingual_str error;
+        BOOST_CHECK_MESSAGE(wallet->UpgradeWallet(asked, error), error.original);
+        BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+    }
+    bilingual_str error;
+    BOOST_CHECK(!wallet->UpgradeWallet(FEATURE_HD_SPLIT, error));
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+    Unload(std::move(wallet));
+
+    {
+        std::unique_ptr<WalletDatabase> database = Database("version");
+        BOOST_REQUIRE(WalletBatch(*database).WriteMinVersion(FEATURE_HD_ACCOUNTS + 1));
+    }
+    DatabaseOptions options;
+    DatabaseStatus status;
+    bilingual_str load_error;
+    std::vector<bilingual_str> warnings;
+    options.require_existing = true;
+    BOOST_CHECK(!LoadWallet(*m_node.chain, "version", std::nullopt, options, status, load_error, warnings));
+    BOOST_CHECK(load_error.original.find("requires newer version") != std::string::npos);
+}
+
+#ifdef USE_BDB
+// Salvage is of Berkeley DB files only.
+// Salvage keeps what tells the keys of an account from those of account 0:
+// their metadata, the account records, and the version and flag that keep a
+// version without accounts from opening the wallet. The flags of the wallet
+// are kept and merged with those the records require, not replaced.
+BOOST_AUTO_TEST_CASE(salvage_keeps_accounts)
+{
+    const SecureString passphrase{"passphrase"};
+    for (const bool accounts : {false, true}) {
+        const std::string name{strprintf("salvage_%d", accounts)};
+        std::shared_ptr<CWallet> wallet = Create(name, walletType::bip39Wallet, 0, passphrase);
+        BOOST_REQUIRE(wallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+        BOOST_REQUIRE(wallet->Unlock(passphrase));
+        CPubKey account_key;
+        CHDAccount record;
+        record.state = CHDAccount::State::ACTIVE;
+        record.label = "salvaged";
+        record.next_receive = 1;
+        CHDAccountMeta meta;
+        meta.highest_derived = 21;
+        meta.highest_used = 1;
+        if (accounts) {
+            account_key = AddAccountKey(*wallet, 1, false, 0);
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            WalletBatch batch(wallet->GetDatabase());
+            BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 1, record));
+            BOOST_REQUIRE(spk_man.WriteHDAccountMeta(batch, meta));
+        }
+        BOOST_REQUIRE(wallet->Lock());
+        Unload(std::move(wallet));
+        uint64_t flags_before{0};
+        BOOST_REQUIRE(Database(name)->MakeBatch()->Read(DBKeys::FLAGS, flags_before));
+        BOOST_REQUIRE(flags_before & WALLET_FLAG_HD_SECRETS_ENCRYPTED);
+        BOOST_REQUIRE(flags_before & ~uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED});
+
+        bilingual_str error;
+        std::vector<bilingual_str> warnings;
+        BOOST_REQUIRE_MESSAGE(RecoverDatabaseFile(GetWalletDir() / name / "wallet.dat", error, warnings), error.original);
+
+        std::unique_ptr<WalletDatabase> database = Database(name);
+        std::unique_ptr<DatabaseBatch> batch = database->MakeBatch();
+        uint64_t flags{0};
+        BOOST_REQUIRE(batch->Read(DBKeys::FLAGS, flags));
+        BOOST_CHECK_EQUAL(flags, flags_before | (accounts ? uint64_t{WALLET_FLAG_HD_ACCOUNTS} : 0));
+        int min_version{0};
+        BOOST_REQUIRE(batch->Read(DBKeys::MINVERSION, min_version));
+        BOOST_CHECK_EQUAL(min_version, accounts ? int{FEATURE_HD_ACCOUNTS} : int{FEATURE_LATEST});
+        if (!accounts) continue;
+        CHDAccount salvaged_record;
+        BOOST_REQUIRE(batch->Read(std::make_pair(DBKeys::HDACCOUNT, uint32_t{1}), salvaged_record));
+        BOOST_CHECK(salvaged_record == record);
+        CHDAccountMeta salvaged_meta;
+        BOOST_REQUIRE(batch->Read(DBKeys::HDACCOUNTMETA, salvaged_meta));
+        BOOST_CHECK(salvaged_meta == meta);
+        CKeyMetadata key_meta;
+        BOOST_REQUIRE(batch->Read(std::make_pair(DBKeys::KEYMETA, account_key), key_meta));
+        BOOST_CHECK_EQUAL(HDAccountOfKeyPath(key_meta.key_origin.path), 1U);
+        CScript witprog;
+        const CScript expected{GetScriptForDestination(WitnessV0KeyHash(account_key.GetID()))};
+        BOOST_CHECK(batch->Read(std::make_pair(DBKeys::CSCRIPT, uint160(Hash160(expected))), witprog));
+        BOOST_CHECK(witprog == expected);
+    }
+}
+#endif // USE_BDB
 
 BOOST_AUTO_TEST_SUITE_END()

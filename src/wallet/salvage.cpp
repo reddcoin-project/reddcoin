@@ -11,6 +11,8 @@
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 
+#include <optional>
+
 /* End of headers, beginning of key/value data */
 static const char *HEADER_END = "HEADER=END";
 /* End of key/value data */
@@ -22,7 +24,14 @@ static bool KeyFilter(const std::string& type)
     // The encrypted secrets of an HD chain belong with the chain: when they
     // are kept in their own record the chain record has no seed in it, and a
     // wallet salvaged without them could derive no key.
-    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN || type == DBKeys::HDSECRETS;
+    // The metadata of a key says which HD account it is of, and the records
+    // of the accounts say what the keys cannot: without them the keys of an
+    // account would be taken for keys of account 0 and spent with them. The
+    // witness scripts of a key are how a segwit payment to it is recognised,
+    // and a restore scan still owed is still owed.
+    return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN || type == DBKeys::HDSECRETS ||
+           type == DBKeys::KEYMETA || type == DBKeys::CSCRIPT ||
+           type == DBKeys::HDACCOUNT || type == DBKeys::HDACCOUNTMETA || type == DBKeys::HDRESTORESCAN;
 }
 
 bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::vector<bilingual_str>& warnings)
@@ -145,6 +154,11 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
 
     CWallet dummyWallet(nullptr, "", CreateDummyWalletDatabase());
     bool kept_hd_secrets{false};
+    bool kept_hd_accounts{false};
+    // The flags and the version the wallet requires are written once, at the
+    // end, merged with what the records kept require.
+    std::optional<uint64_t> kept_flags;
+    std::optional<int> kept_min_version;
     for (KeyValPair& row : salvagedData)
     {
         /* Filter for only private key type KV pairs to be added to the salvaged wallet */
@@ -156,6 +170,23 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
             // Required in LoadKeyMetadata():
             LOCK(dummyWallet.cs_wallet);
             fReadOK = ReadKeyValue(&dummyWallet, ssKey, ssValue, strType, strErr, KeyFilter);
+        }
+        if (strType == DBKeys::FLAGS || strType == DBKeys::MINVERSION) {
+            try {
+                CDataStream value(row.second, SER_DISK, CLIENT_VERSION);
+                if (strType == DBKeys::FLAGS) {
+                    uint64_t flags;
+                    value >> flags;
+                    kept_flags = flags;
+                } else {
+                    int min_version;
+                    value >> min_version;
+                    kept_min_version = min_version;
+                }
+            } catch (const std::exception&) {
+                warnings.push_back(strprintf(Untranslated("WARNING: WalletBatch::Recover skipping %s: unreadable"), strType));
+            }
+            continue;
         }
         if (!KeyFilter(strType)) {
             continue;
@@ -171,21 +202,31 @@ bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::v
         if (ret2 > 0)
             fSuccess = false;
         if (strType == DBKeys::HDSECRETS) kept_hd_secrets = true;
+        if (strType == DBKeys::HDACCOUNT || strType == DBKeys::HDACCOUNTMETA) kept_hd_accounts = true;
     }
 
-    // The encrypted secrets of the chain are kept, and the flags are not: the
-    // flag that says the secrets are in their own record has to be written,
+    // The flags of the wallet are kept, with what the records kept require:
+    // the flag that says the secrets of the chain are in their own record,
     // or a version that does not know the record would load the wallet as
-    // one whose chain has no seed.
-    if (kept_hd_secrets) {
+    // one whose chain has no seed; and the flag of HD accounts, or a version
+    // that does not know them would spend the coins of an account with those
+    // of account 0. A wallet with accounts requires the version that knows them.
+    uint64_t flags{kept_flags.value_or(0)};
+    if (kept_hd_secrets) flags |= WALLET_FLAG_HD_SECRETS_ENCRYPTED;
+    if (kept_hd_accounts) flags |= WALLET_FLAG_HD_ACCOUNTS;
+    std::optional<int> min_version{kept_min_version};
+    if (kept_hd_accounts) min_version = std::max(min_version.value_or(0), int{FEATURE_HD_ACCOUNTS});
+    const auto put = [&](const std::string& type, const auto& data) {
         CDataStream key(SER_DISK, CLIENT_VERSION);
         CDataStream value(SER_DISK, CLIENT_VERSION);
-        key << DBKeys::FLAGS;
-        value << uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED};
+        key << type;
+        value << data;
         Dbt datKey(key.data(), key.size());
         Dbt datValue(value.data(), value.size());
         if (pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE) > 0) fSuccess = false;
-    }
+    };
+    if (kept_flags || flags != 0) put(DBKeys::FLAGS, flags);
+    if (min_version) put(DBKeys::MINVERSION, *min_version);
     if (pdbCopy->close(0) != 0) fSuccess = false;
 
     // The original is still there under another name. If it is the file of an
