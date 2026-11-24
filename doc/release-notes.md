@@ -607,12 +607,38 @@ GUI changes
 
 - Improved dark theme on the staking tab
 
-- In a wallet that holds HD accounts (see Wallet above), the GUI pays from
-  account 0. The Overview page shows account 0's funds as Available, a line
-  with what the other accounts hold, and the whole wallet in Total. The send
-  page's balance is account 0's, and **Move funds to a new wallet...** moves
-  account 0 only. The other accounts are created and spent from with the
-  console.
+- HD accounts in the GUI (see Wallet above), for legacy HD wallets with
+  private keys:
+  - An **Accounts** tab, beside Receive, lists account 0 and the wallet's
+    accounts with their label, state and balances. It creates the next
+    account, renames, retires or brings back an account, lists the unpaid
+    receive addresses of an account, and looks for accounts in the block
+    chain (**Find accounts**, as `rescanhdaccounts`). New account is
+    disabled, with the reason, until the account before the next one has a
+    confirmed payment, and the first account asks for confirmation, since it
+    marks the wallet.
+  - The Send page has a **Spend from** selector at the top. The balance,
+    Use available balance, coin control and the payment follow the account
+    chosen; changing it clears the coins chosen in coin control.
+  - The Receive page has an account selector for a new address, and its
+    list of requests an Account column.
+  - The transaction list has an Account column and an account filter. A
+    payment sent and a stake are in the account of the coins they spend.
+  - The Overview page shows account 0's funds as Available, a line with
+    what the other accounts hold, and the whole wallet in Total, and says
+    when the wallet has to be unlocked to finish finding addresses of its
+    accounts. Where an account needs the seed of an encrypted wallet, the
+    passphrase is asked for.
+  - **Move funds to a new wallet...** moves each account that holds funds in
+    its own transaction, to an account of the new wallet numbered from 0,
+    after showing the plan and the transactions with their fees. The new
+    wallet has to be a legacy mnemonic wallet (`bip39` or `bip44`).
+
+- After the wallet creation wizard restores a wallet from a mnemonic phrase,
+  a report gives the type it was restored as, its first path, how many
+  addresses of account 0 and which accounts were found, and warns when
+  nothing was found: a wrong wallet type or mnemonic passphrase restores an
+  empty wallet without an error.
 
 - External signers such as hardware wallets can now be used. These require an external tool such as [HWI](https://github.com/bitcoin-core/HWI) to be installed and configured under Options -> Wallet. When creating a new wallet a new option "External signer" will appear in the dialog. If the device is detected, its name is suggested as the wallet name. The watch-only keys are then automatically imported. Receive addresses can be verified on the device. The send dialog will automatically use the connected device. This feature is experimental and the UI may freeze for a few seconds when performing these actions.
 
