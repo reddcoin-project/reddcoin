@@ -522,7 +522,21 @@ public:
     /**
      * Return list of available coins and locked coins grouped by non-change output address.
      */
-    std::map<CTxDestination, std::vector<COutput>> ListCoins() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The coins of HD account `account`, by address.
+    std::map<CTxDestination, std::vector<COutput>> ListCoins(uint32_t account = 0) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    //! Whether the wallet holds keys of an HD account above 0: the coins of
+    //! each account are then kept apart.
+    bool HoldsHDAccountKeys() const;
+    //! Decide the HD account a transaction spends, in `coin_control`: the one
+    //! named, or that of the selected inputs, or account 0. Refuse inputs of
+    //! two accounts, an input of another account than the one named, and a
+    //! change address that is not of the account spent.
+    bool ResolveHDAccount(CCoinControl& coin_control, bilingual_str& error) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Hand out a change address of an HD account above 0: the next index,
+    //! or, when the last HD_ACCOUNT_KEY_LOOKAHEAD handed out are all unpaid,
+    //! the lowest of them, so that a restore still finds change.
+    bool GetHDAccountChangeDestination(uint32_t account, OutputType type, CTxDestination& dest, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /**
      * Find non-change parent output.

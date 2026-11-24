@@ -597,6 +597,13 @@ public:
     uint32_t GetHDAccountOfScript(const CScript& script) const;
     //! The highest index derived on each chain of an account, -1 for none.
     std::pair<int64_t, int64_t> GetHDAccountExtent(uint32_t account) const;
+    //! Whether the wallet holds keys of an HD account above 0 of its seed.
+    bool HasHDAccountKeys() const;
+    //! The public key at an index of a chain of an HD account, if derived.
+    bool GetHDAccountPubKey(uint32_t account, bool internal, uint32_t index, CPubKey& pubkey) const;
+    //! Note that the change key at `index` of `account` has been handed out,
+    //! and keep the look-ahead behind it. Needs the wallet's lock.
+    bool HandOutHDAccountChange(uint32_t account, uint32_t index);
     //! Whether the wallet holds keys of an HD account above 0 without the flag.
     bool HasHDAccountsInconsistency() const;
     //! Count the keys of HD accounts and say whether the wallet is

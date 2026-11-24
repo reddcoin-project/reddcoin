@@ -679,6 +679,9 @@ BOOST_AUTO_TEST_CASE(setup_that_does_not_commit_leaves_the_wallet_as_it_was)
     BOOST_CHECK_EQUAL(wallet->GetVersion(), version_before);
     BOOST_CHECK(spk_man.GetHDAccounts().empty());
     BOOST_CHECK(spk_man.GetHDAccountExtent(1) == std::make_pair(int64_t{-1}, int64_t{-1}));
+    CPubKey pubkey;
+    BOOST_CHECK(!spk_man.GetHDAccountPubKey(1, false, 0, pubkey));
+    BOOST_CHECK(!spk_man.HasHDAccountKeys());
 
     BOOST_REQUIRE(Setup(*wallet));
     BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
