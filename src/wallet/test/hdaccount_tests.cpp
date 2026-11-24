@@ -123,6 +123,38 @@ struct HDAccountTestingSetup : public TestChain100Setup {
         return key.GetPubKey();
     }
 
+    //! Mark the wallet as holding HD accounts.
+    static bool Setup(CWallet& wallet)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        return WITH_LOCK(wallet.cs_wallet, return spk_man.SetupHDAccounts());
+    }
+
+    //! The P2PKH script of key `index` of a chain of `account`, from the keys the wallet holds.
+    static CScript AccountScript(const CWallet& wallet, uint32_t account, bool internal, uint32_t index)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        LOCK(spk_man.cs_KeyStore);
+        for (const auto& [key_id, meta] : spk_man.mapKeyMetadata) {
+            const std::vector<uint32_t>& path = meta.key_origin.path;
+            if (path.size() != 3 && path.size() != 5) continue;
+            const bool key_internal{(path.size() == 5 ? path[3] : path[1] & ~0x80000000) != 0};
+            const uint32_t key_index{path.size() == 5 ? path[4] : path[2] & ~0x80000000};
+            if (HDAccountOfKeyPath(path) == account && key_internal == internal && key_index == index) {
+                return GetScriptForDestination(PKHash(key_id));
+            }
+        }
+        BOOST_FAIL("no such account key");
+        return {};
+    }
+
+    //! What the wallet does when a transaction pays `script`.
+    static void Pay(CWallet& wallet, const CScript& script)
+    {
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet.GetLegacyScriptPubKeyMan());
+        WITH_LOCK(wallet.cs_wallet, spk_man.MarkUnusedAddresses(script));
+    }
+
     //! The database of a wallet that is not loaded.
     static std::unique_ptr<WalletDatabase> Database(const std::string& name)
     {
@@ -160,6 +192,30 @@ struct UnknownStateRecord {
 };
 
 const int WALLET_TYPES[]{walletType::bip44Wallet, walletType::bip39Wallet, walletType::bip32Wallet};
+
+//! Whether the transactions of a FailCommitDatabase fail to commit.
+bool g_fail_commit{false};
+
+//! A database that keeps nothing, and whose transactions can be made to fail.
+class FailCommitBatch : public DummyBatch
+{
+    bool ReadKey(CDataStream&& key, CDataStream& value) override { return false; }
+    bool HasKey(CDataStream&& key) override { return false; }
+
+public:
+    bool ReadAtCursor(CDataStream& ssKey, CDataStream& ssValue, bool& complete) override
+    {
+        complete = true;
+        return true;
+    }
+    bool TxnCommit() override { return !g_fail_commit; }
+};
+
+class FailCommitDatabase : public DummyDatabase
+{
+public:
+    std::unique_ptr<DatabaseBatch> MakeBatch(bool flush_on_close = true) override { return std::make_unique<FailCommitBatch>(); }
+};
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(hdaccount_tests, HDAccountTestingSetup)
@@ -375,16 +431,17 @@ BOOST_AUTO_TEST_CASE(account_records_round_trip)
 
 // The record of an account whose keys are in the wallet and whose record is
 // not, as after it was lost, is put together from the paths of its keys and
-// written: the account is taken as handed out, its next indexes past its last
-// keys. A record that is there is left as it is, and keys of account 0 make no
-// record.
+// written: the account is taken as handed out, its next indexes where its
+// keys end less the look-ahead derived past them. A record that is there is
+// left as it is, and keys of account 0 make no record.
 BOOST_AUTO_TEST_CASE(lost_account_records_are_rebuilt)
 {
     for (const int wallet_type : WALLET_TYPES) {
         const std::string name{strprintf("rebuild_%d", wallet_type)};
         std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
-        for (uint32_t i = 0; i < 3; ++i) AddAccountKey(*wallet, 1, false, i);
-        AddAccountKey(*wallet, 1, true, 0);
+        // As the look-ahead leaves them: receive keys 3 + 20, change keys 1 + 20.
+        for (uint32_t i = 0; i < 3 + HD_ACCOUNT_KEY_LOOKAHEAD; ++i) AddAccountKey(*wallet, 1, false, i);
+        for (uint32_t i = 0; i < 1 + HD_ACCOUNT_KEY_LOOKAHEAD; ++i) AddAccountKey(*wallet, 1, true, i);
         AddAccountKey(*wallet, 3, false, 4);
         AddAccountKey(*wallet, 5, true, 6);
         CHDAccount kept;
@@ -406,7 +463,8 @@ BOOST_AUTO_TEST_CASE(lost_account_records_are_rebuilt)
             BOOST_CHECK(accounts.at(1).state == CHDAccount::State::ACTIVE);
             BOOST_CHECK_EQUAL(accounts.at(1).next_receive, 3U);
             BOOST_CHECK_EQUAL(accounts.at(1).next_change, 1U);
-            BOOST_CHECK_EQUAL(accounts.at(3).next_receive, 5U);
+            // Fewer keys than the look-ahead: nothing handed out.
+            BOOST_CHECK_EQUAL(accounts.at(3).next_receive, 0U);
             BOOST_CHECK_EQUAL(accounts.at(3).next_change, 0U);
             BOOST_CHECK(accounts.at(5) == kept);
             BOOST_REQUIRE(spk_man.GetHDAccountMeta());
@@ -541,5 +599,226 @@ BOOST_AUTO_TEST_CASE(salvage_keeps_accounts)
     }
 }
 #endif // USE_BDB
+
+// Marking a wallet as holding HD accounts sets the flag and FEATURE_HD_ACCOUNTS
+// together, and derives the one account kept ahead, account 1, with its keys,
+// every form of which the wallet knows as account 1's. The wallet loads as it
+// was left. A wallet that cannot hold accounts is not marked.
+BOOST_AUTO_TEST_CASE(setup_marks_the_wallet)
+{
+    for (const int wallet_type : WALLET_TYPES) {
+        const std::string name{strprintf("setup_%d", wallet_type)};
+        std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
+        BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+        BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_LATEST);
+        CTxDestination dest;
+        std::string error;
+        BOOST_REQUIRE(wallet->GetNewDestination(OutputType::BECH32, "", dest, error));
+        const CScript account_zero{GetScriptForDestination(dest)};
+        BOOST_REQUIRE(Setup(*wallet));
+        BOOST_REQUIRE(Setup(*wallet));
+
+        for (int load = 0; load < 2; ++load) {
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+            BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+            const std::map<uint32_t, CHDAccount> accounts{spk_man.GetHDAccounts()};
+            BOOST_REQUIRE_EQUAL(accounts.size(), 1U);
+            BOOST_CHECK(accounts.at(1).state == CHDAccount::State::POOL);
+            BOOST_CHECK(spk_man.GetHDAccountExtent(1) == std::make_pair(int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}, int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+            BOOST_CHECK(spk_man.GetHDAccountExtent(2) == std::make_pair(int64_t{-1}, int64_t{-1}));
+            BOOST_REQUIRE(spk_man.GetHDAccountMeta());
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_used, 0U);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_derived, 1U);
+            CTxDestination key_dest;
+            BOOST_REQUIRE(ExtractDestination(AccountScript(*wallet, 1, true, 7), key_dest));
+            CPubKey pubkey;
+            BOOST_REQUIRE(spk_man.GetPubKey(ToKeyID(std::get<PKHash>(key_dest)), pubkey));
+            for (const CScript& script : ScriptsOf(pubkey)) {
+                BOOST_CHECK_EQUAL(wallet->GetHDAccountOfScript(script), 1U);
+                BOOST_CHECK_EQUAL(spk_man.IsMine(script), ISMINE_SPENDABLE);
+            }
+            BOOST_CHECK_EQUAL(wallet->GetHDAccountOfScript(account_zero), 0U);
+            BOOST_CHECK(!spk_man.HasHDAccountsInconsistency());
+            Unload(std::move(wallet));
+            wallet = Load(name);
+        }
+        Unload(std::move(wallet));
+    }
+
+    for (const uint64_t flags : {uint64_t{WALLET_FLAG_BLANK_WALLET}, uint64_t{WALLET_FLAG_DISABLE_PRIVATE_KEYS}}) {
+        std::shared_ptr<CWallet> wallet = Create(strprintf("no_setup_%d", flags), walletType::bip32Wallet, flags);
+        wallet->GetOrCreateLegacyScriptPubKeyMan();
+        BOOST_CHECK(!Setup(*wallet));
+        BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+        BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_LATEST);
+        Unload(std::move(wallet));
+    }
+}
+
+// Marking a wallet whose transaction does not commit leaves it as it was, in
+// memory too: without the flag or the version, and without keys of account
+// 1, so that the next attempt derives and writes them all.
+BOOST_AUTO_TEST_CASE(setup_that_does_not_commit_leaves_the_wallet_as_it_was)
+{
+    WalletOptions walletoptions;
+    walletoptions.walletType = walletType::bip32Wallet;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    g_fail_commit = false;
+    std::shared_ptr<CWallet> wallet = CWallet::Create(/* chain */ nullptr, "", std::make_unique<FailCommitDatabase>(), 0, walletoptions, error, warnings);
+    BOOST_REQUIRE_MESSAGE(wallet, error.original);
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    const int version_before{wallet->GetVersion()};
+    BOOST_REQUIRE_LT(version_before, int{FEATURE_HD_ACCOUNTS});
+
+    g_fail_commit = true;
+    BOOST_CHECK(!Setup(*wallet));
+    g_fail_commit = false;
+    BOOST_CHECK(!wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), version_before);
+    BOOST_CHECK(spk_man.GetHDAccounts().empty());
+    BOOST_CHECK(spk_man.GetHDAccountExtent(1) == std::make_pair(int64_t{-1}, int64_t{-1}));
+
+    BOOST_REQUIRE(Setup(*wallet));
+    BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+    BOOST_CHECK(spk_man.GetHDAccountExtent(1) == std::make_pair(int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}, int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+}
+
+// A payment to an account moves its next index past the key paid, and keeps
+// the account after it ahead: as BIP44's account rule has it, one account
+// beyond the highest used.
+BOOST_AUTO_TEST_CASE(payment_keeps_the_next_account_ahead)
+{
+    for (const int wallet_type : WALLET_TYPES) {
+        const std::string name{strprintf("ahead_%d", wallet_type)};
+        std::shared_ptr<CWallet> wallet = Create(name, wallet_type);
+        BOOST_REQUIRE(Setup(*wallet));
+        Pay(*wallet, AccountScript(*wallet, 1, false, 5));
+        Pay(*wallet, AccountScript(*wallet, 1, true, 0));
+
+        for (int load = 0; load < 2; ++load) {
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+            const std::map<uint32_t, CHDAccount> accounts{spk_man.GetHDAccounts()};
+            BOOST_REQUIRE_EQUAL(accounts.size(), 2U);
+            BOOST_CHECK(accounts.at(1).state == CHDAccount::State::ACTIVE);
+            BOOST_CHECK_EQUAL(accounts.at(1).next_receive, 6U);
+            BOOST_CHECK_EQUAL(accounts.at(1).next_change, 1U);
+            BOOST_CHECK(accounts.at(2).state == CHDAccount::State::POOL);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_used, 1U);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_derived, 2U);
+            // 20 keys beyond the next index on each chain.
+            BOOST_CHECK(spk_man.GetHDAccountExtent(1) == std::make_pair(int64_t{6 + HD_ACCOUNT_KEY_LOOKAHEAD - 1}, int64_t{1 + HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+            BOOST_CHECK(spk_man.GetHDAccountExtent(2) == std::make_pair(int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}, int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+            BOOST_CHECK(spk_man.GetHDAccountExtent(3) == std::make_pair(int64_t{-1}, int64_t{-1}));
+            Unload(std::move(wallet));
+            wallet = Load(name);
+        }
+
+        // A payment to the account kept ahead keeps the next one ahead.
+        Pay(*wallet, AccountScript(*wallet, 2, false, 0));
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(spk_man.GetHDAccounts().at(2).state == CHDAccount::State::ACTIVE);
+        BOOST_CHECK(spk_man.GetHDAccounts().at(3).state == CHDAccount::State::POOL);
+        BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_used, 2U);
+        // A payment to account 0 changes nothing of the accounts.
+        CTxDestination dest;
+        std::string error;
+        BOOST_REQUIRE(wallet->GetNewDestination(OutputType::LEGACY, "", dest, error));
+        Pay(*wallet, GetScriptForDestination(dest));
+        BOOST_CHECK_EQUAL(spk_man.GetHDAccounts().size(), 3U);
+        Unload(std::move(wallet));
+    }
+}
+
+// The next account cannot be derived while the wallet is locked: a payment to
+// an account is noted, and the look-ahead is owed. The wallet's worker derives
+// it once the wallet is unlocked, fully or for staking only, and does nothing
+// while it is locked.
+BOOST_AUTO_TEST_CASE(locked_wallet_owes_the_lookahead)
+{
+    const SecureString passphrase{"passphrase"};
+    for (const bool staking_only : {false, true}) {
+        for (const int wallet_type : WALLET_TYPES) {
+            std::shared_ptr<CWallet> wallet = Create(strprintf("owed_%d_%d", staking_only, wallet_type), wallet_type, 0, passphrase);
+            BOOST_REQUIRE(wallet->Unlock(passphrase));
+            BOOST_REQUIRE(Setup(*wallet));
+            const CScript paid{AccountScript(*wallet, 1, false, 3)};
+            BOOST_REQUIRE(wallet->Lock());
+            LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+
+            Pay(*wallet, paid);
+            BOOST_CHECK(spk_man.GetHDAccounts().at(1).state == CHDAccount::State::ACTIVE);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccounts().at(1).next_receive, 4U);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccountMeta()->highest_used, 1U);
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccounts().count(2), 0U);
+            BOOST_CHECK(spk_man.IsHDAccountsTopUpOwed());
+
+            wallet->ScheduleHDAccountWork();
+            wallet->SyncWithHDAccountWorker();
+            BOOST_CHECK_EQUAL(spk_man.GetHDAccounts().count(2), 0U);
+
+            BOOST_REQUIRE(wallet->Unlock(passphrase));
+            if (staking_only) wallet->SetIsWalletStakingOnly(true);
+            wallet->SyncWithHDAccountWorker();
+            BOOST_CHECK(spk_man.GetHDAccounts().at(2).state == CHDAccount::State::POOL);
+            BOOST_CHECK(spk_man.GetHDAccountExtent(2) == std::make_pair(int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}, int64_t{HD_ACCOUNT_KEY_LOOKAHEAD - 1}));
+            BOOST_CHECK(spk_man.GetHDAccountExtent(1).first == int64_t{4 + HD_ACCOUNT_KEY_LOOKAHEAD - 1});
+            BOOST_CHECK(!spk_man.IsHDAccountsTopUpOwed());
+            if (staking_only) wallet->SetIsWalletStakingOnly(false);
+            BOOST_REQUIRE(wallet->Lock());
+            // The worker is joined when the wallet goes.
+            Unload(std::move(wallet));
+        }
+    }
+}
+
+// A locked wallet that sees a payment whose look-ahead it already holds, as a
+// wallet loaded with its best block behind the chain sees its payments again,
+// owes nothing. A payment that needs keys it does not hold is still owed.
+BOOST_AUTO_TEST_CASE(locked_wallet_owes_nothing_it_holds)
+{
+    const SecureString passphrase{"passphrase"};
+    for (const int wallet_type : WALLET_TYPES) {
+        std::shared_ptr<CWallet> wallet = Create(strprintf("held_%d", wallet_type), wallet_type, 0, passphrase);
+        BOOST_REQUIRE(wallet->Unlock(passphrase));
+        BOOST_REQUIRE(Setup(*wallet));
+        const CScript paid{AccountScript(*wallet, 1, false, 3)};
+        Pay(*wallet, paid);
+        LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+        BOOST_CHECK(!spk_man.IsHDAccountsTopUpOwed());
+        BOOST_REQUIRE(spk_man.GetHDAccounts().count(2));
+        BOOST_REQUIRE(wallet->Lock());
+
+        // The same address paid again: its keys and the account kept ahead are there.
+        Pay(*wallet, paid);
+        BOOST_CHECK(!spk_man.IsHDAccountsTopUpOwed());
+
+        // The account kept ahead paid: the account after it is owed.
+        Pay(*wallet, AccountScript(*wallet, 2, false, 0));
+        BOOST_CHECK(spk_man.IsHDAccountsTopUpOwed());
+        Unload(std::move(wallet));
+    }
+}
+
+// A wallet that holds keys of an HD account above 0 without the flag, as an
+// earlier wallet tool's salvage leaves it, is loaded and known to be so.
+BOOST_AUTO_TEST_CASE(account_keys_without_the_flag_are_inconsistent)
+{
+    std::shared_ptr<CWallet> wallet = Create("unflagged", walletType::bip39Wallet);
+    AddAccountKey(*wallet, 1, false, 0);
+    Unload(std::move(wallet));
+    wallet = Load("unflagged");
+    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->HasHDAccountsInconsistency());
+    Unload(std::move(wallet));
+
+    wallet = Create("flagged", walletType::bip39Wallet);
+    BOOST_REQUIRE(Setup(*wallet));
+    Unload(std::move(wallet));
+    wallet = Load("flagged");
+    BOOST_CHECK(!Assert(wallet->GetLegacyScriptPubKeyMan())->HasHDAccountsInconsistency());
+    Unload(std::move(wallet));
+}
 
 BOOST_AUTO_TEST_SUITE_END()
