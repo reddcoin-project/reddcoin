@@ -632,6 +632,28 @@ Wallet
   not changed. They have no mnemonic phrase, so back up the wallet file
   itself.
 
+- BIP39 mnemonic phrases and mnemonic passphrases are now Unicode
+  NFKD-normalised before they are checked and before the seed is derived, as
+  the BIP39 specification requires and as other BIP39 wallets do. A French,
+  Spanish, Japanese or Korean phrase typed in composed form, which is what
+  macOS, iOS and most input methods produce, failed to validate, because the
+  word lists are stored decomposed. It is now accepted and derives the same
+  seed as other BIP39 wallets. A Japanese phrase may be typed with the
+  ideographic space (U+3000) or an ordinary space, and a new Japanese phrase is
+  written with the ideographic space. The same derivation is used by the
+  develop line, so a phrase restores the same wallet on both.
+
+  Phrases and passphrases in plain ASCII, which includes every English phrase,
+  are not changed by NFKD: their wallets keep the same seed and addresses.
+  Existing wallet files are not affected either, since they hold their seed.
+
+  A wallet made with 4.22.9.5 or earlier with a mnemonic passphrase that is
+  not plain ASCII can derive a different seed when its phrase is restored with
+  this version. If such a restore shows an empty wallet, restore the phrase
+  once with 4.22.9.5 to recover the funds, then send them to a new wallet
+  made with this version. Wallets with no mnemonic passphrase, or a plain
+  ASCII one, are not affected.
+
 - `AbandonTransaction` gains an overload taking a `WalletBatch`, so a sweep
   costs one database transaction rather than one per transaction abandoned.
   `ReacceptWalletTransactions` uses it.
