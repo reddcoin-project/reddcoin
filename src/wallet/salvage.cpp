@@ -31,7 +31,7 @@ static bool KeyFilter(const std::string& type)
     // and a restore scan still owed is still owed.
     return WalletBatch::IsKeyType(type) || type == DBKeys::HDCHAIN || type == DBKeys::HDSECRETS ||
            type == DBKeys::KEYMETA || type == DBKeys::CSCRIPT ||
-           type == DBKeys::HDACCOUNT || type == DBKeys::HDACCOUNTMETA || type == DBKeys::HDRESTORESCAN;
+           type == DBKeys::HDACCOUNT || type == DBKeys::HDACCOUNTMETA || type == DBKeys::HDRESTORESCAN || type == DBKeys::HDACCOUNTSDECLINED;
 }
 
 bool RecoverDatabaseFile(const fs::path& file_path, bilingual_str& error, std::vector<bilingual_str>& warnings)

@@ -453,13 +453,20 @@ BOOST_AUTO_TEST_CASE(lost_account_records_are_rebuilt)
             WalletBatch batch(wallet->GetDatabase());
             BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 5, kept));
         }
+        // Marked as holding accounts, as a wallet with account keys is.
+        wallet->SetWalletFlag(WALLET_FLAG_HD_ACCOUNTS);
         Unload(std::move(wallet));
 
         for (int load = 0; load < 2; ++load) {
             wallet = Load(name);
+            // The worker keeps accounts ahead at the load, as on any wallet
+            // that holds accounts: 2 and 4, after the used 1 and 3.
+            wallet->SyncWithHDAccountWorker();
             LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
             const std::map<uint32_t, CHDAccount> accounts{spk_man.GetHDAccounts()};
-            BOOST_REQUIRE_EQUAL(accounts.size(), 3U);
+            BOOST_REQUIRE_EQUAL(accounts.size(), 5U);
+            BOOST_CHECK(accounts.at(2).state == CHDAccount::State::POOL);
+            BOOST_CHECK(accounts.at(4).state == CHDAccount::State::POOL);
             BOOST_CHECK(accounts.at(1).state == CHDAccount::State::ACTIVE);
             BOOST_CHECK_EQUAL(accounts.at(1).next_receive, 3U);
             BOOST_CHECK_EQUAL(accounts.at(1).next_change, 1U);
@@ -831,15 +838,33 @@ BOOST_AUTO_TEST_CASE(locked_wallet_owes_nothing_it_holds)
     }
 }
 
-// A wallet that holds keys of an HD account above 0 without the flag, as an
-// earlier wallet tool's salvage leaves it, is loaded and known to be so.
+// A wallet that holds keys of an HD account above 0 without the flag is
+// loaded and known to be so; once its seed can be read, the wallet's worker
+// marks it as holding the accounts.
 BOOST_AUTO_TEST_CASE(account_keys_without_the_flag_are_inconsistent)
 {
-    std::shared_ptr<CWallet> wallet = Create("unflagged", walletType::bip39Wallet);
-    AddAccountKey(*wallet, 1, false, 0);
+    const SecureString passphrase{"passphrase"};
+    std::shared_ptr<CWallet> wallet = Create("unflagged", walletType::bip39Wallet, 0, passphrase);
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    const CPubKey account_key{AddAccountKey(*wallet, 1, false, 0)};
+    BOOST_REQUIRE(wallet->Lock());
     Unload(std::move(wallet));
     wallet = Load("unflagged");
-    BOOST_CHECK(Assert(wallet->GetLegacyScriptPubKeyMan())->HasHDAccountsInconsistency());
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    BOOST_CHECK(spk_man.HasHDAccountsInconsistency());
+    BOOST_CHECK(spk_man.IsHDAccountRepairOwed());
+    wallet->SyncWithHDAccountWorker();
+    BOOST_CHECK(spk_man.HasHDAccountsInconsistency());
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    wallet->SyncWithHDAccountWorker();
+    BOOST_CHECK(!spk_man.HasHDAccountsInconsistency());
+    BOOST_CHECK(!spk_man.IsHDAccountRepairOwed());
+    BOOST_CHECK(wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK_EQUAL(wallet->GetVersion(), FEATURE_HD_ACCOUNTS);
+    // Its record was put together from the paths of its keys at the load.
+    BOOST_CHECK_EQUAL(spk_man.GetHDAccounts().count(1), 1U);
+    BOOST_CHECK_EQUAL(wallet->GetHDAccountOfScript(GetScriptForDestination(PKHash(account_key))), 1U);
+    BOOST_REQUIRE(wallet->Lock());
     Unload(std::move(wallet));
 
     wallet = Create("flagged", walletType::bip39Wallet);

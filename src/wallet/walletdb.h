@@ -71,6 +71,8 @@ extern const std::string HDSECRETSPENDING;
 //! The height from which a restore scan is owed: a wallet restored from a
 //! mnemonic phrase holds it until a scan from that height has completed.
 extern const std::string HDRESTORESCAN;
+//! A restore asked not to look for HD accounts, while its scan is owed.
+extern const std::string HDACCOUNTSDECLINED;
 //! An HD account of a legacy wallet, by its number.
 extern const std::string HDACCOUNT;
 //! What the wallet knows of its HD accounts as a whole.
@@ -394,6 +396,7 @@ public:
     bool WriteRestoreScan(int height);
     bool ReadRestoreScan(int& height);
     bool EraseRestoreScan();
+    bool WriteHDAccountsDeclined();
 
     bool WriteHDAccount(uint32_t account, const CHDAccount& record);
     bool WriteHDAccountMeta(const CHDAccountMeta& meta);

@@ -133,6 +133,10 @@ bool CWallet::NewHDAccount(const std::string& label, bool force, uint32_t& accou
 
     const bool first_account{!IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)};
     if (first_account) {
+        if (spk_man->IsHDAccountDiscoveryPending()) {
+            error = _("This wallet is looking for its HD accounts in the block chain. Try again once that scan has finished.");
+            return false;
+        }
         if (IsLocked()) {
             error = _("Unlock the wallet to create its first HD account.");
             return false;
@@ -285,4 +289,23 @@ CWallet::HDRestoreReport CWallet::GetHDRestoreReport() const
         if (record.state == CHDAccount::State::ACTIVE) report.accounts_found.push_back(account);
     }
     return report;
+}
+
+bool CWallet::RepairHDAccounts()
+{
+    AssertLockHeld(cs_wallet);
+    LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man || !spk_man->IsHDAccountRepairOwed()) return true;
+    std::vector<uint32_t> found;
+    if (!spk_man->RepairHDAccountKeys(found)) return false;
+    // The payments the wallet holds to the accounts found move their next
+    // indexes and keep the account after the highest used ahead.
+    for (const auto& entry : mapWallet) {
+        const auto& wtx = entry.second;
+        if (wtx.isAbandoned() || wtx.GetDepthInMainChain() < 0) continue;
+        for (const CTxOut& txout : wtx.tx->vout) {
+            if (GetHDAccountOfScript(txout.scriptPubKey) != 0) spk_man->MarkUnusedAddresses(txout.scriptPubKey);
+        }
+    }
+    return true;
 }

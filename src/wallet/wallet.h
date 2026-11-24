@@ -290,8 +290,9 @@ private:
     //! Set while CreateWallet scans a wallet it restores: the worker, woken by
     //! the unlock, leaves that scan to it.
     std::atomic<bool> m_restoring{false};
-    //! A restore asked not to look for HD accounts: its scan does not look.
-    bool m_hd_accounts_declined{false};
+    //! A restore asked not to look for HD accounts: its scan does not look,
+    //! nor does the worker's when it is done again.
+    std::atomic<bool> m_hd_accounts_declined{false};
     friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
@@ -481,7 +482,15 @@ public:
     void SyncWithHDAccountWorker();
     /** Begin looking for the HD accounts of a wallet restored from a mnemonic
      *  phrase, if it can look now: see LegacyScriptPubKeyMan::BeginHDAccountDiscovery. */
-    void BeginHDAccountDiscovery();
+    bool BeginHDAccountDiscovery();
+    //! A restore is asked not to look for HD accounts: said in the file too,
+    //! until its scan has completed.
+    bool DeclineHDAccounts();
+    void LoadHDAccountsDeclined() { m_hd_accounts_declined = true; }
+    //! Match keys that lost their metadata against the accounts of the seed
+    //! (LegacyScriptPubKeyMan::RepairHDAccountKeys), then note the payments
+    //! the wallet holds to the accounts found, as when they were received.
+    bool RepairHDAccounts() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void SetRestoring(bool restoring) { m_restoring = restoring; }
     /** The HD account of a script of the wallet; 0 for every script that is
      *  not a key of an account above 0. */
@@ -686,8 +695,17 @@ public:
     };
     ScanResult ScanForWalletTransactions(const uint256& start_block, int start_height, std::optional<int> max_height, const WalletRescanReserver& reserver, bool fUpdate);
     //! Do the scan a restore from a mnemonic phrase owes, if it owes one, and
-    //! say in the file that it is done. False if it did not complete.
-    bool ScanOwedRestore();
+    //! say in the file that it is done. False if it did not complete. The
+    //! accounts kept in memory are forgotten at its end if `own_discovery`:
+    //! if the discovery is the worker's, not that of rescanhdaccounts.
+    bool ScanOwedRestore(bool own_discovery = true);
+    //! The lowest block height at which the keys of an HD account were due
+    //! while they could not be derived, since the last scan began: the scan
+    //! owed from then on.
+    std::optional<int> m_hd_owed_height GUARDED_BY(cs_wallet);
+    //! At the end of an owed scan: erase its record, or write the height
+    //! from which a scan is still owed.
+    void FinishOwedScan() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason, uint64_t mempool_sequence) override;
     void ReacceptWalletTransactions() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void ResendWalletTransactions();
