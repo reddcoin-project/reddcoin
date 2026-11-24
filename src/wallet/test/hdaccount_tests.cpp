@@ -735,6 +735,32 @@ BOOST_AUTO_TEST_CASE(payment_keeps_the_next_account_ahead)
     }
 }
 
+// A retired account gives no new receive address, but it is still spent from,
+// and the change of each payment goes back to it: its change chain is kept
+// ahead as any other account's.
+BOOST_AUTO_TEST_CASE(retired_account_keeps_its_change_ahead)
+{
+    std::shared_ptr<CWallet> wallet = Create("retired", walletType::bip39Wallet);
+    BOOST_REQUIRE(Setup(*wallet));
+    Pay(*wallet, AccountScript(*wallet, 1, false, 0));
+    LegacyScriptPubKeyMan& spk_man = *Assert(wallet->GetLegacyScriptPubKeyMan());
+    CHDAccount record{spk_man.GetHDAccounts().at(1)};
+    record.state = CHDAccount::State::RETIRED;
+    {
+        WalletBatch batch(wallet->GetDatabase());
+        BOOST_REQUIRE(spk_man.WriteHDAccount(batch, 1, record));
+    }
+    const int64_t receive_extent{spk_man.GetHDAccountExtent(1).first};
+    for (uint32_t index = 0; index < 2 * HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+        CPubKey pubkey;
+        BOOST_REQUIRE_MESSAGE(spk_man.GetHDAccountPubKey(1, true, index, pubkey), strprintf("change key %u", index));
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return spk_man.HandOutHDAccountKey(1, true, index)));
+    }
+    BOOST_CHECK_EQUAL(spk_man.GetHDAccountExtent(1).second, int64_t{3 * HD_ACCOUNT_KEY_LOOKAHEAD - 1});
+    BOOST_CHECK_EQUAL(spk_man.GetHDAccountExtent(1).first, receive_extent);
+    Unload(std::move(wallet));
+}
+
 // The next account cannot be derived while the wallet is locked: a payment to
 // an account is noted, and the look-ahead is owed. The wallet's worker derives
 // it once the wallet is unlocked, fully or for staking only, and does nothing

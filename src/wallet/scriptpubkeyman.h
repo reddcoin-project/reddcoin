@@ -404,10 +404,10 @@ private:
     //! For each HD account above 0 of the active seed, the highest index
     //! derived on its receive and its change chain, -1 for none.
     std::map<uint32_t, std::pair<int64_t, int64_t>> m_hd_account_extent GUARDED_BY(cs_KeyStore);
-    //! The HD account of each form of each key of an account above 0 of the
-    //! active seed: P2PKH, P2PK, P2WPKH and P2SH-P2WPKH. A script not here is
-    //! of account 0.
-    std::map<CScript, uint32_t> m_hd_account_scripts GUARDED_BY(cs_KeyStore);
+    //! The HD account, chain (true for change) and index of each form of
+    //! each key of an account above 0 of the active seed: P2PKH, P2PK, P2WPKH
+    //! and P2SH-P2WPKH. A script not here is of account 0.
+    std::map<CScript, std::tuple<uint32_t, bool, uint32_t>> m_hd_account_scripts GUARDED_BY(cs_KeyStore);
     //! The key at each account, chain (true for change) and index.
     std::map<std::tuple<uint32_t, bool, uint32_t>, CKeyID> m_hd_account_keys GUARDED_BY(cs_KeyStore);
     //! Look-ahead the wallet could not derive for want of its seed, as when
@@ -601,9 +601,14 @@ public:
     bool HasHDAccountKeys() const;
     //! The public key at an index of a chain of an HD account, if derived.
     bool GetHDAccountPubKey(uint32_t account, bool internal, uint32_t index, CPubKey& pubkey) const;
-    //! Note that the change key at `index` of `account` has been handed out,
-    //! and keep the look-ahead behind it. Needs the wallet's lock.
-    bool HandOutHDAccountChange(uint32_t account, uint32_t index);
+    //! The account, chain and index of a script of a key of an HD account above 0.
+    bool GetHDAccountKeyOfScript(const CScript& script, uint32_t& account, bool& internal, uint32_t& index) const;
+    //! Note that the key at `index` of a chain of `account` has been handed
+    //! out, and keep the look-ahead behind it. Needs the wallet's lock.
+    bool HandOutHDAccountKey(uint32_t account, bool internal, uint32_t index);
+    bool HandOutHDAccountChange(uint32_t account, uint32_t index) { return HandOutHDAccountKey(account, true, index); }
+    //! Change the label or the state of an HD account, and write it.
+    bool UpdateHDAccount(uint32_t account, const CHDAccount& record);
     //! Whether the wallet holds keys of an HD account above 0 without the flag.
     bool HasHDAccountsInconsistency() const;
     //! Count the keys of HD accounts and say whether the wallet is

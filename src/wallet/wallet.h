@@ -150,6 +150,9 @@ static const std::map<std::string,WalletFlags> WALLET_FLAG_MAP{
 
 extern const std::map<uint64_t,std::string> WALLET_FLAG_CAVEATS;
 
+//! Said wherever an HD account is asked of a descriptor wallet.
+extern const std::string HD_ACCOUNTS_LEGACY_ONLY;
+
 /** A wrapper to reserve an address from a wallet
  *
  * ReserveDestination is used to reserve an address.
@@ -539,6 +542,23 @@ public:
     //! the lowest of them, so that a restore still finds change.
     bool GetHDAccountChangeDestination(uint32_t account, OutputType type, CTxDestination& dest, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
+    //! Whether a transaction of the wallet that is not abandoned or
+    //! conflicted pays an address of HD account `account`, confirmed if asked.
+    bool IsHDAccountUsed(uint32_t account, bool confirmed_only) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The highest index paid on a chain of an HD account above 0, -1 for none.
+    int64_t HighestPaidHDAccountIndex(uint32_t account, bool internal) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Create the next HD account, as BIP44's account rule allows: the account
+    //! before it has a confirmed payment, unless `force`. The first account
+    //! marks the wallet. Its number, and its first address, labelled.
+    bool NewHDAccount(const std::string& label, bool force, uint32_t& account, CTxDestination& first, std::vector<bilingual_str>& warnings, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Hand out the next address of a chain of an HD account above 0, within
+    //! the gap of HD_ACCOUNT_KEY_LOOKAHEAD unpaid addresses unless `force`.
+    bool GetNewHDAccountDestination(uint32_t account, bool internal, OutputType type, const std::string& label, bool force, CTxDestination& dest, std::vector<bilingual_str>& warnings, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The receive addresses of an HD account handed out and not yet paid.
+    std::vector<CTxDestination> GetUnpaidHDAccountAddresses(uint32_t account) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Change the label of an HD account, or retire it or bring it back.
+    bool SetHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
     /**
      * Find non-change parent output.
      */
@@ -664,6 +684,8 @@ public:
         CAmount m_watchonly_immature{0};
     };
     Balance GetBalance(int min_depth = 0, bool avoid_reuse = true) const;
+    //! What the wallet can spend in each HD account, account 0 included.
+    std::map<uint32_t, Balance> GetHDAccountBalances(int min_depth = 0, bool avoid_reuse = true) const;
     CAmount GetAvailableBalance(const CCoinControl* coinControl = nullptr) const;
 
     OutputType TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const;
