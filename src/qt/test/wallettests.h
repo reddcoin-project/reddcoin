@@ -26,6 +26,7 @@ private Q_SLOTS:
     void labelIndexTests();
     void mintingTableTests();
     void keysNoticeTests();
+    void hdAccountsTests();
 };
 
 #endif // BITCOIN_QT_TEST_WALLETTESTS_H

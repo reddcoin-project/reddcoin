@@ -36,9 +36,17 @@ bool IsFeatureSupported(int wallet_version, int feature_version)
 
 WalletFeature GetClosestWalletFeature(int version)
 {
-    static constexpr std::array wallet_features{FEATURE_LATEST, FEATURE_PRE_SPLIT_KEYPOOL, FEATURE_NO_DEFAULT_KEY, FEATURE_HD_SPLIT, FEATURE_HD, FEATURE_COMPRPUBKEY, FEATURE_WALLETCRYPT, FEATURE_BASE};
+    static constexpr std::array wallet_features{FEATURE_HD_ACCOUNTS, FEATURE_LATEST, FEATURE_PRE_SPLIT_KEYPOOL, FEATURE_NO_DEFAULT_KEY, FEATURE_HD_SPLIT, FEATURE_HD, FEATURE_COMPRPUBKEY, FEATURE_WALLETCRYPT, FEATURE_BASE};
     for (const WalletFeature& wf : wallet_features) {
         if (version >= wf) return wf;
     }
     return static_cast<WalletFeature>(0);
+}
+
+uint32_t HDAccountOfKeyPath(const std::vector<uint32_t>& path)
+{
+    constexpr uint32_t hardened{0x80000000};
+    if (path.size() == 5) return path[2] & ~hardened;
+    if (path.size() == 3) return path[0] & ~hardened;
+    return 0;
 }

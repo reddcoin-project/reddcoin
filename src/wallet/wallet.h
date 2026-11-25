@@ -32,13 +32,16 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -127,7 +130,8 @@ static constexpr uint64_t KNOWN_WALLET_FLAGS =
     |   WALLET_FLAG_DISABLE_PRIVATE_KEYS
     |   WALLET_FLAG_DESCRIPTORS
     |   WALLET_FLAG_EXTERNAL_SIGNER
-    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED;
+    |   WALLET_FLAG_HD_SECRETS_ENCRYPTED
+    |   WALLET_FLAG_HD_ACCOUNTS;
 
 static constexpr uint64_t MUTABLE_WALLET_FLAGS =
         WALLET_FLAG_AVOID_REUSE;
@@ -140,10 +144,14 @@ static const std::map<std::string,WalletFlags> WALLET_FLAG_MAP{
     {"disable_private_keys", WALLET_FLAG_DISABLE_PRIVATE_KEYS},
     {"descriptor_wallet", WALLET_FLAG_DESCRIPTORS},
     {"external_signer", WALLET_FLAG_EXTERNAL_SIGNER},
-    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED}
+    {"hd_secrets_encrypted", WALLET_FLAG_HD_SECRETS_ENCRYPTED},
+    {"hd_accounts", WALLET_FLAG_HD_ACCOUNTS}
 };
 
 extern const std::map<uint64_t,std::string> WALLET_FLAG_CAVEATS;
+
+//! Said wherever an HD account is asked of a descriptor wallet.
+extern const std::string HD_ACCOUNTS_LEGACY_ONLY;
 
 /** A wrapper to reserve an address from a wallet
  *
@@ -267,6 +275,24 @@ private:
     std::atomic<bool> m_orphaned_coinstakes_swept{false};
     /** Set by UnloadWallet() before it fires NotifyUnload. See IsUnloading(). */
     std::atomic<bool> m_unloading{false};
+
+    /** The worker that does HD account work the wallet could not do while
+     *  locked, once it is unlocked: a thread of this wallet's own, not the
+     *  scheduler, which serves every wallet and the validation callbacks.
+     *  Started when first needed; stopped and joined when the wallet goes. */
+    std::thread m_hd_account_worker;
+    std::mutex m_hd_account_worker_mutex;
+    std::condition_variable m_hd_account_worker_cv;
+    bool m_hd_account_work{false};
+    bool m_hd_account_worker_busy{false};
+    bool m_hd_account_worker_stop{false};
+    void HDAccountWorkerLoop();
+    //! Set while CreateWallet scans a wallet it restores: the worker, woken by
+    //! the unlock, leaves that scan to it.
+    std::atomic<bool> m_restoring{false};
+    //! A restore asked not to look for HD accounts: its scan does not look,
+    //! nor does the worker's when it is done again.
+    std::atomic<bool> m_hd_accounts_declined{false};
     friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
@@ -442,9 +468,33 @@ public:
 
     ~CWallet()
     {
+        StopHDAccountWorker();
         // Should not have slots connected at this point.
         assert(NotifyUnload.empty());
     }
+
+    /** Have the worker do the HD account work that is owed, if the wallet
+     *  holds accounts: the look-ahead it could not derive while locked. */
+    void ScheduleHDAccountWork();
+    /** Stop the worker and wait for it. */
+    void StopHDAccountWorker();
+    /** Wait until the worker has done the work scheduled so far. */
+    void SyncWithHDAccountWorker();
+    /** Begin looking for the HD accounts of a wallet restored from a mnemonic
+     *  phrase, if it can look now: see LegacyScriptPubKeyMan::BeginHDAccountDiscovery. */
+    bool BeginHDAccountDiscovery();
+    //! A restore is asked not to look for HD accounts: said in the file too,
+    //! until its scan has completed.
+    bool DeclineHDAccounts();
+    void LoadHDAccountsDeclined() { m_hd_accounts_declined = true; }
+    //! Match keys that lost their metadata against the accounts of the seed
+    //! (LegacyScriptPubKeyMan::RepairHDAccountKeys), then note the payments
+    //! the wallet holds to the accounts found, as when they were received.
+    bool RepairHDAccounts() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void SetRestoring(bool restoring) { m_restoring = restoring; }
+    /** The HD account of a script of the wallet; 0 for every script that is
+     *  not a key of an account above 0. */
+    uint32_t GetHDAccountOfScript(const CScript& script) const;
 
     bool IsCrypted() const;
     bool IsLocked() const override;
@@ -494,7 +544,46 @@ public:
     /**
      * Return list of available coins and locked coins grouped by non-change output address.
      */
-    std::map<CTxDestination, std::vector<COutput>> ListCoins() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The coins of HD account `account`, by address.
+    std::map<CTxDestination, std::vector<COutput>> ListCoins(uint32_t account = 0) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    //! Whether the wallet holds keys of an HD account above 0: the coins of
+    //! each account are then kept apart.
+    bool HoldsHDAccountKeys() const;
+    //! Decide the HD account a transaction spends, in `coin_control`: the one
+    //! named, or that of the selected inputs, or account 0. Refuse inputs of
+    //! two accounts, an input of another account than the one named, and a
+    //! change address that is not of the account spent.
+    bool ResolveHDAccount(CCoinControl& coin_control, bilingual_str& error) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Hand out a change address of an HD account above 0: the next index,
+    //! or, when the last HD_ACCOUNT_KEY_LOOKAHEAD handed out are all unpaid,
+    //! the lowest of them, so that a restore still finds change.
+    bool GetHDAccountChangeDestination(uint32_t account, OutputType type, CTxDestination& dest, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    //! Whether a transaction of the wallet that is not abandoned or
+    //! conflicted pays an address of HD account `account`, confirmed if asked.
+    bool IsHDAccountUsed(uint32_t account, bool confirmed_only) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The highest index paid on a chain of an HD account above 0, -1 for none.
+    int64_t HighestPaidHDAccountIndex(uint32_t account, bool internal) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Create the next HD account, as BIP44's account rule allows: the account
+    //! before it has a confirmed payment, unless `force`. The first account
+    //! marks the wallet. Its number, and its first address, labelled.
+    bool NewHDAccount(const std::string& label, bool force, uint32_t& account, CTxDestination& first, std::vector<bilingual_str>& warnings, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Hand out the next address of a chain of an HD account above 0, within
+    //! the gap of HD_ACCOUNT_KEY_LOOKAHEAD unpaid addresses unless `force`.
+    bool GetNewHDAccountDestination(uint32_t account, bool internal, OutputType type, const std::string& label, bool force, CTxDestination& dest, std::vector<bilingual_str>& warnings, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! The receive addresses of an HD account handed out and not yet paid.
+    std::vector<CTxDestination> GetUnpaidHDAccountAddresses(uint32_t account) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! What a restore from a mnemonic phrase found.
+    struct HDRestoreReport {
+        std::string first_path;
+        int used_addresses{0};
+        std::vector<uint32_t> accounts_found;
+        bool history{false};
+    };
+    HDRestoreReport GetHDRestoreReport() const;
+    //! Change the label of an HD account, or retire it or bring it back.
+    bool SetHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /**
      * Find non-change parent output.
@@ -606,8 +695,17 @@ public:
     };
     ScanResult ScanForWalletTransactions(const uint256& start_block, int start_height, std::optional<int> max_height, const WalletRescanReserver& reserver, bool fUpdate);
     //! Do the scan a restore from a mnemonic phrase owes, if it owes one, and
-    //! say in the file that it is done. False if it did not complete.
-    bool ScanOwedRestore();
+    //! say in the file that it is done. False if it did not complete. The
+    //! accounts kept in memory are forgotten at its end if `own_discovery`:
+    //! if the discovery is the worker's, not that of rescanhdaccounts.
+    bool ScanOwedRestore(bool own_discovery = true);
+    //! The lowest block height at which the keys of an HD account were due
+    //! while they could not be derived, since the last scan began: the scan
+    //! owed from then on.
+    std::optional<int> m_hd_owed_height GUARDED_BY(cs_wallet);
+    //! At the end of an owed scan: erase its record, or write the height
+    //! from which a scan is still owed.
+    void FinishOwedScan() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason, uint64_t mempool_sequence) override;
     void ReacceptWalletTransactions() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void ResendWalletTransactions();
@@ -621,6 +719,10 @@ public:
         CAmount m_watchonly_immature{0};
     };
     Balance GetBalance(int min_depth = 0, bool avoid_reuse = true) const;
+    //! What the wallet can spend in each HD account, account 0 included.
+    std::map<uint32_t, Balance> GetHDAccountBalances(int min_depth = 0, bool avoid_reuse = true, bool other_accounts_only = false) const;
+    //! The trusted funds of the HD accounts above 0, as GetBalance counts them.
+    CAmount GetOtherHDAccountsTrusted() const;
     CAmount GetAvailableBalance(const CCoinControl* coinControl = nullptr) const;
 
     OutputType TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const;

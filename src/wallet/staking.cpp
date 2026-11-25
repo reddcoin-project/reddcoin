@@ -51,6 +51,8 @@ bool GetStakeWeight(const CWallet* pwallet, uint64_t& nAverageWeight, uint64_t &
         LOCK(pwallet->cs_wallet);
         std::vector<COutput> vAvailableCoins;
         CCoinControl temp;
+        // The coins of every HD account stake.
+        temp.m_hd_all_accounts = true;
         pwallet->AvailableCoins(vAvailableCoins, &temp);
         coins.reserve(vAvailableCoins.size());
         for (const COutput& out : vAvailableCoins) {
@@ -260,6 +262,9 @@ bool CollectStakeCandidates(const CWallet* pwallet, StakeCandidates& candidates)
 
     std::vector<COutput> vAvailableCoins;
     CCoinControl temp;
+    // The coins of every HD account stake: a stake pays the kernel's own key,
+    // and combines only coins on that script, so it stays in its account.
+    temp.m_hd_all_accounts = true;
     pwallet->AvailableCoins(vAvailableCoins, &temp);
     // For staking, use all available coins directly: SelectCoins applies
     // confirmation filters that reject recently-received coins, but staking

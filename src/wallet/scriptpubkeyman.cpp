@@ -438,7 +438,15 @@ void LegacyScriptPubKeyMan::MarkUnusedAddresses(const CScript& script)
         auto it = mapKeyMetadata.find(keyid);
         if (it != mapKeyMetadata.end()){
             CKeyMetadata meta = it->second;
-            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) {
+            // A key of an HD account above 0 of the active seed: the account
+            // is used, and the one after it is kept ahead.
+            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id == m_hd_chain.seed_id && HDAccountsEnabled() &&
+                (meta.key_origin.path.size() == 3 || meta.key_origin.path.size() == 5) && HDAccountOfKeyPath(meta.key_origin.path) != 0) {
+                MarkHDAccountKeyUsed(meta);
+            }
+            // An inactive chain is topped up for keys of account 0 only: a
+            // key of another HD account says nothing of where account 0 is.
+            if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id && HDAccountOfKeyPath(meta.key_origin.path) == 0) {
                 // Which chain the key is on and where: m/0'/chain'/index' for
                 // a plain HD seed, m/44'/coin'/account'/chain/index for a
                 // BIP44 one, where the second and third elements are the coin
@@ -504,6 +512,13 @@ bool LegacyScriptPubKeyMan::SetupGeneration(const WalletOptions& walletoptions, 
                   force ? "true" : "false",
                   CanGenerateKeys() ? "true" : "false",
                   m_storage.IsLocked() ? "true" : "false");
+
+    // A new seed in the place of the seed of a wallet that holds HD accounts
+    // would leave its accounts behind.
+    if (force && KeepsHDSeed()) {
+        WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: refused, the wallet holds HD accounts and keeps its seed\n");
+        return false;
+    }
 
     if ((CanGenerateKeys() && !force) || m_storage.IsLocked()) {
         WalletLogPrintf("LegacyScriptPubKeyMan::SetupGeneration: Early return - CanGenerateKeys=%s, force=%s, IsLocked=%s\n",
@@ -1572,15 +1587,815 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewKey(WalletBatch &batch, CHDChain& hd_c
     return pubkey;
 }
 
+HDAccountKey DeriveHDAccountKeyFromMaster(const CExtKey& master, bool bip44, uint32_t coin_type, uint32_t account, bool internal, uint32_t index)
+{
+    HDAccountKey result;
+    CExtKey account_key;
+    CExtKey chain_key;
+    CExtKey child_key;
+    if (bip44) {
+        // m/44'/coin_type'/account'/chain/index
+        CExtKey purpose_key;
+        CExtKey coin_type_key;
+        master.Derive(purpose_key, 44 | BIP32_HARDENED_KEY_LIMIT);
+        purpose_key.Derive(coin_type_key, coin_type | BIP32_HARDENED_KEY_LIMIT);
+        coin_type_key.Derive(account_key, account | BIP32_HARDENED_KEY_LIMIT);
+        account_key.Derive(chain_key, internal ? 1 : 0);
+        chain_key.Derive(child_key, index);
+        result.path = {44 | BIP32_HARDENED_KEY_LIMIT, coin_type | BIP32_HARDENED_KEY_LIMIT, account | BIP32_HARDENED_KEY_LIMIT, internal ? 1U : 0U, index};
+        result.path_text = strprintf("m/44'/%d'/%d'/%d/%d", coin_type, account, internal, index);
+    } else {
+        // m/account'/chain'/index'
+        master.Derive(account_key, account | BIP32_HARDENED_KEY_LIMIT);
+        account_key.Derive(chain_key, (internal ? 1 : 0) | BIP32_HARDENED_KEY_LIMIT);
+        chain_key.Derive(child_key, index | BIP32_HARDENED_KEY_LIMIT);
+        result.path = {account | BIP32_HARDENED_KEY_LIMIT, (internal ? 1U : 0U) | BIP32_HARDENED_KEY_LIMIT, index | BIP32_HARDENED_KEY_LIMIT};
+        result.path_text = strprintf("m/%d'/%d'/%d'", account, internal, index);
+    }
+    result.key = child_key.key;
+    return result;
+}
+
+bool LegacyScriptPubKeyMan::DeriveHDAccountKey(uint32_t account, bool internal, uint32_t index, CKey& key, CKeyMetadata& metadata)
+{
+    AssertLockHeld(cs_KeyStore);
+    if (!IsHDEnabled() || m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+    if (internal && !m_storage.CanSupportFeature(FEATURE_HD_SPLIT)) return false;
+    // Hardened, the account and an index of a plain or BIP39 chain have 31
+    // bits: one beyond them would be another key's number.
+    if (account >= BIP32_HARDENED_KEY_LIMIT || index >= BIP32_HARDENED_KEY_LIMIT) return false;
+    if (!CanDeriveFrom(m_hd_chain)) return false;
+    SecureVector seed_bytes;
+    if (!GetHDSeed(m_hd_chain, seed_bytes)) return false;
+    CExtKey master;
+    master.SetSeed(seed_bytes.data(), seed_bytes.size());
+
+    const HDAccountKey derived{DeriveHDAccountKeyFromMaster(master, m_hd_chain.IsBip44(), Params().ExtCoinType(), account, internal, index)};
+    key = derived.key;
+    metadata = CKeyMetadata(GetTime());
+    metadata.hdKeypath = derived.path_text;
+    metadata.key_origin.path = derived.path;
+    metadata.hd_seed_id = m_hd_chain.seed_id;
+    const CKeyID master_id = master.key.GetPubKey().GetID();
+    std::copy(master_id.begin(), master_id.begin() + 4, metadata.key_origin.fingerprint);
+    metadata.has_key_origin = true;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::AddHDAccountKey(WalletBatch& batch, const CKey& key, const CKeyMetadata& metadata)
+{
+    AssertLockHeld(cs_KeyStore);
+    const CPubKey pubkey = key.GetPubKey();
+    if (HaveKey(pubkey.GetID())) return true;
+    mapKeyMetadata[pubkey.GetID()] = metadata;
+    UpdateTimeFirstKey(metadata.nCreateTime);
+    if (!AddKeyPubKeyWithDB(batch, key, pubkey)) return false;
+    // A key is handed out before it is paid, as is the case for every key of
+    // an account kept ahead of use: the forms it can be paid to are known
+    // from the start, segwit ones included.
+    if (pubkey.IsCompressed()) {
+        const CScript witprog = GetScriptForDestination(WitnessV0KeyHash(pubkey.GetID()));
+        if (!AddCScriptWithDB(batch, witprog)) return false;
+    }
+    IndexHDAccountKey(pubkey, metadata);
+    return true;
+}
+
+void LegacyScriptPubKeyMan::IndexHDAccountKey(const CPubKey& pubkey, const CKeyMetadata& metadata)
+{
+    AssertLockHeld(cs_KeyStore);
+    if (metadata.hd_seed_id.IsNull() || metadata.hd_seed_id != m_hd_chain.seed_id) return;
+    const std::vector<uint32_t>& path = metadata.key_origin.path;
+    if (path.size() != 3 && path.size() != 5) return;
+    const uint32_t account{HDAccountOfKeyPath(path)};
+    if (account == 0) return;
+    const bool internal{(path.size() == 5 ? path[3] : path[1] & ~BIP32_HARDENED_KEY_LIMIT) != 0};
+    const int64_t index{path.size() == 5 ? path[4] : path[2] & ~BIP32_HARDENED_KEY_LIMIT};
+    auto& [last_receive, last_change] = m_hd_account_extent.emplace(account, std::make_pair(int64_t{-1}, int64_t{-1})).first->second;
+    int64_t& last = internal ? last_change : last_receive;
+    last = std::max(last, index);
+    m_hd_account_keys[std::make_tuple(account, internal, static_cast<uint32_t>(index))] = pubkey.GetID();
+    const auto where = std::make_tuple(account, internal, static_cast<uint32_t>(index));
+    m_hd_account_scripts[GetScriptForDestination(PKHash(pubkey))] = where;
+    m_hd_account_scripts[GetScriptForRawPubKey(pubkey)] = where;
+    if (pubkey.IsCompressed()) {
+        const CScript witprog = GetScriptForDestination(WitnessV0KeyHash(pubkey.GetID()));
+        m_hd_account_scripts[witprog] = where;
+        m_hd_account_scripts[GetScriptForDestination(ScriptHash(witprog))] = where;
+    }
+}
+
+bool LegacyScriptPubKeyMan::HDAccountsEnabled() const
+{
+    return m_storage.IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS);
+}
+
+bool LegacyScriptPubKeyMan::ExtendHDAccountChain(WalletBatch& batch, uint32_t account, bool internal, int64_t last)
+{
+    AssertLockHeld(cs_KeyStore);
+    // An account a scan holds in memory only, made the wallet's by a payment
+    // whose commit failed or by an account handed out during the scan: its
+    // keys are written first, or the end of the scan would take back those
+    // the keys written after them follow.
+    if (m_hd_discovery_accounts.count(account)) {
+        if (!WriteHDDiscoveryKeys(batch, {account})) return false;
+        KeepHDDiscoveryAccounts({account});
+    }
+    auto& extent = m_hd_account_extent.emplace(account, std::make_pair(int64_t{-1}, int64_t{-1})).first->second;
+    for (int64_t index = (internal ? extent.second : extent.first) + 1; index <= last; ++index) {
+        CKey key;
+        CKeyMetadata metadata;
+        if (!DeriveHDAccountKey(account, internal, static_cast<uint32_t>(index), key, metadata)) return false;
+        if (!AddHDAccountKey(batch, key, metadata)) return false;
+    }
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::SetupHDAccounts()
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    if (HDAccountsEnabled()) return true;
+    if (!IsHDEnabled() || m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !m_storage.CanSupportFeature(FEATURE_HD_SPLIT)) return false;
+    // A restore looking for the accounts marks the wallet itself if it finds one.
+    if (!m_hd_discovery_accounts.empty()) return false;
+    if (!CanDeriveFrom(m_hd_chain)) return false;
+    {
+        // Derived before anything is written: a seed that cannot be read
+        // leaves the wallet as it was.
+        CKey probe;
+        CKeyMetadata probe_meta;
+        if (!DeriveHDAccountKey(1, false, 0, probe, probe_meta)) return false;
+    }
+
+    WalletBatch batch(m_storage.GetDatabase());
+    if (!batch.TxnBegin()) return false;
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    meta.highest_derived = std::max(meta.highest_derived, uint32_t{1});
+    CHDAccount pool;
+    pool.state = CHDAccount::State::POOL;
+    pool.nCreateTime = GetTime();
+    // What is in memory before, for a transaction that does not commit.
+    const std::map<uint32_t, CHDAccount> accounts_before{m_hd_accounts};
+    const std::optional<CHDAccountMeta> meta_before{m_hd_account_meta};
+    const auto keys_before{m_hd_account_keys};
+    const auto extent_before{m_hd_account_extent};
+    const bool blank_before{m_storage.IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)};
+    bool ok{true};
+    if (!m_hd_accounts.count(1)) ok = WriteHDAccount(batch, 1, pool);
+    ok = ok && WriteHDAccountMeta(batch, meta);
+    ok = ok && ExtendHDAccountChain(batch, 1, false, HD_ACCOUNT_KEY_LOOKAHEAD - 1) && ExtendHDAccountChain(batch, 1, true, HD_ACCOUNT_KEY_LOOKAHEAD - 1);
+    // The flags last: adding a key writes the flags as they are in memory,
+    // which have this one only once the transaction is committed. The
+    // version is written here, and set in memory only once committed.
+    ok = ok && m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_ACCOUNTS);
+    ok = ok && batch.WriteMinVersion(FEATURE_HD_ACCOUNTS);
+    if (!ok || !batch.TxnCommit()) {
+        batch.TxnAbort();
+        // The keys added are forgotten, so that a later attempt derives and
+        // writes them again.
+        for (const auto& [where, key_id] : m_hd_account_keys) {
+            if (keys_before.count(where)) continue;
+            CPubKey pubkey;
+            if (GetPubKey(key_id, pubkey)) {
+                const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(key_id))};
+                mapScripts.erase(CScriptID(witprog));
+                for (const CScript& script : {GetScriptForDestination(PKHash(pubkey)), GetScriptForRawPubKey(pubkey), witprog, GetScriptForDestination(ScriptHash(witprog))}) {
+                    m_hd_account_scripts.erase(script);
+                }
+            }
+            mapKeys.erase(key_id);
+            mapCryptedKeys.erase(key_id);
+            mapKeyMetadata.erase(key_id);
+        }
+        m_hd_account_keys = keys_before;
+        m_hd_account_extent = extent_before;
+        m_hd_accounts = accounts_before;
+        m_hd_account_meta = meta_before;
+        if (blank_before) m_storage.ConfirmWalletFlag(WALLET_FLAG_BLANK_WALLET);
+        return false;
+    }
+    m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_ACCOUNTS);
+    m_storage.SetMinVersion(FEATURE_HD_ACCOUNTS);
+    WalletLogPrintf("The wallet now holds HD accounts; account 1 is kept ahead of use\n");
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::TopUpHDAccounts()
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    if (!HDAccountsEnabled()) return true;
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    // BIP44's account rule: one account is kept ahead of the highest used.
+    // An account handed out beyond it, with force, is kept too.
+    uint32_t highest{meta.highest_used + 1};
+    for (const auto& [account, record] : m_hd_accounts) {
+        if (record.state != CHDAccount::State::POOL) highest = std::max(highest, account);
+    }
+    if (!CanDeriveFrom(m_hd_chain) || m_storage.IsLocked()) {
+        // Nothing is owed when the keys are already there, as when a locked
+        // wallet sees again a payment it had seen while unlocked.
+        m_hd_accounts_topup_owed = !HDAccountsLookaheadHeld(highest);
+        return !m_hd_accounts_topup_owed;
+    }
+    WalletBatch batch(m_storage.GetDatabase());
+    for (uint32_t account = 1; account <= highest; ++account) {
+        auto it = m_hd_accounts.find(account);
+        if (it == m_hd_accounts.end()) {
+            CHDAccount pool;
+            pool.state = CHDAccount::State::POOL;
+            pool.nCreateTime = GetTime();
+            if (!WriteHDAccount(batch, account, pool)) return false;
+            it = m_hd_accounts.find(account);
+        }
+        // A retired account gives no new receive address, but its coins are
+        // still spent, and the change of each payment goes back to it.
+        const bool retired{it->second.state == CHDAccount::State::RETIRED};
+        const CHDAccount record{it->second};
+        if ((!retired && !ExtendHDAccountChain(batch, account, false, int64_t{record.next_receive} + HD_ACCOUNT_KEY_LOOKAHEAD - 1)) ||
+            !ExtendHDAccountChain(batch, account, true, int64_t{record.next_change} + HD_ACCOUNT_KEY_LOOKAHEAD - 1)) {
+            m_hd_accounts_topup_owed = true;
+            return false;
+        }
+    }
+    if (highest > meta.highest_derived || !m_hd_account_meta) {
+        meta.highest_derived = std::max(meta.highest_derived, highest);
+        if (!WriteHDAccountMeta(batch, meta)) return false;
+    }
+    m_hd_accounts_topup_owed = false;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::HDAccountsLookaheadHeld(uint32_t highest) const
+{
+    AssertLockHeld(cs_KeyStore);
+    if (!m_hd_account_meta || highest > m_hd_account_meta->highest_derived) return false;
+    for (uint32_t account = 1; account <= highest; ++account) {
+        const auto it = m_hd_accounts.find(account);
+        if (it == m_hd_accounts.end()) return false;
+        const auto extent = m_hd_account_extent.find(account);
+        if (extent == m_hd_account_extent.end()) return false;
+        const bool retired{it->second.state == CHDAccount::State::RETIRED};
+        if (!retired && extent->second.first < int64_t{it->second.next_receive} + HD_ACCOUNT_KEY_LOOKAHEAD - 1) return false;
+        if (extent->second.second < int64_t{it->second.next_change} + HD_ACCOUNT_KEY_LOOKAHEAD - 1) return false;
+    }
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::IsHDAccountsTopUpOwed() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_accounts_topup_owed;
+}
+
+void LegacyScriptPubKeyMan::MarkHDAccountKeyUsed(const CKeyMetadata& metadata)
+{
+    AssertLockHeld(cs_KeyStore);
+    const std::vector<uint32_t>& path = metadata.key_origin.path;
+    const uint32_t account{HDAccountOfKeyPath(path)};
+    const bool internal{(path.size() == 5 ? path[3] : path[1] & ~BIP32_HARDENED_KEY_LIMIT) != 0};
+    const uint32_t index{path.size() == 5 ? path[4] : path[2] & ~BIP32_HARDENED_KEY_LIMIT};
+    CHDAccount record{m_hd_accounts.count(account) ? m_hd_accounts.at(account) : CHDAccount{}};
+    const CHDAccount before{record};
+    if (record.state == CHDAccount::State::POOL) record.state = CHDAccount::State::ACTIVE;
+    uint32_t& next = internal ? record.next_change : record.next_receive;
+    next = std::max(next, index + 1);
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    const CHDAccountMeta meta_before{meta};
+    meta.highest_used = std::max(meta.highest_used, account);
+    meta.highest_derived = std::max(meta.highest_derived, account);
+    WalletBatch batch(m_storage.GetDatabase());
+    if (!m_hd_accounts.count(account) || !(record == before)) WriteHDAccount(batch, account, record);
+    if (!m_hd_account_meta || !(meta == meta_before)) WriteHDAccountMeta(batch, meta);
+    if (!TopUpHDAccounts()) {
+        WalletLogPrintf("%s: HD account %u was paid while its seed cannot be read; the account after it is derived at the next unlock\n", __func__, account);
+    }
+}
+
+uint32_t LegacyScriptPubKeyMan::GetHDAccountOfScript(const CScript& script) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_scripts.find(script);
+    return it == m_hd_account_scripts.end() ? 0 : std::get<0>(it->second);
+}
+
+bool LegacyScriptPubKeyMan::GetHDAccountKeyOfScript(const CScript& script, uint32_t& account, bool& internal, uint32_t& index) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_scripts.find(script);
+    if (it == m_hd_account_scripts.end()) return false;
+    std::tie(account, internal, index) = it->second;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::UpdateHDAccount(uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    WalletBatch batch(m_storage.GetDatabase());
+    return WriteHDAccount(batch, account, record);
+}
+
+std::pair<int64_t, int64_t> LegacyScriptPubKeyMan::GetHDAccountExtent(uint32_t account) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_extent.find(account);
+    return it == m_hd_account_extent.end() ? std::make_pair(int64_t{-1}, int64_t{-1}) : it->second;
+}
+
+bool LegacyScriptPubKeyMan::HasHDAccountKeys() const
+{
+    LOCK(cs_KeyStore);
+    return !m_hd_account_scripts.empty();
+}
+
+bool LegacyScriptPubKeyMan::GetHDAccountPubKey(uint32_t account, bool internal, uint32_t index, CPubKey& pubkey) const
+{
+    LOCK(cs_KeyStore);
+    const auto it = m_hd_account_keys.find(std::make_tuple(account, internal, index));
+    return it != m_hd_account_keys.end() && GetPubKey(it->second, pubkey);
+}
+
+bool LegacyScriptPubKeyMan::HandOutHDAccountKey(uint32_t account, bool internal, uint32_t index)
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    auto it = m_hd_accounts.find(account);
+    if (it == m_hd_accounts.end()) return false;
+    if (index >= (internal ? it->second.next_change : it->second.next_receive)) {
+        CHDAccount record{it->second};
+        (internal ? record.next_change : record.next_receive) = index + 1;
+        WalletBatch batch(m_storage.GetDatabase());
+        if (!WriteHDAccount(batch, account, record)) return false;
+    }
+    // Owed at the next unlock when the wallet is locked.
+    TopUpHDAccounts();
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::HasHDAccountsInconsistency() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_accounts_inconsistent;
+}
+
+bool LegacyScriptPubKeyMan::KeepHDAccountInMemory(uint32_t account)
+{
+    AssertLockHeld(cs_KeyStore);
+    // Held already: in memory, or written.
+    if (m_hd_discovery_accounts.count(account) || m_hd_account_extent.count(account)) return true;
+    std::vector<DiscoveryKey> keys;
+    for (const bool internal : {false, true}) {
+        for (uint32_t index = 0; index < HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+            DiscoveryKey entry;
+            if (!DeriveHDAccountKey(account, internal, index, entry.key, entry.metadata)) return false;
+            entry.pubkey = entry.key.GetPubKey();
+            if (m_storage.HasEncryptionKeys()) {
+                const CKeyingMaterial secret(entry.key.begin(), entry.key.end());
+                if (!EncryptSecret(m_storage.GetEncryptionKey(), secret, entry.pubkey.GetHash(), entry.crypted)) return false;
+            }
+            keys.push_back(std::move(entry));
+        }
+    }
+    // Into the key store, as the loader adds keys: nothing is written.
+    for (const DiscoveryKey& entry : keys) {
+        if (HaveKey(entry.pubkey.GetID())) continue;
+        const bool added{m_storage.HasEncryptionKeys() ? AddCryptedKeyInner(entry.pubkey, entry.crypted) : FillableSigningProvider::AddKeyPubKey(entry.key, entry.pubkey)};
+        if (!added) return false;
+        mapKeyMetadata[entry.pubkey.GetID()] = entry.metadata;
+        if (entry.pubkey.IsCompressed()) FillableSigningProvider::AddCScript(GetScriptForDestination(WitnessV0KeyHash(entry.pubkey.GetID())));
+        IndexHDAccountKey(entry.pubkey, entry.metadata);
+        m_hd_discovery_keys.push_back(entry);
+    }
+    m_hd_discovery_accounts.insert(account);
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::BeginHDAccountDiscovery(uint32_t count)
+{
+    LOCK(cs_KeyStore);
+    if (!m_hd_discovery_accounts.empty()) return false;
+    if (!IsHDEnabled() || m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !m_storage.CanSupportFeature(FEATURE_HD_SPLIT)) return false;
+    if (!CanDeriveFrom(m_hd_chain)) return false;
+    m_hd_discovery_count = std::max(count, uint32_t{1});
+    // BIP44's account discovery: the accounts past the highest used. A
+    // wallet that holds accounts keeps the first of them written already.
+    const uint32_t highest_used{HDAccountsEnabled() && m_hd_account_meta ? m_hd_account_meta->highest_used : 0};
+    for (uint32_t account = 1; account <= highest_used + m_hd_discovery_count; ++account) {
+        if (!KeepHDAccountInMemory(account)) {
+            EndHDAccountDiscovery();
+            return false;
+        }
+    }
+    if (!m_hd_discovery_accounts.empty()) {
+        WalletLogPrintf("Looking for HD accounts: accounts %u to %u are kept ahead in memory\n", *m_hd_discovery_accounts.begin(), *m_hd_discovery_accounts.rbegin());
+    }
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::IsHDAccountDiscoveryPending() const
+{
+    LOCK(cs_KeyStore);
+    return !m_hd_discovery_accounts.empty();
+}
+
+bool LegacyScriptPubKeyMan::CommitHDAccountDiscovery(uint32_t paid)
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    if (m_hd_discovery_accounts.empty() || paid == 0) return true;
+    // The accounts past the one paid are looked at as well: kept in memory
+    // first, so that the one after it is written below and not taken as
+    // held by the look-ahead that follows the payment.
+    for (uint32_t account = paid + 1; account <= paid + m_hd_discovery_count; ++account) {
+        if (!KeepHDAccountInMemory(account)) {
+            WalletLogPrintf("%s: HD account %u cannot be derived now; it is derived at the next unlock\n", __func__, account);
+            break;
+        }
+    }
+    std::set<uint32_t> written;
+    for (const uint32_t account : m_hd_discovery_accounts) {
+        if (account <= paid + 1) written.insert(account);
+    }
+    if (written.empty()) return true;
+
+    WalletBatch batch(m_storage.GetDatabase());
+    if (!batch.TxnBegin()) return false;
+    bool ok{WriteHDDiscoveryKeys(batch, written)};
+    CHDAccount pool;
+    pool.state = CHDAccount::State::POOL;
+    pool.nCreateTime = GetTime();
+    for (const uint32_t account : written) {
+        if (!m_hd_accounts.count(account)) ok = ok && batch.WriteHDAccount(account, pool);
+    }
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    meta.highest_derived = std::max(meta.highest_derived, *written.rbegin());
+    ok = ok && batch.WriteHDAccountMeta(meta);
+    const bool mark{!HDAccountsEnabled()};
+    if (mark) {
+        ok = ok && m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_ACCOUNTS);
+        // Set in memory only once committed.
+        ok = ok && batch.WriteMinVersion(FEATURE_HD_ACCOUNTS);
+    }
+    if (!ok || !batch.TxnCommit()) {
+        batch.TxnAbort();
+        WalletLogPrintf("%s: the HD accounts found could not be written to the wallet; they are looked for again at the next scan\n", __func__);
+        return false;
+    }
+    for (const uint32_t account : written) {
+        if (!m_hd_accounts.count(account)) m_hd_accounts[account] = pool;
+    }
+    KeepHDDiscoveryAccounts(written);
+    m_hd_account_meta = meta;
+    if (mark) {
+        m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_ACCOUNTS);
+        m_storage.SetMinVersion(FEATURE_HD_ACCOUNTS);
+        WalletLogPrintf("The wallet holds HD accounts: an account above 0 was found used\n");
+    }
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDDiscoveryKeys(WalletBatch& batch, const std::set<uint32_t>& accounts)
+{
+    AssertLockHeld(cs_KeyStore);
+    for (const DiscoveryKey& entry : m_hd_discovery_keys) {
+        if (!accounts.count(HDAccountOfKeyPath(entry.metadata.key_origin.path))) continue;
+        if (m_storage.HasEncryptionKeys()) {
+            if (entry.crypted.empty() || !batch.WriteCryptedKey(entry.pubkey, entry.crypted, entry.metadata)) return false;
+        } else {
+            if (!batch.WriteKey(entry.pubkey, entry.key.GetPrivKey(), entry.metadata)) return false;
+        }
+        if (entry.pubkey.IsCompressed()) {
+            const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(entry.pubkey.GetID()))};
+            if (!batch.WriteCScript(Hash160(witprog), witprog)) return false;
+        }
+    }
+    return true;
+}
+
+void LegacyScriptPubKeyMan::KeepHDDiscoveryAccounts(const std::set<uint32_t>& accounts)
+{
+    AssertLockHeld(cs_KeyStore);
+    std::vector<DiscoveryKey> kept;
+    for (DiscoveryKey& entry : m_hd_discovery_keys) {
+        if (accounts.count(HDAccountOfKeyPath(entry.metadata.key_origin.path))) {
+            UpdateTimeFirstKey(entry.metadata.nCreateTime);
+        } else {
+            kept.push_back(std::move(entry));
+        }
+    }
+    m_hd_discovery_keys = std::move(kept);
+    for (const uint32_t account : accounts) m_hd_discovery_accounts.erase(account);
+}
+
+void LegacyScriptPubKeyMan::EndHDAccountDiscovery()
+{
+    LOCK(cs_KeyStore);
+    if (m_hd_discovery_accounts.empty()) return;
+    for (const DiscoveryKey& entry : m_hd_discovery_keys) {
+        const CKeyID id{entry.pubkey.GetID()};
+        mapKeys.erase(id);
+        mapCryptedKeys.erase(id);
+        mapKeyMetadata.erase(id);
+        const CScript witprog{GetScriptForDestination(WitnessV0KeyHash(id))};
+        mapScripts.erase(CScriptID(witprog));
+        for (const CScript& script : {GetScriptForDestination(PKHash(entry.pubkey)), GetScriptForRawPubKey(entry.pubkey), witprog, GetScriptForDestination(ScriptHash(witprog))}) {
+            m_hd_account_scripts.erase(script);
+        }
+        const std::vector<uint32_t>& path = entry.metadata.key_origin.path;
+        const bool internal{(path.size() == 5 ? path[3] : path[1] & ~BIP32_HARDENED_KEY_LIMIT) != 0};
+        const uint32_t index{path.size() == 5 ? path[4] : path[2] & ~BIP32_HARDENED_KEY_LIMIT};
+        m_hd_account_keys.erase(std::make_tuple(HDAccountOfKeyPath(path), internal, index));
+    }
+    for (const uint32_t account : m_hd_discovery_accounts) m_hd_account_extent.erase(account);
+    m_hd_discovery_keys.clear();
+    m_hd_discovery_accounts.clear();
+    if (HDAccountsEnabled()) {
+        WalletLogPrintf("The HD accounts looked at past the highest used were not found used, and are not kept\n");
+    } else {
+        WalletLogPrintf("No HD account was found used: the wallet holds account 0 only\n");
+    }
+}
+
+bool LegacyScriptPubKeyMan::KeepsHDSeed() const
+{
+    LOCK(cs_KeyStore);
+    // Flagged; or holding keys of accounts the flag is still to cover, as an
+    // earlier wallet tool's salvage leaves them; or a scan holding accounts
+    // in memory: with another seed they would be keys of account 0.
+    return HDAccountsEnabled() || m_hd_accounts_inconsistent || m_hd_account_repair_owed || !m_hd_discovery_accounts.empty();
+}
+
+bool LegacyScriptPubKeyMan::HoldsInactiveSeedKeys() const
+{
+    LOCK(cs_KeyStore);
+    for (const auto& entry : mapKeyMetadata) {
+        const auto& meta = entry.second;
+        if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) return true;
+    }
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::IsHDAccountRepairOwed() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_account_repair_owed;
+}
+
+bool LegacyScriptPubKeyMan::RepairHDAccountKeys(std::vector<uint32_t>& found)
+{
+    m_storage.AssertWalletLockHeld();
+    LOCK(cs_KeyStore);
+    found.clear();
+    if (!m_hd_account_repair_owed) return true;
+    if (!IsHDEnabled() || m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        m_hd_account_repair_owed = false;
+        return true;
+    }
+    // Not while a scan keeps keys in memory: they would be taken as the wallet's.
+    if (!m_hd_discovery_accounts.empty() || !CanDeriveFrom(m_hd_chain) || m_storage.IsLocked()) return false;
+    SecureVector seed_bytes;
+    if (!GetHDSeed(m_hd_chain, seed_bytes)) return false;
+    CExtKey master;
+    master.SetSeed(seed_bytes.data(), seed_bytes.size());
+    const CKeyID master_id{master.key.GetPubKey().GetID()};
+
+    struct Match {
+        CPubKey pubkey;
+        CKeyMetadata metadata;
+        bool lost;
+    };
+    std::vector<Match> matches;
+    // The accounts of a wallet follow each other: one with no key in the
+    // wallet ends them. On each chain the keys run from index 0, and a gap
+    // as long as the look-ahead ends the chain.
+    for (uint32_t account = 1;; ++account) {
+        bool held{false};
+        for (const bool internal : {false, true}) {
+            uint32_t misses{0};
+            for (uint32_t index = 0; misses < HD_ACCOUNT_KEY_LOOKAHEAD; ++index) {
+                const HDAccountKey derived{DeriveHDAccountKeyFromMaster(master, m_hd_chain.IsBip44(), Params().ExtCoinType(), account, internal, index)};
+                const CPubKey pubkey{derived.key.GetPubKey()};
+                if (!HaveKey(pubkey.GetID())) {
+                    ++misses;
+                    continue;
+                }
+                misses = 0;
+                held = true;
+                Match match{pubkey, {}, false};
+                const auto it = mapKeyMetadata.find(pubkey.GetID());
+                if (it != mapKeyMetadata.end() && it->second.has_key_origin && it->second.hd_seed_id == m_hd_chain.seed_id) {
+                    match.metadata = it->second;
+                } else {
+                    // When the key was made is not known.
+                    match.metadata = CKeyMetadata(1);
+                    match.metadata.hdKeypath = derived.path_text;
+                    match.metadata.key_origin.path = derived.path;
+                    match.metadata.hd_seed_id = m_hd_chain.seed_id;
+                    std::copy(master_id.begin(), master_id.begin() + 4, match.metadata.key_origin.fingerprint);
+                    match.metadata.has_key_origin = true;
+                    match.lost = true;
+                }
+                matches.push_back(std::move(match));
+            }
+        }
+        if (!held) break;
+        found.push_back(account);
+    }
+    // The other keys without metadata are of no account above 0: given the
+    // metadata of a key whose creation time is not known, so that the wallet
+    // is not asked again at its next load.
+    std::set<CKeyID> matched;
+    for (const Match& match : matches) matched.insert(match.pubkey.GetID());
+    std::vector<CPubKey> unknown;
+    const auto collect = [&](const CKeyID& key_id) EXCLUSIVE_LOCKS_REQUIRED(cs_KeyStore) {
+        CPubKey pubkey;
+        if (!mapKeyMetadata.count(key_id) && !matched.count(key_id) && GetPubKey(key_id, pubkey)) unknown.push_back(pubkey);
+    };
+    for (const auto& entry : mapKeys) collect(entry.first);
+    for (const auto& entry : mapCryptedKeys) collect(entry.first);
+    if (found.empty() && unknown.empty()) {
+        m_hd_account_repair_owed = false;
+        return true;
+    }
+
+    WalletBatch batch(m_storage.GetDatabase());
+    if (!batch.TxnBegin()) return false;
+    bool ok{true};
+    const CKeyMetadata unknown_meta{1};
+    for (const CPubKey& pubkey : unknown) ok = ok && batch.WriteKeyMetadata(unknown_meta, pubkey, /* overwrite */ true);
+    // The witness script of each key is learned with the key when it is
+    // loaded: only the metadata is to be put back.
+    for (const Match& match : matches) {
+        if (match.lost) ok = ok && batch.WriteKeyMetadata(match.metadata, match.pubkey, /* overwrite */ true);
+    }
+    CHDAccount pool;
+    pool.state = CHDAccount::State::POOL;
+    pool.nCreateTime = GetTime();
+    std::vector<uint32_t> new_records;
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    const bool mark{!found.empty() && !HDAccountsEnabled()};
+    if (!found.empty()) {
+        for (const uint32_t account : found) {
+            if (m_hd_accounts.count(account)) continue;
+            ok = ok && batch.WriteHDAccount(account, pool);
+            new_records.push_back(account);
+        }
+        meta.highest_derived = std::max(meta.highest_derived, found.back());
+        ok = ok && batch.WriteHDAccountMeta(meta);
+    }
+    if (mark) {
+        ok = ok && m_storage.SetWalletFlagWithDB(batch, WALLET_FLAG_HD_ACCOUNTS);
+        ok = ok && batch.WriteMinVersion(FEATURE_HD_ACCOUNTS);
+    }
+    if (!ok || !batch.TxnCommit()) {
+        batch.TxnAbort();
+        WalletLogPrintf("%s: the keys of HD accounts found could not be written to the wallet; tried again at the next load\n", __func__);
+        m_hd_account_repair_owed = false;
+        return false;
+    }
+    for (const CPubKey& pubkey : unknown) {
+        mapKeyMetadata[pubkey.GetID()] = unknown_meta;
+        UpdateTimeFirstKey(unknown_meta.nCreateTime);
+    }
+    m_hd_account_repair_owed = false;
+    if (found.empty()) {
+        WalletLogPrintf("No keys of HD accounts were found in the wallet; %u keys without metadata were given it\n", unknown.size());
+        return true;
+    }
+    size_t lost{0};
+    for (const Match& match : matches) {
+        if (match.lost) {
+            mapKeyMetadata[match.pubkey.GetID()] = match.metadata;
+            UpdateTimeFirstKey(match.metadata.nCreateTime);
+            ++lost;
+        }
+        IndexHDAccountKey(match.pubkey, match.metadata);
+    }
+    for (const uint32_t account : new_records) m_hd_accounts[account] = pool;
+    m_hd_account_meta = meta;
+    if (mark) {
+        m_storage.ConfirmWalletFlag(WALLET_FLAG_HD_ACCOUNTS);
+        m_storage.SetMinVersion(FEATURE_HD_ACCOUNTS);
+    }
+    m_hd_accounts_inconsistent = false;
+    WalletLogPrintf("The keys of %u HD accounts were found in the wallet (the metadata of %u keys put back from the seed)%s\n",
+        found.size(), lost, mark ? "; the wallet is marked as holding HD accounts" : "");
+    return true;
+}
+
+void LegacyScriptPubKeyMan::DecideHDAccounts()
+{
+    LOCK(cs_KeyStore);
+    m_hd_account_extent.clear();
+    m_hd_account_scripts.clear();
+    m_hd_account_keys.clear();
+    for (const auto& [key_id, metadata] : mapKeyMetadata) {
+        CPubKey pubkey;
+        if (!GetPubKey(key_id, pubkey)) continue;
+        IndexHDAccountKey(pubkey, metadata);
+    }
+    m_hd_accounts_inconsistent = !HDAccountsEnabled() && !m_hd_account_extent.empty();
+    if (m_hd_accounts_inconsistent) {
+        WalletLogPrintf("The wallet holds keys of %u HD accounts but not the flag that says it holds accounts, as an earlier wallet tool's salvage leaves it\n", m_hd_account_extent.size());
+    }
+    // An earlier wallet tool's salvage keeps the keys and drops their
+    // metadata, the flags and the version: keys of accounts then look like
+    // keys of account 0. Matched against the seed's accounts on the
+    // wallet's worker, once the seed can be read.
+    m_hd_account_repair_owed = false;
+    if (!HDAccountsEnabled() && IsHDEnabled() && !m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        m_hd_account_repair_owed = m_hd_accounts_inconsistent;
+        for (const auto& entry : mapKeys) {
+            const auto& key_id = entry.first;
+            if (m_hd_account_repair_owed) break;
+            m_hd_account_repair_owed = !mapKeyMetadata.count(key_id);
+        }
+        for (const auto& entry : mapCryptedKeys) {
+            const auto& key_id = entry.first;
+            if (m_hd_account_repair_owed) break;
+            m_hd_account_repair_owed = !mapKeyMetadata.count(key_id);
+        }
+    }
+}
+
+void LegacyScriptPubKeyMan::LoadHDAccount(uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    m_hd_accounts[account] = record;
+}
+
+void LegacyScriptPubKeyMan::LoadHDAccountMeta(const CHDAccountMeta& meta)
+{
+    LOCK(cs_KeyStore);
+    m_hd_account_meta = meta;
+}
+
+std::map<uint32_t, CHDAccount> LegacyScriptPubKeyMan::GetHDAccounts() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_accounts;
+}
+
+std::optional<CHDAccountMeta> LegacyScriptPubKeyMan::GetHDAccountMeta() const
+{
+    LOCK(cs_KeyStore);
+    return m_hd_account_meta;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDAccount(WalletBatch& batch, uint32_t account, const CHDAccount& record)
+{
+    LOCK(cs_KeyStore);
+    if (!batch.WriteHDAccount(account, record)) return false;
+    m_hd_accounts[account] = record;
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::WriteHDAccountMeta(WalletBatch& batch, const CHDAccountMeta& meta)
+{
+    LOCK(cs_KeyStore);
+    if (!batch.WriteHDAccountMeta(meta)) return false;
+    m_hd_account_meta = meta;
+    return true;
+}
+
+std::pair<std::vector<uint32_t>, bool> LegacyScriptPubKeyMan::RebuildHDAccounts(const std::map<std::pair<CKeyID, uint32_t>, std::pair<int64_t, int64_t>>& account_keys)
+{
+    LOCK(cs_KeyStore);
+    std::vector<uint32_t> rebuilt;
+    if (m_hd_chain.seed_id.IsNull()) return {rebuilt, false};
+    uint32_t highest{0};
+    for (const auto& [seed_account, last] : account_keys) {
+        const auto& [seed_id, account] = seed_account;
+        if (seed_id != m_hd_chain.seed_id) continue;
+        highest = std::max(highest, account);
+        if (m_hd_accounts.count(account)) continue;
+        CHDAccount record;
+        record.state = CHDAccount::State::ACTIVE;
+        record.nCreateTime = GetTime();
+        // The keys of a chain run HD_ACCOUNT_KEY_LOOKAHEAD past its next
+        // index, which is where the gap of a new address is measured from.
+        record.next_receive = static_cast<uint32_t>(std::max<int64_t>(last.first + 1 - HD_ACCOUNT_KEY_LOOKAHEAD, 0));
+        record.next_change = static_cast<uint32_t>(std::max<int64_t>(last.second + 1 - HD_ACCOUNT_KEY_LOOKAHEAD, 0));
+        m_hd_accounts[account] = record;
+        rebuilt.push_back(account);
+    }
+    if (highest == 0) return {rebuilt, false};
+    CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
+    const CHDAccountMeta before{meta};
+    meta.highest_derived = std::max(meta.highest_derived, highest);
+    // An account put together from its keys may have been used: the accounts
+    // kept ahead of use reach past it.
+    for (const uint32_t account : rebuilt) meta.highest_used = std::max(meta.highest_used, account);
+    const bool meta_changed{!m_hd_account_meta || !(meta == before)};
+    m_hd_account_meta = meta;
+    return {rebuilt, meta_changed};
+}
+
 void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, bool internal)
 {
     // for now we use a fixed keypath scheme of m/0'/0'/k
     CExtKey masterKey;             //hd master key
-    CExtKey purposeKey;            //key at m/purpose'
-    CExtKey coinTypeKey;           //key at m/purpose'/coin_type'
-    CExtKey accountKey;            //key at m/0'
-    CExtKey chainChildKey;         //key at m/0'/0' (external) or m/0'/1' (internal)
-    CExtKey childKey;              //key at m/0'/0'/<n>'
 
     // The callers have asked whether the seed is available. This is the last resort.
     SecureVector seed_bytes;
@@ -1588,62 +2403,25 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata& 
         throw std::runtime_error(std::string(__func__) + ": seed not found");
     masterKey.SetSeed(seed_bytes.data(), seed_bytes.size());
 
-    uint32_t nAccountIndex = 0; // TODO add HDAccounts management
+    // The keys every wallet has always had are those of account 0.
+    const uint32_t nAccountIndex = 0;
 
     uint32_t& nChildIndex = internal ? hd_chain.nInternalChainCounter : hd_chain.nExternalChainCounter;
 
+    assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
+    HDAccountKey derived;
     do {
         // An index that is already taken is passed over, and the next one
         // tried: the path is that of the key that is kept, not of every try.
-        metadata.key_origin.path.clear();
-        if (hd_chain.IsBip44()) {
-            // derive m/purpose'
-            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
-            masterKey.Derive(purposeKey, 44 | BIP32_HARDENED_KEY_LIMIT);
-
-            // derive m/purpose'/coin_type'
-            purposeKey.Derive(coinTypeKey, Params().ExtCoinType() | BIP32_HARDENED_KEY_LIMIT);
-
-            // derive m/purpose'/coin_type'/account'
-            coinTypeKey.Derive(accountKey, nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
-
-            // derive m/purpose'/coin_type'/account'/change (external chain) OR m/purpose'/coin_type'/account'/1' (internal chain)
-            assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
-            accountKey.Derive(chainChildKey, (internal ? 1 : 0));
-
-            // derive m/purpose'/coin_type'/account'/change/address_index
-            chainChildKey.Derive(childKey, nChildIndex);
-
-            metadata.hdKeypath = strprintf("m/44'/%d'/%d'/%d/%d", Params().ExtCoinType(), nAccountIndex, internal, nChildIndex);
-            metadata.key_origin.path.push_back(44 | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(Params().ExtCoinType() | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(internal);
-            metadata.key_origin.path.push_back(nChildIndex);
-
-        } else {
-            // derive m/account'
-            // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
-            masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
-
-            // derive m/account'/change' (external chain) OR m/0'/1' (internal chain)
-            assert(internal ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
-            accountKey.Derive(chainChildKey, BIP32_HARDENED_KEY_LIMIT + (internal ? 1 : 0));
-
-            // derive m/account'/change'/address_index'
-            chainChildKey.Derive(childKey, BIP32_HARDENED_KEY_LIMIT | nChildIndex);
-
-            metadata.hdKeypath = strprintf("m/%d'/%d'/%d'", nAccountIndex, internal, nChildIndex);
-            metadata.key_origin.path.push_back(nAccountIndex | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(internal | BIP32_HARDENED_KEY_LIMIT);
-            metadata.key_origin.path.push_back(nChildIndex | BIP32_HARDENED_KEY_LIMIT);
-        }
+        derived = DeriveHDAccountKeyFromMaster(masterKey, hd_chain.IsBip44(), Params().ExtCoinType(), nAccountIndex, internal, nChildIndex);
+        metadata.hdKeypath = derived.path_text;
+        metadata.key_origin.path = derived.path;
 
         // increment childkey index
         nChildIndex++;
 
-    } while (HaveKey(childKey.key.GetPubKey().GetID()));
-    secret = childKey.key;
+    } while (HaveKey(derived.key.GetPubKey().GetID()));
+    secret = derived.key;
     metadata.hd_seed_id = hd_chain.seed_id;
     CKeyID master_id = masterKey.key.GetPubKey().GetID();
     std::copy(master_id.begin(), master_id.begin() + 4, metadata.key_origin.fingerprint);
