@@ -75,6 +75,8 @@ public Q_SLOTS:
     void gotoHistoryPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
+    /** Switch to the HD accounts page */
+    void gotoHDAccountsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
 

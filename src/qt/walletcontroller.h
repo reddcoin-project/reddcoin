@@ -32,6 +32,7 @@ namespace interfaces {
 class Handler;
 class Node;
 class Wallet;
+struct WalletRestoreReport;
 } // namespace interfaces
 
 class AskPassphraseDialog;
@@ -140,6 +141,10 @@ private:
     CreateWalletDialog* m_create_wallet_dialog{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
 };
+
+/** What a restore from a phrase found, as the wizard reports it. no_history:
+ *  set when nothing was found, which a wrong wallet type or passphrase gives. */
+QString RestoreReportText(const interfaces::WalletRestoreReport& report, const QString& wallet_name, bool& no_history);
 
 class CreateWalletWizardActivity : public WalletControllerActivity
 {

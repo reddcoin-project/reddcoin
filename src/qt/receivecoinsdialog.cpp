@@ -10,11 +10,17 @@
 
 #include <qt/addresstablemodel.h>
 #include <qt/guiutil.h>
+#include <qt/hdaccountselector.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/receiverequestdialog.h>
 #include <qt/recentrequeststablemodel.h>
 #include <qt/walletmodel.h>
+
+#include <key_io.h>
+
+#include <algorithm>
+#include <optional>
 
 #include <QAction>
 #include <QCursor>
@@ -30,6 +36,10 @@ ReceiveCoinsDialog::ReceiveCoinsDialog(const PlatformStyle *_platformStyle, QWid
     platformStyle(_platformStyle)
 {
     ui->setupUi(this);
+
+    // The HD account of the new address, above the request form.
+    m_account_selector = new HDAccountSelector(HDAccountSelector::Purpose::Receive, this);
+    ui->verticalLayout_3->insertWidget(0, m_account_selector);
 
     if (!_platformStyle->getImagesOnButtons()) {
         ui->clearButton->setIcon(QIcon());
@@ -83,10 +93,22 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
         QTableView* tableView = ui->recentRequestsView;
         tableView->setModel(_model->getRecentRequestsTableModel());
         tableView->sortByColumn(RecentRequestsTableModel::Date, Qt::DescendingOrder);
+        // The HD account, the last column, needs room for its number only:
+        // Amount takes the room left, as it did as the last column. Also
+        // over a layout saved before the Account column, whose last
+        // section stretched.
+        tableView->horizontalHeader()->setMinimumSectionSize(std::min<int>(tableView->horizontalHeader()->minimumSectionSize(), ACCOUNT_COLUMN_WIDTH));
+        tableView->horizontalHeader()->setStretchLastSection(false);
+        tableView->horizontalHeader()->setSectionResizeMode(RecentRequestsTableModel::Amount, QHeaderView::Stretch);
+        tableView->setColumnWidth(RecentRequestsTableModel::Account, ACCOUNT_COLUMN_WIDTH);
 
         connect(tableView->selectionModel(),
             &QItemSelectionModel::selectionChanged, this,
             &ReceiveCoinsDialog::recentRequestsView_selectionChanged);
+
+        m_account_selector->setModel(_model);
+        updateAccountColumn();
+        connect(_model, &WalletModel::hdAccountsChanged, this, &ReceiveCoinsDialog::updateAccountColumn);
 
         if (model->wallet().getDefaultAddressType() == OutputType::BECH32) {
             ui->useBech32->setCheckState(Qt::Checked);
@@ -155,22 +177,43 @@ void ReceiveCoinsDialog::on_receiveButton_clicked()
             address_type = OutputType::P2SH_SEGWIT;
         }
     }
+
+    // An address of an HD account above 0: from the account's chain.
+    if (const uint32_t account{m_account_selector->isHidden() ? 0 : m_account_selector->account()}; account != 0) {
+        CTxDestination dest;
+        bilingual_str error;
+        bool ok = model->wallet().getNewHDAccountDestination(account, address_type, label.toStdString(), dest, error);
+        std::optional<WalletModel::UnlockContext> unlock;
+        if (!ok && model->getEncryptionStatus() == WalletModel::Locked) {
+            // The keys kept ahead are used up: deriving more needs the seed.
+            unlock.emplace(model->requestUnlock());
+            if (!unlock->isValid()) {
+                QMessageBox::critical(this, windowTitle(), tr("Could not unlock wallet."), QMessageBox::Ok, QMessageBox::Ok);
+                return;
+            }
+            error = {};
+            ok = model->wallet().getNewHDAccountDestination(account, address_type, label.toStdString(), dest, error);
+        }
+        if (!ok) {
+            QString text{QString::fromStdString(error.translated)};
+            if (error.original.rfind("The last 20 addresses", 0) == 0) {
+                text = tr("The last 20 addresses of HD account %1 have not been paid. Use one of them: the Accounts page lists them (Unpaid addresses). An address beyond them may not be found when the wallet is restored.").arg(account);
+            }
+            QMessageBox::critical(this, windowTitle(), text, QMessageBox::Ok, QMessageBox::Ok);
+            return;
+        }
+        showNewRequest(QString::fromStdString(EncodeDestination(dest)), label);
+        clear();
+        return;
+    }
+
     address = model->getAddressTableModel()->addRow(AddressTableModel::Receive, label, "", address_type);
 
     switch(model->getAddressTableModel()->getEditStatus())
     {
     case AddressTableModel::EditStatus::OK: {
         // Success
-        SendCoinsRecipient info(address, label,
-            ui->reqAmount->value(), ui->reqMessage->text());
-        ReceiveRequestDialog *dialog = new ReceiveRequestDialog(this);
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        dialog->setModel(model);
-        dialog->setInfo(info);
-        dialog->show();
-
-        /* Store request for later reference */
-        model->getRecentRequestsTableModel()->addNewRequest(info);
+        showNewRequest(address, label);
         break;
     }
     case AddressTableModel::EditStatus::WALLET_UNLOCK_FAILURE:
@@ -190,6 +233,26 @@ void ReceiveCoinsDialog::on_receiveButton_clicked()
         assert(false);
     }
     clear();
+}
+
+void ReceiveCoinsDialog::showNewRequest(const QString& address, const QString& label)
+{
+    SendCoinsRecipient info(address, label,
+        ui->reqAmount->value(), ui->reqMessage->text());
+    ReceiveRequestDialog *dialog = new ReceiveRequestDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setModel(model);
+    dialog->setInfo(info);
+    dialog->show();
+
+    /* Store request for later reference */
+    model->getRecentRequestsTableModel()->addNewRequest(info);
+}
+
+void ReceiveCoinsDialog::updateAccountColumn()
+{
+    if (!model) return;
+    ui->recentRequestsView->setColumnHidden(RecentRequestsTableModel::Account, model->wallet().listHDAccounts(/* with_balances */ false).size() <= 1);
 }
 
 void ReceiveCoinsDialog::on_recentRequestsView_doubleClicked(const QModelIndex &index)

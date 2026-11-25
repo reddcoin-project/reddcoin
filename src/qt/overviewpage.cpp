@@ -166,7 +166,7 @@ OverviewPage::OverviewPage(const PlatformStyle *platformStyle, QWidget *parent) 
         m_label_other_accounts->setObjectName("labelOtherAccounts");
         m_label_other_accounts->setFont(ui->labelTotal->font());
         m_label_other_accounts->setCursor(ui->labelTotal->cursor());
-        m_label_other_accounts->setToolTip(tr("Confirmed funds of the HD accounts of this wallet other than account 0. Available above, and the send page, are account 0's."));
+        m_label_other_accounts->setToolTip(tr("Confirmed funds of the HD accounts of this wallet other than account 0. Available above is account 0's; the send page spends the account chosen at its top."));
         m_label_other_accounts->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
         const int row{grid->rowCount()};
         grid->addWidget(m_label_other_accounts_text, row, 0);
@@ -345,6 +345,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
 
         // An unlock that moves the seed into its encrypted record can change what there is to say.
         connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateKeysNotice);
+        connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateHDAccountsNotice);
     }
     updateKeysNotice();
 
@@ -416,6 +417,8 @@ void OverviewPage::updateHDAccountsNotice()
     }
     if (walletModel && walletModel->wallet().hdRestoreScanOwed()) {
         lines << tr("The scan of the chain for this restored wallet has not completed. It continues when the wallet is next loaded.");
+    } else if (walletModel && walletModel->wallet().hdAccountsUnlockOwed()) {
+        lines << tr("Unlock the wallet to finish finding addresses of your HD accounts.");
     }
     m_label_hd_accounts_notice->setText(lines.join("\n\n"));
     m_label_hd_accounts_notice->setVisible(!lines.isEmpty());

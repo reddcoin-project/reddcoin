@@ -29,7 +29,7 @@ RecentRequestsTableModel::RecentRequestsTableModel(WalletModel *parent) :
     }
 
     /* These columns must match the indices in the ColumnIndex enumeration */
-    columns << tr("Date") << tr("Label") << tr("Message") << getAmountTitle();
+    columns << tr("Date") << tr("Label") << tr("Message") << getAmountTitle() << tr("Account");
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &RecentRequestsTableModel::updateDisplayUnit);
 }
@@ -92,11 +92,17 @@ QVariant RecentRequestsTableModel::data(const QModelIndex &index, int role) cons
                 return BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), rec->recipient.amount, false, BitcoinUnits::SeparatorStyle::NEVER);
             else
                 return BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), rec->recipient.amount);
+        case Account: {
+            // The HD account of the address; 0 for an address of no account.
+            const CTxDestination dest{DecodeDestination(rec->recipient.address.toStdString())};
+            if (!IsValidDestination(dest)) return QVariant();
+            return walletModel->wallet().getHDAccountOfScript(GetScriptForDestination(dest));
+        }
         }
     }
     else if (role == Qt::TextAlignmentRole)
     {
-        if (index.column() == Amount)
+        if (index.column() == Amount || index.column() == Account)
             return (int)(Qt::AlignRight|Qt::AlignVCenter);
     }
     return QVariant();

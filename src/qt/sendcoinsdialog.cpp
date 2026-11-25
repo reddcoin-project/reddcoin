@@ -15,6 +15,7 @@
 #include <qt/clientmodel.h>
 #include <qt/coincontroldialog.h>
 #include <qt/guiutil.h>
+#include <qt/hdaccountselector.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/sendcoinsentry.h>
@@ -66,6 +67,17 @@ SendCoinsDialog::SendCoinsDialog(const PlatformStyle *_platformStyle, QWidget *p
     platformStyle(_platformStyle)
 {
     ui->setupUi(this);
+
+    // The HD account the payment spends: above the coin control frame.
+    m_account_selector = new HDAccountSelector(HDAccountSelector::Purpose::Spend, this);
+    ui->verticalLayout->insertWidget(0, m_account_selector);
+    connect(m_account_selector, &HDAccountSelector::accountChanged, this, [this](uint32_t) {
+        // Coins of the account chosen before would be refused now.
+        m_coin_control->UnSelectAll();
+        applyHDAccount();
+        if (model) setBalance(model->wallet().getBalances());
+        coinControlUpdateLabels();
+    });
 
     if (!_platformStyle->getImagesOnButtons()) {
         ui->addButton->setIcon(QIcon());
@@ -158,6 +170,7 @@ void SendCoinsDialog::setModel(WalletModel *_model)
             }
         }
 
+        m_account_selector->setModel(_model);
         interfaces::WalletBalances balances = _model->wallet().getBalances();
         setBalance(balances);
         connect(_model, &WalletModel::balanceChanged, this, &SendCoinsDialog::setBalance);
@@ -643,6 +656,10 @@ void SendCoinsDialog::setAddress(const QString &address)
 void SendCoinsDialog::sendAllTo(const QString& address, const QString& label)
 {
     clear();
+    // Move funds sends account 0: a wallet whose other accounts hold funds
+    // moves them an account at a time (MoveHDAccounts).
+    m_account_selector->setAccount(0);
+    applyHDAccount();
     SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(0)->widget());
     if (!entry) return;
     // The address is the new wallet's, so this wallet's address book has no label for it.
@@ -690,6 +707,13 @@ void SendCoinsDialog::setBalance(const interfaces::WalletBalances& balances)
     if(model && model->getOptionsModel())
     {
         CAmount balance = balances.balance;
+        // The balance of the HD account chosen; balances.balance is account 0's.
+        if (const uint32_t account{m_account_selector->account()}; account != 0) {
+            balance = 0;
+            for (const interfaces::WalletHDAccount& entry : model->wallet().listHDAccounts(/* with_balances */ true)) {
+                if (entry.number == account) balance = entry.trusted;
+            }
+        }
         if (model->wallet().hasExternalSigner()) {
             ui->labelBalanceName->setText(tr("External balance:"));
         } else if (model->wallet().privateKeysDisabled()) {
@@ -728,8 +752,8 @@ void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn 
         msgParams.first = sendCoinsReturn.status == WalletModel::AmountExceedsBalance ?
             tr("The amount exceeds your balance.") :
             tr("The total exceeds your balance when the %1 transaction fee is included.").arg(msgArg);
-        // The balance is account 0's: the other HD accounts are apart.
-        const QString other{GUIUtil::OtherHDAccountsNote(model->getOptionsModel()->getDisplayUnit(), model->wallet().getBalances().other_accounts, /* moving */ false)};
+        // The balance is the chosen account's: the other HD accounts are apart.
+        const QString other{GUIUtil::OtherHDAccountsNote(model->getOptionsModel()->getDisplayUnit(), otherHDAccountsTrusted(), /* moving */ false)};
         if (!other.isEmpty()) msgParams.first += " " + other;
         break;
     }
@@ -779,6 +803,7 @@ void SendCoinsDialog::on_buttonMinimizeFee_clicked()
 
 void SendCoinsDialog::useAvailableBalance(SendCoinsEntry* entry)
 {
+    applyHDAccount();
     // Include watch-only for wallets without private key
     m_coin_control->fAllowWatchOnly = model->wallet().privateKeysDisabled() && !model->wallet().hasExternalSigner();
 
@@ -836,6 +861,29 @@ void SendCoinsDialog::updateCoinControlState()
     m_coin_control->m_signal_bip125_rbf = ui->optInRBF->isChecked();
     // Include watch-only for wallets without private key
     m_coin_control->fAllowWatchOnly = model->wallet().privateKeysDisabled() && !model->wallet().hasExternalSigner();
+    applyHDAccount();
+}
+
+void SendCoinsDialog::applyHDAccount()
+{
+    // A wallet without accounts leaves it to the wallet, as before them.
+    if (m_account_selector->isHidden()) {
+        m_coin_control->m_hd_account.reset();
+    } else {
+        m_coin_control->m_hd_account = m_account_selector->account();
+    }
+}
+
+CAmount SendCoinsDialog::otherHDAccountsTrusted()
+{
+    const interfaces::WalletBalances balances{model->wallet().getBalances()};
+    const uint32_t account{m_account_selector->account()};
+    if (account == 0) return balances.other_accounts;
+    CAmount chosen{0};
+    for (const interfaces::WalletHDAccount& entry : model->wallet().listHDAccounts(/* with_balances */ true)) {
+        if (entry.number == account) chosen = entry.trusted;
+    }
+    return balances.balance + balances.other_accounts - chosen;
 }
 
 void SendCoinsDialog::updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers, SynchronizationState sync_state) {
@@ -924,6 +972,7 @@ void SendCoinsDialog::coinControlFeatureChanged(bool checked)
 
     if (!checked && model) { // coin control features disabled
         m_coin_control = std::make_unique<CCoinControl>();
+        applyHDAccount();
     }
 
     coinControlUpdateLabels();
@@ -932,6 +981,8 @@ void SendCoinsDialog::coinControlFeatureChanged(bool checked)
 // Coin Control: button inputs -> show actual coin control dialog
 void SendCoinsDialog::coinControlButtonClicked()
 {
+    // The dialog lists the coins of the account chosen only.
+    applyHDAccount();
     CoinControlDialog dlg(*m_coin_control, model, platformStyle);
     dlg.exec();
     coinControlUpdateLabels();

@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <key_io.h>
 #include <outputtype.h>
 #include <policy/policy.h>
@@ -23,6 +24,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <set>
@@ -968,6 +970,123 @@ BOOST_AUTO_TEST_CASE(repair_without_accounts_leaves_the_wallet_unmarked)
     BOOST_CHECK_LT(plain->GetVersion(), int{FEATURE_HD_ACCOUNTS});
     BOOST_CHECK(WITH_LOCK(plain->cs_wallet, return plain->IsMine(dest)));
     Release(std::move(plain));
+}
+
+// What the GUI reads and does through interfaces::Wallet: the accounts handed
+// out, with their balances when asked; whether New account would be refused,
+// and why; the coins of one account; the account of each input and output of
+// a transaction; renaming, retiring, addresses; the scan for accounts; and
+// the restore report.
+BOOST_AUTO_TEST_CASE(gui_interface)
+{
+    std::unique_ptr<interfaces::Wallet> gui{interfaces::MakeWallet(wallet)};
+    // Account 0 alone is handed out: the account kept ahead is not listed.
+    BOOST_REQUIRE_EQUAL(gui->listHDAccounts(/* with_balances */ false).size(), 1U);
+    interfaces::WalletHDAccountsState state{gui->getHDAccountsState()};
+    BOOST_CHECK(state.supported);
+    BOOST_CHECK(state.holds_accounts);
+    BOOST_CHECK(!state.unlock_owed);
+    BOOST_CHECK_EQUAL(state.earlier_seed_keys, 0);
+    // Account 0 has no confirmed payment: New account would be refused.
+    BOOST_CHECK_MESSAGE(state.new_account_refusal.original.rfind("Account 0 has not received a confirmed payment", 0) == 0, state.new_account_refusal.original);
+    // That is the account rule alone, which force overrides.
+    BOOST_CHECK(state.new_account_forceable);
+
+    uint32_t account{0};
+    CTxDestination first;
+    std::vector<bilingual_str> warnings;
+    bilingual_str error;
+    BOOST_REQUIRE_MESSAGE(gui->newHDAccount("savings", /* force */ true, account, first, warnings, error), error.original);
+    BOOST_CHECK_EQUAL(account, 1U);
+    // Account 1 has no payment either.
+    BOOST_CHECK(gui->getHDAccountsState().new_account_refusal.original.rfind("Account 1 has not received", 0) == 0);
+    Fund({AccountZeroScript(), GetScriptForDestination(first)});
+
+    std::vector<interfaces::WalletHDAccount> accounts{gui->listHDAccounts(/* with_balances */ true)};
+    BOOST_REQUIRE_EQUAL(accounts.size(), 2U);
+    BOOST_CHECK_EQUAL(accounts[0].number, 0U);
+    BOOST_CHECK_EQUAL(accounts[0].trusted, wallet->GetAvailableBalance());
+    BOOST_CHECK(accounts[0].used);
+    BOOST_CHECK_EQUAL(accounts[1].number, 1U);
+    BOOST_CHECK_EQUAL(accounts[1].label, "savings");
+    BOOST_CHECK(!accounts[1].retired);
+    BOOST_CHECK(accounts[1].used);
+    BOOST_CHECK_GT(accounts[1].trusted, 0);
+    // Without balances: numbers, labels and states only.
+    BOOST_CHECK(!gui->listHDAccounts(false)[1].used);
+    BOOST_CHECK_EQUAL(gui->listHDAccounts(false)[1].trusted, 0);
+    // Account 1 is paid: the next can be created.
+    BOOST_CHECK(gui->getHDAccountsState().new_account_refusal.empty());
+    BOOST_CHECK(!gui->getHDAccountsState().new_account_forceable);
+
+    // The coins of one account.
+    size_t listed{0};
+    for (const auto& entry : gui->listCoins(1)) {
+        for (const auto& coin : entry.second) {
+            BOOST_CHECK_EQUAL(gui->getHDAccountOfScript(std::get<1>(coin).txout.scriptPubKey), 1U);
+            ++listed;
+        }
+    }
+    BOOST_CHECK_EQUAL(listed, 1U);
+    listed = 0;
+    for (const auto& entry : gui->listCoins(0)) listed += entry.second.size();
+    BOOST_CHECK_EQUAL(listed, 1U);
+
+    // A payment of account 1: its input and its change are account 1's, and
+    // a script of no wallet is of account 0.
+    CCoinControl account_one;
+    account_one.m_hd_account = 1;
+    const Funded paid{Pay(Elsewhere(), accounts[1].trusted / 2, account_one)};
+    BOOST_REQUIRE_MESSAGE(paid.ok, paid.error.original);
+    BOOST_REQUIRE_GE(paid.change_pos, 0);
+    wallet->CommitTransaction(paid.tx, {}, {});
+    const interfaces::WalletTx wtx{gui->getWalletTx(paid.tx->GetHash())};
+    BOOST_REQUIRE_EQUAL(wtx.txin_account.size(), paid.tx->vin.size());
+    BOOST_REQUIRE_EQUAL(wtx.txout_account.size(), paid.tx->vout.size());
+    for (const uint32_t input : wtx.txin_account) BOOST_CHECK_EQUAL(input, 1U);
+    for (size_t i = 0; i < paid.tx->vout.size(); ++i) {
+        BOOST_CHECK_EQUAL(wtx.txout_account[i], int(i) == paid.change_pos ? 1U : 0U);
+    }
+
+    // Rename, retire, bring back; account 0 has nothing of its own to change.
+    BOOST_CHECK(gui->setHDAccount(1, std::string{"rainy day"}, std::nullopt, error));
+    BOOST_CHECK(gui->setHDAccount(1, std::nullopt, true, error));
+    accounts = gui->listHDAccounts(false);
+    BOOST_CHECK_EQUAL(accounts[1].label, "rainy day");
+    BOOST_CHECK(accounts[1].retired);
+    BOOST_CHECK(!gui->setHDAccount(0, std::string{"mine"}, std::nullopt, error));
+    BOOST_CHECK(!gui->setHDAccount(7, std::string{"none"}, std::nullopt, error));
+    // A retired account gives no new address.
+    CTxDestination dest;
+    BOOST_CHECK(!gui->getNewHDAccountDestination(1, OutputType::LEGACY, "", dest, error));
+    BOOST_CHECK(error.original.find("retired") != std::string::npos);
+    BOOST_CHECK(gui->setHDAccount(1, std::nullopt, false, error));
+    BOOST_REQUIRE_MESSAGE(gui->getNewHDAccountDestination(1, OutputType::LEGACY, "rent", dest, error), error.original);
+    BOOST_CHECK_EQUAL(gui->getHDAccountOfScript(GetScriptForDestination(dest)), 1U);
+    const std::vector<CTxDestination> unpaid{gui->getUnpaidHDAccountAddresses(1)};
+    BOOST_CHECK(std::find(unpaid.begin(), unpaid.end(), dest) != unpaid.end());
+    BOOST_CHECK(std::find(unpaid.begin(), unpaid.end(), first) == unpaid.end());
+    // Account 0 through the same call.
+    BOOST_REQUIRE_MESSAGE(gui->getNewHDAccountDestination(0, OutputType::BECH32, "", dest, error), error.original);
+    BOOST_CHECK_EQUAL(gui->getHDAccountOfScript(GetScriptForDestination(dest)), 0U);
+
+    // The scan for accounts: a count out of range is refused; on this wallet
+    // it finds nothing it did not hold.
+    std::vector<uint32_t> found;
+    BOOST_CHECK(!gui->rescanHDAccounts(0, found, error));
+    BOOST_CHECK(!gui->rescanHDAccounts(21, found, error));
+    BOOST_CHECK_MESSAGE(gui->rescanHDAccounts(1, found, error), error.original);
+    BOOST_CHECK(found.empty());
+    BOOST_CHECK_EQUAL(gui->listHDAccounts(false).size(), 2U);
+
+    // What a restore of this wallet's phrase would report.
+    const interfaces::WalletRestoreReport report{gui->getRestoreReport()};
+    BOOST_CHECK_EQUAL(report.hd_type, "bip39");
+    BOOST_CHECK_EQUAL(report.first_path, "m/0'/0'/0'");
+    BOOST_CHECK(report.history);
+    BOOST_CHECK(report.accounts_found == std::vector<uint32_t>{1});
+    BOOST_CHECK(!report.scan_owed);
+    BOOST_CHECK(!gui->hdAccountsUnlockOwed());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

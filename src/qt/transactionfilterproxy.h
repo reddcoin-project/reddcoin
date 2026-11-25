@@ -10,6 +10,8 @@
 #include <QDateTime>
 #include <QSortFilterProxyModel>
 
+#include <optional>
+
 /** Filter the transaction list according to pre-specified rules. */
 class TransactionFilterProxy : public QSortFilterProxyModel
 {
@@ -42,6 +44,8 @@ public:
     void setTypeFilter(quint32 modes);
     void setMinAmount(const CAmount& minimum);
     void setWatchOnlyFilter(WatchOnlyFilter filter);
+    /** Show the transactions of one HD account only; all of them for none. */
+    void setHDAccountFilter(std::optional<uint32_t> account);
 
     /** Set maximum number of rows returned, -1 if unlimited. */
     void setLimit(int limit);
@@ -63,6 +67,7 @@ private:
     CAmount minAmount;
     int limitRows;
     bool showInactive;
+    std::optional<uint32_t> m_hd_account;
 };
 
 #endif // BITCOIN_QT_TRANSACTIONFILTERPROXY_H

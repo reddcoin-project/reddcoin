@@ -40,7 +40,8 @@ static int column_alignments[] = {
         Qt::AlignLeft|Qt::AlignVCenter, /* date */
         Qt::AlignLeft|Qt::AlignVCenter, /* type */
         Qt::AlignLeft|Qt::AlignVCenter, /* address */
-        Qt::AlignRight|Qt::AlignVCenter /* amount */
+        Qt::AlignRight|Qt::AlignVCenter, /* amount */
+        Qt::AlignRight|Qt::AlignVCenter /* HD account */
     };
 
 // Comparison operator for sort/binary search of model tx list
@@ -266,7 +267,7 @@ TransactionTableModel::TransactionTableModel(const PlatformStyle *_platformStyle
 {
     subscribeToCoreSignals();
 
-    columns << QString() << QString() << tr("Date") << tr("Type") << tr("Label") << BitcoinUnits::getAmountColumnTitle(walletModel->getOptionsModel()->getDisplayUnit());
+    columns << QString() << QString() << tr("Date") << tr("Type") << tr("Label") << BitcoinUnits::getAmountColumnTitle(walletModel->getOptionsModel()->getDisplayUnit()) << tr("Account");
     priv->refreshWallet(walletModel->wallet());
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &TransactionTableModel::updateDisplayUnit);
@@ -602,6 +603,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         case ToAddress:
             return txAddressDecoration(rec);
         case Amount: return {};
+        case Account: return {};
         } // no default case, so the compiler can warn about missing cases
         assert(false);
     case Qt::DecorationRole:
@@ -621,6 +623,8 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
             return formatTxToAddress(rec, false);
         case Amount:
             return formatTxAmount(rec, true, BitcoinUnits::SeparatorStyle::ALWAYS);
+        case Account:
+            return rec->account;
         } // no default case, so the compiler can warn about missing cases
         assert(false);
     case Qt::EditRole:
@@ -638,6 +642,8 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
             return formatTxToAddress(rec, true);
         case Amount:
             return qint64(rec->credit + rec->debit);
+        case Account:
+            return rec->account;
         } // no default case, so the compiler can warn about missing cases
         assert(false);
     case Qt::ToolTipRole:
@@ -719,6 +725,8 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         return formatTxAmount(rec, false, BitcoinUnits::SeparatorStyle::NEVER);
     case StatusRole:
         return rec->status.status;
+    case AccountRole:
+        return rec->account;
     }
     return QVariant();
 }
@@ -750,6 +758,8 @@ QVariant TransactionTableModel::headerData(int section, Qt::Orientation orientat
                 return tr("User-defined intent/purpose of the transaction.");
             case Amount:
                 return tr("Amount removed from or added to balance.");
+            case Account:
+                return tr("The HD account the transaction pays, or whose coins it spends.");
             }
         }
     }

@@ -37,7 +37,8 @@ public:
         Date = 2,
         Type = 3,
         ToAddress = 4,
-        Amount = 5
+        Amount = 5,
+        Account = 6
     };
 
     /** Roles to get specific information from a transaction row.
@@ -72,6 +73,8 @@ public:
         FormattedAmountRole,
         /** Transaction status (TransactionRecord::Status) */
         StatusRole,
+        /** The HD account of the transaction part */
+        AccountRole,
         /** Unprocessed icon */
         RawDecorationRole,
     };

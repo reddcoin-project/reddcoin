@@ -581,6 +581,24 @@ public:
         bool history{false};
     };
     HDRestoreReport GetHDRestoreReport() const;
+    //! Why this wallet cannot look for the HD accounts of its seed, if it
+    //! cannot; a wallet that is locked can, once unlocked.
+    bilingual_str HDAccountScanRefusal() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    struct HDAccountScan {
+        enum class Status { SUCCESS, BUSY, PRUNED, CANNOT_DERIVE, FAILURE, USER_ABORT } status{Status::SUCCESS};
+        //! The accounts above 0 the wallet holds as used after the scan, and
+        //! those of them the scan found.
+        std::vector<uint32_t> accounts;
+        std::vector<uint32_t> found;
+        std::optional<int> stop_height;
+    };
+    //! Scan the whole block chain for the HD accounts of the seed, looking
+    //! count accounts past the highest used one (rescanhdaccounts).
+    HDAccountScan ScanForHDAccounts(uint32_t count, const WalletRescanReserver& reserver);
+    //! The number of keys of a seed the wallet no longer has.
+    int CountKeysOfEarlierSeed() const;
+    //! Why NewHDAccount would refuse without force, if it would.
+    bilingual_str NewHDAccountRefusal(bool* forceable = nullptr) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     //! Change the label of an HD account, or retire it or bring it back.
     bool SetHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
@@ -934,6 +952,9 @@ public:
 
     /** Keypool has new keys */
     boost::signals2::signal<void ()> NotifyCanGetAddressesChanged;
+
+    /** An HD account was handed out, renamed, retired or brought back */
+    boost::signals2::signal<void ()> NotifyHDAccountsChanged;
 
     /**
      * Wallet status (encrypted, locked) changed.

@@ -586,7 +586,9 @@ void CoinControlDialog::updateView()
 
     int nDisplayUnit = model->getOptionsModel()->getDisplayUnit();
 
-    for (const auto& coins : model->wallet().listCoins()) {
+    // The coins of the HD account the payment spends: coins of two accounts
+    // are never spent together.
+    for (const auto& coins : model->wallet().listCoins(m_coin_control.m_hd_account.value_or(0))) {
         CCoinControlWidgetItem* itemWalletAddress{nullptr};
         QString sWalletAddress = QString::fromStdString(EncodeDestination(coins.first));
         QString sWalletLabel = model->getAddressTableModel()->labelForAddress(sWalletAddress);
