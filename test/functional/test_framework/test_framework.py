@@ -191,6 +191,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--randomseed", type=int,
                             help="set a random seed for deterministically reproducing a previous test run")
         parser.add_argument('--timeout-factor', dest="timeout_factor", type=float, default=1.0, help='adjust test timeouts by a factor. Setting it to 0 disables all timeouts')
+        parser.add_argument("--otherline", dest="otherline", default=os.getenv("OTHERLINE_BUILDDIR"),
+                            help="Build directory of the other release line (develop or 4.22.9), whose src/ holds its "
+                                 "reddcoind, reddcoin-cli and reddcoin-wallet, for the tests that run a node of each "
+                                 "line (default: $OTHERLINE_BUILDDIR)")
 
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--descriptors", action='store_const', const=True,
@@ -1132,6 +1136,20 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Skip the running test if bitcoin-cli has not been compiled."""
         if not self.is_cli_compiled():
             raise SkipTest("reddcoin-cli has not been compiled.")
+
+    def otherline_binary(self, name):
+        """The path of a binary of the other line's build (--otherline): reddcoind, reddcoin-cli
+        or reddcoin-wallet. A test that runs the wallet tool on a wallet of the other line's node
+        runs this one, since wallet_tool_binary() is the tool of the build under test."""
+        return os.path.join(self.options.otherline, "src", name)
+
+    def skip_if_no_otherline(self):
+        """Skip the running test unless --otherline names a build of the other line."""
+        if not self.options.otherline:
+            raise SkipTest("no build of the other line: run with --otherline=<build dir> or OTHERLINE_BUILDDIR")
+        for name in ("reddcoind", "reddcoin-cli"):
+            if not os.path.isfile(self.otherline_binary(name)):
+                raise AssertionError("--otherline: %s not found" % self.otherline_binary(name))
 
     def skip_if_no_previous_releases(self):
         """Skip the running test if previous releases are not available."""
