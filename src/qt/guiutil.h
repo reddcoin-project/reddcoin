@@ -427,6 +427,13 @@ namespace GUIUtil
      *  the other accounts hold nothing. `moving` gives the Move funds wording. */
     QString OtherHDAccountsNote(int unit, CAmount other_accounts, bool moving);
 
+    /** The name an HD account is shown with: its label, or "Default" for
+     *  account 0, which has no label of its own. */
+    QString HDAccountLabel(uint32_t number, const std::string& label);
+
+    /** "Account N", followed by the account's name when it has one. */
+    QString HDAccountTitle(uint32_t number, const std::string& label);
+
 } // namespace GUIUtil
 
 #endif // BITCOIN_QT_GUIUTIL_H

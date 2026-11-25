@@ -24,6 +24,7 @@
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
+#include <qt/hdaccountmove.h>
 #include <qt/walletcontroller.h>
 #include <qt/walletframe.h>
 #include <qt/walletmodel.h>
@@ -367,6 +368,14 @@ void BitcoinGUI::createActions()
     receiveCoinsMenuAction->setStatusTip(receiveCoinsAction->statusTip());
     receiveCoinsMenuAction->setToolTip(receiveCoinsMenuAction->statusTip());
 
+    hdAccountsAction = new QAction(platformStyle->SingleColorIcon(":/icons/address-book"), tr("&Accounts"), this);
+    hdAccountsAction->setStatusTip(tr("Show the HD accounts of the wallet, and create, rename and retire them"));
+    hdAccountsAction->setToolTip(hdAccountsAction->statusTip());
+    hdAccountsAction->setCheckable(true);
+    hdAccountsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
+    hdAccountsAction->setVisible(false);
+    tabGroup->addAction(hdAccountsAction);
+
     historyAction = new QAction(platformStyle->SingleColorIcon(":/icons/history"), tr("&Transactions"), this);
     historyAction->setStatusTip(tr("Browse transaction history"));
     historyAction->setToolTip(historyAction->statusTip());
@@ -394,6 +403,8 @@ void BitcoinGUI::createActions()
     connect(receiveCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
     connect(receiveCoinsMenuAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(receiveCoinsMenuAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
+    connect(hdAccountsAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+    connect(hdAccountsAction, &QAction::triggered, this, &BitcoinGUI::gotoHDAccountsPage);
     connect(historyAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
     connect(mintingAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
@@ -719,6 +730,7 @@ void BitcoinGUI::createToolBars()
         toolbar->addAction(overviewAction);
         toolbar->addAction(sendCoinsAction);
         toolbar->addAction(receiveCoinsAction);
+        toolbar->addAction(hdAccountsAction);
         toolbar->addAction(historyAction);
         toolbar->addAction(mintingAction);
         overviewAction->setChecked(true);
@@ -965,6 +977,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     sendCoinsMenuAction->setEnabled(enabled);
     receiveCoinsAction->setEnabled(enabled);
     receiveCoinsMenuAction->setEnabled(enabled);
+    hdAccountsAction->setEnabled(enabled);
     historyAction->setEnabled(enabled);
     mintingAction->setEnabled(enabled);
     encryptWalletAction->setEnabled(enabled);
@@ -1145,6 +1158,12 @@ void BitcoinGUI::gotoReceiveCoinsPage()
 {
     receiveCoinsAction->setChecked(true);
     if (walletFrame) walletFrame->gotoReceiveCoinsPage();
+}
+
+void BitcoinGUI::gotoHDAccountsPage()
+{
+    hdAccountsAction->setChecked(true);
+    if (walletFrame) walletFrame->gotoHDAccountsPage();
 }
 
 void BitcoinGUI::gotoSendCoinsPage(QString addr)
@@ -1613,6 +1632,13 @@ void BitcoinGUI::setHDStatus(bool privkeyDisabled, int hdEnabled, const QStringL
 void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
 {
     if (!from || !m_wallet_controller) return;
+    // A wallet whose HD accounts hold funds moves each account in its own
+    // transaction, to an account of the new wallet.
+    const std::vector<HDAccountMove> plan{PlanHDAccountMove(from->wallet().listHDAccounts(/* with_balances */ true))};
+    if (MovesHDAccounts(plan)) {
+        moveHDAccountsToNewWallet(from, plan);
+        return;
+    }
     const QString name = from->getDisplayName().toHtmlEscaped();
     QMessageBox box(QMessageBox::Information, tr("Move funds to a new wallet"),
         "<qt>" + tr("To move the funds of wallet %1 to a new wallet:").arg(name) + "<ol>" +
@@ -1641,6 +1667,39 @@ void BitcoinGUI::moveFundsToNewWallet(WalletModel* from)
         }
         setCurrentWallet(source);
         if (WalletView* view = walletFrame->currentWalletView()) view->sendAllTo(QString::fromStdString(EncodeDestination(dest)), tr("To wallet %1").arg(to->getDisplayName()));
+    });
+    connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
+    activity->create();
+}
+
+void BitcoinGUI::moveHDAccountsToNewWallet(WalletModel* from, const std::vector<HDAccountMove>& plan)
+{
+    const QString name = from->getDisplayName().toHtmlEscaped();
+    const int unit{from->getOptionsModel()->getDisplayUnit()};
+    QMessageBox box(QMessageBox::Information, tr("Move funds to a new wallet"),
+        "<qt>" + tr("To move the funds of wallet %1 to a new wallet:").arg(name) + "<ol>" +
+        "<li>" + tr("Create the new wallet. Choose a legacy mnemonic wallet (bip39 or bip44), and write down its mnemonic phrase: it is the backup of the new wallet.") + "</li>" +
+        "<li>" + tr("Each HD account of wallet %1 that holds funds then moves in its own transaction, to an account of the new wallet; you confirm the transactions first:").arg(name) +
+        "<br>" + DescribeHDAccountMove(plan, unit).toHtmlEscaped().replace("\n", "<br>") + "</li>" +
+        "</ol>" + tr("Coins that are not mature yet, and payments not yet confirmed, stay in wallet %1: move them the same way once they are.").arg(name) + "<br><br>" +
+        tr("Moved coins start their coin age for staking again. Keep the file of wallet %1 until the payments are confirmed.").arg(name) + "</qt>",
+        QMessageBox::Ok | QMessageBox::Cancel, this);
+    if (box.exec() != QMessageBox::Ok) return;
+
+    QPointer<WalletModel> source{from};
+    auto activity = new CreateWalletWizardActivity(m_wallet_controller, this);
+    connect(activity, &CreateWalletWizardActivity::created, this, [this, source, plan](WalletModel* to) {
+        if (!source || !to) return;
+        // Accounts need a legacy wallet whose phrase restores them.
+        if (!to->wallet().isLegacy() || !to->wallet().bip39Enabled() || !to->wallet().getHDAccountsState().supported) {
+            message(tr("Move funds to a new wallet"),
+                tr("The new wallet %1 cannot hold HD accounts: it is not a legacy mnemonic wallet. Nothing was moved. Create a bip39 or bip44 wallet, and use Move funds again.").arg(to->getDisplayName()),
+                CClientUIInterface::MSG_WARNING);
+            return;
+        }
+        QString result;
+        const bool moved{MoveHDAccounts(*source, *to, plan, this, result)};
+        message(tr("Move funds to a new wallet"), result, moved ? CClientUIInterface::MSG_INFORMATION : CClientUIInterface::MSG_WARNING);
     });
     connect(activity, &CreateWalletWizardActivity::finished, activity, &QObject::deleteLater);
     activity->create();
@@ -1850,6 +1909,10 @@ void BitcoinGUI::updateWalletStatus()
     QStringList notices;
     for (const bilingual_str& notice : walletModel->wallet().getHDWarnings(/* with_advice */ false)) notices << QString::fromStdString(notice.translated);
     setHDStatus(walletModel->wallet().privateKeysDisabled(), hdType, notices);
+    // The Accounts tab: for the wallets that can hold HD accounts.
+    const bool accounts{walletModel->wallet().getHDAccountsState().supported};
+    hdAccountsAction->setVisible(accounts);
+    if (!accounts && hdAccountsAction->isChecked()) gotoOverviewPage();
 }
 #endif // ENABLE_WALLET
 
@@ -1992,9 +2055,9 @@ void BitcoinGUI::updateStatusBarIconColor()
 
     // Re-colorize toolbar icons
     if (appToolBar) {
-        QAction* tabActions[] = {overviewAction, sendCoinsAction, receiveCoinsAction, historyAction, mintingAction};
-        const char* tabIcons[] = {":/icons/overview", ":/icons/send", ":/icons/receiving_addresses", ":/icons/history", ":/icons/staking"};
-        for (int i = 0; i < 5; ++i) {
+        QAction* tabActions[] = {overviewAction, sendCoinsAction, receiveCoinsAction, hdAccountsAction, historyAction, mintingAction};
+        const char* tabIcons[] = {":/icons/overview", ":/icons/send", ":/icons/receiving_addresses", ":/icons/address-book", ":/icons/history", ":/icons/staking"};
+        for (int i = 0; i < 6; ++i) {
             tabActions[i]->setIcon(platformStyle->SingleColorIcon(QString(tabIcons[i])));
         }
     }

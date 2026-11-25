@@ -140,6 +140,9 @@ public:
     /** Whether the transaction was sent/received with a watch-only address */
     bool involvesWatchAddress;
 
+    /** The HD account of the part: of the output received, or of the coins spent */
+    uint32_t account{0};
+
     /** Return the unique identifier for this transaction (part) */
     QString getTxHash() const;
 

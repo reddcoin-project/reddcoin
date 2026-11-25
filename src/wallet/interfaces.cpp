@@ -40,8 +40,11 @@ using interfaces::Wallet;
 using interfaces::WalletAddress;
 using interfaces::WalletBalances;
 using interfaces::WalletClient;
+using interfaces::WalletHDAccount;
+using interfaces::WalletHDAccountsState;
 using interfaces::WalletMintingOutput;
 using interfaces::WalletOrderForm;
+using interfaces::WalletRestoreReport;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
 using interfaces::WalletTxStatus;
@@ -68,6 +71,16 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
         result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
                                                       wallet.IsMine(result.txout_address.back()) :
                                                       ISMINE_NO);
+    }
+    if (wallet.HoldsHDAccountKeys()) {
+        result.txin_account.reserve(wtx.tx->vin.size());
+        for (const auto& txin : wtx.tx->vin) {
+            const auto prev = wallet.mapWallet.find(txin.prevout.hash);
+            const bool known{prev != wallet.mapWallet.end() && txin.prevout.n < prev->second.tx->vout.size()};
+            result.txin_account.push_back(known ? wallet.GetHDAccountOfScript(prev->second.tx->vout[txin.prevout.n].scriptPubKey) : 0);
+        }
+        result.txout_account.reserve(wtx.tx->vout.size());
+        for (const auto& txout : wtx.tx->vout) result.txout_account.push_back(wallet.GetHDAccountOfScript(txout.scriptPubKey));
     }
     result.credit = wtx.GetCredit(ISMINE_ALL);
     result.debit = wtx.GetDebit(ISMINE_ALL);
@@ -154,6 +167,150 @@ public:
     {
         int height;
         return WalletBatch(m_wallet->GetDatabase()).ReadRestoreScan(height);
+    }
+    bool hdAccountsUnlockOwed() override
+    {
+        const LegacyScriptPubKeyMan* spk_man = m_wallet->GetLegacyScriptPubKeyMan();
+        return spk_man && m_wallet->IsLocked() && (spk_man->IsHDAccountsTopUpOwed() || spk_man->IsHDAccountRepairOwed());
+    }
+    WalletHDAccountsState getHDAccountsState() override
+    {
+        WalletHDAccountsState state;
+        const LegacyScriptPubKeyMan* spk_man = m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ? nullptr : m_wallet->GetLegacyScriptPubKeyMan();
+        state.supported = spk_man && spk_man->IsHDEnabled() && !m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+        if (!spk_man) return state;
+        state.holds_accounts = m_wallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS);
+        state.inconsistent = spk_man->HasHDAccountsInconsistency();
+        state.scan_owed = hdRestoreScanOwed();
+        state.unlock_owed = hdAccountsUnlockOwed();
+        state.discovery_pending = spk_man->IsHDAccountDiscoveryPending();
+        state.earlier_seed_keys = m_wallet->CountKeysOfEarlierSeed();
+        if (state.supported) {
+            LOCK(m_wallet->cs_wallet);
+            state.new_account_refusal = m_wallet->NewHDAccountRefusal(&state.new_account_forceable);
+        }
+        return state;
+    }
+    std::vector<WalletHDAccount> listHDAccounts(bool with_balances) override
+    {
+        std::vector<WalletHDAccount> result;
+        const LegacyScriptPubKeyMan* spk_man = m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ? nullptr : m_wallet->GetLegacyScriptPubKeyMan();
+        const std::map<uint32_t, CWallet::Balance> balances{with_balances ? m_wallet->GetHDAccountBalances() : std::map<uint32_t, CWallet::Balance>{}};
+        LOCK(m_wallet->cs_wallet);
+        auto add = [&](uint32_t number, const CHDAccount* record) EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet) {
+            WalletHDAccount& entry = result.emplace_back();
+            entry.number = number;
+            if (record) {
+                entry.label = record->label;
+                entry.retired = record->state == CHDAccount::State::RETIRED;
+            }
+            if (const auto it = balances.find(number); it != balances.end()) {
+                entry.trusted = it->second.m_mine_trusted;
+                entry.untrusted_pending = it->second.m_mine_untrusted_pending;
+                entry.immature = it->second.m_mine_immature;
+            }
+            if (with_balances) entry.used = m_wallet->IsHDAccountUsed(number, /* confirmed_only */ false);
+        };
+        add(0, nullptr);
+        if (spk_man) {
+            for (const auto& [number, record] : spk_man->GetHDAccounts()) {
+                if (record.state != CHDAccount::State::POOL) add(number, &record);
+            }
+        }
+        return result;
+    }
+    bool newHDAccount(const std::string& label, bool force, uint32_t& account, CTxDestination& first,
+        std::vector<bilingual_str>& warnings, bilingual_str& error) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->NewHDAccount(label, force, account, first, warnings, error);
+    }
+    bool setHDAccount(uint32_t account, const std::optional<std::string>& label, std::optional<bool> retired,
+        bilingual_str& error) override
+    {
+        if (account == 0) {
+            error = _("Account 0 is the wallet's own: it has no label or state of its own to change.");
+            return false;
+        }
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->SetHDAccount(account, label, retired, error);
+    }
+    std::vector<CTxDestination> getUnpaidHDAccountAddresses(uint32_t account) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetUnpaidHDAccountAddresses(account);
+    }
+    bool rescanHDAccounts(int count, std::vector<uint32_t>& found, bilingual_str& error) override
+    {
+        if (count < 1 || count > 20) {
+            error = _("The number of accounts to look at must be from 1 to 20.");
+            return false;
+        }
+        {
+            LOCK(m_wallet->cs_wallet);
+            error = m_wallet->HDAccountScanRefusal();
+            if (!error.empty()) return false;
+            if (m_wallet->IsLocked() || m_wallet->GetIsWalletStakingOnly()) {
+                error = _("Unlock the wallet to look for its HD accounts.");
+                return false;
+            }
+        }
+        WalletRescanReserver reserver(*m_wallet);
+        if (!reserver.reserve()) {
+            error = _("The wallet is already scanning the block chain. Wait for that scan to finish.");
+            return false;
+        }
+        const CWallet::HDAccountScan scan{m_wallet->ScanForHDAccounts(static_cast<uint32_t>(count), reserver)};
+        found = scan.found;
+        switch (scan.status) {
+        case CWallet::HDAccountScan::Status::SUCCESS:
+            return true;
+        case CWallet::HDAccountScan::Status::BUSY:
+            error = _("The wallet is already scanning the block chain. Wait for that scan to finish.");
+            return false;
+        case CWallet::HDAccountScan::Status::PRUNED:
+            error = _("The blocks to scan have been pruned from this node.");
+            return false;
+        case CWallet::HDAccountScan::Status::CANNOT_DERIVE:
+            error = _("The accounts of this wallet's seed cannot be derived now.");
+            return false;
+        case CWallet::HDAccountScan::Status::FAILURE:
+            error = _("The scan failed: the block files may be damaged.");
+            return false;
+        case CWallet::HDAccountScan::Status::USER_ABORT:
+            error = _("The scan was cancelled. The accounts found so far are kept.");
+            return false;
+        } // no default case, so the compiler can warn about missing cases
+        assert(false);
+    }
+    bool getNewHDAccountDestination(uint32_t account, OutputType type, const std::string& label,
+        CTxDestination& dest, bilingual_str& error) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        if (account == 0) {
+            std::string err;
+            if (m_wallet->GetNewDestination(type, label, dest, err)) return true;
+            error = Untranslated(err);
+            return false;
+        }
+        std::vector<bilingual_str> warnings;
+        return m_wallet->GetNewHDAccountDestination(account, /* internal */ false, type, label, /* force */ false, dest, warnings, error);
+    }
+    uint32_t getHDAccountOfScript(const CScript& script) override
+    {
+        return m_wallet->GetHDAccountOfScript(script);
+    }
+    WalletRestoreReport getRestoreReport() override
+    {
+        WalletRestoreReport report;
+        const CWallet::HDRestoreReport restore{m_wallet->GetHDRestoreReport()};
+        report.hd_type = m_wallet->IsBip44Enabled() ? "bip44" : m_wallet->IsBip39Enabled() ? "bip39" : "bip32";
+        report.first_path = restore.first_path;
+        report.used_addresses = restore.used_addresses;
+        report.accounts_found = restore.accounts_found;
+        report.history = restore.history;
+        report.scan_owed = hdRestoreScanOwed();
+        return report;
     }
     bool isLocked() override { return m_wallet->IsLocked(); }
     bool changeWalletPassphrase(const SecureString& old_wallet_passphrase,
@@ -473,11 +630,11 @@ public:
         LOCK(m_wallet->cs_wallet);
         return m_wallet->GetCredit(txout, filter);
     }
-    CoinsList listCoins() override
+    CoinsList listCoins(uint32_t account) override
     {
         LOCK(m_wallet->cs_wallet);
         CoinsList result;
-        for (const auto& entry : m_wallet->ListCoins()) {
+        for (const auto& entry : m_wallet->ListCoins(account)) {
             auto& group = result[entry.first];
             for (const auto& coin : entry.second) {
                 group.emplace_back(COutPoint(coin.tx->GetHash(), coin.i),
@@ -593,6 +750,10 @@ public:
     std::unique_ptr<Handler> handleCanGetAddressesChanged(CanGetAddressesChangedFn fn) override
     {
         return MakeHandler(m_wallet->NotifyCanGetAddressesChanged.connect(fn));
+    }
+    std::unique_ptr<Handler> handleHDAccountsChanged(HDAccountsChangedFn fn) override
+    {
+        return MakeHandler(m_wallet->NotifyHDAccountsChanged.connect(fn));
     }
     CWallet* wallet() override { return m_wallet.get(); }
 

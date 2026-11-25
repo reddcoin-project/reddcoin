@@ -287,6 +287,9 @@ public:
 
     /** Keypool has new keys */
     boost::signals2::signal<void ()> NotifyCanGetAddressesChanged;
+
+    /** An HD account was handed out, renamed, retired or brought back */
+    boost::signals2::signal<void ()> NotifyHDAccountsChanged;
 };
 
 /** OutputTypes supported by the LegacyScriptPubKeyMan */
@@ -669,6 +672,8 @@ public:
     //! Whether the wallet holds keys of an HD seed other than its active one,
     //! as a plain HD wallet does once encryption or sethdseed replaced its seed.
     bool HoldsInactiveSeedKeys() const;
+    //! The number of those keys.
+    int CountInactiveSeedKeys() const;
     //! Whether keys may be of HD accounts that the wallet does not know as such.
     bool IsHDAccountRepairOwed() const;
     //! Match the keys of the wallet against the accounts of its seed, account

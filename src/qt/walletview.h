@@ -12,6 +12,7 @@
 #include <QStackedWidget>
 
 class ClientModel;
+class HDAccountsPage;
 class OverviewPage;
 class PlatformStyle;
 class ReceiveCoinsDialog;
@@ -69,6 +70,7 @@ private:
     QWidget *transactionsPage;
     QWidget *mintingPage;
     ReceiveCoinsDialog *receiveCoinsPage;
+    HDAccountsPage* hdAccountsPage;
     SendCoinsDialog *sendCoinsPage;
     AddressBookPage *usedSendingAddressesPage;
     AddressBookPage *usedReceivingAddressesPage;
@@ -89,6 +91,8 @@ public Q_SLOTS:
     void gotoMintingPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
+    /** Switch to the HD accounts page */
+    void gotoHDAccountsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to send coins page, with all of the funds of the wallet to one address */

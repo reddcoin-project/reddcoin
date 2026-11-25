@@ -5383,13 +5383,8 @@ static RPCHelpMan rescanhdaccounts()
             throw JSONRPCError(RPC_WALLET_ERROR, "This wallet is not an HD wallet: it has no seed to derive accounts from");
         }
         EnsureWalletIsUnlocked(*pwallet);
-        if (!pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Cannot hold HD accounts in a wallet without HD chain split. Use the upgradewallet RPC first");
-        }
-        // Accounts of the seed the wallet has now: of no use for the keys of
-        // the one it had before.
-        if (spk_man->HoldsInactiveSeedKeys() && !pwallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "The seed of this wallet was replaced after keys were made (by encryption or by sethdseed). Accounts of the earlier seed cannot be reached from this wallet. Restore the earlier seed into a new blank wallet.");
+        if (const bilingual_str refusal{pwallet->HDAccountScanRefusal()}; !refusal.empty()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, refusal.original);
         }
     }
 
@@ -5397,49 +5392,29 @@ static RPCHelpMan rescanhdaccounts()
     if (!reserver.reserve()) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
     }
-    std::set<uint32_t> before;
-    uint256 start_block;
-    {
-        LOCK(pwallet->cs_wallet);
-        if (!pwallet->chain().hasBlocks(pwallet->GetLastBlockHash(), 0, {})) {
-            throw JSONRPCError(RPC_MISC_ERROR, "Can't rescan beyond pruned data. Use RPC call getblockchaininfo to determine your pruned height.");
-        }
-        CHECK_NONFATAL(pwallet->chain().findAncestorByHeight(pwallet->GetLastBlockHash(), 0, FoundBlock().hash(start_block)));
-        if (spk_man->IsHDAccountDiscoveryPending()) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
-        }
-        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
-            if (record.state != CHDAccount::State::POOL) before.insert(account);
-        }
-        if (!spk_man->BeginHDAccountDiscovery(static_cast<uint32_t>(count))) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "The accounts of this wallet's seed cannot be derived now");
-        }
-    }
-
-    const CWallet::ScanResult result{pwallet->ScanForWalletTransactions(start_block, 0, /* max_height */ {}, reserver, /* fUpdate */ true)};
-    UniValue accounts{UniValue::VARR};
-    UniValue found{UniValue::VARR};
-    {
-        LOCK(pwallet->cs_wallet);
-        spk_man->EndHDAccountDiscovery();
-        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
-            if (record.state == CHDAccount::State::POOL) continue;
-            accounts.push_back(static_cast<int64_t>(account));
-            if (!before.count(account)) found.push_back(static_cast<int64_t>(account));
-        }
-    }
+    const CWallet::HDAccountScan result{pwallet->ScanForHDAccounts(static_cast<uint32_t>(count), reserver)};
     switch (result.status) {
-    case CWallet::ScanResult::SUCCESS:
+    case CWallet::HDAccountScan::Status::SUCCESS:
         break;
-    case CWallet::ScanResult::FAILURE:
+    case CWallet::HDAccountScan::Status::BUSY:
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
+    case CWallet::HDAccountScan::Status::PRUNED:
+        throw JSONRPCError(RPC_MISC_ERROR, "Can't rescan beyond pruned data. Use RPC call getblockchaininfo to determine your pruned height.");
+    case CWallet::HDAccountScan::Status::CANNOT_DERIVE:
+        throw JSONRPCError(RPC_WALLET_ERROR, "The accounts of this wallet's seed cannot be derived now");
+    case CWallet::HDAccountScan::Status::FAILURE:
         throw JSONRPCError(RPC_MISC_ERROR, "Rescan failed. Potentially corrupted data files.");
-    case CWallet::ScanResult::USER_ABORT:
+    case CWallet::HDAccountScan::Status::USER_ABORT:
         throw JSONRPCError(RPC_MISC_ERROR, "Rescan aborted.");
         // no default case, so the compiler can warn about missing cases
     }
+    UniValue accounts{UniValue::VARR};
+    for (const uint32_t account : result.accounts) accounts.push_back(static_cast<int64_t>(account));
+    UniValue found{UniValue::VARR};
+    for (const uint32_t account : result.found) found.push_back(static_cast<int64_t>(account));
     UniValue response(UniValue::VOBJ);
     response.pushKV("start_height", 0);
-    response.pushKV("stop_height", result.last_scanned_height ? *result.last_scanned_height : UniValue());
+    response.pushKV("stop_height", result.stop_height ? *result.stop_height : UniValue());
     response.pushKV("hd_accounts", accounts);
     response.pushKV("found", found);
     return response;

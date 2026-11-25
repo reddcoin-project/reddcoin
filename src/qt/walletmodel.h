@@ -180,6 +180,7 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_show_progress;
     std::unique_ptr<interfaces::Handler> m_handler_watch_only_changed;
     std::unique_ptr<interfaces::Handler> m_handler_can_get_addrs_changed;
+    std::unique_ptr<interfaces::Handler> m_handler_hd_accounts_changed;
     ClientModel* m_client_model;
     interfaces::Node& m_node;
 
@@ -242,6 +243,9 @@ Q_SIGNALS:
 
     // Notify that there are now keys in the keypool
     void canGetAddressesChanged();
+
+    // The HD accounts of the wallet changed: one was created, renamed, retired or found
+    void hdAccountsChanged();
 
     void timerTimeout();
 

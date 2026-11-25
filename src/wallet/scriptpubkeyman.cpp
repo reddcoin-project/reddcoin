@@ -2128,12 +2128,18 @@ bool LegacyScriptPubKeyMan::KeepsHDSeed() const
 
 bool LegacyScriptPubKeyMan::HoldsInactiveSeedKeys() const
 {
+    return CountInactiveSeedKeys() > 0;
+}
+
+int LegacyScriptPubKeyMan::CountInactiveSeedKeys() const
+{
     LOCK(cs_KeyStore);
+    int count{0};
     for (const auto& entry : mapKeyMetadata) {
         const auto& meta = entry.second;
-        if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) return true;
+        if (!meta.hd_seed_id.IsNull() && meta.hd_seed_id != m_hd_chain.seed_id) ++count;
     }
-    return false;
+    return count;
 }
 
 bool LegacyScriptPubKeyMan::IsHDAccountRepairOwed() const
@@ -2347,7 +2353,12 @@ bool LegacyScriptPubKeyMan::WriteHDAccount(WalletBatch& batch, uint32_t account,
 {
     LOCK(cs_KeyStore);
     if (!batch.WriteHDAccount(account, record)) return false;
+    const auto it = m_hd_accounts.find(account);
+    // What the accounts listed show: those out of the pool, their labels and states.
+    const bool listed_changed{it == m_hd_accounts.end() ? record.state != CHDAccount::State::POOL :
+                              it->second.state != record.state || it->second.label != record.label};
     m_hd_accounts[account] = record;
+    if (listed_changed) NotifyHDAccountsChanged();
     return true;
 }
 
@@ -2380,6 +2391,7 @@ std::pair<std::vector<uint32_t>, bool> LegacyScriptPubKeyMan::RebuildHDAccounts(
         m_hd_accounts[account] = record;
         rebuilt.push_back(account);
     }
+    if (!rebuilt.empty()) NotifyHDAccountsChanged();
     if (highest == 0) return {rebuilt, false};
     CHDAccountMeta meta{m_hd_account_meta.value_or(CHDAccountMeta{})};
     const CHDAccountMeta before{meta};
