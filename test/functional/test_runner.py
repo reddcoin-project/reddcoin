@@ -103,6 +103,7 @@ BASE_SCRIPTS = [
     'wallet_restore_from_mnemonic.py --legacy-wallet',
     'wallet_hd_accounts.py --legacy-wallet',
     'wallet_hd_accounts_restore.py --legacy-wallet',
+    'wallet_hd_accounts_crossline.py --legacy-wallet',
     'wallet_passphrase_change_residue.py --legacy-wallet',
     'wallet_passphrase_change_residue.py --descriptors',
     'wallet_hd.py --descriptors',
