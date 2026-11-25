@@ -53,6 +53,13 @@ public:
     int m_min_depth = DEFAULT_MIN_DEPTH;
     //! Maximum chain depth value for coin availability
     int m_max_depth = DEFAULT_MAX_DEPTH;
+    //! The HD account whose coins are spent, and to which change goes. Not
+    //! set: account 0, or the account of the selected inputs when they are
+    //! all of one. A transaction never spends coins of two accounts.
+    std::optional<uint32_t> m_hd_account;
+    //! The coins of every HD account, for the staker and listunspent only:
+    //! no RPC option or GUI control sets it, and no transaction is funded with it.
+    bool m_hd_all_accounts = false;
 
     CCoinControl();
 

@@ -724,11 +724,15 @@ void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn 
         msgParams.first = tr("The amount to pay must be larger than 0.");
         break;
     case WalletModel::AmountExceedsBalance:
-        msgParams.first = tr("The amount exceeds your balance.");
+    case WalletModel::AmountWithFeeExceedsBalance: {
+        msgParams.first = sendCoinsReturn.status == WalletModel::AmountExceedsBalance ?
+            tr("The amount exceeds your balance.") :
+            tr("The total exceeds your balance when the %1 transaction fee is included.").arg(msgArg);
+        // The balance is account 0's: the other HD accounts are apart.
+        const QString other{GUIUtil::OtherHDAccountsNote(model->getOptionsModel()->getDisplayUnit(), model->wallet().getBalances().other_accounts, /* moving */ false)};
+        if (!other.isEmpty()) msgParams.first += " " + other;
         break;
-    case WalletModel::AmountWithFeeExceedsBalance:
-        msgParams.first = tr("The total exceeds your balance when the %1 transaction fee is included.").arg(msgArg);
-        break;
+    }
     case WalletModel::DuplicateAddress:
         msgParams.first = tr("Duplicate address found: addresses should only be used once each.");
         break;

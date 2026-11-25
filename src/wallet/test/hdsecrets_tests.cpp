@@ -231,22 +231,23 @@ BOOST_AUTO_TEST_CASE(unreadable_records)
 }
 
 // The flag that says the secrets are in their own record is a known one, and
-// mandatory. The number set aside beside it for another feature is not known:
-// a wallet carrying it is still refused.
+// mandatory; so is the one beside it that says the wallet holds HD accounts.
+// A number past them is not known: a wallet carrying it is refused.
 BOOST_AUTO_TEST_CASE(wallet_flag)
 {
     BOOST_CHECK_EQUAL(uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED}, uint64_t{1} << 49);
     BOOST_CHECK_EQUAL(uint64_t{WALLET_FLAG_HD_ACCOUNTS}, uint64_t{1} << 48);
     BOOST_CHECK(KNOWN_WALLET_FLAGS & WALLET_FLAG_HD_SECRETS_ENCRYPTED);
-    BOOST_CHECK(!(KNOWN_WALLET_FLAGS & WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK(KNOWN_WALLET_FLAGS & WALLET_FLAG_HD_ACCOUNTS);
     BOOST_CHECK(!(MUTABLE_WALLET_FLAGS & WALLET_FLAG_HD_SECRETS_ENCRYPTED));
+    BOOST_CHECK(!(MUTABLE_WALLET_FLAGS & WALLET_FLAG_HD_ACCOUNTS));
     BOOST_CHECK_EQUAL(uint64_t{WALLET_FLAG_MAP.at("hd_secrets_encrypted")}, uint64_t{WALLET_FLAG_HD_SECRETS_ENCRYPTED});
 
     CWallet wallet(nullptr, "", CreateMockWalletDatabase());
     BOOST_CHECK(wallet.LoadWalletFlags(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
     BOOST_CHECK(wallet.IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
-    BOOST_CHECK(!wallet.LoadWalletFlags(WALLET_FLAG_HD_ACCOUNTS));
-    BOOST_CHECK(!wallet.LoadWalletFlags(WALLET_FLAG_HD_SECRETS_ENCRYPTED | WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK(wallet.LoadWalletFlags(WALLET_FLAG_HD_SECRETS_ENCRYPTED | WALLET_FLAG_HD_ACCOUNTS));
+    BOOST_CHECK(wallet.IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
     BOOST_CHECK(!wallet.LoadWalletFlags(uint64_t{1} << 50));
 
     // Written through a batch, the flag is in memory only once it is confirmed.

@@ -26,7 +26,14 @@ enum WalletFeature
 
     FEATURE_PRE_SPLIT_KEYPOOL = 169900, // Upgraded to HD SPLIT and can have a pre-split keypool
 
-    FEATURE_LATEST = FEATURE_PRE_SPLIT_KEYPOOL
+    FEATURE_LATEST = FEATURE_PRE_SPLIT_KEYPOOL,
+
+    //! A legacy wallet that holds HD accounts. Written with
+    //! WALLET_FLAG_HD_ACCOUNTS, so that a version that does not know accounts
+    //! refuses the wallet as too new before it reads anything else, Reddcoin
+    //! 3.x included. Above FEATURE_LATEST: new wallets do not get it, and it
+    //! is the highest version a wallet may require of this one.
+    FEATURE_HD_ACCOUNTS = 4220000,
 };
 
 bool IsFeatureSupported(int wallet_version, int feature_version);
@@ -81,6 +88,12 @@ enum WalletFlags : uint64_t {
 
 //! Get the path of the wallet directory.
 fs::path GetWalletDir();
+
+//! The HD account of a key, read from its derivation path by the length of
+//! the path, never from the type of the wallet: the third element of a path of
+//! five (m/44'/coin'/account'/chain/index), the first of a path of three
+//! (m/account'/chain'/index'), and account 0 for a path of any other length.
+uint32_t HDAccountOfKeyPath(const std::vector<uint32_t>& path);
 
 /** Descriptor with some wallet metadata */
 class WalletDescriptor

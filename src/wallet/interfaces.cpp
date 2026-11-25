@@ -145,6 +145,16 @@ public:
     std::vector<bilingual_str> takeHDSecretsMovedNotices() override { return m_wallet->TakeHDSecretsMovedNotices(); }
     std::vector<bilingual_str> getHDWarnings(bool with_advice) override { return m_wallet->GetHDWarnings(/* for_load */ with_advice); }
     bool hasKeysSeedDoesNotRestore() override { return m_wallet->HasKeysSeedDoesNotRestore(); }
+    bool hdAccountsInconsistent() override
+    {
+        const LegacyScriptPubKeyMan* spk_man = m_wallet->GetLegacyScriptPubKeyMan();
+        return spk_man && spk_man->HasHDAccountsInconsistency();
+    }
+    bool hdRestoreScanOwed() override
+    {
+        int height;
+        return WalletBatch(m_wallet->GetDatabase()).ReadRestoreScan(height);
+    }
     bool isLocked() override { return m_wallet->IsLocked(); }
     bool changeWalletPassphrase(const SecureString& old_wallet_passphrase,
         const SecureString& new_wallet_passphrase) override
@@ -414,6 +424,12 @@ public:
         result.stake = bal.m_mine_stake;
         result.unconfirmed_balance = bal.m_mine_untrusted_pending;
         result.immature_balance = bal.m_mine_immature;
+        // Available is what account 0 can spend; the other HD accounts are
+        // apart, and the payments of the GUI spend account 0.
+        if (m_wallet->HoldsHDAccountKeys()) {
+            result.other_accounts = m_wallet->GetOtherHDAccountsTrusted();
+            result.balance -= result.other_accounts;
+        }
         result.have_watch_only = haveWatchOnly();
         if (result.have_watch_only) {
             result.watch_only_balance = bal.m_watchonly_trusted;

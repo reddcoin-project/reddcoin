@@ -236,6 +236,40 @@ static void SetFeeEstimateMode(const CWallet& wallet, CCoinControl& cc, const Un
     }
 }
 
+//! The HD account an hd_account argument names, if one is given. Above 0 it
+//! has to be an account the wallet has created; a descriptor wallet has
+//! account 0 only.
+static std::optional<uint32_t> ParseHDAccount(const CWallet& wallet, const UniValue& value)
+{
+    if (value.isNull()) return std::nullopt;
+    const int64_t number{value.get_int64()};
+    if (number < 0 || number > 0x7fffffff) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "hd_account must be between 0 and 2147483647");
+    }
+    if (number == 0) return 0;
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, HD_ACCOUNTS_LEGACY_ONLY);
+    }
+    const LegacyScriptPubKeyMan* spk_man = wallet.GetLegacyScriptPubKeyMan();
+    const std::map<uint32_t, CHDAccount> accounts{spk_man ? spk_man->GetHDAccounts() : std::map<uint32_t, CHDAccount>{}};
+    const auto it = accounts.find(static_cast<uint32_t>(number));
+    if (it == accounts.end() || it->second.state == CHDAccount::State::POOL) {
+        throw JSONRPCError(RPC_WALLET_ERROR, strprintf("This wallet has no HD account %d. newhdaccount creates the next one.", number));
+    }
+    return static_cast<uint32_t>(number);
+}
+
+//! The text the RPC results give for the state of an HD account.
+static std::string HDAccountStateName(CHDAccount::State state)
+{
+    switch (state) {
+    case CHDAccount::State::POOL: return "pool";
+    case CHDAccount::State::ACTIVE: return "active";
+    case CHDAccount::State::RETIRED: return "retired";
+    }
+    return "unknown";
+}
+
 static RPCHelpMan getnewaddress()
 {
     return RPCHelpMan{"getnewaddress",
@@ -245,6 +279,9 @@ static RPCHelpMan getnewaddress()
                 {
                     {"label", RPCArg::Type::STR, RPCArg::Default{""}, "The label name for the address to be linked to. It can also be set to the empty string \"\" to represent the default label. The label does not need to exist, it will be created if there is no label by the given name."},
                     {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -addresstype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", and \"bech32\"."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::Default{0}, "(legacy wallets) The HD account to give the address of. Above 0, the next address of that account is handed out\n"
+                     "only while one of the last 20 handed out has been paid, since a restore looks no further."},
+                    {"force", RPCArg::Type::BOOL, RPCArg::Default{false}, "Hand out the next address of an HD account beyond that gap, which a restore may not find."},
                 },
                 RPCResult{
                     RPCResult::Type::STR, "address", "The new Reddcoin address"
@@ -281,6 +318,16 @@ static RPCHelpMan getnewaddress()
 
     CTxDestination dest;
     std::string error;
+    const std::optional<uint32_t> account{ParseHDAccount(*pwallet, request.params[2])};
+    if (account.value_or(0) != 0) {
+        std::vector<bilingual_str> warnings;
+        bilingual_str account_error;
+        const bool force{!request.params[3].isNull() && request.params[3].get_bool()};
+        if (!pwallet->GetNewHDAccountDestination(*account, /* internal */ false, output_type, label, force, dest, warnings, account_error)) {
+            throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, account_error.original);
+        }
+        return EncodeDestination(dest);
+    }
     if (!pwallet->GetNewDestination(output_type, label, dest, error)) {
         throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, error);
     }
@@ -297,6 +344,8 @@ static RPCHelpMan getrawchangeaddress()
                 "This is for use with raw transactions, NOT normal use.\n",
                 {
                     {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -changetype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", and \"bech32\"."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::Default{0}, "(legacy wallets) The HD account to give the change address of, within the same gap as getnewaddress."},
+                    {"force", RPCArg::Type::BOOL, RPCArg::Default{false}, "Hand out the next change address of an HD account beyond that gap."},
                 },
                 RPCResult{
                     RPCResult::Type::STR, "address", "The address"
@@ -328,6 +377,16 @@ static RPCHelpMan getrawchangeaddress()
 
     CTxDestination dest;
     std::string error;
+    const std::optional<uint32_t> account{ParseHDAccount(*pwallet, request.params[1])};
+    if (account.value_or(0) != 0) {
+        std::vector<bilingual_str> warnings;
+        bilingual_str account_error;
+        const bool force{!request.params[2].isNull() && request.params[2].get_bool()};
+        if (!pwallet->GetNewHDAccountDestination(*account, /* internal */ true, output_type, "", force, dest, warnings, account_error)) {
+            throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, account_error.original);
+        }
+        return EncodeDestination(dest);
+    }
     if (!pwallet->GetNewChangeDestination(output_type, dest, error)) {
         throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, error);
     }
@@ -461,6 +520,7 @@ static RPCHelpMan sendtoaddress()
                                          "dirty if they have previously been used in a transaction. If true, this also activates avoidpartialspends, grouping outputs by their addresses."},
                     {"fee_rate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
                     {"verbose", RPCArg::Type::BOOL, RPCArg::Default{false}, "If true, return extra information about the transaction."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::Default{0}, "(legacy wallets) The HD account to pay from; the change goes back to it."},
                 },
                 {
                     RPCResult{"if verbose is not set or set to false",
@@ -534,6 +594,7 @@ static RPCHelpMan sendtoaddress()
     std::vector<CRecipient> recipients;
     ParseRecipients(address_amounts, subtractFeeFromAmount, recipients);
     const bool verbose{request.params[10].isNull() ? false : request.params[10].get_bool()};
+    coin_control.m_hd_account = ParseHDAccount(*pwallet, request.params[11]);
 
     return SendMoney(*pwallet, coin_control, recipients, mapValue, verbose);
 },
@@ -794,6 +855,7 @@ static RPCHelpMan getbalance()
                     {"minconf", RPCArg::Type::NUM, RPCArg::Default{0}, "Only include transactions confirmed at least this many times."},
                     {"include_watchonly", RPCArg::Type::BOOL, RPCArg::DefaultHint{"true for watch-only wallets, otherwise false"}, "Also include balance in watch-only addresses (see 'importaddress')"},
                     {"avoid_reuse", RPCArg::Type::BOOL, RPCArg::Default{true}, "(only available if avoid_reuse wallet flag is set) Do not include balance in dirty outputs; addresses are considered dirty if they have previously been used in a transaction."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::DefaultHint{"the whole wallet"}, "(legacy wallets) The balance of this HD account only."},
                 },
                 RPCResult{
                     RPCResult::Type::STR_AMOUNT, "amount", "The total amount in " + CURRENCY_UNIT + " received for this wallet."
@@ -830,6 +892,10 @@ static RPCHelpMan getbalance()
     bool include_watchonly = ParseIncludeWatchonly(request.params[2], *pwallet);
 
     bool avoid_reuse = GetAvoidReuseFlag(*pwallet, request.params[3]);
+
+    if (const std::optional<uint32_t> account{ParseHDAccount(*pwallet, request.params[4])}) {
+        return ValueFromAmount(pwallet->GetHDAccountBalances(min_depth, avoid_reuse)[*account].m_mine_trusted);
+    }
 
     const auto bal = pwallet->GetBalance(min_depth, avoid_reuse);
 
@@ -955,6 +1021,7 @@ static RPCHelpMan sendmany()
             "       \"" + FeeModes("\"\n\"") + "\""},
                     {"fee_rate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
                     {"verbose", RPCArg::Type::BOOL, RPCArg::Default{false}, "If true, return extra infomration about the transaction."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::Default{0}, "(legacy wallets) The HD account to pay from; the change goes back to it."},
                 },
                 {
                     RPCResult{"if verbose is not set or set to false",
@@ -1014,6 +1081,7 @@ static RPCHelpMan sendmany()
     std::vector<CRecipient> recipients;
     ParseRecipients(sendTo, subtractFeeFromAmount, recipients);
     const bool verbose{request.params[9].isNull() ? false : request.params[9].get_bool()};
+    coin_control.m_hd_account = ParseHDAccount(*pwallet, request.params[10]);
 
     return SendMoney(*pwallet, coin_control, recipients, std::move(mapValue), verbose);
 },
@@ -2267,13 +2335,21 @@ static RPCHelpMan encryptwallet()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "passphrase can not be empty");
     }
 
+    const LegacyScriptPubKeyMan* legacy_spk_man{pwallet->GetLegacyScriptPubKeyMan()};
+    if (legacy_spk_man && legacy_spk_man->IsHDAccountDiscoveryPending()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "This wallet is looking for its HD accounts in the block chain. Encrypt it once that scan has finished.");
+    }
+    const bool keeps_seed{pwallet->IsBip39Enabled() || (legacy_spk_man && legacy_spk_man->KeepsHDSeed())};
+
     if (!pwallet->EncryptWallet(strWalletPass)) {
         throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Error: Failed to encrypt the wallet.");
     }
 
     // A wallet created from a mnemonic keeps its seed and its keypool when it
-    // is encrypted: its phrase has to go on restoring it.
-    if (pwallet->IsBip39Enabled()) {
+    // is encrypted: its phrase has to go on restoring it. So does a wallet
+    // that holds HD accounts, whatever its type: the keys of its accounts
+    // come from its seed.
+    if (keeps_seed) {
         return "wallet encrypted; this wallet keeps its seed and its keypool. Any copy of the wallet file made before now holds the seed unencrypted; destroy such copies. You need to make a new backup.";
     }
 
@@ -2523,6 +2599,15 @@ static RPCHelpMan getbalances()
                     {RPCResult::Type::STR_AMOUNT, "untrusted_pending", "untrusted pending balance (outputs created by others that are in the mempool)"},
                     {RPCResult::Type::STR_AMOUNT, "immature", "balance from immature coinbase outputs"},
                 }},
+                {RPCResult::Type::OBJ_DYN, "hd_accounts", /* optional */ true, "(only for a wallet that holds HD accounts) the balances of \"mine\" by HD account number, account 0 included",
+                {
+                    {RPCResult::Type::OBJ, "account", "",
+                    {
+                        {RPCResult::Type::STR_AMOUNT, "trusted", "trusted balance of the account"},
+                        {RPCResult::Type::STR_AMOUNT, "untrusted_pending", "untrusted pending balance of the account"},
+                        {RPCResult::Type::STR_AMOUNT, "immature", "immature balance of the account"},
+                    }},
+                }},
             }
             },
         RPCExamples{
@@ -2563,6 +2648,17 @@ static RPCHelpMan getbalances()
         balances_watchonly.pushKV("immature", ValueFromAmount(bal.m_watchonly_immature));
         balances.pushKV("watchonly", balances_watchonly);
     }
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
+        UniValue by_account{UniValue::VOBJ};
+        for (const auto& [account, account_bal] : wallet.GetHDAccountBalances()) {
+            UniValue entry{UniValue::VOBJ};
+            entry.pushKV("trusted", ValueFromAmount(account_bal.m_mine_trusted));
+            entry.pushKV("untrusted_pending", ValueFromAmount(account_bal.m_mine_untrusted_pending));
+            entry.pushKV("immature", ValueFromAmount(account_bal.m_mine_immature));
+            by_account.pushKV(strprintf("%u", account), entry);
+        }
+        balances.pushKV("hd_accounts", by_account);
+    }
     return balances;
 },
     };
@@ -2595,6 +2691,9 @@ static RPCHelpMan getwalletinfo()
                         {RPCResult::Type::STR, "hd_warnings", /* optional */ true, "what the owner has to be told about where the seed of the wallet is kept and about the keys of its seed, when there is something to say"},
                         {RPCResult::Type::BOOL, "hd_secrets_encrypted", "whether the seed of the HD chain, and the mnemonic it came from, are kept in a record of their own, encrypted with the wallet passphrase"},
                         {RPCResult::Type::BOOL, "earlier_seed_keys", "whether the wallet has keys of an earlier seed beside a chain with a seed of its own, which that seed (and its mnemonic, if it has one) does not restore"},
+                        {RPCResult::Type::NUM, "hd_accounts", "how many HD accounts above 0 the wallet has created (legacy wallets; 0 for a descriptor wallet)"},
+                        {RPCResult::Type::BOOL, "hd_accounts_inconsistent", "whether the wallet holds keys of an HD account above 0 without the flag that says it holds accounts, as the salvage of an earlier wallet tool leaves it"},
+                        {RPCResult::Type::BOOL, "hd_restore_scan_owed", "whether a scan of the chain for a wallet restored from its seed is still owed"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -2665,6 +2764,19 @@ static RPCHelpMan getwalletinfo()
     }
     obj.pushKV("hd_secrets_encrypted", pwallet->IsWalletFlagSet(WALLET_FLAG_HD_SECRETS_ENCRYPTED));
     obj.pushKV("earlier_seed_keys", spk_man && spk_man->HasEarlierSeedKeys());
+    {
+        int created{0};
+        if (spk_man) {
+            for (const auto& entry : spk_man->GetHDAccounts()) {
+                const auto& record = entry.second;
+                if (record.state != CHDAccount::State::POOL) ++created;
+            }
+        }
+        obj.pushKV("hd_accounts", created);
+        obj.pushKV("hd_accounts_inconsistent", spk_man && spk_man->HasHDAccountsInconsistency());
+        int owed_height;
+        obj.pushKV("hd_restore_scan_owed", WalletBatch(pwallet->GetDatabase()).ReadRestoreScan(owed_height));
+    }
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
         obj.pushKV("keypoolsize_hd_internal",   (int64_t)(pwallet->GetKeyPoolSize() - kpExternalSize));
@@ -2902,6 +3014,8 @@ static RPCHelpMan createwallet()
             {"mnemonic_passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "BIP39 mnemonic passphrase (NOT the wallet encryption passphrase). Used as additional entropy for seed derivation."},
             {"language", RPCArg::Type::STR, RPCArg::Default{"english"}, "Language for mnemonic generation. Options: english, japanese, spanish, chinese_simplified, chinese_traditional, french, italian, korean."},
             {"entropy_bits", RPCArg::Type::NUM, RPCArg::Default{256}, "Entropy bits for mnemonic generation: 128 (12 words), 160 (15 words), 192 (18 words), 224 (21 words), or 256 (24 words)."},
+            {"hd_accounts", RPCArg::Type::BOOL, RPCArg::Default{true}, "With a mnemonic to restore: look for the HD accounts of the phrase too. The wallet is marked as holding\n"
+             "accounts only if one above 0 is found used."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -2910,6 +3024,14 @@ static RPCHelpMan createwallet()
                 {RPCResult::Type::STR, "warning", "Warning message if wallet was not loaded cleanly."},
                 {RPCResult::Type::STR, "wallet_type", "HD wallet type: bip32, bip39, or bip44"},
                 {RPCResult::Type::STR, "mnemonic", /* optional */ true, "The generated BIP39 mnemonic phrase (only for newly generated bip39/bip44 wallets)"},
+                {RPCResult::Type::OBJ, "hd_restore", /* optional */ true, "What the restore from a mnemonic found (only when a mnemonic is given)",
+                {
+                    {RPCResult::Type::STR, "wallet_type", "The HD type the phrase was restored as"},
+                    {RPCResult::Type::STR, "first_path", "The derivation path of its first address"},
+                    {RPCResult::Type::NUM, "used_addresses", "How many addresses of account 0 were found used"},
+                    {RPCResult::Type::ARR, "hd_accounts", "The HD accounts above 0 found used", {{RPCResult::Type::NUM, "", ""}}},
+                    {RPCResult::Type::STR, "warning", /* optional */ true, "Said when no history was found"},
+                }},
             }
         },
         RPCExamples{
@@ -3031,6 +3153,11 @@ static RPCHelpMan createwallet()
         walletoptions.bits = bits;
     }
 
+    // Parse hd_accounts (param 13)
+    if (!request.params[13].isNull()) {
+        walletoptions.hd_accounts = request.params[13].get_bool();
+    }
+
     // Validation: BIP39/BIP44 requires legacy wallet
     if (is_bip39_or_bip44) {
         if (flags & WALLET_FLAG_DESCRIPTORS) {
@@ -3082,6 +3209,23 @@ static RPCHelpMan createwallet()
     // Return mnemonic only for newly generated bip39/bip44 wallets (not imports)
     if (!generated_mnemonic.empty()) {
         obj.pushKV("mnemonic", std::string(generated_mnemonic.begin(), generated_mnemonic.end()));
+    }
+
+    // The type is not in the phrase: a wrong type or mnemonic passphrase
+    // gives an empty wallet and no error. Say what was found.
+    if (mnemonic_provided && spk_man) {
+        const CWallet::HDRestoreReport report{wallet->GetHDRestoreReport()};
+        UniValue restore{UniValue::VOBJ};
+        restore.pushKV("wallet_type", response_type);
+        restore.pushKV("first_path", report.first_path);
+        restore.pushKV("used_addresses", report.used_addresses);
+        UniValue accounts{UniValue::VARR};
+        for (const uint32_t account : report.accounts_found) accounts.push_back(static_cast<int64_t>(account));
+        restore.pushKV("hd_accounts", accounts);
+        if (!report.history) {
+            restore.pushKV("warning", "No history was found. Check the wallet type (bip39 or bip44) and the mnemonic passphrase: either being wrong gives an empty wallet.");
+        }
+        obj.pushKV("hd_restore", restore);
     }
 
     return obj;
@@ -3180,6 +3324,7 @@ static RPCHelpMan listunspent()
                             {RPCResult::Type::STR_HEX, "redeemScript", "The redeemScript if scriptPubKey is P2SH"},
                             {RPCResult::Type::STR, "witnessScript", "witnessScript if the scriptPubKey is P2WSH or P2SH-P2WSH"},
                             {RPCResult::Type::BOOL, "spendable", "Whether we have the private keys to spend this output"},
+                            {RPCResult::Type::NUM, "hd_account", /* optional */ true, "(legacy wallets) The HD account of the output"},
                             {RPCResult::Type::BOOL, "solvable", "Whether we know how to spend this output, ignoring the lack of keys"},
                             {RPCResult::Type::BOOL, "reused", "(only present if avoid_reuse is set) Whether this output is reused/dirty (sent to an address that was previously spent from)"},
                             {RPCResult::Type::STR, "desc", "(only when solvable) A descriptor for spending this output"},
@@ -3277,6 +3422,8 @@ static RPCHelpMan listunspent()
         cctl.m_min_depth = nMinDepth;
         cctl.m_max_depth = nMaxDepth;
         cctl.m_include_unsafe_inputs = include_unsafe;
+        // Every coin of the wallet, of whatever HD account.
+        cctl.m_hd_all_accounts = true;
         LOCK(pwallet->cs_wallet);
         pwallet->AvailableCoins(vecOutputs, &cctl, nMinimumAmount, nMaximumAmount, nMinimumSumAmount, nMaximumCount);
     }
@@ -3344,6 +3491,9 @@ static RPCHelpMan listunspent()
         entry.pushKV("amount", ValueFromAmount(out.tx->tx->vout[out.i].nValue));
         entry.pushKV("confirmations", out.nDepth);
         entry.pushKV("spendable", out.fSpendable);
+        if (!pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+            entry.pushKV("hd_account", static_cast<int64_t>(pwallet->GetHDAccountOfScript(out.tx->tx->vout[out.i].scriptPubKey)));
+        }
         entry.pushKV("solvable", out.fSolvable);
         if (out.fSolvable) {
             std::unique_ptr<SigningProvider> provider = pwallet->GetSolvingProvider(scriptPubKey);
@@ -3404,8 +3554,13 @@ void FundTransaction(CWallet& wallet, CMutableTransaction& tx, CAmount& fee_out,
                 {"replaceable", UniValueType(UniValue::VBOOL)},
                 {"conf_target", UniValueType(UniValue::VNUM)},
                 {"estimate_mode", UniValueType(UniValue::VSTR)},
+                {"hd_account", UniValueType(UniValue::VNUM)},
             },
             true, true);
+
+        if (options.exists("hd_account")) {
+            coinControl.m_hd_account = ParseHDAccount(wallet, options["hd_account"]);
+        }
 
         if (options.exists("add_inputs") ) {
             coinControl.m_add_inputs = options["add_inputs"].get_bool();
@@ -3518,6 +3673,7 @@ static RPCHelpMan fundrawtransaction()
                     {"options", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "for backward compatibility: passing in a true instead of an object will result in {\"includeWatching\":true}",
                         {
                             {"add_inputs", RPCArg::Type::BOOL, RPCArg::Default{true}, "For a transaction with existing inputs, automatically include more if they are not enough."},
+                            {"hd_account", RPCArg::Type::NUM, RPCArg::DefaultHint{"0, or the account of the inputs given"}, "(legacy wallets) The HD account to fund from; the inputs and the change address have to be of it."},
                             {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include inputs that are not safe to spend (unconfirmed transactions from outside keys and unconfirmed replacement transactions).\n"
                                                           "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                           "If that happens, you will need to fund the transaction with different inputs and republish it."},
@@ -4083,6 +4239,7 @@ RPCHelpMan getaddressinfo()
                         {RPCResult::Type::STR, "address", "The Reddcoin address validated."},
                         {RPCResult::Type::STR_HEX, "scriptPubKey", "The hex-encoded scriptPubKey generated by the address."},
                         {RPCResult::Type::BOOL, "ismine", "If the address is yours."},
+                        {RPCResult::Type::NUM, "hd_account", /* optional */ true, "(legacy wallets, addresses of the wallet) The HD account of the address."},
                         {RPCResult::Type::BOOL, "iswatchonly", "If the address is watchonly."},
                         {RPCResult::Type::BOOL, "solvable", "If we know how to spend coins sent to this address, ignoring the possible lack of private keys."},
                         {RPCResult::Type::STR, "desc", /* optional */ true, "A descriptor for spending coins sent to this address (only when solvable)."},
@@ -4153,6 +4310,9 @@ RPCHelpMan getaddressinfo()
 
     isminetype mine = pwallet->IsMine(dest);
     ret.pushKV("ismine", bool(mine & ISMINE_SPENDABLE));
+    if (mine != ISMINE_NO && !pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        ret.pushKV("hd_account", static_cast<int64_t>(pwallet->GetHDAccountOfScript(scriptPubKey)));
+    }
 
     if (provider) {
         auto inferred = InferDescriptor(scriptPubKey, *provider);
@@ -4351,6 +4511,7 @@ static RPCHelpMan send()
             {"options", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
                     {"add_inputs", RPCArg::Type::BOOL, RPCArg::Default{false}, "If inputs are specified, automatically include more if they are not enough."},
+                    {"hd_account", RPCArg::Type::NUM, RPCArg::DefaultHint{"0, or the account of the inputs given"}, "(legacy wallets) The HD account to fund from; the inputs and the change address have to be of it."},
                     {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include inputs that are not safe to spend (unconfirmed transactions from outside keys and unconfirmed replacement transactions).\n"
                                                           "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                           "If that happens, you will need to fund the transaction with different inputs and republish it."},
@@ -4530,6 +4691,10 @@ static RPCHelpMan sethdseed()
                 "HD will have a new HD seed set so that new keys added to the keypool will be derived from this new seed.\n"
                 "\nA wallet created from a mnemonic (\"hd_type\" bip39 or bip44 in getwalletinfo) is refused: all its keys come\n"
                 "from its mnemonic phrase, and a new seed would discard the phrase. To use another seed, create another wallet.\n"
+                "\nA wallet that holds HD accounts is refused as well: the keys of its accounts come from its seed.\n"
+                "\nTo restore the HD accounts of a plain HD wallet from its seed, give the seed to a blank wallet with hd_accounts:\n"
+                "the wallet is marked as holding accounts and keeps its seed from then on. Then call rescanhdaccounts, which finds\n"
+                "the accounts and the history of the wallet.\n"
                 "\nNote that you will need to MAKE A NEW BACKUP of your wallet after setting the HD wallet seed." +
         HELP_REQUIRING_PASSPHRASE,
                 {
@@ -4539,12 +4704,19 @@ static RPCHelpMan sethdseed()
                                          "keypool will be used until it has been depleted."},
                     {"seed", RPCArg::Type::STR, RPCArg::DefaultHint{"random seed"}, "The WIF private key to use as the new HD seed.\n"
                                          "The seed value can be retrieved using the dumpwallet command. It is the private key marked hdseed=1"},
+                    {"options", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
+                        {
+                            {"hd_accounts", RPCArg::Type::BOOL, RPCArg::Default{false}, "Mark the wallet as holding HD accounts, with the seed, in a blank wallet only (see rescanhdaccounts).\n"
+                                         "Versions without HD accounts refuse to open the wallet from then on."},
+                        },
+                        "options"},
                 },
                 RPCResult{RPCResult::Type::NONE, "", ""},
                 RPCExamples{
                     HelpExampleCli("sethdseed", "")
             + HelpExampleCli("sethdseed", "false")
             + HelpExampleCli("sethdseed", "true \"wifkey\"")
+            + HelpExampleCli("sethdseed", "true \"wifkey\" '{\"hd_accounts\": true}'")
             + HelpExampleRpc("sethdseed", "true, \"wifkey\"")
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -4573,11 +4745,33 @@ static RPCHelpMan sethdseed()
         throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet created from a mnemonic: its keys come from the mnemonic phrase, which a new seed would discard. Create a new wallet to use another seed");
     }
 
+    // The keys of every HD account come from the seed. With another seed,
+    // the accounts would get no further key, and a restore from the new seed
+    // would find none of them. So for keys of accounts not yet marked, and for
+    // accounts a scan holds in memory.
+    if (spk_man.KeepsHDSeed()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a new HD seed on a wallet that holds HD accounts: the keys of its accounts come from its seed, which a new seed would leave behind. Create a new wallet to use another seed");
+    }
+
     EnsureWalletIsUnlocked(*pwallet);
 
     bool flush_key_pool = true;
     if (!request.params[0].isNull()) {
         flush_key_pool = request.params[0].get_bool();
+    }
+
+    bool hd_accounts{false};
+    if (!request.params[2].isNull()) {
+        RPCTypeCheckObj(request.params[2], {{"hd_accounts", UniValueType(UniValue::VBOOL)}}, /* fAllowNull */ true, /* fStrict */ true);
+        hd_accounts = !request.params[2]["hd_accounts"].isNull() && request.params[2]["hd_accounts"].get_bool();
+    }
+    // The seed and the mark go together: a wallet that has had keys of
+    // another seed, or has given out addresses, is not one a seed restores.
+    if (hd_accounts && !pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "hd_accounts is for a blank wallet only: create one with createwallet blank=true, and give it the seed");
+    }
+    if (hd_accounts && !pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot hold HD accounts in a wallet without HD chain split. Use the upgradewallet RPC first");
     }
 
     CPubKey master_pub_key;
@@ -4598,6 +4792,10 @@ static RPCHelpMan sethdseed()
 
     spk_man.SetHDSeed(master_pub_key);
     if (flush_key_pool) spk_man.NewKeyPool();
+
+    if (hd_accounts && !spk_man.SetupHDAccounts()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "The seed is set, but the wallet could not be marked as holding HD accounts");
+    }
 
     return NullUniValue;
 },
@@ -4713,6 +4911,7 @@ static RPCHelpMan walletcreatefundedpsbt()
                     {"options", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                         {
                             {"add_inputs", RPCArg::Type::BOOL, RPCArg::Default{false}, "If inputs are specified, automatically include more if they are not enough."},
+                            {"hd_account", RPCArg::Type::NUM, RPCArg::DefaultHint{"0, or the account of the inputs given"}, "(legacy wallets) The HD account to fund from; the inputs and the change address have to be of it."},
                             {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include inputs that are not safe to spend (unconfirmed transactions from outside keys and unconfirmed replacement transactions).\n"
                                                           "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                           "If that happens, you will need to fund the transaction with different inputs and republish it."},
@@ -4930,6 +5129,322 @@ RPCHelpMan importmulti();
 RPCHelpMan importdescriptors();
 RPCHelpMan listdescriptors();
 
+//! The entry of an HD account in the results of listhdaccounts and sethdaccount.
+static UniValue HDAccountEntry(const CWallet& wallet, uint32_t account, const CHDAccount* record, const std::map<uint32_t, CWallet::Balance>& balances) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    UniValue entry{UniValue::VOBJ};
+    entry.pushKV("hd_account", static_cast<int64_t>(account));
+    entry.pushKV("label", record ? record->label : "");
+    entry.pushKV("state", record ? HDAccountStateName(record->state) : "active");
+    const auto balance = balances.find(account);
+    const CWallet::Balance bal{balance == balances.end() ? CWallet::Balance{} : balance->second};
+    entry.pushKV("trusted", ValueFromAmount(bal.m_mine_trusted));
+    entry.pushKV("untrusted_pending", ValueFromAmount(bal.m_mine_untrusted_pending));
+    entry.pushKV("immature", ValueFromAmount(bal.m_mine_immature));
+    entry.pushKV("used", wallet.IsHDAccountUsed(account, /* confirmed_only */ false));
+    if (record) {
+        entry.pushKV("next_receive_index", static_cast<int64_t>(record->next_receive));
+        entry.pushKV("next_change_index", static_cast<int64_t>(record->next_change));
+    }
+    return entry;
+}
+
+static const std::vector<RPCResult> HD_ACCOUNT_ENTRY_RESULT{
+    {RPCResult::Type::NUM, "hd_account", "The number of the HD account"},
+    {RPCResult::Type::STR, "label", "Its label"},
+    {RPCResult::Type::STR, "state", "\"active\", \"retired\" (no new address, still watched and spendable), or \"pool\" (kept ahead, not created)"},
+    {RPCResult::Type::STR_AMOUNT, "trusted", "Its trusted balance"},
+    {RPCResult::Type::STR_AMOUNT, "untrusted_pending", "Its untrusted pending balance"},
+    {RPCResult::Type::STR_AMOUNT, "immature", "Its immature balance"},
+    {RPCResult::Type::BOOL, "used", "Whether a transaction of the wallet pays it"},
+    {RPCResult::Type::NUM, "next_receive_index", /* optional */ true, "The index of the next receive address to hand out (not for account 0)"},
+    {RPCResult::Type::NUM, "next_change_index", /* optional */ true, "The index of the next change address to hand out (not for account 0)"},
+};
+
+static RPCHelpMan newhdaccount()
+{
+    return RPCHelpMan{"newhdaccount",
+        "\nCreate the next HD account of a legacy HD wallet, with its own addresses and balance. A payment spends one\n"
+        "account and returns its change to it: coins of two accounts are never spent in one transaction.\n"
+        "An account is created only once the account before it has a confirmed payment, account 0 included, as BIP44\n"
+        "has it: the phrase or seed of the wallet then restores every account, in this wallet and in other BIP44 wallets.\n"
+        "The first account marks the wallet: versions without HD accounts refuse to open it from then on.\n"
+        "A restore finds accounts by number, not by label: note the number.\n" +
+        HELP_REQUIRING_PASSPHRASE,
+        {
+            {"label", RPCArg::Type::STR, RPCArg::Default{""}, "A label for the account, and for its first address"},
+            {"force", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create the account although the account before it has no confirmed payment; a restore may not find it"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "hd_account", "The number of the new account"},
+                {RPCResult::Type::STR, "label", "Its label"},
+                {RPCResult::Type::STR, "address", "Its first address"},
+                {RPCResult::Type::STR, "hdkeypath", "The derivation path of that address"},
+                {RPCResult::Type::ARR, "warnings", "What the owner has to know",
+                {
+                    {RPCResult::Type::STR, "", ""},
+                }},
+            }
+        },
+        RPCExamples{
+            HelpExampleCli("newhdaccount", "\"savings\"")
+            + HelpExampleRpc("newhdaccount", "\"savings\"")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+    pwallet->BlockUntilSyncedToCurrentChain();
+    LOCK(pwallet->cs_wallet);
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, HD_ACCOUNTS_LEGACY_ONLY);
+    }
+    if (pwallet->IsLocked() && !pwallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
+        throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+    }
+    const std::string label{request.params[0].isNull() ? "" : LabelFromValue(request.params[0])};
+    const bool force{!request.params[1].isNull() && request.params[1].get_bool()};
+    uint32_t account;
+    CTxDestination first;
+    std::vector<bilingual_str> warnings;
+    bilingual_str error;
+    if (!pwallet->NewHDAccount(label, force, account, first, warnings, error)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, error.original);
+    }
+    UniValue result{UniValue::VOBJ};
+    result.pushKV("hd_account", static_cast<int64_t>(account));
+    result.pushKV("label", label);
+    result.pushKV("address", EncodeDestination(first));
+    std::string path;
+    if (const LegacyScriptPubKeyMan* spk_man = pwallet->GetLegacyScriptPubKeyMan()) {
+        uint32_t key_account, index;
+        bool internal;
+        if (spk_man->GetHDAccountKeyOfScript(GetScriptForDestination(first), key_account, internal, index)) {
+            if (auto meta = spk_man->GetMetadata(first)) path = WriteHDKeypath(meta->key_origin.path);
+        }
+    }
+    result.pushKV("hdkeypath", path);
+    UniValue warning_list{UniValue::VARR};
+    for (const bilingual_str& warning : warnings) warning_list.push_back(warning.original);
+    result.pushKV("warnings", warning_list);
+    return result;
+},
+    };
+}
+
+static RPCHelpMan listhdaccounts()
+{
+    return RPCHelpMan{"listhdaccounts",
+        "\nList the HD accounts of the wallet, account 0 first, with their balances. With an account number, that account\n"
+        "alone, with the receive addresses it has handed out that are not yet paid. A descriptor wallet has account 0 only.\n",
+        {
+            {"hd_account", RPCArg::Type::NUM, RPCArg::Optional::OMITTED_NAMED_ARG, "The account to show"},
+        },
+        {
+            RPCResult{"without an account number", RPCResult::Type::ARR, "", "", {{RPCResult::Type::OBJ, "", "", HD_ACCOUNT_ENTRY_RESULT}}},
+            RPCResult{"with an account number", RPCResult::Type::OBJ, "", "", [] {
+                std::vector<RPCResult> fields{HD_ACCOUNT_ENTRY_RESULT};
+                fields.push_back({RPCResult::Type::ARR, "unpaid_addresses", "Receive addresses handed out and not yet paid (not for account 0)", {{RPCResult::Type::STR, "", ""}}});
+                return fields;
+            }()},
+        },
+        RPCExamples{
+            HelpExampleCli("listhdaccounts", "")
+            + HelpExampleCli("listhdaccounts", "1")
+            + HelpExampleRpc("listhdaccounts", "")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+    pwallet->BlockUntilSyncedToCurrentChain();
+    const std::map<uint32_t, CWallet::Balance> balances{pwallet->GetHDAccountBalances()};
+    LOCK(pwallet->cs_wallet);
+    const LegacyScriptPubKeyMan* spk_man = pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ? nullptr : pwallet->GetLegacyScriptPubKeyMan();
+    const std::map<uint32_t, CHDAccount> accounts{spk_man ? spk_man->GetHDAccounts() : std::map<uint32_t, CHDAccount>{}};
+    if (!request.params[0].isNull()) {
+        const uint32_t account{*ParseHDAccount(*pwallet, request.params[0])};
+        UniValue entry{HDAccountEntry(*pwallet, account, account ? &accounts.at(account) : nullptr, balances)};
+        UniValue unpaid{UniValue::VARR};
+        if (account) {
+            for (const CTxDestination& dest : pwallet->GetUnpaidHDAccountAddresses(account)) unpaid.push_back(EncodeDestination(dest));
+        }
+        entry.pushKV("unpaid_addresses", unpaid);
+        return entry;
+    }
+    UniValue result{UniValue::VARR};
+    result.push_back(HDAccountEntry(*pwallet, 0, nullptr, balances));
+    for (const auto& [number, record] : accounts) result.push_back(HDAccountEntry(*pwallet, number, &record, balances));
+    return result;
+},
+    };
+}
+
+static RPCHelpMan sethdaccount()
+{
+    return RPCHelpMan{"sethdaccount",
+        "\nChange the label of an HD account, or retire it or bring it back. A retired account gives no new address;\n"
+        "its coins are still watched and spendable.\n",
+        {
+            {"hd_account", RPCArg::Type::NUM, RPCArg::Optional::NO, "The account, above 0"},
+            {"label", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "The new label"},
+            {"retired", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED_NAMED_ARG, "true to retire the account, false to bring it back"},
+        },
+        RPCResult{RPCResult::Type::OBJ, "", "", HD_ACCOUNT_ENTRY_RESULT},
+        RPCExamples{
+            HelpExampleCli("sethdaccount", "1 \"savings\"")
+            + HelpExampleCli("sethdaccount", "1 null true")
+            + HelpExampleRpc("sethdaccount", "1, \"savings\"")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, HD_ACCOUNTS_LEGACY_ONLY);
+    }
+    const std::map<uint32_t, CWallet::Balance> balances{pwallet->GetHDAccountBalances()};
+    LOCK(pwallet->cs_wallet);
+    const uint32_t account{*ParseHDAccount(*pwallet, request.params[0])};
+    if (account == 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Account 0 is the wallet's own: it has no label or state of its own to change");
+    }
+    std::optional<std::string> label;
+    if (!request.params[1].isNull()) label = LabelFromValue(request.params[1]);
+    std::optional<bool> retired;
+    if (!request.params[2].isNull()) retired = request.params[2].get_bool();
+    bilingual_str error;
+    if (!pwallet->SetHDAccount(account, label, retired, error)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, error.original);
+    }
+    const std::map<uint32_t, CHDAccount> accounts{pwallet->GetLegacyScriptPubKeyMan()->GetHDAccounts()};
+    return HDAccountEntry(*pwallet, account, &accounts.at(account), balances);
+},
+    };
+}
+
+static RPCHelpMan rescanhdaccounts()
+{
+    return RPCHelpMan{"rescanhdaccounts",
+        "\nScan the whole block chain for the HD accounts of the wallet's seed, as a restore from a mnemonic phrase does, and\n"
+        "for every other transaction of the wallet, account 0's included. The account after the highest used one is looked\n"
+        "at, and the account after each one found used, as BIP44's account discovery does; an account created with force\n"
+        "after one that had no payment is found only if count reaches it. The accounts looked at are kept in memory only:\n"
+        "the wallet holds the accounts found used, and the one after the highest of them.\n"
+        "This finds the accounts of a seed given to a blank wallet with sethdseed and hd_accounts, and those a copy of the\n"
+        "wallet made before its first account has not seen. A wallet that holds HD accounts from then on cannot be opened\n"
+        "by versions without them.\n" +
+        HELP_REQUIRING_PASSPHRASE,
+        {
+            {"count", RPCArg::Type::NUM, RPCArg::Default{1}, "How many accounts past the highest used one to look at (1 to 20)"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "start_height", "The block height where the scan started (the genesis block)"},
+                {RPCResult::Type::NUM, "stop_height", "The height of the last block scanned"},
+                {RPCResult::Type::ARR, "hd_accounts", "The accounts above 0 the wallet holds as used",
+                {
+                    {RPCResult::Type::NUM, "", "An account number"},
+                }},
+                {RPCResult::Type::ARR, "found", "Those of them this scan found",
+                {
+                    {RPCResult::Type::NUM, "", "An account number"},
+                }},
+            }
+        },
+        RPCExamples{
+            HelpExampleCli("rescanhdaccounts", "")
+            + HelpExampleCli("rescanhdaccounts", "5")
+            + HelpExampleRpc("rescanhdaccounts", "")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, HD_ACCOUNTS_LEGACY_ONLY);
+    }
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "This wallet has no private keys: it has no seed to derive accounts from");
+    }
+    const int count{request.params[0].isNull() ? 1 : request.params[0].get_int()};
+    if (count < 1 || count > 20) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "count must be from 1 to 20");
+    }
+    LegacyScriptPubKeyMan* spk_man = pwallet->GetLegacyScriptPubKeyMan();
+    {
+        LOCK(pwallet->cs_wallet);
+        if (!spk_man || !spk_man->IsHDEnabled()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "This wallet is not an HD wallet: it has no seed to derive accounts from");
+        }
+        EnsureWalletIsUnlocked(*pwallet);
+        if (!pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Cannot hold HD accounts in a wallet without HD chain split. Use the upgradewallet RPC first");
+        }
+        // Accounts of the seed the wallet has now: of no use for the keys of
+        // the one it had before.
+        if (spk_man->HoldsInactiveSeedKeys() && !pwallet->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "The seed of this wallet was replaced after keys were made (by encryption or by sethdseed). Accounts of the earlier seed cannot be reached from this wallet. Restore the earlier seed into a new blank wallet.");
+        }
+    }
+
+    WalletRescanReserver reserver(*pwallet);
+    if (!reserver.reserve()) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
+    }
+    std::set<uint32_t> before;
+    uint256 start_block;
+    {
+        LOCK(pwallet->cs_wallet);
+        if (!pwallet->chain().hasBlocks(pwallet->GetLastBlockHash(), 0, {})) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Can't rescan beyond pruned data. Use RPC call getblockchaininfo to determine your pruned height.");
+        }
+        CHECK_NONFATAL(pwallet->chain().findAncestorByHeight(pwallet->GetLastBlockHash(), 0, FoundBlock().hash(start_block)));
+        if (spk_man->IsHDAccountDiscoveryPending()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
+        }
+        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
+            if (record.state != CHDAccount::State::POOL) before.insert(account);
+        }
+        if (!spk_man->BeginHDAccountDiscovery(static_cast<uint32_t>(count))) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "The accounts of this wallet's seed cannot be derived now");
+        }
+    }
+
+    const CWallet::ScanResult result{pwallet->ScanForWalletTransactions(start_block, 0, /* max_height */ {}, reserver, /* fUpdate */ true)};
+    UniValue accounts{UniValue::VARR};
+    UniValue found{UniValue::VARR};
+    {
+        LOCK(pwallet->cs_wallet);
+        spk_man->EndHDAccountDiscovery();
+        for (const auto& [account, record] : spk_man->GetHDAccounts()) {
+            if (record.state == CHDAccount::State::POOL) continue;
+            accounts.push_back(static_cast<int64_t>(account));
+            if (!before.count(account)) found.push_back(static_cast<int64_t>(account));
+        }
+    }
+    switch (result.status) {
+    case CWallet::ScanResult::SUCCESS:
+        break;
+    case CWallet::ScanResult::FAILURE:
+        throw JSONRPCError(RPC_MISC_ERROR, "Rescan failed. Potentially corrupted data files.");
+    case CWallet::ScanResult::USER_ABORT:
+        throw JSONRPCError(RPC_MISC_ERROR, "Rescan aborted.");
+        // no default case, so the compiler can warn about missing cases
+    }
+    UniValue response(UniValue::VOBJ);
+    response.pushKV("start_height", 0);
+    response.pushKV("stop_height", result.last_scanned_height ? *result.last_scanned_height : UniValue());
+    response.pushKV("hd_accounts", accounts);
+    response.pushKV("found", found);
+    return response;
+},
+    };
+}
+
 Span<const CRPCCommand> GetWalletRPCCommands()
 {
 // clang-format off
@@ -4954,6 +5469,10 @@ static const CRPCCommand commands[] =
     { "wallet",             &getbalance,                     },
 	{ "wallet",             &getinterest,                    },
     { "wallet",             &getnewaddress,                  },
+    { "wallet",             &newhdaccount,                   },
+    { "wallet",             &listhdaccounts,                 },
+    { "wallet",             &sethdaccount,                   },
+    { "wallet",             &rescanhdaccounts,               },
     { "wallet",             &getrawchangeaddress,            },
     { "wallet",             &getreceivedbyaddress,           },
     { "wallet",             &getreceivedbylabel,             },

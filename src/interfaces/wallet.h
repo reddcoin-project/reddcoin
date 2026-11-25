@@ -81,6 +81,13 @@ public:
     //! Whether the wallet holds keys its seed does not restore, so that only its file does.
     virtual bool hasKeysSeedDoesNotRestore() = 0;
 
+    //! Whether the wallet holds keys of HD accounts above 0 without the flag
+    //! that says it holds accounts, as an earlier wallet tool's salvage leaves it.
+    virtual bool hdAccountsInconsistent() = 0;
+
+    //! Whether the scan of a wallet restored from its seed is still owed.
+    virtual bool hdRestoreScanOwed() = 0;
+
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
 
@@ -415,13 +422,16 @@ struct WalletBalances
     CAmount watch_only_balance = 0;
     CAmount unconfirmed_watch_only_balance = 0;
     CAmount immature_watch_only_balance = 0;
+    //! What the HD accounts above 0 hold, trusted: not in balance, which is
+    //! what account 0 can spend. Pending and immature are of the whole wallet.
+    CAmount other_accounts = 0;
 
     bool balanceChanged(const WalletBalances& prev) const
     {
         return balance != prev.balance || stake != prev.stake || unconfirmed_balance != prev.unconfirmed_balance ||
                immature_balance != prev.immature_balance || watch_only_balance != prev.watch_only_balance ||
                unconfirmed_watch_only_balance != prev.unconfirmed_watch_only_balance ||
-               immature_watch_only_balance != prev.immature_watch_only_balance;
+               immature_watch_only_balance != prev.immature_watch_only_balance || other_accounts != prev.other_accounts;
     }
 };
 
