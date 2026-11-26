@@ -51,8 +51,8 @@ QT_TRANSLATE_NOOP("bitcoin-core", ""
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "Error: Listening for incoming connections failed (listen returned error %s)"),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
-"Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -"
-"fallbackfee."),
+"Fee estimation failed: the network has too few transactions for an estimate, "
+"and the fallback fee is disabled. Enable -fallbackfee or set a fee rate."),
 QT_TRANSLATE_NOOP("bitcoin-core", ""
 "File %s already exists. If you are sure this is what you want, move it out "
 "of the way first."),

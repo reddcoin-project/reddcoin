@@ -905,7 +905,7 @@ void SendCoinsDialog::updateSmartFeeLabel()
     ui->labelSmartFee->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), feeRate.GetFeePerK()) + "/kvB");
 
     if (reason == FeeReason::FALLBACK) {
-        ui->labelSmartFee2->show(); // (Smart fee not initialized yet. This usually takes a few blocks...)
+        ui->labelSmartFee2->show(); // (the fallback fee: too few transactions on the network for an estimate)
         ui->labelFeeEstimation->setText("");
         ui->fallbackFeeWarningLabel->setVisible(true);
         int lightness = ui->fallbackFeeWarningLabel->palette().color(QPalette::WindowText).lightness();
