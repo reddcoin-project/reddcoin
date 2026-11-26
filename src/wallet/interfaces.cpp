@@ -163,11 +163,7 @@ public:
         const LegacyScriptPubKeyMan* spk_man = m_wallet->GetLegacyScriptPubKeyMan();
         return spk_man && spk_man->HasHDAccountsInconsistency();
     }
-    bool hdRestoreScanOwed() override
-    {
-        int height;
-        return WalletBatch(m_wallet->GetDatabase()).ReadRestoreScan(height);
-    }
+    bool hdRestoreScanOwed() override { return m_wallet->IsHDRestoreScanOwed(); }
     bool hdAccountsUnlockOwed() override
     {
         const LegacyScriptPubKeyMan* spk_man = m_wallet->GetLegacyScriptPubKeyMan();
