@@ -295,6 +295,8 @@ BASE_SCRIPTS = [
     'feature_compat_pos_blocks.py --compat-release=4220905',
     'feature_pos_coinstake_fees.py --previous_release',
     'feature_pos_coinstake_fees.py --previous_release --compat-release=4220905',
+    'feature_fee_estimates_file.py',
+    'feature_fee_estimates_file.py --compat-release=4220905',
     'feature_compat_tx_versions.py',
     'feature_compat_tx_versions.py --compat-release=4220905',
     'feature_compat_staking_interop.py',
