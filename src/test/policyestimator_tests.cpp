@@ -2,8 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <clientversion.h>
+#include <fs.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
+#include <streams.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/time.h>
@@ -11,6 +14,8 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <algorithm>
 
 BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, BasicTestingSetup)
 
@@ -177,6 +182,90 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
     for (int i = 2; i < 9; i++) { // At 9, the original estimate was already at the bottom (b/c scale = 2)
         BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
+    }
+}
+
+// fee_estimates.dat says which version it needs to be read. A file written
+// before the estimator's parameters were set for Reddcoin needs less than
+// FEE_ESTIMATES_VERSION_REQUIRED and is discarded, since reading it would
+// keep the old buckets, decay and scale; one this build writes is read back;
+// one that needs a later version is refused.
+BOOST_AUTO_TEST_CASE(fee_estimates_file_version)
+{
+    CBlockPolicyEstimator feeEst;
+    {
+        CTxMemPool mpool(&feeEst);
+        LOCK2(cs_main, mpool.cs);
+        TestMemPoolEntryHelper entry;
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vout.resize(1);
+        // Ten transactions a block at each of ten fees, every one mined in
+        // the next block: enough for an estimate.
+        for (int blocknum = 0; blocknum < 30; blocknum++) {
+            std::vector<CTransactionRef> block;
+            for (int j = 0; j < 10; j++) {
+                for (int k = 0; k < 10; k++) {
+                    tx.vin[0].prevout.n = 10000 * blocknum + 100 * j + k;
+                    mpool.addUnchecked(entry.Fee(2000 * (j + 1)).Time(GetTime()).Height(blocknum).FromTx(tx));
+                    block.push_back(mpool.get(tx.GetHash()));
+                }
+            }
+            mpool.removeForBlock(block, blocknum + 1);
+        }
+    }
+    const CFeeRate estimate{feeEst.estimateFee(2)};
+    BOOST_REQUIRE(estimate != CFeeRate(0));
+
+    const fs::path path{m_path_root / "fee_estimates.dat"};
+    {
+        CAutoFile file(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(feeEst.Write(file));
+    }
+    // What the file needs, as a later or earlier version would write it.
+    const auto set_required = [&](int required) {
+        CAutoFile file(fsbridge::fopen(path, "r+b"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(!file.IsNull());
+        file << required;
+    };
+    const auto read_back = [&](CBlockPolicyEstimator& est) {
+        CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+        return est.Read(file);
+    };
+    {
+        CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+        int required;
+        file >> required;
+        BOOST_CHECK_EQUAL(required, FEE_ESTIMATES_VERSION_REQUIRED);
+    }
+
+    // Written by this build: read back, whatever its CLIENT_VERSION.
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == estimate);
+    }
+    // Written with the old parameters (the header of 4.22.9.5 and earlier):
+    // discarded, and the estimator starts empty.
+    set_required(42199);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+    }
+    // One just below the version required: discarded too.
+    set_required(FEE_ESTIMATES_VERSION_REQUIRED - 1);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+    }
+    // Needs a later version than this build: refused.
+    set_required(std::max(CLIENT_VERSION, FEE_ESTIMATES_VERSION_REQUIRED) + 1);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(!read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
     }
 }
 

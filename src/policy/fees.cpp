@@ -14,6 +14,8 @@
 #include <util/serfloat.h>
 #include <util/system.h>
 
+#include <algorithm>
+
 static const char* FEE_ESTIMATES_FILENAME = "fee_estimates.dat";
 
 static constexpr double INF_FEERATE = 1e99;
@@ -896,7 +898,7 @@ bool CBlockPolicyEstimator::Write(CAutoFile& fileout) const
 {
     try {
         LOCK(m_cs_fee_estimator);
-        fileout << 42199; // version required to read: 4.21.99 or later
+        fileout << FEE_ESTIMATES_VERSION_REQUIRED; // version required to read
         fileout << CLIENT_VERSION; // version that wrote the file
         fileout << nBestSeenHeight;
         if (BlockSpan() > HistoricalBlockSpan()/2) {
@@ -923,7 +925,7 @@ bool CBlockPolicyEstimator::Read(CAutoFile& filein)
         LOCK(m_cs_fee_estimator);
         int nVersionRequired, nVersionThatWrote;
         filein >> nVersionRequired >> nVersionThatWrote;
-        if (nVersionRequired > CLIENT_VERSION) {
+        if (nVersionRequired > std::max(CLIENT_VERSION, FEE_ESTIMATES_VERSION_REQUIRED)) {
             throw std::runtime_error(strprintf("up-version (%d) fee estimate file", nVersionRequired));
         }
 
@@ -932,9 +934,11 @@ bool CBlockPolicyEstimator::Read(CAutoFile& filein)
         unsigned int nFileBestSeenHeight;
         filein >> nFileBestSeenHeight;
 
-        if (nVersionRequired < 42199) {
+        // Written with the old estimator parameters, or in the format before
+        // 0.14.99: start empty.
+        if (nVersionRequired < FEE_ESTIMATES_VERSION_REQUIRED) {
             LogPrintf("%s: incompatible old fee estimation data (non-fatal). Version: %d\n", __func__, nVersionRequired);
-        } else { // New format introduced in 149900
+        } else {
             unsigned int nFileHistoricalFirst, nFileHistoricalBest;
             filein >> nFileHistoricalFirst >> nFileHistoricalBest;
             if (nFileHistoricalFirst > nFileHistoricalBest || nFileHistoricalBest > nFileBestSeenHeight) {

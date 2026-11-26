@@ -80,6 +80,14 @@ struct FeeCalculation
     int returnedTarget = 0;
 };
 
+/** The version required to read fee_estimates.dat, written in its header.
+ *  A file that requires less was written before the estimator's buckets,
+ *  decay and scale were set for Reddcoin, and is discarded: reading it would
+ *  keep the old ones. It is above 4.22.9.5, so the releases up to that one
+ *  discard the files written now and start empty. A build reads the files
+ *  it writes even where its CLIENT_VERSION is lower, as develop's is. */
+static constexpr int FEE_ESTIMATES_VERSION_REQUIRED{4220906};
+
 /** \class CBlockPolicyEstimator
  * The BlockPolicyEstimator is used for estimating the feerate needed
  * for a transaction to be included in a block within a certain number of

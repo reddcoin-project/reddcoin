@@ -289,6 +289,7 @@ BASE_SCRIPTS = [
     'feature_compat_p2p_sync.py',
     'feature_compat_pos_blocks.py',
     'feature_pos_coinstake_fees.py --previous_release',
+    'feature_fee_estimates_file.py',
     'feature_compat_tx_versions.py',
     'feature_compat_staking_interop.py',
     'feature_compat_softfork_signaling.py',
