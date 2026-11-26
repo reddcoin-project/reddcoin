@@ -234,7 +234,10 @@ struct HDAccountSpendSetup : public TestChain100Setup {
     static bool ScanOwed(CWallet& restored)
     {
         int height;
-        return WITH_LOCK(restored.cs_wallet, return WalletBatch(restored.GetDatabase()).ReadRestoreScan(height));
+        const bool on_file{WITH_LOCK(restored.cs_wallet, return WalletBatch(restored.GetDatabase()).ReadRestoreScan(height))};
+        // What the GUI is told, without reading the file, is what the file says.
+        BOOST_CHECK_EQUAL(restored.IsHDRestoreScanOwed(), on_file);
+        return on_file;
     }
 
     //! The bytes of a record's key, written as they are.
@@ -613,7 +616,7 @@ BOOST_AUTO_TEST_CASE(restore_scan_owed_finds_accounts_at_the_next_load)
     std::shared_ptr<CWallet> restored = Restore("cut_short", /* hd_accounts */ false);
     BOOST_CHECK(!restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
     BOOST_CHECK_EQUAL(AccountCoins(*restored, 1), 0U);
-    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).EraseRestoreScan() && WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
+    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return restored->EraseRestoreScan() && restored->WriteRestoreScan(0)));
 
     restored = Reload(std::move(restored));
     BOOST_CHECK(restored->IsWalletFlagSet(WALLET_FLAG_HD_ACCOUNTS));
@@ -634,7 +637,7 @@ BOOST_AUTO_TEST_CASE(declined_restore_does_not_look_when_done_again)
     for (const bool encrypted : {false, true}) {
         std::shared_ptr<CWallet> restored = Restore(strprintf("declined_%d", encrypted), /* hd_accounts */ false, encrypted ? passphrase : SecureString{});
         // Cut short: the scan is owed again, and the choice is still in the file.
-        BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).WriteRestoreScan(0) && WalletBatch(restored->GetDatabase()).WriteHDAccountsDeclined()));
+        BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return restored->WriteRestoreScan(0) && WalletBatch(restored->GetDatabase()).WriteHDAccountsDeclined()));
         restored = Reload(std::move(restored));
         if (encrypted) {
             BOOST_REQUIRE(restored->Unlock(passphrase));
@@ -658,7 +661,7 @@ BOOST_AUTO_TEST_CASE(encrypted_restore_scan_owed_finds_accounts_at_unlock)
     Fund({AccountScript(1, false, 0)});
     std::shared_ptr<CWallet> restored = Restore("cut_short_encrypted", /* hd_accounts */ false, passphrase);
     BOOST_REQUIRE(restored->IsLocked());
-    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return WalletBatch(restored->GetDatabase()).EraseRestoreScan() && WalletBatch(restored->GetDatabase()).WriteRestoreScan(0)));
+    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return restored->EraseRestoreScan() && restored->WriteRestoreScan(0)));
 
     restored = Reload(std::move(restored));
     BOOST_REQUIRE(restored->IsLocked());
@@ -772,7 +775,7 @@ BOOST_AUTO_TEST_CASE(scan_owed_survives_a_relock)
     wallet->Lock();
     BOOST_REQUIRE(wallet->IsLocked());
     // A scan is owed from the start of the chain, as a restore leaves it.
-    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0)));
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->WriteRestoreScan(0)));
     Fund({last_ahead});
     const int due_height{WITH_LOCK(wallet->cs_wallet, return wallet->GetLastBlockHeight())};
     Fund({beyond}, /* seen */ false);
@@ -1087,6 +1090,25 @@ BOOST_AUTO_TEST_CASE(gui_interface)
     BOOST_CHECK(report.accounts_found == std::vector<uint32_t>{1});
     BOOST_CHECK(!report.scan_owed);
     BOOST_CHECK(!gui->hdAccountsUnlockOwed());
+}
+
+// At shutdown the wallets' files are closed before the GUI lets go of them,
+// and the GUI refreshes the status of a wallet still shown when it removes
+// another. What it asks then is answered without opening the file again.
+BOOST_AUTO_TEST_CASE(gui_state_after_the_file_is_closed)
+{
+    std::shared_ptr<CWallet> restored = Restore("closed", /* hd_accounts */ true);
+    BOOST_REQUIRE(WITH_LOCK(restored->cs_wallet, return restored->WriteRestoreScan(0)));
+    std::unique_ptr<interfaces::Wallet> gui{interfaces::MakeWallet(restored)};
+    BOOST_CHECK(gui->hdRestoreScanOwed());
+    restored->Close();
+    const interfaces::WalletHDAccountsState state{gui->getHDAccountsState()};
+    BOOST_CHECK(state.supported);
+    BOOST_CHECK(state.scan_owed);
+    BOOST_CHECK(gui->hdRestoreScanOwed());
+    BOOST_CHECK(gui->getRestoreReport().scan_owed);
+    gui.reset();
+    Release(std::move(restored));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

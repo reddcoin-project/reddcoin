@@ -1428,7 +1428,7 @@ BOOST_FIXTURE_TEST_CASE(restore_scan_owed_at_load, TestChain100Setup)
         // As a restore leaves the file while its scan is owed.
         {
             LOCK(wallet->cs_wallet);
-            BOOST_REQUIRE(WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0));
+            BOOST_REQUIRE(wallet->WriteRestoreScan(0));
         }
         TestUnloadWallet(std::move(wallet));
     }
@@ -1440,6 +1440,7 @@ BOOST_FIXTURE_TEST_CASE(restore_scan_owed_at_load, TestChain100Setup)
         BOOST_CHECK_EQUAL(tx_count(*wallet), everything);
         int height;
         BOOST_CHECK(!WITH_LOCK(wallet->cs_wallet, return WalletBatch(wallet->GetDatabase()).ReadRestoreScan(height)));
+        BOOST_CHECK(!wallet->IsHDRestoreScanOwed());
         TestUnloadWallet(std::move(wallet));
     }
 }

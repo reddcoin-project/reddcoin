@@ -292,6 +292,10 @@ private:
     //! A restore asked not to look for HD accounts: its scan does not look,
     //! nor does the worker's when it is done again.
     std::atomic<bool> m_hd_accounts_declined{false};
+    //! Whether the file holds a restore scan owed. Kept here so that the
+    //! GUI can show it without reading the file: at shutdown the file is
+    //! closed before the GUI lets go of the wallet.
+    std::atomic<bool> m_hd_restore_scan_owed{false};
     friend void UnloadWallet(std::shared_ptr<CWallet>&& wallet);
     /** optional setting to unlock wallet for staking only
      * serves to disable the trivial sendmoney when OS account compromised
@@ -486,6 +490,15 @@ public:
     //! until its scan has completed.
     bool DeclineHDAccounts();
     void LoadHDAccountsDeclined() { m_hd_accounts_declined = true; }
+    //! Write or erase the restore scan owed (WalletBatch::WriteRestoreScan,
+    //! EraseRestoreScan), and keep IsHDRestoreScanOwed() in step.
+    bool WriteRestoreScan(WalletBatch& batch, int height);
+    bool WriteRestoreScan(int height);
+    bool EraseRestoreScan(WalletBatch& batch);
+    bool EraseRestoreScan();
+    void LoadHDRestoreScan() { m_hd_restore_scan_owed = true; }
+    //! Whether a restore scan is owed, without reading the file.
+    bool IsHDRestoreScanOwed() const { return m_hd_restore_scan_owed; }
     //! Match keys that lost their metadata against the accounts of the seed
     //! (LegacyScriptPubKeyMan::RepairHDAccountKeys), then note the payments
     //! the wallet holds to the accounts found, as when they were received.
