@@ -9,7 +9,9 @@
 #include <streams.h>
 #include <txmempool.h>
 #include <uint256.h>
+#include <util/serfloat.h>
 #include <util/time.h>
+#include <validation.h>
 
 #include <test/util/setup_common.h>
 
@@ -19,14 +21,44 @@
 
 BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, BasicTestingSetup)
 
+// The buckets start at the relay fee, below which no transaction goes, and
+// are spaced 5% apart up to 10000 times that; the last takes everything above.
+// They are read from the file the estimator writes.
+BOOST_AUTO_TEST_CASE(buckets_start_at_the_relay_fee)
+{
+    CBlockPolicyEstimator feeEst;
+    const fs::path path{m_path_root / "fee_estimates.dat"};
+    {
+        CAutoFile file(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(feeEst.Write(file));
+    }
+    CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+    int required, wrote;
+    unsigned int best_seen, first, best;
+    // Doubles are written as their encoding, 64 bits each.
+    std::vector<uint64_t> encoded;
+    file >> required >> wrote >> best_seen >> first >> best >> encoded;
+    std::vector<double> buckets;
+    for (const uint64_t e : encoded) buckets.push_back(DecodeDouble(e));
+    BOOST_REQUIRE(!buckets.empty());
+    BOOST_CHECK_EQUAL(buckets.front(), double{DEFAULT_MIN_RELAY_TX_FEE});
+    // 100000 * 1.05^188 is the last below 1e9: 189 boundaries and the last bucket.
+    BOOST_CHECK_EQUAL(buckets.size(), 190U);
+    BOOST_CHECK_LE(buckets[buckets.size() - 2], 1e9);
+    BOOST_CHECK_GT(buckets[buckets.size() - 2] * 1.05, 1e9);
+    BOOST_CHECK_EQUAL(buckets.back(), 1e99);
+}
+
 BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
 {
     CBlockPolicyEstimator feeEst;
     CTxMemPool mpool(&feeEst);
     LOCK2(cs_main, mpool.cs);
     TestMemPoolEntryHelper entry;
-    CAmount basefee(2000);
-    CAmount deltaFee(100);
+    // ReddCoin: 100 times Bitcoin's, as the relay fee and the lowest
+    // bucket are, so that every fee lands in a bucket of its own.
+    CAmount basefee(200000);
+    CAmount deltaFee(10000);
     std::vector<CAmount> feeV;
 
     // Populate vectors of increasing fees
@@ -207,7 +239,7 @@ BOOST_AUTO_TEST_CASE(fee_estimates_file_version)
             for (int j = 0; j < 10; j++) {
                 for (int k = 0; k < 10; k++) {
                     tx.vin[0].prevout.n = 10000 * blocknum + 100 * j + k;
-                    mpool.addUnchecked(entry.Fee(2000 * (j + 1)).Time(GetTime()).Height(blocknum).FromTx(tx));
+                    mpool.addUnchecked(entry.Fee(200000 * (j + 1)).Time(GetTime()).Height(blocknum).FromTx(tx));
                     block.push_back(mpool.get(tx.GetHash()));
                 }
             }
