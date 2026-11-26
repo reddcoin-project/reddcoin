@@ -171,14 +171,16 @@ private:
     static constexpr double SUFFICIENT_TXS_SHORT = 0.5;
 
     /** Minimum and Maximum values for tracking feerates
-     * The MIN_BUCKET_FEERATE should just be set to the lowest reasonable feerate we
-     * might ever want to track.  Historically this has been 1000 since it was
-     * inheriting DEFAULT_MIN_RELAY_TX_FEE and changing it is disruptive as it
-     * invalidates old estimates files. So leave it at 1000 unless it becomes
-     * necessary to lower it, and then lower it substantially.
+     * The MIN_BUCKET_FEERATE is the lowest feerate a transaction can pay and
+     * still be relayed: Reddcoin's DEFAULT_MIN_RELAY_TX_FEE, 100 times
+     * Bitcoin's. Bitcoin's 1000 left half the buckets below it, where no
+     * transaction ever goes. Changing it changes the buckets, which are kept
+     * in fee_estimates.dat: see FEE_ESTIMATES_VERSION_REQUIRED.
+     * The MAX_BUCKET_FEERATE is 10000 times the lowest, as Bitcoin's is: 10
+     * RDD/kvB. Bitcoin's 1e7 was only 100 times Reddcoin's relay fee.
      */
-    static constexpr double MIN_BUCKET_FEERATE = 1000;
-    static constexpr double MAX_BUCKET_FEERATE = 1e7;
+    static constexpr double MIN_BUCKET_FEERATE = 100000;
+    static constexpr double MAX_BUCKET_FEERATE = 1e9;
 
     /** Spacing of FeeRate buckets
      * We have to lump transactions into buckets based on feerate, but we want to be able
