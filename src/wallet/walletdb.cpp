@@ -718,7 +718,8 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         } else if (strType == DBKeys::REWRITTEN) {
             // Asked for when the wallet is opened; nothing to load.
         } else if (strType == DBKeys::HDRESTORESCAN) {
-            // Read when the wallet is attached to the chain; nothing to load.
+            // Its height is read when the wallet is attached to the chain.
+            pwallet->LoadHDRestoreScan();
         } else if (strType == DBKeys::HDACCOUNTSDECLINED) {
             pwallet->LoadHDAccountsDeclined();
         } else if (strType == DBKeys::HDACCOUNT) {

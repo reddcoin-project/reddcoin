@@ -357,7 +357,7 @@ std::shared_ptr<CWallet> CreateWallet(interfaces::Chain& chain, const std::strin
             // Set a seed for the wallet
             {
                 LOCK(wallet->cs_wallet);
-                if (restore_scan && (!WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0) ||
+                if (restore_scan && (!wallet->WriteRestoreScan(0) ||
                                      (!walletoptions.hd_accounts && !wallet->DeclineHDAccounts()))) {
                     error = Untranslated("Error: Wallet was encrypted but could not be written to");
                     status = DatabaseStatus::FAILED_CREATE;
@@ -1249,7 +1249,7 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, CWalletTx::Co
                 WalletBatch batch(GetDatabase());
                 int owed_height;
                 if (!batch.ReadRestoreScan(owed_height) || confirm.block_height < owed_height) {
-                    batch.WriteRestoreScan(confirm.block_height);
+                    WriteRestoreScan(batch, confirm.block_height);
                 }
             }
 
@@ -3009,7 +3009,7 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, const std::st
         // the next load. A wallet made blank to be encrypted has no keys yet:
         // CreateWallet sets up its seed and then scans.
         const bool restore_scan{walletoptions.importing && !(wallet_creation_flags & WALLET_FLAG_BLANK_WALLET)};
-        if (restore_scan && !WITH_LOCK(walletInstance->cs_wallet, return WalletBatch(walletInstance->GetDatabase()).WriteRestoreScan(0))) {
+        if (restore_scan && !WITH_LOCK(walletInstance->cs_wallet, return walletInstance->WriteRestoreScan(0))) {
             error = strprintf(_("Error creating %s: could not write to the wallet file"), walletFile);
             return nullptr;
         }
@@ -3368,6 +3368,32 @@ bool CWallet::ScanOwedRestore(bool own_discovery)
     return true;
 }
 
+bool CWallet::WriteRestoreScan(WalletBatch& batch, int height)
+{
+    if (!batch.WriteRestoreScan(height)) return false;
+    m_hd_restore_scan_owed = true;
+    return true;
+}
+
+bool CWallet::WriteRestoreScan(int height)
+{
+    WalletBatch batch(GetDatabase());
+    return WriteRestoreScan(batch, height);
+}
+
+bool CWallet::EraseRestoreScan(WalletBatch& batch)
+{
+    if (!batch.EraseRestoreScan()) return false;
+    m_hd_restore_scan_owed = false;
+    return true;
+}
+
+bool CWallet::EraseRestoreScan()
+{
+    WalletBatch batch(GetDatabase());
+    return EraseRestoreScan(batch);
+}
+
 void CWallet::FinishOwedScan()
 {
     AssertLockHeld(cs_wallet);
@@ -3377,11 +3403,11 @@ void CWallet::FinishOwedScan()
         // can leave it, when the keys of an account came due: the scan from
         // there is owed, at the next unlock.
         WalletLogPrintf("The keys of HD accounts came due at block %i while the wallet was locked; the scan from there is done at the next unlock\n", *m_hd_owed_height);
-        if (!batch.WriteRestoreScan(*m_hd_owed_height)) {
+        if (!WriteRestoreScan(batch, *m_hd_owed_height)) {
             WalletLogPrintf("Warning: the scan owed from block %i could not be written to the wallet file\n", *m_hd_owed_height);
         }
         m_hd_owed_height.reset();
-    } else if (!batch.EraseRestoreScan()) {
+    } else if (!EraseRestoreScan(batch)) {
         WalletLogPrintf("Warning: the restore scan has completed, but the wallet file could not be updated to say so; it is done again at the next load\n");
     } else {
         m_hd_accounts_declined = false;

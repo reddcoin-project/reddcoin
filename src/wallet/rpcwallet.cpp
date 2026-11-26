@@ -2776,8 +2776,7 @@ static RPCHelpMan getwalletinfo()
         }
         obj.pushKV("hd_accounts", created);
         obj.pushKV("hd_accounts_inconsistent", spk_man && spk_man->HasHDAccountsInconsistency());
-        int owed_height;
-        obj.pushKV("hd_restore_scan_owed", WalletBatch(pwallet->GetDatabase()).ReadRestoreScan(owed_height));
+        obj.pushKV("hd_restore_scan_owed", pwallet->IsHDRestoreScanOwed());
     }
 
     if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {

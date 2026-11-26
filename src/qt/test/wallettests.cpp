@@ -838,11 +838,11 @@ void TestHDAccounts(interfaces::Node& node)
         // The notice: none for a consistent wallet that owes no scan; one for a restore scan owed.
         QLabel* notice = overviewPage.findChild<QLabel*>("labelHDAccountsNotice");
         QVERIFY(notice && notice->isHidden());
-        QVERIFY(WalletBatch(wallet->GetDatabase()).WriteRestoreScan(0));
+        QVERIFY(wallet->WriteRestoreScan(0));
         overviewPage.setBalance(balances);
         QVERIFY(!notice->isHidden());
         QVERIFY(notice->text().contains("has not completed"));
-        QVERIFY(WalletBatch(wallet->GetDatabase()).EraseRestoreScan());
+        QVERIFY(wallet->EraseRestoreScan());
 
         // The send page's balance is account 0's.
         SendCoinsDialog sendCoinsDialog(platformStyle.get());
