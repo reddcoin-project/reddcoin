@@ -88,8 +88,7 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     int blocknum = 0;
 
     // Loop through 200 blocks
-    // At a decay .9952 and 4 fee transactions per block
-    // This makes the tx count about 2.5 per bucket, well above the 0.1 threshold
+    // At 4 fee transactions per block in each bucket, well above the 0.01 threshold
     while (blocknum < 200) {
         for (int j = 0; j < 10; j++) { // For each fee
             for (int k = 0; k < 4; k++) { // add 4 fee txs
@@ -194,9 +193,11 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
         BOOST_CHECK(feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee);
     }
 
-    // Mine 400 more blocks where everything is mined every block
-    // Estimates should be below original estimates
-    while (blocknum < 665) {
+    // Mine 4000 more blocks where everything is mined every block
+    // Estimates should be below original estimates. The decays are set for
+    // 60-second blocks, so the old data takes 10 times as many blocks to fade
+    // as on Bitcoin, which mined 400 here.
+    while (blocknum < 4265) {
         for (int j = 0; j < 10; j++) { // For each fee multiple
             for (int k = 0; k < 4; k++) { // add 4 fee txs
                 tx.vin[0].prevout.n = 10000*blocknum+100*j+k;
@@ -215,6 +216,40 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     for (int i = 2; i < 9; i++) { // At 9, the original estimate was already at the bottom (b/c scale = 2)
         BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
     }
+}
+
+// The estimate for a chain where one transaction comes every `every` blocks,
+// each paying the same fee and mined in the next block.
+static CFeeRate EstimateAtRate(int every, int blocks)
+{
+    CBlockPolicyEstimator feeEst;
+    CTxMemPool mpool(&feeEst);
+    LOCK2(cs_main, mpool.cs);
+    TestMemPoolEntryHelper entry;
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    for (int blocknum = 0; blocknum < blocks; blocknum++) {
+        std::vector<CTransactionRef> block;
+        if (blocknum % every == 0) {
+            tx.vin[0].prevout.n = blocknum;
+            mpool.addUnchecked(entry.Fee(200000).Time(GetTime()).Height(blocknum).FromTx(tx));
+            block.push_back(mpool.get(tx.GetHash()));
+        }
+        mpool.removeForBlock(block, blocknum + 1);
+    }
+    return feeEst.estimateFee(2);
+}
+
+// The estimator needs on average SUFFICIENT_FEETXS transactions a block, 0.01,
+// one every 100 minutes as on Bitcoin. Mainnet carries about 0.015 a block
+// (2026-11), which Bitcoin's 0.1 a block never gave an estimate for.
+BOOST_AUTO_TEST_CASE(estimate_at_reddcoin_volume)
+{
+    // One transaction every 50 blocks, 0.02 a block: an estimate.
+    BOOST_CHECK(EstimateAtRate(50, 6000) != CFeeRate(0));
+    // One every 200 blocks, 0.005 a block: too few.
+    BOOST_CHECK(EstimateAtRate(200, 6000) == CFeeRate(0));
 }
 
 // fee_estimates.dat says which version it needs to be read. A file written

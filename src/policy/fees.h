@@ -151,12 +151,16 @@ private:
     /** Historical estimates that are older than this aren't valid */
     static const unsigned int OLDEST_ESTIMATE_HISTORY = 6 * 1008;
 
-    /** Decay of .962 is a half-life of 18 blocks or about 3 hours */
-    static constexpr double SHORT_DECAY = .962;
-    /** Decay of .9952 is a half-life of 144 blocks or about 1 day */
-    static constexpr double MED_DECAY = .9952;
-    /** Decay of .99931 is a half-life of 1008 blocks or about 1 week */
-    static constexpr double LONG_DECAY = .99931;
+    /** The decays are per block. Bitcoin's are set for 10-minute blocks;
+     *  each one here is Bitcoin's to the power 1/10, so it keeps the same
+     *  history in time on 60-second blocks. They are kept in
+     *  fee_estimates.dat: see FEE_ESTIMATES_VERSION_REQUIRED. */
+    /** Decay of .996133 is a half-life of 179 blocks or about 3 hours */
+    static constexpr double SHORT_DECAY = .996133;
+    /** Decay of .999519 is a half-life of 1441 blocks or about 1 day */
+    static constexpr double MED_DECAY = .999519;
+    /** Decay of .999931 is a half-life of 10045 blocks or about 1 week */
+    static constexpr double LONG_DECAY = .999931;
 
     /** Require greater than 60% of X feerate transactions to be confirmed within Y/2 blocks*/
     static constexpr double HALF_SUCCESS_PCT = .6;
@@ -165,10 +169,13 @@ private:
     /** Require greater than 95% of X feerate transactions to be confirmed within 2 * Y blocks*/
     static constexpr double DOUBLE_SUCCESS_PCT = .95;
 
-    /** Require an avg of 0.1 tx in the combined feerate bucket per block to have stat significance */
-    static constexpr double SUFFICIENT_FEETXS = 0.1;
-    /** Require an avg of 0.5 tx when using short decay since there are fewer blocks considered*/
-    static constexpr double SUFFICIENT_TXS_SHORT = 0.5;
+    /** Require an avg of 0.01 tx in the combined feerate bucket per block to
+     *  have stat significance. Bitcoin's 0.1 is one transaction in 100
+     *  minutes; on 60-second blocks the same rate is 0.01 per block. */
+    static constexpr double SUFFICIENT_FEETXS = 0.01;
+    /** Require an avg of 0.05 tx when using short decay since there are fewer
+     *  blocks considered: Bitcoin's 0.5, scaled the same way. */
+    static constexpr double SUFFICIENT_TXS_SHORT = 0.05;
 
     /** Minimum and Maximum values for tracking feerates
      * The MIN_BUCKET_FEERATE is the lowest feerate a transaction can pay and
