@@ -37,7 +37,9 @@
 #include <QSettings>
 #include <QTextDocument>
 
-static constexpr std::array confTargets{2, 4, 6, 12, 24, 48, 144, 504, 1008};
+// Confirmation targets in blocks: on 60-second blocks, 2, 5, 10 and 30
+// minutes, 1, 4 and 12 hours, and 1, 3 and 7 days.
+static constexpr std::array confTargets{2, 5, 10, 30, 60, 240, 720, 1440, 4320, 10080};
 int getConfTargetForIndex(int index) {
     if (index+1 > static_cast<int>(confTargets.size())) {
         return confTargets.back();
@@ -905,7 +907,7 @@ void SendCoinsDialog::updateSmartFeeLabel()
     ui->labelSmartFee->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), feeRate.GetFeePerK()) + "/kvB");
 
     if (reason == FeeReason::FALLBACK) {
-        ui->labelSmartFee2->show(); // (Smart fee not initialized yet. This usually takes a few blocks...)
+        ui->labelSmartFee2->show(); // (the fallback fee: too few transactions on the network for an estimate)
         ui->labelFeeEstimation->setText("");
         ui->fallbackFeeWarningLabel->setVisible(true);
         int lightness = ui->fallbackFeeWarningLabel->palette().color(QPalette::WindowText).lightness();
