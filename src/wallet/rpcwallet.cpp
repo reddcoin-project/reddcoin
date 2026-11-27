@@ -204,7 +204,7 @@ static std::string LabelFromValue(const UniValue& value)
  *
  * @param[in]     wallet            Wallet reference
  * @param[in,out] cc                Coin control to be updated
- * @param[in]     conf_target       UniValue integer; confirmation target in blocks, values between 1 and 1008 are valid per policy/fees.h;
+ * @param[in]     conf_target       UniValue integer; confirmation target in blocks, values between 1 and 10080 are valid per policy/fees.h;
  * @param[in]     estimate_mode     UniValue string; fee estimation mode, valid values are "unset", "economical" or "conservative";
  * @param[in]     fee_rate          UniValue real; fee rate in sat/vB;
  *                                      if present, both conf_target and estimate_mode must either be null, or "unset"

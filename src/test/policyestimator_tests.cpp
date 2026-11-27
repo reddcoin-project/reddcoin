@@ -2,17 +2,52 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <clientversion.h>
+#include <fs.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
+#include <streams.h>
 #include <txmempool.h>
 #include <uint256.h>
+#include <util/serfloat.h>
 #include <util/time.h>
+#include <validation.h>
 
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+
 BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, BasicTestingSetup)
+
+// The buckets start at the relay fee, below which no transaction goes, and
+// are spaced 5% apart up to 10000 times that; the last takes everything above.
+// They are read from the file the estimator writes.
+BOOST_AUTO_TEST_CASE(buckets_start_at_the_relay_fee)
+{
+    CBlockPolicyEstimator feeEst;
+    const fs::path path{m_path_root / "fee_estimates.dat"};
+    {
+        CAutoFile file(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(feeEst.Write(file));
+    }
+    CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+    int required, wrote;
+    unsigned int best_seen, first, best;
+    // Doubles are written as their encoding, 64 bits each.
+    std::vector<uint64_t> encoded;
+    file >> required >> wrote >> best_seen >> first >> best >> encoded;
+    std::vector<double> buckets;
+    for (const uint64_t e : encoded) buckets.push_back(DecodeDouble(e));
+    BOOST_REQUIRE(!buckets.empty());
+    BOOST_CHECK_EQUAL(buckets.front(), double{DEFAULT_MIN_RELAY_TX_FEE});
+    // 100000 * 1.05^188 is the last below 1e9: 189 boundaries and the last bucket.
+    BOOST_CHECK_EQUAL(buckets.size(), 190U);
+    BOOST_CHECK_LE(buckets[buckets.size() - 2], 1e9);
+    BOOST_CHECK_GT(buckets[buckets.size() - 2] * 1.05, 1e9);
+    BOOST_CHECK_EQUAL(buckets.back(), 1e99);
+}
 
 BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
 {
@@ -20,8 +55,10 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     CTxMemPool mpool(&feeEst);
     LOCK2(cs_main, mpool.cs);
     TestMemPoolEntryHelper entry;
-    CAmount basefee(2000);
-    CAmount deltaFee(100);
+    // ReddCoin: 100 times Bitcoin's, as the relay fee and the lowest
+    // bucket are, so that every fee lands in a bucket of its own.
+    CAmount basefee(200000);
+    CAmount deltaFee(10000);
     std::vector<CAmount> feeV;
 
     // Populate vectors of increasing fees
@@ -51,8 +88,7 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     int blocknum = 0;
 
     // Loop through 200 blocks
-    // At a decay .9952 and 4 fee transactions per block
-    // This makes the tx count about 2.5 per bucket, well above the 0.1 threshold
+    // At 4 fee transactions per block in each bucket, well above the 0.01 threshold
     while (blocknum < 200) {
         for (int j = 0; j < 10; j++) { // For each fee
             for (int k = 0; k < 4; k++) { // add 4 fee txs
@@ -157,9 +193,11 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
         BOOST_CHECK(feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee);
     }
 
-    // Mine 400 more blocks where everything is mined every block
-    // Estimates should be below original estimates
-    while (blocknum < 665) {
+    // Mine 4000 more blocks where everything is mined every block
+    // Estimates should be below original estimates. The decays are set for
+    // 60-second blocks, so the old data takes 10 times as many blocks to fade
+    // as on Bitcoin, which mined 400 here.
+    while (blocknum < 4265) {
         for (int j = 0; j < 10; j++) { // For each fee multiple
             for (int k = 0; k < 4; k++) { // add 4 fee txs
                 tx.vin[0].prevout.n = 10000*blocknum+100*j+k;
@@ -177,6 +215,216 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
     for (int i = 2; i < 9; i++) { // At 9, the original estimate was already at the bottom (b/c scale = 2)
         BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
+    }
+}
+
+// The estimate for a chain where one transaction comes every `every` blocks,
+// each paying the same fee and mined in the next block.
+static CFeeRate EstimateAtRate(int every, int blocks)
+{
+    CBlockPolicyEstimator feeEst;
+    CTxMemPool mpool(&feeEst);
+    LOCK2(cs_main, mpool.cs);
+    TestMemPoolEntryHelper entry;
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    for (int blocknum = 0; blocknum < blocks; blocknum++) {
+        std::vector<CTransactionRef> block;
+        if (blocknum % every == 0) {
+            tx.vin[0].prevout.n = blocknum;
+            mpool.addUnchecked(entry.Fee(200000).Time(GetTime()).Height(blocknum).FromTx(tx));
+            block.push_back(mpool.get(tx.GetHash()));
+        }
+        mpool.removeForBlock(block, blocknum + 1);
+    }
+    return feeEst.estimateFee(2);
+}
+
+// The estimator needs on average SUFFICIENT_FEETXS transactions a block, 0.01,
+// one every 100 minutes as on Bitcoin. Mainnet carries about 0.015 a block
+// (2026-11), which Bitcoin's 0.1 a block never gave an estimate for.
+BOOST_AUTO_TEST_CASE(estimate_at_reddcoin_volume)
+{
+    // One transaction every 50 blocks, 0.02 a block: an estimate.
+    BOOST_CHECK(EstimateAtRate(50, 6000) != CFeeRate(0));
+    // One every 200 blocks, 0.005 a block: too few.
+    BOOST_CHECK(EstimateAtRate(200, 6000) == CFeeRate(0));
+}
+
+// fee_estimates.dat says which version it needs to be read. A file written
+// before the estimator's parameters were set for Reddcoin needs less than
+// FEE_ESTIMATES_VERSION_REQUIRED and is discarded, since reading it would
+// keep the old buckets, decay and scale; one this build writes is read back;
+// one that needs a later version is refused.
+BOOST_AUTO_TEST_CASE(fee_estimates_file_version)
+{
+    CBlockPolicyEstimator feeEst;
+    {
+        CTxMemPool mpool(&feeEst);
+        LOCK2(cs_main, mpool.cs);
+        TestMemPoolEntryHelper entry;
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vout.resize(1);
+        // Ten transactions a block at each of ten fees, every one mined in
+        // the next block: enough for an estimate.
+        for (int blocknum = 0; blocknum < 30; blocknum++) {
+            std::vector<CTransactionRef> block;
+            for (int j = 0; j < 10; j++) {
+                for (int k = 0; k < 10; k++) {
+                    tx.vin[0].prevout.n = 10000 * blocknum + 100 * j + k;
+                    mpool.addUnchecked(entry.Fee(200000 * (j + 1)).Time(GetTime()).Height(blocknum).FromTx(tx));
+                    block.push_back(mpool.get(tx.GetHash()));
+                }
+            }
+            mpool.removeForBlock(block, blocknum + 1);
+        }
+    }
+    const CFeeRate estimate{feeEst.estimateFee(2)};
+    BOOST_REQUIRE(estimate != CFeeRate(0));
+
+    const fs::path path{m_path_root / "fee_estimates.dat"};
+    {
+        CAutoFile file(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(feeEst.Write(file));
+    }
+    // What the file needs, as a later or earlier version would write it.
+    const auto set_required = [&](int required) {
+        CAutoFile file(fsbridge::fopen(path, "r+b"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(!file.IsNull());
+        file << required;
+    };
+    const auto read_back = [&](CBlockPolicyEstimator& est) {
+        CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+        return est.Read(file);
+    };
+    {
+        CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+        int required;
+        file >> required;
+        BOOST_CHECK_EQUAL(required, FEE_ESTIMATES_VERSION_REQUIRED);
+    }
+
+    // Written by this build: read back, whatever its CLIENT_VERSION.
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == estimate);
+    }
+    // Written with the old parameters (the header of 4.22.9.5 and earlier):
+    // discarded, and the estimator starts empty.
+    set_required(42199);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+    }
+    // One just below the version required: discarded too.
+    set_required(FEE_ESTIMATES_VERSION_REQUIRED - 1);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+    }
+    // Needs a later version than this build: refused.
+    set_required(std::max(CLIENT_VERSION, FEE_ESTIMATES_VERSION_REQUIRED) + 1);
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(!read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+    }
+}
+
+// The longest target is a week of 60-second blocks. An estimate for it needs
+// twice that span of data, as every target does.
+BOOST_AUTO_TEST_CASE(longest_target_is_a_week)
+{
+    CBlockPolicyEstimator feeEst;
+    BOOST_CHECK_EQUAL(feeEst.HighestTargetTracked(FeeEstimateHorizon::SHORT_HALFLIFE), 12U);
+    BOOST_CHECK_EQUAL(feeEst.HighestTargetTracked(FeeEstimateHorizon::MED_HALFLIFE), 48U);
+    BOOST_CHECK_EQUAL(feeEst.HighestTargetTracked(FeeEstimateHorizon::LONG_HALFLIFE), 10080U);
+    {
+        CTxMemPool mpool(&feeEst);
+        LOCK2(cs_main, mpool.cs);
+        TestMemPoolEntryHelper entry;
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vout.resize(1);
+        // One transaction a block, each mined in the next.
+        for (int blocknum = 0; blocknum < 2 * 10080 + 10; blocknum++) {
+            tx.vin[0].prevout.n = blocknum;
+            mpool.addUnchecked(entry.Fee(200000).Time(GetTime()).Height(blocknum).FromTx(tx));
+            mpool.removeForBlock({mpool.get(tx.GetHash())}, blocknum + 1);
+        }
+    }
+    FeeCalculation feeCalc;
+    BOOST_CHECK(feeEst.estimateSmartFee(10080, &feeCalc, /*conservative=*/false) != CFeeRate(0));
+    BOOST_CHECK_EQUAL(feeCalc.returnedTarget, 10080);
+}
+
+// Each horizon keeps the targets it was written with. A file whose long
+// horizon tracks Bitcoin's 1008 blocks (42 steps of 24), as a build before the
+// week was set would write, is discarded and the estimator starts empty.
+BOOST_AUTO_TEST_CASE(fee_estimates_file_with_other_targets)
+{
+    CBlockPolicyEstimator feeEst;
+    {
+        CTxMemPool mpool(&feeEst);
+        LOCK2(cs_main, mpool.cs);
+        TestMemPoolEntryHelper entry;
+        CMutableTransaction tx;
+        tx.vin.resize(1);
+        tx.vout.resize(1);
+        for (int blocknum = 0; blocknum < 30; blocknum++) {
+            std::vector<CTransactionRef> block;
+            for (int k = 0; k < 10; k++) {
+                tx.vin[0].prevout.n = 100 * blocknum + k;
+                mpool.addUnchecked(entry.Fee(200000).Time(GetTime()).Height(blocknum).FromTx(tx));
+                block.push_back(mpool.get(tx.GetHash()));
+            }
+            mpool.removeForBlock(block, blocknum + 1);
+        }
+    }
+    BOOST_REQUIRE(feeEst.estimateFee(2) != CFeeRate(0));
+
+    const fs::path path{m_path_root / "fee_estimates.dat"};
+    {
+        CAutoFile file(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(feeEst.Write(file));
+    }
+    const auto read_back = [&](CBlockPolicyEstimator& est) {
+        CAutoFile file(fsbridge::fopen(path, "rb"), SER_DISK, CLIENT_VERSION);
+        return est.Read(file);
+    };
+    {
+        CBlockPolicyEstimator est;
+        BOOST_REQUIRE(read_back(est));
+        BOOST_CHECK(est.estimateFee(2) != CFeeRate(0));
+    }
+
+    // The long horizon is written last: decay, scale, two vectors of one
+    // value a bucket, then two of one such vector a period.
+    const std::vector<uint64_t> bucket_row(190, EncodeDouble(0));
+    const auto horizon_size = [&](unsigned int periods) {
+        CDataStream s(SER_DISK, CLIENT_VERSION);
+        s << EncodeDouble(0.999931) << (unsigned int)1 << bucket_row << bucket_row
+          << std::vector<std::vector<uint64_t>>(periods, bucket_row)
+          << std::vector<std::vector<uint64_t>>(periods, bucket_row);
+        return s.size();
+    };
+    fs::resize_file(path, fs::file_size(path) - horizon_size(84));
+    {
+        CAutoFile file(fsbridge::fopen(path, "ab"), SER_DISK, CLIENT_VERSION);
+        file << EncodeDouble(0.999931) << (unsigned int)24 << bucket_row << bucket_row
+             << std::vector<std::vector<uint64_t>>(42, bucket_row)
+             << std::vector<std::vector<uint64_t>>(42, bucket_row);
+    }
+    {
+        CBlockPolicyEstimator est;
+        BOOST_CHECK(!read_back(est));
+        BOOST_CHECK(est.estimateFee(2) == CFeeRate(0));
+        BOOST_CHECK_EQUAL(est.HighestTargetTracked(FeeEstimateHorizon::LONG_HALFLIFE), 10080U);
     }
 }
 

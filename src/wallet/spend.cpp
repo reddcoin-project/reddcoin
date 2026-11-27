@@ -781,7 +781,7 @@ bool CWallet::CreateTransactionInternal(
     }
     if (feeCalc.reason == FeeReason::FALLBACK && !m_allow_fallback_fee) {
         // eventually allow a fallback fee
-        error = _("Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.");
+        error = _("Fee estimation failed: the network has too few transactions for an estimate, and the fallback fee is disabled. Enable -fallbackfee or set a fee rate.");
         return false;
     }
 

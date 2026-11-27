@@ -762,7 +762,7 @@
           <item>
            <widget class="QLabel" name="fallbackFeeWarningLabel">
             <property name="toolTip">
-             <string>Using the fallbackfee can result in sending a transaction that will take several hours or days (or never) to confirm. Consider choosing your fee manually or wait until you have validated the complete chain.</string>
+             <string>The network has too few transactions for a fee estimate, so the fallback fee (-fallbackfee) is used. By default it is the minimum relay fee. To pay more, choose a custom fee.</string>
             </property>
             <property name="font">
             <font>
@@ -771,7 +771,7 @@
             </font>
             </property>
             <property name="text">
-             <string>Warning: Fee estimation is currently not possible.</string>
+             <string>No fee estimate: the fallback fee is used.</string>
             </property>
             <property name="wordWrap">
              <bool>false</bool>
@@ -991,7 +991,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee rate of "100 satos
                  <item>
                   <widget class="QLabel" name="labelSmartFee2">
                    <property name="text">
-                    <string>(Smart fee not initialized yet. This usually takes a few blocks…)</string>
+                    <string>(the fallback fee: too few transactions on the network for an estimate)</string>
                    </property>
                   </widget>
                  </item>

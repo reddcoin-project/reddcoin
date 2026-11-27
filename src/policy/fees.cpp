@@ -14,9 +14,15 @@
 #include <util/serfloat.h>
 #include <util/system.h>
 
+#include <algorithm>
+
 static const char* FEE_ESTIMATES_FILENAME = "fee_estimates.dat";
 
 static constexpr double INF_FEERATE = 1e99;
+
+/** The longest confirmation target a fee estimates file may track: a week of
+ *  60-second blocks. */
+static constexpr size_t MAX_CONFIRMS_TRACKED = 7 * 24 * 60;
 
 std::string StringForFeeEstimateHorizon(FeeEstimateHorizon horizon)
 {
@@ -414,8 +420,8 @@ void TxConfirmStats::Read(CAutoFile& filein, int nFileVersion, size_t numBuckets
     maxPeriods = confAvg.size();
     maxConfirms = scale * maxPeriods;
 
-    if (maxConfirms <= 0 || maxConfirms > 6 * 24 * 7) { // one week
-        throw std::runtime_error("Corrupt estimates file.  Must maintain estimates for between 1 and 1008 (one week) confirms");
+    if (maxConfirms <= 0 || maxConfirms > MAX_CONFIRMS_TRACKED) {
+        throw std::runtime_error(strprintf("Corrupt estimates file.  Must maintain estimates for between 1 and %u (one week) confirms", MAX_CONFIRMS_TRACKED));
     }
     for (unsigned int i = 0; i < maxPeriods; i++) {
         if (confAvg[i].size() != numBuckets) {
@@ -510,6 +516,7 @@ CBlockPolicyEstimator::CBlockPolicyEstimator()
     : nBestSeenHeight(0), firstRecordedHeight(0), historicalFirst(0), historicalBest(0), trackedTxs(0), untrackedTxs(0)
 {
     static_assert(MIN_BUCKET_FEERATE > 0, "Min feerate must be nonzero");
+    static_assert(LONG_BLOCK_PERIODS * LONG_SCALE <= MAX_CONFIRMS_TRACKED, "The long horizon must fit in a fee estimates file");
     size_t bucketIndex = 0;
 
     for (double bucketBoundary = MIN_BUCKET_FEERATE; bucketBoundary <= MAX_BUCKET_FEERATE; bucketBoundary *= FEE_SPACING, bucketIndex++) {
@@ -896,7 +903,7 @@ bool CBlockPolicyEstimator::Write(CAutoFile& fileout) const
 {
     try {
         LOCK(m_cs_fee_estimator);
-        fileout << 42199; // version required to read: 4.21.99 or later
+        fileout << FEE_ESTIMATES_VERSION_REQUIRED; // version required to read
         fileout << CLIENT_VERSION; // version that wrote the file
         fileout << nBestSeenHeight;
         if (BlockSpan() > HistoricalBlockSpan()/2) {
@@ -923,7 +930,7 @@ bool CBlockPolicyEstimator::Read(CAutoFile& filein)
         LOCK(m_cs_fee_estimator);
         int nVersionRequired, nVersionThatWrote;
         filein >> nVersionRequired >> nVersionThatWrote;
-        if (nVersionRequired > CLIENT_VERSION) {
+        if (nVersionRequired > std::max(CLIENT_VERSION, FEE_ESTIMATES_VERSION_REQUIRED)) {
             throw std::runtime_error(strprintf("up-version (%d) fee estimate file", nVersionRequired));
         }
 
@@ -932,9 +939,11 @@ bool CBlockPolicyEstimator::Read(CAutoFile& filein)
         unsigned int nFileBestSeenHeight;
         filein >> nFileBestSeenHeight;
 
-        if (nVersionRequired < 42199) {
+        // Written with the old estimator parameters, or in the format before
+        // 0.14.99: start empty.
+        if (nVersionRequired < FEE_ESTIMATES_VERSION_REQUIRED) {
             LogPrintf("%s: incompatible old fee estimation data (non-fatal). Version: %d\n", __func__, nVersionRequired);
-        } else { // New format introduced in 149900
+        } else {
             unsigned int nFileHistoricalFirst, nFileHistoricalBest;
             filein >> nFileHistoricalFirst >> nFileHistoricalBest;
             if (nFileHistoricalFirst > nFileHistoricalBest || nFileHistoricalBest > nFileBestSeenHeight) {
@@ -953,6 +962,14 @@ bool CBlockPolicyEstimator::Read(CAutoFile& filein)
             fileFeeStats->Read(filein, nVersionThatWrote, numBuckets);
             fileShortStats->Read(filein, nVersionThatWrote, numBuckets);
             fileLongStats->Read(filein, nVersionThatWrote, numBuckets);
+            // Each horizon keeps the scale and periods it was written with,
+            // so a file tracking other targets than this build would keep
+            // them: start empty instead.
+            if (fileShortStats->GetMaxConfirms() != SHORT_BLOCK_PERIODS * SHORT_SCALE ||
+                fileFeeStats->GetMaxConfirms() != MED_BLOCK_PERIODS * MED_SCALE ||
+                fileLongStats->GetMaxConfirms() != LONG_BLOCK_PERIODS * LONG_SCALE) {
+                throw std::runtime_error(strprintf("fee estimate file tracks other confirmation targets (up to %u blocks)", fileLongStats->GetMaxConfirms()));
+            }
 
             // Fee estimates file parsed correctly
             // Copy buckets from file and refresh our bucketmap
