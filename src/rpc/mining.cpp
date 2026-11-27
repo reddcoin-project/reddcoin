@@ -1513,7 +1513,7 @@ static RPCHelpMan estimatesmartfee()
         "for which the estimate is valid. Uses virtual transaction size as defined\n"
         "in BIP 141 (witness data is discounted).\n",
         {
-            {"conf_target", RPCArg::Type::NUM, RPCArg::Optional::NO, "Confirmation target in blocks (1 - 1008)"},
+            {"conf_target", RPCArg::Type::NUM, RPCArg::Optional::NO, "Confirmation target in blocks (1 - 10080)"},
             {"estimate_mode", RPCArg::Type::STR, RPCArg::Default{"conservative"}, "The fee estimate mode.\n"
             "                   Whether to return a more conservative estimate which also satisfies\n"
             "                   a longer history. A conservative estimate potentially returns a\n"
@@ -1584,7 +1584,7 @@ static RPCHelpMan estimaterawfee()
                 "confirmation within conf_target blocks if possible. Uses virtual transaction size as\n"
                 "defined in BIP 141 (witness data is discounted).\n",
                 {
-                    {"conf_target", RPCArg::Type::NUM, RPCArg::Optional::NO, "Confirmation target in blocks (1 - 1008)"},
+                    {"conf_target", RPCArg::Type::NUM, RPCArg::Optional::NO, "Confirmation target in blocks (1 - 10080)"},
                     {"threshold", RPCArg::Type::NUM, RPCArg::Default{0.95}, "The proportion of transactions in a given feerate range that must have been\n"
             "               confirmed within conf_target in order to consider those feerates as high enough and proceed to check\n"
             "               lower buckets."},

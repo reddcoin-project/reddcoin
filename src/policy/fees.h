@@ -145,11 +145,18 @@ private:
     /** Track confirm delays up to 48 blocks for medium horizon */
     static constexpr unsigned int MED_BLOCK_PERIODS = 24;
     static constexpr unsigned int MED_SCALE = 2;
-    /** Track confirm delays up to 1008 blocks for long horizon */
-    static constexpr unsigned int LONG_BLOCK_PERIODS = 42;
-    static constexpr unsigned int LONG_SCALE = 24;
-    /** Historical estimates that are older than this aren't valid */
-    static const unsigned int OLDEST_ESTIMATE_HISTORY = 6 * 1008;
+    /** Track confirm delays up to 10080 blocks, a week, for long horizon,
+     *  in steps of 120 blocks (2 hours). Bitcoin's 42 steps of 24 blocks
+     *  reach a week on 10-minute blocks, but only 17 hours on 60-second
+     *  ones. The short and medium horizons keep Bitcoin's block counts, so
+     *  the short targets keep their one-block steps. Changing these changes
+     *  the targets kept in fee_estimates.dat: a file that tracks others is
+     *  discarded. */
+    static constexpr unsigned int LONG_BLOCK_PERIODS = 84;
+    static constexpr unsigned int LONG_SCALE = 120;
+    /** Historical estimates that are older than this aren't valid: six times
+     *  the longest target, as on Bitcoin, about six weeks */
+    static const unsigned int OLDEST_ESTIMATE_HISTORY = 6 * LONG_BLOCK_PERIODS * LONG_SCALE;
 
     /** The decays are per block. Bitcoin's are set for 10-minute blocks;
      *  each one here is Bitcoin's to the power 1/10, so it keeps the same
